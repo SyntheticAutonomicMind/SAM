@@ -1,0 +1,132 @@
+name: Release SAM
+
+on:
+  push:
+    tags:
+      - '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 20251213.1)'
+        required: true
+        type: string
+
+env:
+  XCODE_VERSION: '26.2'
+  MACOS_VERSION: '14.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-sign-notarize-package:
+    name: Build, Sign, Notarize, and Package
+    runs-on: [self-hosted]
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+      
+      - name: Download Metal Toolchain
+        run: |
+          echo "Downloading Metal Toolchain for Xcode ${{ env.XCODE_VERSION }}..."
+          sudo xcodebuild -downloadComponent MetalToolchain || echo "Metal Toolchain already installed or download failed"
+      
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/}
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+      
+      - name: Update version in Info.plist
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Info.plist
+          UPDATED_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
+          if [ "$UPDATED_VERSION" != "$VERSION" ]; then
+            echo "ERROR: Version update failed"
+            exit 1
+          fi
+      
+      - name: Build release package
+        run: make build-release
+      
+      - name: Validate Python Bundle
+        run: ./scripts/validate_python_bundle.sh Release
+      
+      - name: Sign and notarize
+        run: |
+          if [ -f /Users/andrew/.sam_runner_env ]; then
+            source /Users/andrew/.sam_runner_env
+          fi
+          make sign-only-release
+      
+      - name: Verify distribution files
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          if [ ! -f "dist/SAM-${VERSION}.dmg" ]; then
+            echo "ERROR: DMG not found"
+            exit 1
+          fi
+          if [ ! -f "dist/SAM-${VERSION}.zip" ]; then
+            echo "ERROR: ZIP not found"
+            exit 1
+          fi
+          echo "Distribution files ready:"
+          ls -lh dist/SAM-${VERSION}.*
+      
+      - name: Update appcast.xml
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          ./scripts/update_appcast.sh "${VERSION}" "dist/SAM-${VERSION}.zip"
+      
+      - name: Commit and push appcast changes
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add appcast.xml
+          if git diff --staged --quiet; then
+            echo "No changes to appcast.xml"
+          else
+            git commit -m "chore(release): update appcast.xml for v${VERSION}"
+            git push origin HEAD:main
+          fi
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: SAM ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/SAM-${{ steps.version.outputs.VERSION }}.dmg
+            dist/SAM-${{ steps.version.outputs.VERSION }}.zip
+          body: |
+            ## Downloads
+            
+            - **[SAM-${{ steps.version.outputs.VERSION }}.dmg](https://github.com/SyntheticAutonomicMind/SAM/releases/download/${{ steps.version.outputs.VERSION }}/SAM-${{ steps.version.outputs.VERSION }}.dmg)** - Recommended installer
+            - **[SAM-${{ steps.version.outputs.VERSION }}.zip](https://github.com/SyntheticAutonomicMind/SAM/releases/download/${{ steps.version.outputs.VERSION }}/SAM-${{ steps.version.outputs.VERSION }}.zip)** - For Sparkle updates
+            
+            ## Installation
+            
+            1. Download and open the DMG file
+            2. Drag SAM.app to your Applications folder
+            3. Launch SAM from Applications

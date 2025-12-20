@@ -1,0 +1,64 @@
+# Build artifacts
+.build/
+*.app
+*.dSYM
+*.xcarchive
+releases/
+Sources/SAM/Resources
+
+# Dependencies
+.dependencies/
+.python_cache/
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+*.pid
+*.log
+nohup.out
+*.profraw
+.last_version
+*.log
+/*.txt
+/*.json
+
+# Test output
+Tests/*.log
+Tests/*.txt
+Tests/test_run_output.*
+Tests/full_test_output.*
+Tests/test_results.*
+Tests/sam_server.log
+
+# IDE
+.vscode/
+.idea/
+*.xcworkspace
+*.xcuserdata
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# Sparkle (keep private key secure!)
+.sam-sparkle-keys/
+
+# Node
+node_modules/
+
+# Agent session handoffs (development only, not for public release)
+ai-assisted/20*/
+
+# Scratch directory (development work, not for release)
+scratch/
+
+# macOS
+.Trashes
+.fseventsd
+.Spotlight-V100
+.TemporaryItems

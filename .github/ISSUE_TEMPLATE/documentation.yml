@@ -1,0 +1,93 @@
+name: 📚 Documentation Issue
+description: Report missing, incorrect, or unclear documentation
+title: "[Docs]: "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Documentation Feedback
+        
+        Help us improve SAM's documentation! This template is for:
+        - Missing documentation
+        - Incorrect or outdated information
+        - Unclear explanations
+        - Broken links
+        - Typos or formatting issues
+        
+        **Current documentation:**
+        - [Main Documentation Site](https://www.syntheticautonomicmind.org)
+        - [README](https://github.com/SyntheticAutonomicMind/SAM/blob/main/README.md)
+        - [In-repo docs](https://github.com/SyntheticAutonomicMind/SAM/tree/main/project-docs)
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: What type of documentation issue is this?
+      options:
+        - Missing documentation
+        - Incorrect information
+        - Unclear explanation
+        - Broken link
+        - Typo or formatting
+        - Outdated content
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Documentation Location
+      description: Which page or document is affected?
+      placeholder: "e.g., https://www.syntheticautonomicmind.org/docs/getting-started or README.md"
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What's Wrong?
+      description: Describe the documentation issue
+      placeholder: |
+        The documentation says...
+        But actually...
+        Or: This section is missing information about...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: How should the documentation be improved?
+      placeholder: |
+        It should say...
+        Add a section explaining...
+        Update the example to show...
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: How does this documentation issue affect users?
+      placeholder: |
+        This confused me because...
+        New users might think...
+        This makes it hard to...
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Would you like to submit a PR?
+      description: Documentation contributions are especially welcome!
+      options:
+        - "No, just reporting"
+        - "Yes, I'd like to fix this"
+        - "Yes, I've already started a PR"
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any screenshots, links, or other relevant information

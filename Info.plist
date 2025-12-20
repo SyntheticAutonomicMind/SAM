@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>SAM</string>
+	<key>CFBundleIconFile</key>
+	<string>sam-icon</string>
+	<key>CFBundleIconName</key>
+	<string>sam-icon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.fewtarius.syntheticautonomicmind</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Synthetic Autonomic Mind</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>20251221.1</string>
+	<key>CFBundleVersion</key>
+	<string>20251221</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>api.anthropic.com</key>
+			<dict>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.2</string>
+				<key>NSExceptionRequiresForwardSecrecy</key>
+				<false/>
+			</dict>
+			<key>api.openai.com</key>
+			<dict>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.2</string>
+				<key>NSExceptionRequiresForwardSecrecy</key>
+				<false/>
+			</dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSExceptionMinimumTLSVersion</key>
+				<string>TLSv1.0</string>
+			</dict>
+		</dict>
+	</dict>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (c) 2025 Andrew Wyatt (Fewtarius)</string>
+	<key>NSInternetAccessUsageDescription</key>
+	<string>Synthetic Autonomic Mind requires internet access for web operations and AI model interactions.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SAM needs microphone access for voice input and wake word detection.</string>
+	<key>NSNetworkUsageDescription</key>
+	<string>Synthetic Autonomic Mind requires network access for web scraping, API calls, and content extraction.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>SAM uses speech recognition to convert your voice input into text commands.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/SyntheticAutonomicMind/SAM/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>2mOuTI54ezTNI/haP2YpxrAG9ZSk+dTNqfYJeBq3YJ0=</string>
+</dict>
+</plist>

@@ -1,0 +1,79 @@
+{
+  "releases": [
+    {
+      "version": "20251221.1",
+      "release_date": "December 21, 2025",
+      "introduction": "Welcome to SAM - Synthetic Autonomic Mind! SAM is a native macOS AI assistant built to work *with* you, not just *for* you. Designed for privacy, SAM keeps your conversations and data on your Mac while giving you access to powerful AI capabilities: multi-provider support, voice interaction, local image generation, document analysis, and intelligent tools. Say \"Hey SAM\" to go hands-free, or type naturally - you're always in control.",
+      "highlights": [
+        {
+          "id": "native-macos",
+          "icon": "apple.logo",
+          "title": "Native macOS Experience",
+          "description": "Beautiful SwiftUI interface designed specifically for Mac. Fast, responsive, and follows macOS design guidelines perfectly."
+        },
+        {
+          "id": "privacy-first",
+          "icon": "lock.shield.fill",
+          "title": "Privacy You Can Trust",
+          "description": "All conversations and data stay on your Mac. Works with local AI models by default. Cloud AI providers only when you choose."
+        },
+        {
+          "id": "voice-control",
+          "icon": "waveform",
+          "title": "Full Voice Control",
+          "description": "Say \"Hey SAM\" for hands-free operation. Complete voice input and natural text-to-speech output. Works offline with local models."
+        },
+        {
+          "id": "multi-provider",
+          "icon": "cloud.fill",
+          "title": "Multi-Provider AI Support",
+          "description": "Choose from OpenAI, Anthropic, Google, DeepSeek, GitHub Copilot, or run models locally with MLX and GGUF. Switch providers anytime."
+        },
+        {
+          "id": "local-image-gen",
+          "icon": "photo.on.rectangle.angled",
+          "title": "Local Image Generation",
+          "description": "Create beautiful images with Stable Diffusion running entirely on your Mac. No subscriptions, no cloud uploads, just your imagination."
+        },
+        {
+          "id": "intelligent-tools",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "14 Integrated Tools",
+          "description": "File management, web research with citations, image generation, document analysis, shell commands, and more. Real work, not just conversation."
+        },
+        {
+          "id": "document-intelligence",
+          "icon": "doc.text.fill",
+          "title": "Document Analysis",
+          "description": "Upload PDFs, Word docs, text files, and more. Ask questions, get summaries, extract insights. Your documents become searchable knowledge."
+        },
+        {
+          "id": "semantic-memory",
+          "icon": "brain.head.profile",
+          "title": "Smart Memory System",
+          "description": "Create Shared Topics to connect conversations around projects. Find anything by meaning with semantic search, not just keywords."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "personality-system",
+          "icon": "theatermasks.fill",
+          "title": "24 Personalities",
+          "description": "From friendly and professional to creative and technical. Choose the tone that fits your task, or create custom personalities."
+        },
+        {
+          "id": "project-workspaces",
+          "icon": "folder.fill",
+          "title": "Project Organization",
+          "description": "Keep everything organized in ~/SAM/{project-name}/ folders. Generated images, downloads, and outputs automatically organized."
+        },
+        {
+          "id": "automatic-updates",
+          "icon": "arrow.down.circle.fill",
+          "title": "Automatic Updates",
+          "description": "Integrated Sparkle framework for seamless updates. Check for Updates menu keeps SAM current with the latest features and fixes."
+        }
+      ]
+    }
+  ]
+}

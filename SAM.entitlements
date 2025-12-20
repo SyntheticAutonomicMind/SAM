@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- ========================================== -->
+    <!-- NO APP SANDBOX - SAM is a Developer Tool  -->
+    <!-- ========================================== -->
+    <!-- SAM runs a local HTTP server on port 8080 and needs unrestricted access -->
+    <!-- App Sandbox is incompatible with server applications -->
+    <!-- This is NOT an App Store app - distributed directly to developers -->
+    
+    <!-- ========================================== -->
+    <!-- KEYCHAIN ACCESS (API Key Storage)         -->
+    <!-- ========================================== -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)com.fewtarius.syntheticautonomicmind</string>
+    </array>
+    
+    <!-- ========================================== -->
+    <!-- HARDENED RUNTIME (Required for MLX/Llama) -->
+    <!-- ========================================== -->
+    <!-- Allow JIT compilation for MLX/Llama.cpp -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    
+    <!-- Allow unsigned memory for MLX operations -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    
+    <!-- Disable library validation for MLX frameworks -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    
+    <!-- ========================================== -->
+    <!-- DEVELOPER TOOL REQUIREMENTS               -->
+    <!-- ========================================== -->
+    <!-- SAM needs unrestricted access as a developer tool -->
+    <!-- No sandbox restrictions on file access, networking, or process execution -->
+
+</dict>
+</plist>

@@ -1,0 +1,7 @@
+NESTED FILE CONTENT
+
+This file is deeply nested: subdir2/nested/deep.txt
+
+Purpose: Test that MCP tools can access files in nested subdirectories.
+
+Level: 3 (root -> subdir2 -> nested -> deep.txt)

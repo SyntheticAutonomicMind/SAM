@@ -1,0 +1,7 @@
+[submodule "external/llama.cpp"]
+	path = external/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git
+[submodule "external/ml-stable-diffusion"]
+	path = external/ml-stable-diffusion
+	url = https://github.com/SyntheticAutonomicMind/ml-stable-diffusion
+	branch = sam-modifications

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAM Terminal</title>
+    <link rel="stylesheet" href="xterm.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+        }
+        #terminal {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+    
+    <script src="xterm.js"></script>
+    <script src="xterm-addon-fit.js"></script>
+    <script>
+        // Initialize xterm.js terminal with proper color support
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 13,
+            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+            theme: {
+                background: '#000000',
+                foreground: '#ffffff',  // Default white text (not forcing green)
+                cursor: '#ffffff',
+                cursorAccent: '#000000',
+                selection: 'rgba(255, 255, 255, 0.3)',
+                // Respect ANSI colors
+                black: '#000000',
+                red: '#ff5555',
+                green: '#50fa7b',
+                yellow: '#f1fa8c',
+                blue: '#bd93f9',
+                magenta: '#ff79c6',
+                cyan: '#8be9fd',
+                white: '#bfbfbf',
+                brightBlack: '#4d4d4d',
+                brightRed: '#ff6e67',
+                brightGreen: '#5af78e',
+                brightYellow: '#f4f99d',
+                brightBlue: '#caa9fa',
+                brightMagenta: '#ff92d0',
+                brightCyan: '#9aedfe',
+                brightWhite: '#e6e6e6'
+            },
+            scrollback: 10000,
+            tabStopWidth: 8
+        });
+        
+        // Fit addon for terminal resizing
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        
+        // Open terminal in DOM
+        term.open(document.getElementById('terminal'));
+        fitAddon.fit();
+        
+        // Clear any initial junk
+        term.clear();
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+            // Notify Swift of new terminal size
+            const dims = { rows: term.rows, cols: term.cols };
+            window.webkit.messageHandlers.terminalResize.postMessage(dims);
+        });
+        
+        // Also fit when terminal container becomes visible
+        const observer = new ResizeObserver(() => {
+            fitAddon.fit();
+            const dims = { rows: term.rows, cols: term.cols };
+            window.webkit.messageHandlers.terminalResize.postMessage(dims);
+        });
+        observer.observe(document.getElementById('terminal'));
+        
+        // Handle terminal input (send to Swift)
+        term.onData(data => {
+            window.webkit.messageHandlers.terminalInput.postMessage(data);
+        });
+        
+        // Function to write output to terminal (called from Swift)
+        function writeOutput(data) {
+            term.write(data);
+        }
+        
+        // Function to get terminal buffer (for AI agents)
+        function getTerminalBuffer() {
+            const buffer = term.buffer.active;
+            let lines = [];
+            for (let i = 0; i < buffer.length; i++) {
+                const line = buffer.getLine(i);
+                if (line) {
+                    lines.push(line.translateToString(true));
+                }
+            }
+            return lines.join('\n');
+        }
+        
+        // Function to clear terminal
+        function clearTerminal() {
+            term.clear();
+        }
+        
+        // Initial terminal size notification
+        setTimeout(() => {
+            const dims = { rows: term.rows, cols: term.cols };
+            window.webkit.messageHandlers.terminalResize.postMessage(dims);
+        }, 100);
+        
+        // Ready signal
+        window.webkit.messageHandlers.terminalReady.postMessage({ ready: true });
+    </script>
+</body>
+</html>

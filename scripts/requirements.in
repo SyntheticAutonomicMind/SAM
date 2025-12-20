@@ -1,0 +1,37 @@
+# SAM Python Dependencies
+# High-level requirements (pip-compile will resolve and pin all transitive dependencies)
+
+# PyTorch (compatible with basicsr>=1.7 AND modern diffusers)
+# Note: torch and torchvision are installed separately in bundle_python.sh
+# Upgraded to 2.9.1 for modern diffusers support (Z-Image, FLUX, etc.)
+# Successfully tested with basicsr 1.4.2 and realesrgan 0.3.0
+torch==2.9.1
+torchvision==0.24.1
+
+# Stable Diffusion core
+# Note: Using diffusers dev version for Z-Image Turbo and transformer-based models
+diffusers @ git+https://github.com/huggingface/diffusers.git@main
+transformers
+safetensors
+
+# CoreML conversion (Apple ml-stable-diffusion)
+coremltools
+omegaconf
+accelerate
+peft
+
+# MLX support (for MLX models)
+diffusionkit==0.4.0
+
+# Image processing and upscaling
+opencv-python
+basicsr
+realesrgan
+gfpgan
+
+# ml-stable-diffusion dependencies
+scipy
+scikit-learn
+matplotlib
+invisible-watermark
+pytest

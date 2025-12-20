@@ -1,0 +1,25 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions - Questions & Support
+    url: https://github.com/SyntheticAutonomicMind/SAM/discussions
+    about: |
+      Please use GitHub Discussions for:
+      - General questions ("How do I...?")
+      - Troubleshooting help
+      - Usage guidance
+      - Feature discussions
+      - Sharing tips and workflows
+      
+      Issues are for confirmed bugs and feature requests only.
+  
+  - name: 📚 Documentation
+    url: https://www.syntheticautonomicmind.org
+    about: Check the documentation first - it may answer your question!
+  
+  - name: 🎓 Getting Started Guide
+    url: https://www.syntheticautonomicmind.org/docs/getting-started
+    about: New to SAM? Start here for installation and setup help.
+  
+  - name: 🔧 Troubleshooting Guide
+    url: https://www.syntheticautonomicmind.org/docs/troubleshooting
+    about: Common issues and solutions for SAM.

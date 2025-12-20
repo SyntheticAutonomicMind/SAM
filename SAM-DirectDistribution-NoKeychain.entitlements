@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Hardened Runtime Entitlements for Direct Distribution -->
+	
+	<!-- Allow JIT compilation (required for MLX and llama.cpp) -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	
+	<!-- Allow unsigned executable memory (required for MLX Metal kernels) -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	
+	<!-- Disable library validation (required for loading llama.cpp framework) -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	
+	<!-- NO keychain-access-groups for now - testing if this causes the issue -->
+</dict>
+</plist>

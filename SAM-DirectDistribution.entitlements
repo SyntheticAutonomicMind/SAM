@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- ========================================== -->
+    <!-- DIRECT DISTRIBUTION BUILD                 -->
+    <!-- ========================================== -->
+    <!-- This entitlements file is for Developer ID distribution (DMG/direct download) -->
+    <!-- For App Store builds, use SAM.entitlements instead -->
+    
+    <!-- NOTE: NO APP SANDBOX -->
+    <!-- Developer ID builds have unrestricted file system and process access -->
+    <!-- App Store builds MUST use app-sandbox (see SAM.entitlements) -->
+    
+    <!-- ========================================== -->
+    <!-- HARDENED RUNTIME (Required for notarization) -->
+    <!-- ========================================== -->
+    
+    <!-- Allow JIT compilation for MLX/Llama.cpp -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    
+    <!-- Allow unsigned memory for MLX operations -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    
+    <!-- Disable library validation for MLX frameworks -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    
+    <!-- ========================================== -->
+    <!-- KEYCHAIN ACCESS                           -->
+    <!-- ========================================== -->
+    <!-- REMOVED: keychain-access-groups requires App Store provisioning profile -->
+    <!-- Developer ID signing cannot use $(AppIdentifierPrefix) -->
+    <!-- SAM will use system keychain for API keys instead -->
+</dict>
+</plist>

@@ -1,0 +1,8 @@
+This is a sample text file in the root_files directory.
+It contains multiple lines for testing file read operations.
+
+Line 3: Testing line-based reading
+Line 4: Testing grep search
+Line 5: Testing semantic search capabilities
+
+Some specific keywords: TESTMARKER, UNITTEST, VALIDATION

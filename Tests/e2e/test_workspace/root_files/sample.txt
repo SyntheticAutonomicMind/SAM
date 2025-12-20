@@ -1,0 +1,4 @@
+Sample text file
+TESTMARKER_SAMPLE
+With multiple lines
+For testing purposes

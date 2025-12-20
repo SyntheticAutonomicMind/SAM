@@ -1,0 +1,844 @@
+{
+  "version": "1.0.0",
+  "sections": [
+    {
+      "id": "model-providers",
+      "title": "Model Providers",
+      "icon": "cpu.fill",
+      "order": 3,
+      "elements": [
+        {"id": "mp-heading", "type": "heading", "content": "AI Model Providers"},
+        {"id": "mp-intro", "type": "text", "content": "SAM supports 6 different AI providers with multiple models each. Choose the provider and model that best fits your needs!"},
+        {"id": "mp-div", "type": "divider", "content": ""},
+        {"id": "mp-openai", "type": "group", "content": "OpenAI", "children": [
+          {"id": "mp-o1", "type": "bulletPoint", "content": "**GPT-4 Turbo**: Most capable model, excellent for complex tasks (8k-128k context)"},
+          {"id": "mp-o2", "type": "bulletPoint", "content": "**GPT-3.5 Turbo**: Fast and cost-effective for simpler tasks (4k-16k context)"},
+          {"id": "mp-o3", "type": "bulletPoint", "content": "**O1/O3 Series**: Advanced reasoning models for complex problem-solving"},
+          {"id": "mp-o4", "type": "bulletPoint", "content": "**Setup**: Add your OpenAI API key in Preferences > API Providers"},
+          {"id": "mp-o5", "type": "text", "content": "Best for: General-purpose AI, coding, analysis, creative writing"}
+        ]},
+        {"id": "mp-copilot", "type": "group", "content": "GitHub Copilot", "children": [
+          {"id": "mp-cp1", "type": "bulletPoint", "content": "**GPT-4**: Access GPT-4 through your Copilot subscription"},
+          {"id": "mp-cp2", "type": "bulletPoint", "content": "**Claude 3.5 Sonnet**: Access Anthropic's models through Copilot"},
+          {"id": "mp-cp3", "type": "bulletPoint", "content": "**O1 Series**: Advanced reasoning through Copilot"},
+          {"id": "mp-cp4", "type": "bulletPoint", "content": "**Setup**: Uses your GitHub Copilot subscription - requires authentication"},
+          {"id": "mp-cp5", "type": "text", "content": "Best for: Developers with Copilot access who want multiple models"}
+        ]},
+        {"id": "mp-claude", "type": "group", "content": "Anthropic/Claude", "children": [
+          {"id": "mp-cl1", "type": "bulletPoint", "content": "**Claude 3.5 Sonnet**: Excellent reasoning and coding (90k context)"},
+          {"id": "mp-cl2", "type": "bulletPoint", "content": "**Claude 4**: Latest generation with improved capabilities (200k context)"},
+          {"id": "mp-cl3", "type": "bulletPoint", "content": "**Claude 4.5 Sonnet**: Enhanced performance and accuracy (200k context)"},
+          {"id": "mp-cl4", "type": "bulletPoint", "content": "**Setup**: Add your Anthropic API key in Preferences > API Providers"},
+          {"id": "mp-cl5", "type": "text", "content": "Best for: Long documents, detailed analysis, nuanced conversations"}
+        ]},
+        {"id": "mp-gemini", "type": "group", "content": "Google Gemini", "children": [
+          {"id": "mp-g1", "type": "bulletPoint", "content": "**Gemini 2.0 Flash**: Fast and efficient latest generation (1M context)"},
+          {"id": "mp-g2", "type": "bulletPoint", "content": "**Gemini 1.5 Pro**: Most capable previous generation (2M context!)"},
+          {"id": "mp-g3", "type": "bulletPoint", "content": "**Gemini 1.5 Flash**: Faster processing with excellent performance (1M context)"},
+          {"id": "mp-g4", "type": "bulletPoint", "content": "**Setup**: Add your Google AI API key in Preferences > API Providers"},
+          {"id": "mp-g5", "type": "text", "content": "Best for: Massive context windows, processing huge documents or codebases"}
+        ]},
+        {"id": "mp-grok", "type": "group", "content": "xAI Grok", "children": [
+          {"id": "mp-gk1", "type": "bulletPoint", "content": "**Grok-2**: Latest reasoning-focused model (128k context)"},
+          {"id": "mp-gk2", "type": "bulletPoint", "content": "**Grok Vision**: Multimodal capabilities for image understanding"},
+          {"id": "mp-gk3", "type": "bulletPoint", "content": "**Setup**: Add your xAI API key in Preferences > API Providers"},
+          {"id": "mp-gk4", "type": "text", "content": "Best for: Real-time information, alternative perspectives, multimodal tasks"}
+        ]},
+        {"id": "mp-local", "type": "group", "content": "Local Models (MLX & GGUF)", "children": [
+          {"id": "mp-lc1", "type": "bulletPoint", "content": "**Apple MLX**: Optimized for Apple Silicon, uses model.safetensors format"},
+          {"id": "mp-lc2", "type": "bulletPoint", "content": "**Llama.cpp (GGUF)**: Efficient quantized models, cross-platform"},
+          {"id": "mp-lc3", "type": "bulletPoint", "content": "**Models Location**: ~/Library/Caches/sam/models/ (auto-detected)"},
+          {"id": "mp-lc4", "type": "bulletPoint", "content": "**Popular**: Qwen2.5 Coder, Qwen3, Llama 3, Phi-3, Mistral"},
+          {"id": "mp-lc5", "type": "bulletPoint", "content": "**Setup**: Download models to models directory - SAM auto-detects them"},
+          {"id": "mp-lc6", "type": "text", "content": "Best for: Complete privacy, offline work, no API costs, Apple Silicon optimization"}
+        ]},
+        {"id": "mp-sd", "type": "group", "content": "Stable Diffusion (Image Generation)", "children": [
+          {"id": "mp-sd1", "type": "text", "content": "SAM supports Stable Diffusion models for AI image generation with two execution engines:"},
+          {"id": "mp-sd2", "type": "bulletPoint", "content": "**CoreML**: Apple Silicon optimized, fast inference, lower memory usage"},
+          {"id": "mp-sd3", "type": "bulletPoint", "content": "**Python**: Fallback using diffusers library, broader compatibility"},
+          {"id": "mp-sd4", "type": "text", "content": "Model Sources: HuggingFace (official models) and CivitAI (community models)"}
+        ]},
+        {"id": "mp-tip", "type": "tip", "content": "You can switch models mid-conversation! Try different models for different parts of your workflow."}
+      ]
+    },
+    {
+      "id": "capabilities",
+      "title": "Core Capabilities",
+      "icon": "brain",
+      "order": 4,
+      "elements": [
+        {"id": "cap-heading", "type": "heading", "content": "What SAM Can Do"},
+        {"id": "cap-intro", "type": "text", "content": "SAM is a powerful AI assistant with extensive capabilities across many domains."},
+        {"id": "cap-div", "type": "divider", "content": ""},
+        {"id": "cap-research", "type": "capabilityCategory", "content": "", "properties": {"icon": "magnifyingglass", "title": "Research & Information", "description": "Comprehensive web research, article summarization, and information synthesis"}, "children": [
+          {"id": "cap-r1", "type": "example", "content": "Research the latest developments in quantum computing"},
+          {"id": "cap-r2", "type": "example", "content": "Summarize this article: [paste URL]"},
+          {"id": "cap-r3", "type": "example", "content": "What are the top 10 programming languages in 2025?"}
+        ]},
+        {"id": "cap-docs", "type": "capabilityCategory", "content": "", "properties": {"icon": "doc.text", "title": "Document Management", "description": "Create, import, and analyze documents in multiple formats"}, "children": [
+          {"id": "cap-d1", "type": "example", "content": "Create a PDF report about my project findings"},
+          {"id": "cap-d2", "type": "example", "content": "Import this Word document and summarize it"},
+          {"id": "cap-d3", "type": "example", "content": "Convert this data to an Excel spreadsheet"}
+        ]},
+        {"id": "cap-code", "type": "capabilityCategory", "content": "", "properties": {"icon": "chevron.left.forwardslash.chevron.right", "title": "Code & Development", "description": "Write code, debug issues, search codebases, and automate tasks"}, "children": [
+          {"id": "cap-c1", "type": "example", "content": "Create a Python script to analyze CSV data"},
+          {"id": "cap-c2", "type": "example", "content": "Find all uses of the authenticate() function in my project"},
+          {"id": "cap-c3", "type": "example", "content": "Debug this error: [paste error message]"}
+        ]},
+        {"id": "cap-files", "type": "capabilityCategory", "content": "", "properties": {"icon": "folder", "title": "File Operations", "description": "Search, organize, and work with files in your conversation's folder"}, "children": [
+          {"id": "cap-f1", "type": "example", "content": "Find all Swift files in my Sources directory"},
+          {"id": "cap-f2", "type": "example", "content": "Read the contents of config.json"},
+          {"id": "cap-f3", "type": "example", "content": "Create a file called notes.txt with my meeting notes"}
+        ]},
+        {"id": "cap-memory", "type": "capabilityCategory", "content": "", "properties": {"icon": "brain.head.profile", "title": "Memory & Learning", "description": "Store and recall information from previous conversations"}, "children": [
+          {"id": "cap-m1", "type": "example", "content": "Remember that my preferred coding style is 4-space indentation"},
+          {"id": "cap-m2", "type": "example", "content": "Search my memory for conversations about machine learning"},
+          {"id": "cap-m3", "type": "example", "content": "What documents have I imported this week?"}
+        ]},
+        {"id": "cap-terminal", "type": "capabilityCategory", "content": "", "properties": {"icon": "terminal", "title": "Terminal & Automation", "description": "Run shell commands in the built-in terminal and watch results in real-time"}, "children": [
+          {"id": "cap-t1", "type": "example", "content": "Use terminal to list all files in current directory"},
+          {"id": "cap-t2", "type": "example", "content": "Run 'cat README.md' and show me what's inside"},
+          {"id": "cap-t3", "type": "example", "content": "Check my git status using the terminal"}
+        ]},
+        {"id": "cap-image", "type": "capabilityCategory", "content": "", "properties": {"icon": "photo.fill", "title": "Image Generation (AI Art)", "description": "Create images from text descriptions using Stable Diffusion models"}, "children": [
+          {"id": "cap-i1", "type": "example", "content": "Generate an image of a serene mountain landscape at sunset"},
+          {"id": "cap-i2", "type": "example", "content": "Make an image of a futuristic city with flying cars"},
+          {"id": "cap-i3", "type": "example", "content": "Create a photo-realistic image of a cat on a windowsill"}
+        ]},
+        {"id": "cap-local", "type": "capabilityCategory", "content": "", "properties": {"icon": "cpu", "title": "Local AI Inference", "description": "Run AI models locally on your Mac with complete privacy"}, "children": [
+          {"id": "cap-loc1", "type": "example", "content": "Use Qwen Coder for code generation without internet"},
+          {"id": "cap-loc2", "type": "example", "content": "Run Llama 3 locally for private conversations"},
+          {"id": "cap-loc3", "type": "example", "content": "Switch to local model for offline work"}
+        ]}
+      ]
+    },
+    {
+      "id": "image-generation",
+      "title": "Image Generation Guide",
+      "icon": "photo.on.rectangle.angled",
+      "order": 5,
+      "elements": [
+        {"id": "ig-heading", "type": "heading", "content": "Image Generation Guide"},
+        {"id": "ig-intro", "type": "text", "content": "Complete guide to creating AI-generated images with Stable Diffusion."},
+        {"id": "ig-div", "type": "divider", "content": ""},
+        {"id": "ig-quick", "type": "group", "content": "Quick Start", "children": [
+          {"id": "ig-q1", "type": "step", "content": "Install a Model: Go to Preferences > Image Generation > Model Browser", "properties": {"number": "1"}},
+          {"id": "ig-q2", "type": "step", "content": "Download: Find a model you like and download it (with optional CoreML conversion)", "properties": {"number": "2"}},
+          {"id": "ig-q3", "type": "step", "content": "Generate: Type your prompt in chat or ask the AI to generate an image", "properties": {"number": "3"}},
+          {"id": "ig-q4", "type": "example", "content": "Generate an image of a serene mountain landscape at sunset"}
+        ]},
+        {"id": "ig-models", "type": "group", "content": "Model Selection", "children": [
+          {"id": "ig-m1", "type": "text", "content": "**Where to Find Models:**"},
+          {"id": "ig-m2", "type": "bulletPoint", "content": "**HuggingFace**: Official Stable Diffusion models and popular variants"},
+          {"id": "ig-m3", "type": "bulletPoint", "content": "**CivitAI**: 100,000+ community models with search, filtering, NSFW controls"},
+          {"id": "ig-m4", "type": "text", "content": "**Model Types:**"},
+          {"id": "ig-m5", "type": "bulletPoint", "content": "**SD 1.5**: 512x512 images, fast, wide variety of fine-tuned models"},
+          {"id": "ig-m6", "type": "bulletPoint", "content": "**SD 2.x**: 768x768 images, improved quality"},
+          {"id": "ig-m7", "type": "bulletPoint", "content": "**SDXL**: 1024x1024 images, highest quality, slower"},
+          {"id": "ig-m8", "type": "tip", "content": "Start with SD 1.5 models - faster and more community options."}
+        ]},
+        {"id": "ig-engine", "type": "group", "content": "Engine Selection", "children": [
+          {"id": "ig-e1", "type": "text", "content": "**CoreML (Recommended)**"},
+          {"id": "ig-e2", "type": "bulletPoint", "content": "Apple Silicon optimized (M1/M2/M3)"},
+          {"id": "ig-e3", "type": "bulletPoint", "content": "Fast inference (2-4 seconds per image)"},
+          {"id": "ig-e4", "type": "bulletPoint", "content": "Lower memory usage, energy efficient"},
+          {"id": "ig-e5", "type": "text", "content": "**Python (Fallback)**"},
+          {"id": "ig-e6", "type": "bulletPoint", "content": "Uses diffusers library, broader model compatibility"},
+          {"id": "ig-e7", "type": "bulletPoint", "content": "Works with any .safetensors file"},
+          {"id": "ig-e8", "type": "bulletPoint", "content": "Slower but more flexible"},
+          {"id": "ig-e9", "type": "note", "content": "SAM automatically chooses the best available engine based on what formats you have."}
+        ]},
+        {"id": "ig-prompts", "type": "group", "content": "Prompt Engineering Tips", "children": [
+          {"id": "ig-p1", "type": "bulletPoint", "content": "**Be Specific**: 'Serene mountain landscape at sunset' vs 'mountains'"},
+          {"id": "ig-p2", "type": "bulletPoint", "content": "**Add Style**: 'watercolor painting of...', 'photo-realistic...', 'digital art of...'"},
+          {"id": "ig-p3", "type": "bulletPoint", "content": "**Include Details**: Lighting, mood, composition, colors"},
+          {"id": "ig-p4", "type": "bulletPoint", "content": "**Use Quality Tags**: '8k', 'detailed', 'highly detailed', 'masterpiece'"},
+          {"id": "ig-p5", "type": "example", "content": "A serene mountain landscape at sunset, golden hour lighting, 8k, detailed"},
+          {"id": "ig-p6", "type": "example", "content": "Futuristic city with flying cars, neon lights, cyberpunk style, digital art"}
+        ]},
+        {"id": "ig-params", "type": "group", "content": "Advanced Parameters", "children": [
+          {"id": "ig-pr1", "type": "bulletPoint", "content": "**Steps**: Number of diffusion steps (default: 20). More steps = higher quality, slower"},
+          {"id": "ig-pr2", "type": "bulletPoint", "content": "**Guidance Scale**: How closely to follow prompt (default: 7.5). Higher = stricter"},
+          {"id": "ig-pr3", "type": "bulletPoint", "content": "**Seed**: Random seed for reproducibility. Same seed + prompt = same image"},
+          {"id": "ig-pr4", "type": "bulletPoint", "content": "**Size**: Image dimensions. Must match model's training (512x512 for SD 1.5, 1024x1024 for SDXL)"},
+          {"id": "ig-pr5", "type": "bulletPoint", "content": "**Scheduler**: Sampling algorithm (DPM++, Euler, etc.). Different algorithms produce different results"}
+        ]}
+      ]
+    },
+    {
+      "id": "conversation-management",
+      "title": "Conversation Management",
+      "icon": "folder.fill",
+      "order": 6,
+      "elements": [
+        {"id": "cm-heading", "type": "heading", "content": "Conversation Management"},
+        {"id": "cm-intro", "type": "text", "content": "Organize, export, and manage your conversations effectively."},
+        {"id": "cm-div", "type": "divider", "content": ""},
+        {"id": "cm-creating", "type": "group", "content": "Creating Conversations", "children": [
+          {"id": "cm-cr1", "type": "bulletPoint", "content": "**New Conversation**: Click + button in sidebar or press Cmd+N"},
+          {"id": "cm-cr2", "type": "bulletPoint", "content": "**Name Automatically**: First message becomes conversation name"},
+          {"id": "cm-cr3", "type": "bulletPoint", "content": "**Rename Anytime**: Double-click conversation name to edit"},
+          {"id": "cm-cr4", "type": "bulletPoint", "content": "**Fresh Start**: Each new conversation starts with clean context"}
+        ]},
+        {"id": "cm-settings", "type": "group", "content": "Conversation Settings", "children": [
+          {"id": "cm-s1", "type": "bulletPoint", "content": "**Model Selection**: Choose different AI models per conversation"},
+          {"id": "cm-s2", "type": "bulletPoint", "content": "**System Prompt**: Apply different personalities or behaviors"},
+          {"id": "cm-s3", "type": "bulletPoint", "content": "**Mini-Prompts**: Enable contextual information per conversation"},
+          {"id": "cm-s4", "type": "bulletPoint", "content": "**Tools Toggle**: Enable/disable tools independently"},
+          {"id": "cm-s5", "type": "bulletPoint", "content": "**Memory Scope**: Documents imported in one conversation don't affect others"},
+          {"id": "cm-s6", "type": "text", "content": "Access settings via conversation header or right-click menu."}
+        ]},
+        {"id": "cm-export", "type": "group", "content": "Exporting Conversations", "children": [
+          {"id": "cm-e1", "type": "text", "content": "**Supported Formats:**"},
+          {"id": "cm-e2", "type": "bulletPoint", "content": "**PDF**: Professional document with formatting and metadata"},
+          {"id": "cm-e3", "type": "bulletPoint", "content": "**DOCX**: Microsoft Word document for editing"},
+          {"id": "cm-e4", "type": "bulletPoint", "content": "**Markdown**: Plain text with formatting for sharing"},
+          {"id": "cm-e5", "type": "bulletPoint", "content": "**JSON**: Complete conversation data for re-import"},
+          {"id": "cm-e6", "type": "text", "content": "**How to Export:**"},
+          {"id": "cm-e7", "type": "bulletPoint", "content": "File menu > Export Conversation (Cmd+E)"},
+          {"id": "cm-e8", "type": "bulletPoint", "content": "Right-click conversation > Export"},
+          {"id": "cm-e9", "type": "bulletPoint", "content": "Choose format and save location"}
+        ]},
+        {"id": "cm-search", "type": "group", "content": "Search & Filtering", "children": [
+          {"id": "cm-sr1", "type": "bulletPoint", "content": "**Global Search**: Cmd+F to search across all conversations"},
+          {"id": "cm-sr2", "type": "bulletPoint", "content": "**Filter by Folder**: Click folder to show only its conversations"},
+          {"id": "cm-sr3", "type": "bulletPoint", "content": "**Recent Conversations**: Automatically sorted by last activity"},
+          {"id": "cm-sr4", "type": "bulletPoint", "content": "**Find in Conversation**: Search within active chat"}
+        ]},
+        {"id": "cm-delete", "type": "group", "content": "Deletion & Cleanup", "children": [
+          {"id": "cm-d1", "type": "bulletPoint", "content": "**Delete Conversation**: Right-click > Delete (Cmd+Backspace)"},
+          {"id": "cm-d2", "type": "bulletPoint", "content": "**Clear All History**: File > Clear History (removes all conversations)"},
+          {"id": "cm-d3", "type": "warning", "content": "Deletion is permanent unless you have backups. Export important conversations first."}
+        ]},
+        {"id": "cm-shortcuts", "type": "group", "content": "Conversation Shortcuts", "children": [
+          {"id": "cm-sh1", "type": "keyboardShortcut", "content": "New conversation", "properties": {"keys": "Cmd+N"}},
+          {"id": "cm-sh2", "type": "keyboardShortcut", "content": "Previous conversation", "properties": {"keys": "Cmd+["}},
+          {"id": "cm-sh3", "type": "keyboardShortcut", "content": "Next conversation", "properties": {"keys": "Cmd+]"}},
+          {"id": "cm-sh4", "type": "keyboardShortcut", "content": "Export conversation", "properties": {"keys": "Cmd+E"}},
+          {"id": "cm-sh5", "type": "keyboardShortcut", "content": "Delete conversation", "properties": {"keys": "Cmd+Del"}}
+        ]}
+      ]
+    },
+    {
+      "id": "personalities",
+      "title": "Personalities & Traits",
+      "icon": "theatermasks",
+      "order": 7,
+      "elements": [
+        {"id": "per-heading", "type": "heading", "content": "Personalities & System Prompts"},
+        {"id": "per-intro", "type": "text", "content": "System prompts define SAM's personality and behavior. Choose the one that matches your task."},
+        {"id": "per-div", "type": "divider", "content": ""},
+        {"id": "per-default", "type": "systemPromptOption", "content": "Autonomous AI partner with evidence-based problem-solving. Works independently, tests solutions, and provides proven results. Good for most tasks.", "properties": {"name": "SAM Default", "bestFor": "General use, balanced approach"}},
+        {"id": "per-problem", "type": "systemPromptOption", "content": "Relentless problem-solving with exhaustive execution. Extracts ALL data (not summaries), traces root causes, and works persistently until complete. Automatically enables Workflow Mode and Dynamic Iterations.", "properties": {"name": "SAM Problem Solver", "bestFor": "Complex problems, research, data extraction"}},
+        {"id": "per-dev", "type": "systemPromptOption", "content": "Development-focused with rigorous standards. Direct, technical, open-source oriented. Automatically enables Workflow Mode, Terminal Access, and Dynamic Iterations.", "properties": {"name": "SAM Developer", "bestFor": "Software development, coding, technical work"}},
+        {"id": "per-minimal", "type": "systemPromptOption", "content": "Ultra-simplified prompt for smaller local models. Removes complex instructions that confuse local models. Use this with downloaded models running on your Mac.", "properties": {"name": "SAM Minimal", "bestFor": "Local GGUF/MLX models"}},
+        {"id": "per-switch", "type": "group", "content": "When to Switch Prompts", "children": [
+          {"id": "per-sw1", "type": "bulletPoint", "content": "Use **Problem Solver** for thorough research and data work"},
+          {"id": "per-sw2", "type": "bulletPoint", "content": "Use **Developer** for coding projects"},
+          {"id": "per-sw3", "type": "bulletPoint", "content": "Use **Minimal** for local models"},
+          {"id": "per-sw4", "type": "bulletPoint", "content": "Stick with **Default** for everything else"}
+        ]},
+        {"id": "per-how", "type": "group", "content": "How to Change", "children": [
+          {"id": "per-h1", "type": "bulletPoint", "content": "Select from the **Prompt** dropdown in the chat toolbar"},
+          {"id": "per-h2", "type": "bulletPoint", "content": "Or click **Parameters button** > System Prompt"},
+          {"id": "per-h3", "type": "bulletPoint", "content": "Create custom prompts in **Preferences > System Prompts**"}
+        ]},
+        {"id": "per-custom", "type": "group", "content": "Creating Custom Prompts", "children": [
+          {"id": "per-c1", "type": "bulletPoint", "content": "Go to Preferences > System Prompts"},
+          {"id": "per-c2", "type": "bulletPoint", "content": "Click + to create a new prompt"},
+          {"id": "per-c3", "type": "bulletPoint", "content": "Define personality, constraints, and behaviors"},
+          {"id": "per-c4", "type": "bulletPoint", "content": "Save and select from the toolbar dropdown"},
+          {"id": "per-c5", "type": "tip", "content": "Custom prompts let you create specialized assistants for specific workflows - coding standards, writing styles, analysis approaches, etc."}
+        ]}
+      ]
+    },
+    {
+      "id": "document-formats",
+      "title": "Document Formats",
+      "icon": "doc.text",
+      "order": 8,
+      "elements": [
+        {"id": "df-heading", "type": "heading", "content": "Document Formats"},
+        {"id": "df-intro", "type": "text", "content": "SAM can import, analyze, and create documents in multiple formats."},
+        {"id": "df-div", "type": "divider", "content": ""},
+        {"id": "df-import", "type": "group", "content": "Import Formats", "children": [
+          {"id": "df-i1", "type": "formatSupport", "content": "Adobe PDF documents - text extraction and analysis", "properties": {"format": "PDF", "icon": "doc.fill", "color": "red"}},
+          {"id": "df-i2", "type": "formatSupport", "content": "Microsoft Word documents - full content extraction", "properties": {"format": "DOCX", "icon": "doc.text.fill", "color": "blue"}},
+          {"id": "df-i3", "type": "formatSupport", "content": "Plain text files - direct reading", "properties": {"format": "TXT", "icon": "doc.plaintext", "color": "gray"}},
+          {"id": "df-i4", "type": "formatSupport", "content": "Markdown files - formatting preserved", "properties": {"format": "MD", "icon": "doc.richtext", "color": "purple"}},
+          {"id": "df-i5", "type": "formatSupport", "content": "Source code - syntax-aware processing", "properties": {"format": "Code", "icon": "chevron.left.forwardslash.chevron.right", "color": "green"}}
+        ]},
+        {"id": "df-export", "type": "group", "content": "Export Formats", "children": [
+          {"id": "df-e1", "type": "formatSupport", "content": "Professional documents with formatting", "properties": {"format": "PDF", "icon": "doc.fill", "color": "red"}},
+          {"id": "df-e2", "type": "formatSupport", "content": "Editable Word documents", "properties": {"format": "DOCX", "icon": "doc.text.fill", "color": "blue"}},
+          {"id": "df-e3", "type": "formatSupport", "content": "Spreadsheets with data tables", "properties": {"format": "XLSX", "icon": "tablecells", "color": "green"}},
+          {"id": "df-e4", "type": "formatSupport", "content": "Formatted text for sharing", "properties": {"format": "Markdown", "icon": "doc.richtext", "color": "purple"}},
+          {"id": "df-e5", "type": "formatSupport", "content": "Complete conversation data", "properties": {"format": "JSON", "icon": "curlybraces", "color": "orange"}}
+        ]},
+        {"id": "df-how", "type": "group", "content": "How to Import Documents", "children": [
+          {"id": "df-h1", "type": "bulletPoint", "content": "Drag and drop files directly into the chat"},
+          {"id": "df-h2", "type": "bulletPoint", "content": "Use File > Import Document (Cmd+I)"},
+          {"id": "df-h3", "type": "bulletPoint", "content": "Ask SAM: 'Import this file: /path/to/document.pdf'"},
+          {"id": "df-h4", "type": "bulletPoint", "content": "Imported documents are chunked and stored in conversation memory"}
+        ]},
+        {"id": "df-analysis", "type": "group", "content": "Document Analysis", "children": [
+          {"id": "df-a1", "type": "example", "content": "Summarize the key points from this PDF"},
+          {"id": "df-a2", "type": "example", "content": "Extract all dates and deadlines from this contract"},
+          {"id": "df-a3", "type": "example", "content": "Compare these two documents and list the differences"},
+          {"id": "df-a4", "type": "example", "content": "Find all mentions of 'budget' in the imported reports"}
+        ]},
+        {"id": "df-creation", "type": "group", "content": "Document Creation", "children": [
+          {"id": "df-cr1", "type": "example", "content": "Create a PDF report summarizing our discussion"},
+          {"id": "df-cr2", "type": "example", "content": "Generate a Word document with these meeting notes"},
+          {"id": "df-cr3", "type": "example", "content": "Make an Excel spreadsheet from this data"},
+          {"id": "df-cr4", "type": "tip", "content": "SAM can create documents with proper formatting, tables, headers, and sections automatically."}
+        ]}
+      ]
+    },
+    {
+      "id": "tool-reference",
+      "title": "Tool Reference",
+      "icon": "wrench.and.screwdriver",
+      "order": 9,
+      "elements": [
+        {"id": "tr-heading", "type": "heading", "content": "Tool Reference"},
+        {"id": "tr-intro", "type": "text", "content": "SAM has 14 integrated tools with 46+ operations. Here's a quick reference."},
+        {"id": "tr-div", "type": "divider", "content": ""},
+        {"id": "tr-file", "type": "toolCategory", "content": "", "properties": {"icon": "folder", "title": "File Operations", "color": "blue"}, "children": [
+          {"id": "tr-f1", "type": "bulletPoint", "content": "**read_file**: Read file contents"},
+          {"id": "tr-f2", "type": "bulletPoint", "content": "**write_file**: Create or update files"},
+          {"id": "tr-f3", "type": "bulletPoint", "content": "**list_directory**: List folder contents"},
+          {"id": "tr-f4", "type": "bulletPoint", "content": "**search_files**: Find files by name or content"},
+          {"id": "tr-f5", "type": "bulletPoint", "content": "**move_file**: Move or rename files"},
+          {"id": "tr-f6", "type": "bulletPoint", "content": "**delete_file**: Remove files (requires explicit path)"}
+        ]},
+        {"id": "tr-doc", "type": "toolCategory", "content": "", "properties": {"icon": "doc.text", "title": "Document Operations", "color": "purple"}, "children": [
+          {"id": "tr-d1", "type": "bulletPoint", "content": "**import_document**: Import PDF, DOCX, TXT into memory"},
+          {"id": "tr-d2", "type": "bulletPoint", "content": "**create_pdf**: Generate PDF documents"},
+          {"id": "tr-d3", "type": "bulletPoint", "content": "**create_docx**: Generate Word documents"},
+          {"id": "tr-d4", "type": "bulletPoint", "content": "**create_xlsx**: Generate Excel spreadsheets"},
+          {"id": "tr-d5", "type": "bulletPoint", "content": "**analyze_document**: Extract and analyze document content"}
+        ]},
+        {"id": "tr-web", "type": "toolCategory", "content": "", "properties": {"icon": "globe", "title": "Web Operations", "color": "green"}, "children": [
+          {"id": "tr-w1", "type": "bulletPoint", "content": "**web_search**: Search the web for information"},
+          {"id": "tr-w2", "type": "bulletPoint", "content": "**fetch_url**: Get content from a specific URL"},
+          {"id": "tr-w3", "type": "bulletPoint", "content": "**research**: Comprehensive multi-source research"}
+        ]},
+        {"id": "tr-mem", "type": "toolCategory", "content": "", "properties": {"icon": "brain", "title": "Memory Operations", "color": "orange"}, "children": [
+          {"id": "tr-m1", "type": "bulletPoint", "content": "**memory_search**: Search conversation memory"},
+          {"id": "tr-m2", "type": "bulletPoint", "content": "**memory_store**: Store information for later recall"},
+          {"id": "tr-m3", "type": "bulletPoint", "content": "**memory_list**: List stored memories"}
+        ]},
+        {"id": "tr-term", "type": "toolCategory", "content": "", "properties": {"icon": "terminal", "title": "Terminal", "color": "gray"}, "children": [
+          {"id": "tr-t1", "type": "bulletPoint", "content": "**execute_command**: Run shell commands"},
+          {"id": "tr-t2", "type": "bulletPoint", "content": "Real-time output streaming"},
+          {"id": "tr-t3", "type": "bulletPoint", "content": "Interactive terminal in SAM window"}
+        ]},
+        {"id": "tr-img", "type": "toolCategory", "content": "", "properties": {"icon": "photo", "title": "Image Generation", "color": "pink"}, "children": [
+          {"id": "tr-ig1", "type": "bulletPoint", "content": "**generate_image**: Create images from text prompts"},
+          {"id": "tr-ig2", "type": "bulletPoint", "content": "Supports Stable Diffusion 1.5, 2.x, SDXL"},
+          {"id": "tr-ig3", "type": "bulletPoint", "content": "CoreML and Python execution engines"}
+        ]},
+        {"id": "tr-cal", "type": "toolCategory", "content": "", "properties": {"icon": "calendar", "title": "Calendar", "color": "red"}, "children": [
+          {"id": "tr-cal1", "type": "bulletPoint", "content": "**list_events**: View calendar events"},
+          {"id": "tr-cal2", "type": "bulletPoint", "content": "**create_event**: Add new calendar events"},
+          {"id": "tr-cal3", "type": "bulletPoint", "content": "**find_free_time**: Find available time slots"}
+        ]},
+        {"id": "tr-collab", "type": "toolCategory", "content": "", "properties": {"icon": "person.2", "title": "Collaboration", "color": "cyan"}, "children": [
+          {"id": "tr-co1", "type": "bulletPoint", "content": "**user_collaboration**: Ask for your confirmation"},
+          {"id": "tr-co2", "type": "bulletPoint", "content": "**panel**: Display formatted output panels"},
+          {"id": "tr-co3", "type": "bulletPoint", "content": "**task_planning**: Structured task management"}
+        ]},
+        {"id": "tr-toggle", "type": "note", "content": "Toggle tools on/off with Cmd+T or the Tools button in toolbar. Tools are enabled by default but can be disabled for simple Q&A conversations."}
+      ]
+    },
+    {
+      "id": "mcp-deep-dive",
+      "title": "MCP & Tools Deep Dive",
+      "icon": "gearshape.2",
+      "order": 10,
+      "elements": [
+        {"id": "mcp-heading", "type": "heading", "content": "MCP & Tools Deep Dive"},
+        {"id": "mcp-intro", "type": "text", "content": "Understanding the Model Context Protocol and how SAM's tools work."},
+        {"id": "mcp-div", "type": "divider", "content": ""},
+        {"id": "mcp-what", "type": "group", "content": "What is Model Context Protocol (MCP)?", "children": [
+          {"id": "mcp-w1", "type": "text", "content": "MCP is a standardized way for AI assistants to interact with external tools and services."},
+          {"id": "mcp-w2", "type": "bulletPoint", "content": "**Tools**: Capabilities the AI can use (file operations, web search, etc.)"},
+          {"id": "mcp-w3", "type": "bulletPoint", "content": "**Parameters**: Inputs required for each tool"},
+          {"id": "mcp-w4", "type": "bulletPoint", "content": "**Execution**: AI decides when and how to use tools based on your request"},
+          {"id": "mcp-w5", "type": "bulletPoint", "content": "**Responses**: Tool results are incorporated into AI's response"}
+        ]},
+        {"id": "mcp-how", "type": "group", "content": "How Tools Work in SAM", "children": [
+          {"id": "mcp-h1", "type": "step", "content": "SAM's system prompt lists all available tools", "properties": {"number": "1"}},
+          {"id": "mcp-h2", "type": "step", "content": "AI analyzes your request and determines if tools are needed", "properties": {"number": "2"}},
+          {"id": "mcp-h3", "type": "step", "content": "AI selects appropriate tools and specifies parameters", "properties": {"number": "3"}},
+          {"id": "mcp-h4", "type": "step", "content": "SAM executes tools and returns results to AI", "properties": {"number": "4"}},
+          {"id": "mcp-h5", "type": "step", "content": "AI incorporates results into its response to you", "properties": {"number": "5"}}
+        ]},
+        {"id": "mcp-selection", "type": "group", "content": "Tool Selection & Usage", "children": [
+          {"id": "mcp-s1", "type": "bulletPoint", "content": "**Intent Recognition**: AI understands what you want to accomplish"},
+          {"id": "mcp-s2", "type": "bulletPoint", "content": "**Capability Matching**: Selects tools that can fulfill request"},
+          {"id": "mcp-s3", "type": "bulletPoint", "content": "**Parameter Extraction**: Pulls required info from your message"},
+          {"id": "mcp-s4", "type": "bulletPoint", "content": "**Chaining**: Combines multiple tools for complex tasks"},
+          {"id": "mcp-s5", "type": "bulletPoint", "content": "**Error Handling**: Graceful recovery when tools fail"}
+        ]},
+        {"id": "mcp-safety", "type": "group", "content": "Safety & Control", "children": [
+          {"id": "mcp-sf1", "type": "bulletPoint", "content": "**Parameter Validation**: All inputs checked before execution"},
+          {"id": "mcp-sf2", "type": "bulletPoint", "content": "**Scope Limits**: Tools can't access arbitrary files or data"},
+          {"id": "mcp-sf3", "type": "bulletPoint", "content": "**No Wildcards**: Deletion requires explicit file paths"},
+          {"id": "mcp-sf4", "type": "bulletPoint", "content": "**Tools Toggle**: Disable ALL tools via toolbar (Cmd+T)"},
+          {"id": "mcp-sf5", "type": "bulletPoint", "content": "**API Direct Mode**: Zero tool access for pure chat"},
+          {"id": "mcp-sf6", "type": "bulletPoint", "content": "**Transparency**: Tool usage visible in conversation"}
+        ]},
+        {"id": "mcp-advanced", "type": "group", "content": "Advanced Usage", "children": [
+          {"id": "mcp-a1", "type": "text", "content": "AI can chain multiple tools for complex tasks:"},
+          {"id": "mcp-a2", "type": "example", "content": "Research Python async/await, summarize findings, and save to a file"},
+          {"id": "mcp-a3", "type": "bulletPoint", "content": "Step 1: web_operations - Search for documentation"},
+          {"id": "mcp-a4", "type": "bulletPoint", "content": "Step 2: fetch_page - Get content from top results"},
+          {"id": "mcp-a5", "type": "bulletPoint", "content": "Step 3: Analysis - Extract key concepts"},
+          {"id": "mcp-a6", "type": "bulletPoint", "content": "Step 4: file_operations - Save summary to file"}
+        ]}
+      ]
+    },
+    {
+      "id": "advanced-prompting",
+      "title": "Advanced Prompting",
+      "icon": "text.bubble",
+      "order": 11,
+      "elements": [
+        {"id": "ap-heading", "type": "heading", "content": "Advanced Prompting"},
+        {"id": "ap-intro", "type": "text", "content": "Get better results with effective prompting techniques."},
+        {"id": "ap-div", "type": "divider", "content": ""},
+        {"id": "ap-specific", "type": "group", "content": "Be Specific", "children": [
+          {"id": "ap-sp1", "type": "text", "content": "Vague requests get vague results. Be explicit about what you want."},
+          {"id": "ap-sp2", "type": "example", "content": "BAD: Write me some code", "properties": {"title": "Too vague:"}},
+          {"id": "ap-sp3", "type": "example", "content": "GOOD: Write a Python function that reads a CSV file and returns the top 10 rows by the 'sales' column", "properties": {"title": "Specific:"}}
+        ]},
+        {"id": "ap-context", "type": "group", "content": "Provide Context", "children": [
+          {"id": "ap-ct1", "type": "text", "content": "Help SAM understand your situation and constraints."},
+          {"id": "ap-ct2", "type": "bulletPoint", "content": "What's your goal? What problem are you solving?"},
+          {"id": "ap-ct3", "type": "bulletPoint", "content": "What have you tried? What didn't work?"},
+          {"id": "ap-ct4", "type": "bulletPoint", "content": "What constraints exist? (language, framework, style)"},
+          {"id": "ap-ct5", "type": "example", "content": "I'm building a SwiftUI app and need a view that displays user profiles. Each profile should show name, avatar, and bio. The design should match Apple HIG."}
+        ]},
+        {"id": "ap-format", "type": "group", "content": "Specify Output Format", "children": [
+          {"id": "ap-f1", "type": "text", "content": "Tell SAM how you want the result formatted."},
+          {"id": "ap-f2", "type": "example", "content": "List the top 5 Python frameworks with pros and cons in a table format"},
+          {"id": "ap-f3", "type": "example", "content": "Explain recursion using a simple analogy suitable for beginners"},
+          {"id": "ap-f4", "type": "example", "content": "Give me step-by-step instructions I can follow to set up Docker"}
+        ]},
+        {"id": "ap-iterate", "type": "group", "content": "Iterate and Refine", "children": [
+          {"id": "ap-i1", "type": "text", "content": "Build on responses to get exactly what you need."},
+          {"id": "ap-i2", "type": "bulletPoint", "content": "Ask for modifications: 'Make it shorter' or 'Add error handling'"},
+          {"id": "ap-i3", "type": "bulletPoint", "content": "Request alternatives: 'Show me another approach'"},
+          {"id": "ap-i4", "type": "bulletPoint", "content": "Drill down: 'Explain the second step in more detail'"},
+          {"id": "ap-i5", "type": "bulletPoint", "content": "Combine: 'Now merge both approaches into one solution'"}
+        ]},
+        {"id": "ap-examples", "type": "group", "content": "Effective Prompt Examples", "children": [
+          {"id": "ap-ex1", "type": "example", "content": "I have a list of customer emails. Write a Python script to validate email format, remove duplicates, and export to a new CSV."},
+          {"id": "ap-ex2", "type": "example", "content": "Review this Swift code for performance issues. Focus on memory management and async patterns. Suggest specific improvements."},
+          {"id": "ap-ex3", "type": "example", "content": "Research the best practices for REST API versioning. Compare 3 approaches and recommend one for a startup building a public API."}
+        ]},
+        {"id": "ap-tip", "type": "tip", "content": "The more context and specificity you provide, the better SAM's responses will be. Don't be afraid to write longer prompts!"}
+      ]
+    },
+    {
+      "id": "performance",
+      "title": "Performance Optimization",
+      "icon": "gauge.with.needle",
+      "order": 12,
+      "elements": [
+        {"id": "po-heading", "type": "heading", "content": "Performance Optimization"},
+        {"id": "po-intro", "type": "text", "content": "Tips for getting the best performance from SAM on your Mac."},
+        {"id": "po-div", "type": "divider", "content": ""},
+        {"id": "po-model", "type": "group", "content": "Model Selection for Speed", "children": [
+          {"id": "po-m1", "type": "bulletPoint", "content": "**Fastest**: GPT-3.5 Turbo, Gemini Flash, local MLX models"},
+          {"id": "po-m2", "type": "bulletPoint", "content": "**Balanced**: GPT-4 Turbo, Claude 3.5 Sonnet"},
+          {"id": "po-m3", "type": "bulletPoint", "content": "**Thorough**: O1/O3 reasoning models (slower but deeper analysis)"},
+          {"id": "po-m4", "type": "tip", "content": "Use faster models for quick questions, thorough models for complex analysis."}
+        ]},
+        {"id": "po-local", "type": "group", "content": "Local Model Performance", "children": [
+          {"id": "po-l1", "type": "bulletPoint", "content": "**MLX** models are optimized for Apple Silicon - prefer these"},
+          {"id": "po-l2", "type": "bulletPoint", "content": "**GGUF** quantized models trade quality for speed"},
+          {"id": "po-l3", "type": "bulletPoint", "content": "**Q4_K_M** quantization is good balance of speed/quality"},
+          {"id": "po-l4", "type": "bulletPoint", "content": "**Smaller models** (7B-13B) respond faster than large (70B+)"},
+          {"id": "po-l5", "type": "bulletPoint", "content": "**Unified Memory** - more RAM = larger models, more context"}
+        ]},
+        {"id": "po-sd", "type": "group", "content": "Stable Diffusion Speed", "children": [
+          {"id": "po-sd1", "type": "bulletPoint", "content": "**CoreML** is 2-4x faster than Python on Apple Silicon"},
+          {"id": "po-sd2", "type": "bulletPoint", "content": "**SD 1.5** generates faster than SDXL (smaller images)"},
+          {"id": "po-sd3", "type": "bulletPoint", "content": "**Fewer steps** = faster generation (20 steps usually sufficient)"},
+          {"id": "po-sd4", "type": "bulletPoint", "content": "**Keep model loaded** - first generation is slower"}
+        ]},
+        {"id": "po-memory", "type": "group", "content": "Memory Management", "children": [
+          {"id": "po-mem1", "type": "bulletPoint", "content": "**Close unused conversations** to free memory"},
+          {"id": "po-mem2", "type": "bulletPoint", "content": "**Clear conversation history** periodically"},
+          {"id": "po-mem3", "type": "bulletPoint", "content": "**Use cloud AI** for memory-intensive tasks"},
+          {"id": "po-mem4", "type": "bulletPoint", "content": "**Restart SAM** if performance degrades after long sessions"}
+        ]},
+        {"id": "po-tips", "type": "group", "content": "General Tips", "children": [
+          {"id": "po-t1", "type": "bulletPoint", "content": "**Disable tools** (Cmd+T) for simple Q&A - fewer tokens processed"},
+          {"id": "po-t2", "type": "bulletPoint", "content": "**Shorter context** - long conversations slow down responses"},
+          {"id": "po-t3", "type": "bulletPoint", "content": "**Start fresh** - new conversation for unrelated topics"},
+          {"id": "po-t4", "type": "bulletPoint", "content": "**Check Activity Monitor** - SAM should use GPU for local inference"}
+        ]}
+      ]
+    },
+    {
+      "id": "getting-started-examples",
+      "title": "Getting Started Examples",
+      "icon": "play.circle",
+      "order": 13,
+      "elements": [
+        {"id": "gse-heading", "type": "heading", "content": "Getting Started Examples"},
+        {"id": "gse-intro", "type": "text", "content": "Ready-to-use examples to help you explore SAM's capabilities."},
+        {"id": "gse-div", "type": "divider", "content": ""},
+        {"id": "gse-code", "type": "group", "content": "Coding & Development", "children": [
+          {"id": "gse-c1", "type": "example", "content": "Create a Python script that monitors a folder and logs any new files added"},
+          {"id": "gse-c2", "type": "example", "content": "Review this code for bugs and suggest improvements: [paste code]"},
+          {"id": "gse-c3", "type": "example", "content": "Explain how async/await works in Swift with practical examples"},
+          {"id": "gse-c4", "type": "example", "content": "Help me debug this error: [paste error message]"}
+        ]},
+        {"id": "gse-research", "type": "group", "content": "Research & Analysis", "children": [
+          {"id": "gse-r1", "type": "example", "content": "Research the top 5 database options for a new startup and compare them"},
+          {"id": "gse-r2", "type": "example", "content": "Summarize the key findings from this research paper: [paste URL]"},
+          {"id": "gse-r3", "type": "example", "content": "What are the current best practices for mobile app security in 2025?"},
+          {"id": "gse-r4", "type": "example", "content": "Analyze trends in remote work policies and their impact on productivity"}
+        ]},
+        {"id": "gse-writing", "type": "group", "content": "Writing & Documents", "children": [
+          {"id": "gse-w1", "type": "example", "content": "Help me write a professional email declining a meeting request"},
+          {"id": "gse-w2", "type": "example", "content": "Create a project proposal document for [describe project]"},
+          {"id": "gse-w3", "type": "example", "content": "Proofread and improve this text: [paste text]"},
+          {"id": "gse-w4", "type": "example", "content": "Generate a weekly status report template for my team"}
+        ]},
+        {"id": "gse-data", "type": "group", "content": "Data & Analysis", "children": [
+          {"id": "gse-d1", "type": "example", "content": "Analyze this CSV data and identify interesting patterns: [drag file]"},
+          {"id": "gse-d2", "type": "example", "content": "Create an Excel spreadsheet tracking project milestones"},
+          {"id": "gse-d3", "type": "example", "content": "Convert this JSON data to a formatted table"},
+          {"id": "gse-d4", "type": "example", "content": "Calculate statistics from this dataset and visualize the results"}
+        ]},
+        {"id": "gse-files", "type": "group", "content": "File & System Tasks", "children": [
+          {"id": "gse-f1", "type": "example", "content": "Find all Python files in my project that import pandas"},
+          {"id": "gse-f2", "type": "example", "content": "Organize my Downloads folder by file type"},
+          {"id": "gse-f3", "type": "example", "content": "Search my notes for anything related to 'machine learning'"},
+          {"id": "gse-f4", "type": "example", "content": "Create a backup script for my Documents folder"}
+        ]},
+        {"id": "gse-creative", "type": "group", "content": "Creative & Images", "children": [
+          {"id": "gse-cr1", "type": "example", "content": "Generate an image of a cozy coffee shop in autumn"},
+          {"id": "gse-cr2", "type": "example", "content": "Create a logo concept for a tech startup called 'NexGen'"},
+          {"id": "gse-cr3", "type": "example", "content": "Design a landscape scene with mountains and a lake at sunset"},
+          {"id": "gse-cr4", "type": "example", "content": "Generate a futuristic city skyline in anime style"}
+        ]},
+        {"id": "gse-tip", "type": "tip", "content": "Copy any of these examples and paste them into a new conversation to try them out!"}
+      ]
+    },
+    {
+      "id": "quick-start",
+      "title": "Quick Start Guide",
+      "icon": "star.fill",
+      "order": 1,
+      "elements": [
+        {
+          "id": "qs-heading",
+          "type": "heading",
+          "content": "Getting Started with SAM"
+        },
+        {
+          "id": "qs-intro",
+          "type": "text",
+          "content": "Welcome to SAM, your intelligent AI assistant for macOS!"
+        },
+        {
+          "id": "qs-div1",
+          "type": "divider",
+          "content": ""
+        },
+        {
+          "id": "qs-first-launch",
+          "type": "group",
+          "content": "First Launch",
+          "children": [
+            {"id": "qs-step1", "type": "step", "content": "Open SAM from your Applications folder", "properties": {"number": "1"}},
+            {"id": "qs-step2", "type": "step", "content": "Choose your AI provider (OpenAI, Anthropic, GitHub Copilot, or Local models)", "properties": {"number": "2"}},
+            {"id": "qs-step3", "type": "step", "content": "Configure your API key in Preferences (Cmd+,)", "properties": {"number": "3"}},
+            {"id": "qs-step4", "type": "step", "content": "Start chatting - SAM will guide you through its capabilities", "properties": {"number": "4"}}
+          ]
+        },
+        {
+          "id": "qs-first-conv",
+          "type": "group",
+          "content": "Your First Conversation",
+          "children": [
+            {"id": "qs-ex1", "type": "example", "content": "Hello SAM, what can you help me with?", "properties": {"title": "Simple greeting:"}},
+            {"id": "qs-ex2", "type": "example", "content": "I need to organize my Downloads folder", "properties": {"title": "Ask for help:"}},
+            {"id": "qs-ex3", "type": "example", "content": "Find information about renewable energy trends", "properties": {"title": "Research task:"}}
+          ]
+        },
+        {
+          "id": "qs-interface",
+          "type": "group",
+          "content": "Interface Overview",
+          "children": [
+            {"id": "qs-if1", "type": "bulletPoint", "content": "**Chat Area**: Main conversation window where you interact with SAM"},
+            {"id": "qs-if2", "type": "bulletPoint", "content": "**Sidebar**: Access your conversation history and create new chats"},
+            {"id": "qs-if3", "type": "bulletPoint", "content": "**Pin Conversations**: Click pin icon to keep important chats at top"},
+            {"id": "qs-if4", "type": "bulletPoint", "content": "**Global Search** (Cmd+F): Search across all conversations"},
+            {"id": "qs-if5", "type": "bulletPoint", "content": "**Terminal**: Click terminal button to open command line"},
+            {"id": "qs-if6", "type": "bulletPoint", "content": "**Working Folder**: Click folder button to set where SAM saves files"},
+            {"id": "qs-if7", "type": "bulletPoint", "content": "**Preferences** (Cmd+,): Configure AI providers and settings"}
+          ]
+        },
+        {
+          "id": "qs-tip",
+          "type": "tip",
+          "content": "Right-click any conversation for quick actions (rename, duplicate, export, delete)!"
+        }
+      ]
+    },
+    {
+      "id": "keyboard-shortcuts",
+      "title": "Keyboard & Navigation",
+      "icon": "keyboard",
+      "order": 2,
+      "elements": [
+        {
+          "id": "kb-heading",
+          "type": "heading",
+          "content": "Keyboard Shortcuts"
+        },
+        {
+          "id": "kb-intro",
+          "type": "text",
+          "content": "Master these shortcuts to work faster with SAM."
+        },
+        {
+          "id": "kb-div",
+          "type": "divider",
+          "content": ""
+        },
+        {
+          "id": "kb-essential",
+          "type": "group",
+          "content": "Essential Shortcuts",
+          "children": [
+            {"id": "kb-e1", "type": "keyboardShortcut", "content": "New conversation", "properties": {"keys": "Cmd+N"}},
+            {"id": "kb-e2", "type": "keyboardShortcut", "content": "Open Preferences", "properties": {"keys": "Cmd+,"}},
+            {"id": "kb-e3", "type": "keyboardShortcut", "content": "Close current window", "properties": {"keys": "Cmd+W"}},
+            {"id": "kb-e4", "type": "keyboardShortcut", "content": "Quit SAM", "properties": {"keys": "Cmd+Q"}},
+            {"id": "kb-e5", "type": "keyboardShortcut", "content": "Open Help", "properties": {"keys": "Cmd+?"}}
+          ]
+        },
+        {
+          "id": "kb-conversation",
+          "type": "group",
+          "content": "Conversation Shortcuts",
+          "children": [
+            {"id": "kb-c1", "type": "keyboardShortcut", "content": "Toggle tools on/off", "properties": {"keys": "Cmd+T"}},
+            {"id": "kb-c2", "type": "keyboardShortcut", "content": "Send message", "properties": {"keys": "Cmd+Return"}},
+            {"id": "kb-c3", "type": "keyboardShortcut", "content": "Clear chat input", "properties": {"keys": "Cmd+K"}},
+            {"id": "kb-c4", "type": "keyboardShortcut", "content": "Focus message input", "properties": {"keys": "Cmd+L"}},
+            {"id": "kb-c5", "type": "keyboardShortcut", "content": "Previous conversation", "properties": {"keys": "Cmd+["}},
+            {"id": "kb-c6", "type": "keyboardShortcut", "content": "Next conversation", "properties": {"keys": "Cmd+]"}}
+          ]
+        },
+        {
+          "id": "kb-editing",
+          "type": "group",
+          "content": "Editing & Selection",
+          "children": [
+            {"id": "kb-ed1", "type": "keyboardShortcut", "content": "Select all text", "properties": {"keys": "Cmd+A"}},
+            {"id": "kb-ed2", "type": "keyboardShortcut", "content": "Copy selected text", "properties": {"keys": "Cmd+C"}},
+            {"id": "kb-ed3", "type": "keyboardShortcut", "content": "Paste text", "properties": {"keys": "Cmd+V"}},
+            {"id": "kb-ed4", "type": "keyboardShortcut", "content": "Undo", "properties": {"keys": "Cmd+Z"}},
+            {"id": "kb-ed5", "type": "keyboardShortcut", "content": "Redo", "properties": {"keys": "Shift+Cmd+Z"}}
+          ]
+        },
+        {
+          "id": "kb-file",
+          "type": "group",
+          "content": "File Operations",
+          "children": [
+            {"id": "kb-f1", "type": "keyboardShortcut", "content": "Open file/conversation", "properties": {"keys": "Cmd+O"}},
+            {"id": "kb-f2", "type": "keyboardShortcut", "content": "Save conversation", "properties": {"keys": "Cmd+S"}},
+            {"id": "kb-f3", "type": "keyboardShortcut", "content": "Export conversation", "properties": {"keys": "Cmd+E"}},
+            {"id": "kb-f4", "type": "keyboardShortcut", "content": "Import document", "properties": {"keys": "Cmd+I"}}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "troubleshooting",
+      "title": "Troubleshooting",
+      "icon": "lifepreserver",
+      "order": 14,
+      "elements": [
+        {
+          "id": "ts-heading",
+          "type": "heading",
+          "content": "Troubleshooting"
+        },
+        {
+          "id": "ts-intro",
+          "type": "text",
+          "content": "Solutions to common issues and questions."
+        },
+        {
+          "id": "ts-div",
+          "type": "divider",
+          "content": ""
+        },
+        {
+          "id": "ts-item1",
+          "type": "troubleshootingItem",
+          "content": "Check these items:\n- Verify your API key is configured in Preferences (Cmd+,)\n- Check your internet connection for cloud AI providers\n- Restart SAM and try again\n- Check the Console app for SAM error messages",
+          "properties": {"question": "SAM isn't responding to my messages"}
+        },
+        {
+          "id": "ts-item2",
+          "type": "troubleshootingItem",
+          "content": "Possible causes:\n- File path incorrect (use file:// prefix)\n- File format not supported\n- File corrupted or password-protected\n- Insufficient disk space\n\nTry: Verify file opens in its native application first",
+          "properties": {"question": "Document import failed"}
+        },
+        {
+          "id": "ts-item3",
+          "type": "troubleshootingItem",
+          "content": "Ensure:\n- Output directory has write permissions\n- Filename doesn't contain invalid characters\n- Sufficient disk space available\n- No existing file is locked in another app",
+          "properties": {"question": "DOCX/XLSX export shows error"}
+        },
+        {
+          "id": "ts-item4",
+          "type": "troubleshootingItem",
+          "content": "Check:\n- Internet connection is active\n- Search API keys configured in Preferences\n- Query is specific enough\n- Try rephrasing your research question",
+          "properties": {"question": "Web research returns no results"}
+        },
+        {
+          "id": "ts-item5",
+          "type": "troubleshootingItem",
+          "content": "Remember:\n- Documents must be imported first\n- Memory is conversation-scoped by default\n- Use similarity_threshold=0.3 for broader results\n- Try different query phrasings",
+          "properties": {"question": "Memory search doesn't find my documents"}
+        },
+        {
+          "id": "ts-item6",
+          "type": "troubleshootingItem",
+          "content": "Optimize performance:\n- Close unused conversations\n- Clear conversation history periodically\n- Use cloud AI instead of local models for resource-intensive tasks\n- Restart SAM to clear cached data",
+          "properties": {"question": "SAM is using too much memory/CPU"}
+        },
+        {
+          "id": "ts-item7",
+          "type": "troubleshootingItem",
+          "content": "Check these items:\n- Verify model is in correct directory: ~/Library/Caches/sam/models/provider/model/\n- Restart SAM to rescan for new models\n- Check SAM User Guide for installation instructions",
+          "properties": {"question": "Local model not appearing in dropdown"}
+        },
+        {
+          "id": "ts-sd-group",
+          "type": "group",
+          "content": "Stable Diffusion Issues",
+          "children": [
+            {
+              "id": "ts-sd1",
+              "type": "troubleshootingItem",
+              "content": "Check these items:\n- Verify model directory contains .mlmodelc files (CoreML) or .safetensors\n- Check Preferences > Local Models to see detected models\n- Restart SAM to rescan models",
+              "properties": {"question": "Model not appearing in picker"}
+            },
+            {
+              "id": "ts-sd2",
+              "type": "troubleshootingItem",
+              "content": "Troubleshoot conversion issues:\n- Check logs for specific error messages\n- Ensure sufficient disk space (~5-10GB per model)\n- Try downloading SafeTensors only\n- Check model compatibility (SD 1.x, 2.x, SDXL supported)",
+              "properties": {"question": "Conversion failed"}
+            },
+            {
+              "id": "ts-sd3",
+              "type": "troubleshootingItem",
+              "content": "This is normal behavior:\n- Model only has one format available\n- CoreML-only: Download SafeTensors to enable Python option\n- SafeTensors-only: Convert to CoreML to enable CoreML option",
+              "properties": {"question": "Engine selection disabled"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "privacy-security",
+      "title": "Privacy & Security",
+      "icon": "lock.shield",
+      "order": 15,
+      "elements": [
+        {
+          "id": "ps-heading",
+          "type": "heading",
+          "content": "Privacy & Security"
+        },
+        {
+          "id": "ps-intro",
+          "type": "text",
+          "content": "How SAM protects your data and respects your privacy."
+        },
+        {
+          "id": "ps-div",
+          "type": "divider",
+          "content": ""
+        },
+        {
+          "id": "ps-storage",
+          "type": "group",
+          "content": "Data Storage",
+          "children": [
+            {"id": "ps-s1", "type": "bulletPoint", "content": "**Conversation History**: Stored locally in ~/Library/Application Support/sam/"},
+            {"id": "ps-s2", "type": "bulletPoint", "content": "**Vector Database**: Encrypted SQLite database for memory search"},
+            {"id": "ps-s3", "type": "bulletPoint", "content": "**Imported Documents**: Chunked and stored in local database"},
+            {"id": "ps-s4", "type": "bulletPoint", "content": "**Temporary Files**: Automatically cleaned up after operations"}
+          ]
+        },
+        {
+          "id": "ps-warning",
+          "type": "warning",
+          "content": "When using remote API providers, your conversation data (messages, prompts, and context) is sent to third-party servers for processing. Choose local models if privacy is a concern."
+        },
+        {
+          "id": "ps-cloud",
+          "type": "group",
+          "content": "Cloud Providers (OpenAI, Anthropic, GitHub Copilot)",
+          "children": [
+            {"id": "ps-c1", "type": "bulletPoint", "content": "Data sent to provider's servers for processing"},
+            {"id": "ps-c2", "type": "bulletPoint", "content": "Your messages and conversation context visible to third party"},
+            {"id": "ps-c3", "type": "bulletPoint", "content": "Subject to provider's privacy policy and terms of service"},
+            {"id": "ps-c4", "type": "bulletPoint", "content": "Faster processing, more powerful models"},
+            {"id": "ps-c5", "type": "bulletPoint", "content": "Requires internet connection and API keys"}
+          ]
+        },
+        {
+          "id": "ps-local",
+          "type": "group",
+          "content": "Local Models (GGUF & MLX)",
+          "children": [
+            {"id": "ps-l1", "type": "bulletPoint", "content": "All processing happens on your Mac"},
+            {"id": "ps-l2", "type": "bulletPoint", "content": "No data sent to external servers - complete privacy"},
+            {"id": "ps-l3", "type": "bulletPoint", "content": "Works offline without internet connection"},
+            {"id": "ps-l4", "type": "bulletPoint", "content": "Complete conversation privacy - nothing leaves your device"},
+            {"id": "ps-l5", "type": "bulletPoint", "content": "Optimized for Apple Silicon (M1/M2/M3 chips)"}
+          ]
+        },
+        {
+          "id": "ps-security",
+          "type": "group",
+          "content": "Security Best Practices",
+          "children": [
+            {"id": "ps-sec1", "type": "bulletPoint", "content": "**API Keys**: Store in Preferences, never share in conversations"},
+            {"id": "ps-sec2", "type": "bulletPoint", "content": "**Sensitive Data**: Use local models or API Direct mode"},
+            {"id": "ps-sec3", "type": "bulletPoint", "content": "**Exported Files**: Secure exported conversations (may contain sensitive info)"},
+            {"id": "ps-sec4", "type": "bulletPoint", "content": "**Updates**: Keep SAM updated for latest security fixes"}
+          ]
+        },
+        {
+          "id": "ps-deletion",
+          "type": "group",
+          "content": "Data Deletion",
+          "children": [
+            {"id": "ps-d1", "type": "bulletPoint", "content": "**Clear History**: File > Clear History (removes all conversations)"},
+            {"id": "ps-d2", "type": "bulletPoint", "content": "**Delete Specific Conversation**: Conversation > Delete Conversation"},
+            {"id": "ps-d3", "type": "bulletPoint", "content": "**Complete Removal**: Delete ~/Library/Application Support/sam/"}
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,321 @@
+{
+  "model_configurations": {
+    "claude-3.5-sonnet": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 90000,
+      "requires_alternating_messages": true
+    },
+    "claude-3-5-sonnet": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 90000,
+      "requires_alternating_messages": true
+    },
+    "claude-sonnet-4.5": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 144000,
+      "requires_alternating_messages": true
+    },
+    "claude-4.5": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 144000,
+      "requires_alternating_messages": true
+    },
+    "claude-4-5": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 144000,
+      "requires_alternating_messages": true
+    },
+    "sonnet-4.5": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 144000,
+      "requires_alternating_messages": true
+    },
+    "haiku-4.5": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 144000,
+      "requires_alternating_messages": true
+    },
+    "claude-sonnet-4": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 216000,
+      "requires_alternating_messages": true
+    },
+    "claude-4": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 200000,
+      "requires_alternating_messages": true
+    },
+    "claude-3.7-sonnet": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 200000,
+      "requires_alternating_messages": true
+    },
+    "claude-haiku": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 200000,
+      "requires_alternating_messages": true
+    },
+    "claude-opus": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 200000,
+      "requires_alternating_messages": true
+    },
+    "claude-opus-41": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 80000,
+      "requires_alternating_messages": true
+    },
+    "opus-4.1": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 80000,
+      "requires_alternating_messages": true
+    },
+    "claude-3": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 100000,
+      "requires_alternating_messages": true
+    },
+    "claude-2": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": true,
+        "required_tags": ["instructions", "toolUseInstructions"],
+        "continuation_signal_required": true
+      },
+      "supports_stateful_marker": true,
+      "context_window": 100000,
+      "requires_alternating_messages": true
+    },
+    "gemini-2.5-pro": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1000000,
+      "requires_alternating_messages": false
+    },
+    "gemini-2.0-flash": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1000000,
+      "requires_alternating_messages": false
+    },
+    "gemini-1.5-pro": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 2000000,
+      "requires_alternating_messages": false
+    },
+    "gemini-1.5-flash": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1000000,
+      "requires_alternating_messages": false
+    },
+    "gpt-4.1": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": true,
+      "context_window": 128000,
+      "requires_alternating_messages": false
+    },
+    "gpt-4": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": true,
+      "context_window": 128000,
+      "requires_alternating_messages": false
+    },
+    "gpt-4o": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": true,
+      "context_window": 128000,
+      "requires_alternating_messages": false
+    },
+    "o1-preview": {
+      "provider": "github_copilot",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": true,
+      "context_window": 128000,
+      "requires_alternating_messages": false
+    }
+  },
+  "provider_defaults": {
+    "github_copilot": {
+      "delta_mode": "incremental",
+      "supports_streaming": true,
+      "supports_stateful_marker": true
+    },
+    "openai": {
+      "delta_mode": "incremental",
+      "supports_streaming": true,
+      "supports_stateful_marker": false
+    },
+    "anthropic": {
+      "delta_mode": "incremental",
+      "supports_streaming": true,
+      "supports_stateful_marker": false
+    },
+    "google": {
+      "delta_mode": "incremental",
+      "supports_streaming": true,
+      "supports_stateful_marker": false
+    }
+  },
+  "model_family_patterns": {
+    "claude": ["claude", "sonnet", "haiku", "opus"],
+    "gpt": ["gpt-4", "gpt-3.5", "o1"],
+    "gemini": ["gemini"],
+    "llama": ["llama", "llama3", "llama-3"],
+    "stable-diffusion": ["sd/", "stable-diffusion"]
+  }
+}

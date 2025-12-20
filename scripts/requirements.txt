@@ -1,0 +1,47 @@
+# SAM Python Dependencies - Locked Versions
+# Generated from requirements.in
+# To update: pip-compile requirements.in --resolver=backtracking
+#
+# Installation notes:
+# - torch and torchvision are installed from PyPI with CPU-only option
+# - Versions are pinned to ensure compatibility with basicsr/realesrgan
+# - torch==2.0.1 and torchvision==0.15.2 are compatible with basicsr 1.4.2
+
+# Core PyTorch (compatible with basicsr>=1.7 and diffusers dev)
+# Note: Using 2.6.0 for transformers requirement (CVE-2025-32434)
+torch==2.6.0
+torchvision==0.21.0
+
+# Stable Diffusion libraries
+# diffusers from git main for Z-Image support (ZImagePipeline)
+git+https://github.com/huggingface/diffusers.git
+transformers>=4.30.0
+safetensors>=0.4.0
+accelerate>=0.20.0
+
+# Prompt enhancement for SD 1.5/SDXL
+# Compel enables prompt weighting syntax: (important:1.3) and long prompts
+compel>=2.0.0
+
+# CoreML tools
+coremltools
+omegaconf
+peft
+
+# MLX support
+diffusionkit==0.4.0
+
+# Image processing and upscaling
+opencv-python
+basicsr==1.4.2
+realesrgan==0.3.0
+gfpgan
+
+# Additional dependencies for ml-stable-diffusion
+scipy
+scikit-learn
+matplotlib
+invisible-watermark
+pytest
+numpy<2.0.0
+psutil  # For memory profiling

@@ -1,0 +1,3 @@
+NESTED FILE CONTENT
+This is a deeply nested file
+TESTMARKER_NESTED

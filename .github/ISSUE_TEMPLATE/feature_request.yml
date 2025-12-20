@@ -1,0 +1,136 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement for SAM
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before Requesting a Feature...
+        
+        **Have you checked if this already exists?**
+        - 📚 [Documentation](https://www.syntheticautonomicmind.org) - Feature may already be available
+        - 🔍 [Existing Issues](https://github.com/SyntheticAutonomicMind/SAM/issues) - Someone may have already requested this
+        - 💬 [Discussions](https://github.com/SyntheticAutonomicMind/SAM/discussions) - Discuss ideas with the community first
+        
+        **SAM's current capabilities:**
+        - 🎤 Voice control with "Hey SAM" activation
+        - 🖼️ Local image generation (Stable Diffusion)
+        - 🤖 Multiple AI providers (GitHub, OpenAI, Claude, Gemini, DeepSeek, Grok)
+        - 🧠 Local model support (MLX, llama.cpp GGUF)
+        - 📄 Document processing (PDF, DOCX, PPTX export)
+        - 🔧 14 integrated tools (file ops, terminal, web research, memory, etc.)
+        - 💾 Semantic memory with RAG
+        - 📊 Mermaid diagram rendering (15 types)
+        
+        Still want to request a feature? Let's hear your idea!
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched [existing issues](https://github.com/SyntheticAutonomicMind/SAM/issues) and [discussions](https://github.com/SyntheticAutonomicMind/SAM/discussions)
+          required: true
+        - label: I have read the [documentation](https://www.syntheticautonomicmind.org) and confirmed this feature doesn't exist
+          required: true
+        - label: This is a feature request, not a bug report or support question
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What's the use case?
+      placeholder: |
+        As a user, I want to...
+        Currently, I have to...
+        This would help me...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this feature to work?
+      placeholder: |
+        SAM should be able to...
+        When I do X, it would...
+        The UI could show...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area would this affect?
+      description: Select the primary component this feature relates to
+      options:
+        - Chat Interface / UX
+        - Voice Control (Wake Word / Speech)
+        - Image Generation
+        - AI Providers / Models
+        - Tools / Integrations
+        - Memory / RAG
+        - Document Processing
+        - Web Research
+        - File Operations
+        - Configuration / Settings
+        - Performance / Optimization
+        - Privacy / Security
+        - Developer Experience
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How important is this to you?
+      options:
+        - Nice to have
+        - Would improve my workflow
+        - Important for my use case
+        - Critical - blocking my usage
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds?
+      placeholder: |
+        I've tried...
+        Other apps do this by...
+        A workaround could be...
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples / References
+      description: |
+        Are there examples of this feature in other applications?
+        Can you provide mockups, screenshots, or links?
+      placeholder: |
+        - App X does this by...
+        - Here's a mockup: [link]
+        - Similar to: [reference]
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Would you be willing to contribute?
+      description: SAM is open source - contributions are welcome!
+      options:
+        - "No, I'm just suggesting"
+        - "Maybe, with guidance"
+        - "Yes, I'd like to implement this"
+        - "Yes, I've already started working on it"
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or information about the feature request
