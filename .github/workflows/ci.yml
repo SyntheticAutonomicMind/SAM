@@ -24,6 +24,7 @@ on:
       - 'ai-assisted/**'
       - '.github/ISSUE_TEMPLATE/**'
       - '.github/FUNDING.yml'
+  workflow_dispatch:
 
 jobs:
   build-and-test:
