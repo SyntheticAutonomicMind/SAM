@@ -26,8 +26,8 @@ on:
       - '.github/FUNDING.yml'
 
 jobs:
-  build:
-    name: Build Debug
+  build-and-test:
+    name: Build, Validate, and Test
     runs-on: [self-hosted]
     
     steps:
@@ -48,47 +48,9 @@ jobs:
     
     - name: Build SAM (Debug)
       run: make build-debug
-
-  validate:
-    name: Validate Python Bundle
-    runs-on: [self-hosted]
-    needs: build
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '26.2'
-    
-    - name: Build SAM (Debug)
-      run: make build-debug
     
     - name: Validate Python Bundle
       run: ./scripts/validate_python_bundle.sh Debug
-
-  test:
-    name: Run Tests
-    runs-on: [self-hosted]
-    needs: build
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-    
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '26.2'
-    
-    - name: Build SAM (Debug)
-      run: make build-debug
     
     - name: Run unit tests
       run: make test || echo "Tests not yet implemented"
