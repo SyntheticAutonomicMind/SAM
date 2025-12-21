@@ -6,46 +6,8 @@
         <description>Updates for SAM (Synthetic Autonomic Mind)</description>
         <language>en</language>
 
-        <!-- Latest release: v20251221.1 -->
-        <item>
-            <title>SAM 20251221.1</title>
-            <description><![CDATA[
-                <h2>What's New in SAM 20251221.1</h2>
-                <ul>
-                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251221.1">GitHub Releases</a> for details</li>
-                </ul>
-            ]]></description>
-            <pubDate>Sun, 21 Dec 2025 15:51:46 +0000</pubDate>
-            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251221.1</sparkle:releaseNotesLink>
-            <enclosure 
-                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20251221.1/SAM-20251221.1.zip"
-                sparkle:version="20251221.1"
-                sparkle:shortVersionString="20251221.1"
-                length="798944981"
-                type="application/octet-stream"
-            />
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-        </item>
-        <item>
-            <title>SAM 20251221.1</title>
-            <description><![CDATA[
-                <h2>What's New in SAM 20251221.1</h2>
-                <ul>
-                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251221.1">GitHub Releases</a> for details</li>
-                </ul>
-            ]]></description>
-            <pubDate>Sun, 21 Dec 2025 15:51:45 +0000</pubDate>
-            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251221.1</sparkle:releaseNotesLink>
-            <enclosure 
-                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20251221.1/SAM-20251221.1.zip"
-                sparkle:version="20251221.1"
-                sparkle:shortVersionString="20251221.1"
-                length="1118278909"
-                type="application/octet-stream"
-            />
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-        </item>
-
+        <!-- Future releases will be added here by CI/CD with proper EdDSA signatures -->
+        
         <!-- Example for future releases - copy and update this template -->
         <!-- 
         <item>
