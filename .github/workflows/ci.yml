@@ -51,7 +51,7 @@ jobs:
 
   validate:
     name: Validate Python Bundle
-    runs-on: [self-hosted, macos, sam-builder-001]
+    runs-on: [self-hosted]
     needs: build
     
     steps:
@@ -73,7 +73,7 @@ jobs:
 
   test:
     name: Run Tests
-    runs-on: [self-hosted, macos, sam-builder-001]
+    runs-on: [self-hosted]
     needs: build
     
     steps:
