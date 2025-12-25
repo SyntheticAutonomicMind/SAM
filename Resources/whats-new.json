@@ -1,8 +1,8 @@
 {
   "releases": [
     {
-      "version": "20251224.1",
-      "release_date": "December 24, 2025",
+      "version": "20251225.1",
+      "release_date": "December 25, 2025",
       "introduction": "This update brings major improvements to CivitAI model browsing with smarter caching, multi-page loading, and fixed API authentication. Browse thousands of Stable Diffusion models efficiently without hammering the API.",
       "highlights": [
         {
