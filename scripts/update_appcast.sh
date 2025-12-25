@@ -89,8 +89,9 @@ echo "  Date: $PUB_DATE"
 echo "  EdDSA Signature: ${SIGNATURE:0:40}..."
 echo ""
 
-# Create new entry
-NEW_ENTRY="        <!-- Latest release: v$VERSION -->
+# Create new entry using heredoc to avoid quote escaping issues
+read -r -d '' NEW_ENTRY << EOF || true
+        <!-- Latest release: v$VERSION -->
         <item>
             <title>SAM $VERSION</title>
             <description><![CDATA[
@@ -108,7 +109,7 @@ NEW_ENTRY="        <!-- Latest release: v$VERSION -->
             />
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
         </item>
-"
+EOF
 
 # Backup appcast.xml
 cp "$APPCAST_FILE" "$APPCAST_FILE.bak"
