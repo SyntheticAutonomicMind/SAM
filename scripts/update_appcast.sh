@@ -105,9 +105,17 @@ NEW_ENTRY="        <!-- Latest release: v$VERSION -->
 # Backup appcast.xml
 cp "$APPCAST_FILE" "$APPCAST_FILE.bak"
 
+# Write NEW_ENTRY to a temporary file to avoid shell quoting issues
+TEMP_ENTRY_FILE=$(mktemp)
+echo "$NEW_ENTRY" > "$TEMP_ENTRY_FILE"
+
 # Use Python to properly insert the new entry after <language>en</language>
-python3 - <<EOF
+python3 <<PYTHON_SCRIPT
 import re
+
+# Read the new entry from temp file
+with open('$TEMP_ENTRY_FILE', 'r') as f:
+    new_entry = f.read()
 
 # Read the appcast file
 with open('$APPCAST_FILE', 'r') as f:
@@ -128,14 +136,17 @@ if end_of_line == -1:
     end_of_line = len(content)
 
 # Insert the new entry
-new_content = content[:end_of_line + 1] + '\n' + '''$NEW_ENTRY''' + content[end_of_line + 1:]
+new_content = content[:end_of_line + 1] + '\n' + new_entry + content[end_of_line + 1:]
 
 # Write the updated content
 with open('$APPCAST_FILE', 'w') as f:
     f.write(new_content)
 
 print("SUCCESS: appcast.xml updated")
-EOF
+PYTHON_SCRIPT
+
+# Clean up temp file
+rm -f "$TEMP_ENTRY_FILE"
 
 # Verify the XML is still valid
 if command -v xmllint > /dev/null 2>&1; then
