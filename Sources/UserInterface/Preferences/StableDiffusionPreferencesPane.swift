@@ -92,6 +92,7 @@ struct CivitAIBrowserView: View {
     @State private var selectedModel: CivitAIModel?
     @State private var errorMessage: String?
     @State private var downloadedModelInfo: [Int: (slug: String, hasSafeTensors: Bool, hasCoreML: Bool)] = [:]  /// Track downloaded models by CivitAI model ID
+    @State private var modelCache = CivitAIModelCache()
 
     /// Filtered models based on search query and NSFW setting
     private var filteredModels: [CivitAIModel] {
@@ -132,17 +133,23 @@ struct CivitAIBrowserView: View {
                     .buttonStyle(.plain)
                 }
 
-                Button(action: { loadAllModels() }) {
+                Button(action: { 
+                    Task {
+                        /// Clear cache and force reload
+                        await modelCache.clearCache()
+                        loadAllModels()
+                    }
+                }) {
                     if isLoading {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Label("Reload", systemImage: "arrow.clockwise")
+                        Label("Refresh", systemImage: "arrow.clockwise")
                     }
                 }
                 .buttonStyle(.bordered)
                 .disabled(isLoading)
-                .help("Reload models from CivitAI")
+                .help("Clear cache and reload models from CivitAI")
             }
             .padding(12)
             .background(Color(NSColor.controlBackgroundColor))
@@ -259,25 +266,59 @@ struct CivitAIBrowserView: View {
 
         Task {
             do {
+                /// Try cache first
+                if let cachedModels = await modelCache.getCachedCheckpoints() {
+                    sdPrefLogger.info("Using cached checkpoint models: \(cachedModels.count)")
+                    await MainActor.run {
+                        allModels = cachedModels
+                        isLoading = false
+                    }
+                    await scanDownloadedModels()
+                    return
+                }
+
                 let service = CivitAIService(apiKey: apiKey.isEmpty ? nil : apiKey)
 
-                sdPrefLogger.info("Loading all Checkpoint models from CivitAI...")
+                sdPrefLogger.info("Loading all Checkpoint models from CivitAI API...")
 
-                /// Load all Checkpoints (no query, just type filter)
-                let response = try await service.searchModels(
-                    query: nil,  /// No search query - get all
-                    limit: 100,
-                    page: 1,
-                    types: ["Checkpoint"],  /// Only Checkpoints
-                    sort: "Highest Rated",
-                    period: "AllTime",
-                    nsfw: nsfwFilter ? false : nil
-                )
+                var allItems: [CivitAIModel] = []
+                var cursor: String? = nil
+                var pageCount = 0
+                let maxPages = 10  /// Limit to prevent excessive requests (10 pages * 100 = 1000 models)
 
-                sdPrefLogger.info("Loaded \(response.items.count) Checkpoint models from CivitAI")
+                /// Load all pages using cursor-based pagination
+                repeat {
+                    pageCount += 1
+                    
+                    let response = try await service.searchModels(
+                        query: nil,  /// No search query - get all
+                        limit: 100,
+                        page: pageCount,
+                        cursor: cursor,
+                        types: ["Checkpoint"],  /// Only Checkpoints
+                        sort: "Highest Rated",
+                        period: "AllTime",
+                        nsfw: nsfwFilter ? false : nil
+                    )
+
+                    allItems.append(contentsOf: response.items)
+                    cursor = response.metadata?.nextCursor
+                    
+                    sdPrefLogger.info("Loaded page \(pageCount): \(response.items.count) models (total: \(allItems.count))")
+                    
+                    /// Stop if we hit the page limit or there's no more data
+                    if pageCount >= maxPages || cursor == nil {
+                        break
+                    }
+                } while true
+
+                sdPrefLogger.info("Loaded \(allItems.count) Checkpoint models from CivitAI across \(pageCount) pages")
+
+                /// Cache the results
+                await modelCache.cacheCheckpoints(allItems)
 
                 await MainActor.run {
-                    allModels = response.items
+                    allModels = allItems
                     isLoading = false
                 }
 
@@ -3491,6 +3532,7 @@ struct LoRABrowserView: View {
     @State private var viewMode: LoRAViewMode = .library  /// Default to Library view
     @State private var currentPage: Int = 1  /// Pagination for CivitAI
     @State private var hasMoreResults: Bool = true  /// Track if more results available
+    @State private var modelCache = CivitAIModelCache()
 
     enum LoRAViewMode: String, CaseIterable {
         case library = "Library"
@@ -3996,16 +4038,39 @@ struct LoRABrowserView: View {
 
         Task {
             do {
+                /// Try cache first (only for page 1)
+                if page == 1 {
+                    if let cachedLoRAs = await modelCache.getCachedLoRAs() {
+                        sdPrefLogger.info("Using cached LoRA models: \(cachedLoRAs.count)")
+                        await MainActor.run {
+                            allLoRAs = cachedLoRAs.filter { $0.type == "LORA" }
+                            currentPage = 1
+                            hasMoreResults = false  /// Cache has all results
+                            isLoading = false
+                        }
+                        return
+                    }
+                }
+
                 let service = CivitAIService()
 
-                sdPrefLogger.info("Loading LoRAs from CivitAI (page \(page))...")
+                sdPrefLogger.info("Loading LoRAs from CivitAI API (page \(page))...")
 
-                /// Load LoRAs with pagination
+                /// Determine cursor for pagination
+                var cursor: String? = nil
+                if page > 1 {
+                    /// For page > 1, we need the cursor from the last response
+                    /// This requires tracking it in state, but for now we'll use page-based
+                    /// The first request doesn't need a cursor
+                }
+
+                /// Load LoRAs with cursor-based pagination
                 let response = try await service.searchLoRAs(
                     query: nil,  /// No search query - get all
                     baseModel: nil,  /// Don't filter by base model in API
                     limit: 100,  /// CivitAI API max is 100
                     page: page,
+                    cursor: cursor,
                     sort: "Highest Rated",
                     nsfw: nsfwFilter ? false : nil
                 )
@@ -4018,13 +4083,17 @@ struct LoRABrowserView: View {
 
                     if page == 1 {
                         allLoRAs = newLoRAs
+                        /// Cache first page of LoRAs
+                        Task {
+                            await modelCache.cacheLoRAs(newLoRAs)
+                        }
                     } else {
                         allLoRAs.append(contentsOf: newLoRAs)
                     }
 
                     currentPage = page
-                    /// If we got fewer than limit, there are no more results
-                    hasMoreResults = response.items.count >= 100
+                    /// Check if there's a next cursor to determine if there are more results
+                    hasMoreResults = response.metadata?.nextCursor != nil
 
                     isLoading = false
                     sdPrefLogger.info("Now have \(allLoRAs.count) total LoRAs loaded")

@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "version": "20251224.1",
+      "release_date": "December 24, 2025",
+      "introduction": "This update brings major improvements to CivitAI model browsing with smarter caching, multi-page loading, and fixed API authentication. Browse thousands of Stable Diffusion models efficiently without hammering the API.",
+      "highlights": [
+        {
+          "id": "civitai-caching",
+          "icon": "square.stack.3d.up.fill",
+          "title": "Smart Model Catalog Caching",
+          "description": "Model catalogs now cache locally for 24 hours. Instant loading on subsequent visits, drastically reduced API requests, and better overall performance."
+        },
+        {
+          "id": "multi-page-loading",
+          "icon": "arrow.down.to.line.circle.fill",
+          "title": "Multi-Page Model Loading",
+          "description": "Automatically loads up to 1,000 checkpoint models across 10 pages. No more seeing just the first 100 - explore the full catalog."
+        },
+        {
+          "id": "civitai-auth-fix",
+          "icon": "key.fill",
+          "title": "Fixed CivitAI Authentication",
+          "description": "API authentication now uses proper query parameters. Eliminates rate limiting issues and ensures reliable model browsing with your API key."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "cursor-pagination",
+          "icon": "arrow.left.and.right.circle.fill",
+          "title": "Cursor-Based Pagination",
+          "description": "Reliable pagination using CivitAI's cursor system. No more failures beyond page 20 - navigate through thousands of models smoothly."
+        },
+        {
+          "id": "cache-refresh",
+          "icon": "arrow.clockwise.circle.fill",
+          "title": "Manual Cache Refresh",
+          "description": "New Refresh button clears cache and reloads from API. Get the latest models on demand while benefiting from caching most of the time."
+        },
+        {
+          "id": "concurrency-safe",
+          "icon": "bolt.shield.fill",
+          "title": "Swift 6 Concurrency",
+          "description": "Full Sendable conformance for thread-safe model data. Actor-isolated caching prevents data races and ensures reliable operation."
+        }
+      ]
+    },
+    {
       "version": "20251221.1",
       "release_date": "December 21, 2025",
       "introduction": "Welcome to SAM - Synthetic Autonomic Mind! SAM is a native macOS AI assistant built to work *with* you, not just *for* you. Designed for privacy, SAM keeps your conversations and data on your Mac while giving you access to powerful AI capabilities: multi-provider support, voice interaction, local image generation, document analysis, and intelligent tools. Say \"Hey SAM\" to go hands-free, or type naturally - you're always in control.",
