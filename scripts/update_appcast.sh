@@ -59,10 +59,18 @@ fi
 
 # Sign the ZIP file to get EdDSA signature
 echo "Signing ZIP file with EdDSA key..."
-SIGNATURE=$("$SIGN_UPDATE_BINARY" "$ZIP_PATH" -f "$PRIVATE_KEY_PATH")
+SIGNATURE_OUTPUT=$("$SIGN_UPDATE_BINARY" "$ZIP_PATH" -f "$PRIVATE_KEY_PATH")
+
+if [ -z "$SIGNATURE_OUTPUT" ]; then
+    echo "Error: Failed to generate signature"
+    exit 1
+fi
+
+# Extract just the signature value from: sparkle:edSignature="VALUE" length="..."
+SIGNATURE=$(echo "$SIGNATURE_OUTPUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
 
 if [ -z "$SIGNATURE" ]; then
-    echo "Error: Failed to generate signature"
+    echo "Error: Failed to extract signature from output: $SIGNATURE_OUTPUT"
     exit 1
 fi
 
