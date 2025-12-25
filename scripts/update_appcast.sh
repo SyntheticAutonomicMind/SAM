@@ -91,12 +91,12 @@ NEW_ENTRY="        <!-- Latest release: v$VERSION -->
             <pubDate>$PUB_DATE</pubDate>
             <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/$VERSION</sparkle:releaseNotesLink>
             <enclosure 
-                url=\"https://github.com/SyntheticAutonomicMind/SAM/releases/download/$VERSION/SAM-$VERSION.zip\"
-                sparkle:version=\"$VERSION\"
-                sparkle:shortVersionString=\"$VERSION\"
-                sparkle:edSignature=\"$SIGNATURE\"
-                length=\"$FILE_SIZE\"
-                type=\"application/octet-stream\"
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/$VERSION/SAM-$VERSION.zip"
+                sparkle:version="$VERSION"
+                sparkle:shortVersionString="$VERSION"
+                sparkle:edSignature="$SIGNATURE"
+                length="$FILE_SIZE"
+                type="application/octet-stream"
             />
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
         </item>
