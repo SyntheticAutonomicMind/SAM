@@ -6,8 +6,7 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-macOS%2014.0%2B-lightgrey.svg)](https://www.apple.com/macos/)
-[![Swift](https://img.shields.io/badge/swift-6.2.1%2B-orange.svg)](https://swift.org/)
-[![Xcode](https://img.shields.io/badge/xcode-26.1%2B-blue.svg)](https://developer.apple.com/xcode/)
+[![Swift](https://img.shields.io/badge/swift-6.0%2B-orange.svg)](https://swift.org/)
 
 [Website](https://www.syntheticautonomicmind.org) | [Download](https://github.com/SyntheticAutonomicMind/SAM/releases)
 
@@ -17,39 +16,40 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 
 🔐 **Privacy First**
 - All data stays on your Mac - nothing sent to the cloud unless you choose
-- Run completely offline with local AI models (MLX/GGUF)
+- Run completely offline with local AI models
 - API keys stored securely in macOS Keychain
 - Zero telemetry, zero tracking
 
-🧠 **Intelligent Memory System**
-- Vector RAG for semantic search across conversations
-- Import documents (PDF, DOCX, XLSX, TXT) and search them
-- Shared Topics for multi-conversation collaboration
-- Conversation-scoped memory prevents data leakage
+🧠 **Intelligent Memory**
+- Remember and search across all your conversations
+- Import documents (PDF, Word, Excel, text) and ask questions about them
+- Share context between conversations when you need it
+- Keep conversations private from each other when you don't
 
-🤖 **Autonomous Workflows**
-- Multi-step task execution with tool orchestration
-- Spawn subagents for parallel work
-- Up to 300 iterations per task
-- Dynamic iteration requests for complex projects
+🤖 **Gets Work Done**
+- Multi-step task execution - describe what you want, SAM handles the details
+- Work with files, run commands, research the web
+- Generate documents and images
+- Handle complex projects autonomously
 
-🛠️ **Comprehensive MCP Tools**
-- File operations, terminal access, web research
-- Git integration, build automation
-- Document import and creation
-- Image generation with Stable Diffusion
+🛠️ **Powerful Tools**
+- Read, edit, and search files
+- Run terminal commands
+- Research and browse the web
+- Work with Git repositories
+- Generate images with Stable Diffusion
 
-🎨 **Stable Diffusion Image Generation**
-- SD 1.5, SDXL, Z-Image, Flux model support
+🎨 **Image Generation**
+- Multiple Stable Diffusion models supported
 - Browse and download from HuggingFace and CivitAI
 - LoRA support for style customization
-- CoreML optimization for Apple Silicon
+- Optimized for Apple Silicon
 
-🌐 **Multi-Provider AI Support**
-- **Cloud**: OpenAI, Anthropic, GitHub Copilot, Google Gemini, xAI Grok
-- **Local**: MLX (Apple Silicon optimized), GGUF (llama.cpp)
+🌐 **Flexible AI Provider Support**
+- **Cloud AI**: OpenAI, Anthropic (Claude), GitHub Copilot, DeepSeek
+- **Local Models**: Run AI completely on your Mac with MLX or llama.cpp
 - Switch models mid-conversation
-- Custom OpenAI-compatible endpoints
+- Use custom OpenAI-compatible endpoints
 
 ---
 
@@ -58,418 +58,274 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 ### Download & Install
 
 1. **Download** the latest release from [GitHub Releases](https://github.com/SyntheticAutonomicMind/SAM/releases)
-2. **Extract** `SAM.app.zip`
+2. **Extract** the downloaded zip file
 3. **Move** `SAM.app` to your Applications folder
 4. **First Launch**: Right-click SAM.app → Open (macOS Gatekeeper requirement, only needed once)
 
-### Configure AI Provider
+### Set Up Your AI Provider
 
 1. Launch SAM
-2. Open Preferences (`⌘,`)
+2. Open Settings (`⌘,`)
 3. Go to **AI Providers** tab
 4. Click **Add Provider**
-5. Choose your provider (OpenAI, Claude, GitHub Copilot, or Local Model)
-6. Enter API key (or select local model)
+5. Choose your provider:
+   - **Cloud AI**: OpenAI, Claude, GitHub Copilot, or DeepSeek
+   - **Local Model**: Choose a model to download and run on your Mac
+6. For cloud providers: Enter your API key
 7. Save and start chatting!
 
-### Your First Conversation
+### Start Your First Conversation
 
-```
-Press ⌘N to create a new conversation
-Type: "Hello! What can you help me with?"
-Press Enter and SAM will introduce itself
-```
+Press `⌘N` to create a new conversation, type your message, and press Enter. SAM will respond and can help you with questions, writing, coding, research, file management, and much more.
 
 ---
 
-## Key Features Overview
+## Key Features
 
-### 🎯 Core Capabilities
+### 💬 Conversations
 
-**Conversations**
-- Unlimited conversations with auto-save
+- Unlimited conversations with automatic saving
 - Export to JSON or Markdown
-- Rename, duplicate, and organize
-- Switch models mid-conversation
+- Rename, duplicate, and organize conversations
+- Switch AI models mid-conversation
 
-**Streaming Responses**
-- Real-time token-by-token streaming
-- Watch SAM think and work
-- Cancel generation anytime
-- Progress indicators for tools
+### 🧠 Memory & Documents
 
-**Memory System**
-- Vector RAG for semantic search
-- Import documents (PDF, DOCX, XLSX, TXT)
-- Per-conversation memory isolation
-- Shared Topics for cross-conversation collaboration
-
-**Autonomous Execution**
-- Multi-step task handling
-- Tool orchestration
-- Subagent spawning
-- Up to 300 iterations per task
+- Search across all your conversations semantically
+- Import documents (PDF, Word, Excel, text files) and ask questions about them
+- Share context between conversations when needed
+- Keep conversations private from each other by default
 
 ### 🤖 AI Provider Support
 
-| Provider | Models | Context | Notes |
-|----------|--------|---------|-------|
-| **OpenAI** | GPT-4, GPT-4o, GPT-3.5, o1/o3 | 8k-128k | General purpose |
-| **Anthropic** | Claude 3.5 Sonnet, Claude 4 | 90k-200k | Long context |
-| **GitHub Copilot** | GPT-4o, Claude 3.5, o1 | Varies | Requires subscription |
-| **Google Gemini** | Gemini 2.0 Flash, 1.5 Pro | 1M-2M | Massive context |
-| **xAI Grok** | Grok-2, Grok Vision | 128k | Multimodal |
-| **Local MLX** | Qwen, Llama, Phi, Mistral | Varies | Apple Silicon only |
-| **Local GGUF** | Any GGUF model | Varies | Works on any Mac |
+| Provider | What You Get |
+|----------|--------------|
+| **OpenAI** | GPT-4, GPT-4o, GPT-3.5, o1/o3 models |
+| **Anthropic** | Claude 3.5 Sonnet, Claude 4 (long context) |
+| **GitHub Copilot** | GPT-4o, Claude 3.5, o1 (requires subscription) |
+| **DeepSeek** | Cost-effective AI models |
+| **Local MLX** | Run models on Apple Silicon Macs |
+| **Local llama.cpp** | Run models on any Mac (Intel or Apple Silicon) |
+| **Custom** | Use any OpenAI-compatible API |
 
-### 🛠️ MCP Tools
+### 🛠️ What SAM Can Do
 
-**File & Terminal**
-- Read, write, search, edit files
-- Execute terminal commands
-- PTY sessions for persistent terminals
-- Working directory management
+**Work with Files**
+- Read, write, search, and edit files
+- Find files by name or content
+- Get file information
 
-**Memory & Planning**
-- Store and retrieve memories
-- Agent todo list management (for AI task tracking)
-- Workflow tracking
-- Context persistence
+**Execute Commands**
+- Run terminal commands
+- Manage persistent terminal sessions
+- Execute shell scripts
 
-**Web & Research**
-- Web search (Google, Bing, Scholar)
-- Web scraping
-- Content extraction
-- Research synthesis
+**Research & Web**
+- Search the web (Google, Bing, and more)
+- Scrape and analyze web pages
+- Gather and synthesize information from multiple sources
 
-**Build & VCS**
+**Development Tools**
 - Git operations (commit, diff, status)
-- Build automation
-- Error checking
-- Code search
+- Build and run tasks
+- Search code and check for errors
 
 **Documents & Images**
-- Import PDF, DOCX, XLSX, TXT
-- Create formatted documents
+- Import and analyze PDF, Word, Excel, and text files
+- Create formatted documents (PDF, Word, PowerPoint)
 - Generate images with Stable Diffusion
-- LoRA management
-
-See [project-docs/MCP_TOOLS_SPECIFICATION.md](project-docs/MCP_TOOLS_SPECIFICATION.md) for complete tool documentation.
 
 ### 🎨 Image Generation
 
-**Supported Models**
-- Stable Diffusion 1.5 (512×512)
-- Stable Diffusion XL (1024×1024)
-- Z-Image (bfloat16 optimized)
-- Flux models
-
-**Features**
-- Browse HuggingFace and CivitAI
-- LoRA support for style customization
-- CoreML optimization (fast inference)
-- Python fallback (full features)
-- Real-ESRGAN upscaling
-- img2img generation
-
-See [project-docs/STABLE_DIFFUSION.md](project-docs/STABLE_DIFFUSION.md) for image generation documentation.
+- Multiple Stable Diffusion models (SD 1.5, SDXL, and more)
+- Browse and download models from HuggingFace and CivitAI
+- LoRA support for custom styles
+- Optimized for Apple Silicon Macs
 
 ### 🎭 Personalities
 
-Choose from multiple built-in personalities to customize SAM's communication style:
+Choose from built-in personalities to customize how SAM communicates:
 
-- **General**: SAM (default), Generic, Concise
-- **Tech**: Developer, Architect, Code Reviewer, Tinkerer, Crusty Coder, BOFH, Tech Buddy
-- **Experts**: Doctor, Counsel, Finance Coach, Trader, Scientist, Philosopher
-- **Creative**: Creative Catalyst, DocuGenie, Prose Pal, Prompt Pal
+- **General Purpose**: SAM (default), Generic, Concise
+- **Tech & Development**: Developer, Architect, Code Reviewer, Tech Buddy
+- **Domain Experts**: Doctor, Counsel, Finance Coach, Scientist, Philosopher
+- **Creative Writing**: Creative Catalyst, DocuGenie, Prose Pal
 - **Productivity**: Fitness Fanatic, Motivator
-- **Fun**: Comedian, Pirate, Time Traveler, Jester
+- **Fun Characters**: Comedian, Pirate, Time Traveler, Jester
+
+And many more! You can also create custom personalities.
 
 ---
 
 ## System Requirements
 
-**Minimum:**
+**To Use SAM:**
 - macOS 14.0 (Sonoma) or later
-- 4GB RAM
-- 3GB free disk space (for SAM application)
+- 4GB RAM minimum (8GB+ recommended)
+- 3GB free disk space for the app
 
-**Recommended:**
-- macOS 14.0+ (Sonoma or Sequoia)
-- 8GB+ RAM (16GB for local models)
-- 20GB+ free space (includes models and generated content)
-- Apple Silicon (M1/M2/M3/M4) for best performance
-
-**For Local Models:**
-- MLX models require Apple Silicon
-- GGUF models work on any Mac (Intel or Apple Silicon)
+**For Local AI Models:**
+- 16GB+ RAM recommended
+- 20GB+ free disk space (models can be large)
+- Apple Silicon (M1/M2/M3/M4) recommended for best performance with MLX
+- Intel Macs can use llama.cpp models
 
 ---
 
 ## Building from Source
 
-### Prerequisites
-
-1. **Install Homebrew** (if not already installed):
-   ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-   Or visit [https://brew.sh](https://brew.sh)
-
-2. **Install cmake:**
-   ```bash
-   brew install cmake
-   ```
-
-3. **Install Xcode:**
-   - Download from the Mac App Store
-   - Open Xcode and accept the license agreement
-
-4. **Configure Xcode command line tools:**
-   ```bash
-   sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-   ```
-
-5. **Install Metal toolchain:**
-   ```bash
-   xcodebuild -downloadComponent "MetalToolchain"
-   ```
-
-### Build Steps
-
-1. **Clone the repository with submodules:**
-   ```bash
-   git clone https://github.com/SyntheticAutonomicMind/SAM.git --recursive
-   cd SAM
-   ```
-
-2. **Build:**
-   ```bash
-   # Debug build
-   make build-debug
-   
-   # Release build
-   make build-release
-   ```
-
-3. **Run:**
-   ```bash
-   # Run from build directory
-   .build/Build/Products/Debug/SAM.app/Contents/MacOS/SAM
-   
-   # Or use make
-   make run
-   ```
-
-**For complete build instructions and troubleshooting**, see [BUILDING.md](BUILDING.md).
+For developers who want to build SAM from source, see [BUILDING.md](BUILDING.md) for complete instructions.
 
 ---
 
 ## Documentation
 
-Complete technical documentation is available in the [`project-docs/`](project-docs/) directory.
+Complete documentation is available:
 
-**Methodology:**
-- **[The Unbroken Method](project-docs/THE_UNBROKEN_METHOD.md)** - Complete AI collaboration framework
-
-**Core Architecture:**
-- **[API Framework](project-docs/API_FRAMEWORK.md)** - Provider system, endpoints, authentication
-- **[MCP Framework](project-docs/MCP_FRAMEWORK.md)** - Model Context Protocol implementation
-- **[Conversation Engine](project-docs/CONVERSATION_ENGINE.md)** - Chat processing and state management
-- **[Messaging Architecture](project-docs/MESSAGING_ARCHITECTURE.md)** - Message flow and transformations
-
-**Subsystems:**
-- **[Stable Diffusion](project-docs/STABLE_DIFFUSION.md)** - Image generation, models, schedulers
-- **[MLX Integration](project-docs/MLX_INTEGRATION.md)** - Local model support (Apple Silicon)
-- **[Sound System](project-docs/SOUND.md)** - Voice input/output, wake word detection
-- **[Mermaid Architecture](project-docs/MERMAID_ARCHITECTURE.md)** - Diagram rendering
-
-**Specifications:**
-- **[MCP Tools](project-docs/MCP_TOOLS_SPECIFICATION.md)** - Complete tool API reference
-- **[API Integration](project-docs/API_INTEGRATION_SPECIFICATION.md)** - Provider integration guide
-- **[Security](project-docs/SECURITY_SPECIFICATION.md)** - Security model and sandboxing
-- **[Memory & Intelligence](project-docs/MEMORY_AND_INTELLIGENCE_SPECIFICATION.md)** - RAG and memory system
-
-**Flow Documentation:**
-- **[Message Flow](project-docs/flows/message_flow.md)** - End-to-end message processing
-- **[Tool Execution](project-docs/flows/tool_execution_flow.md)** - Tool invocation and results
-- **[SD Generation](project-docs/flows/sd_generation_flow.md)** - Image generation pipeline
-- **[Model Loading](project-docs/flows/model_loading_flow.md)** - Local model initialization
+- **[Website](https://www.syntheticautonomicmind.org)** - User guides and tutorials
+- **[project-docs/](project-docs/)** - Technical documentation for developers
+- **[BUILDING.md](BUILDING.md)** - Build instructions
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute
 
 ---
 
 ## Privacy & Security
 
-### Your Data Stays Local
-- **Conversations**: `~/Library/Application Support/SAM/conversations/`
-- **Memories**: Per-conversation SQLite databases
+### Your Data Stays on Your Mac
+
+- **Conversations**: Stored locally in `~/Library/Application Support/SAM/`
+- **Memory**: Per-conversation databases, never shared between conversations
 - **API Keys**: Encrypted in macOS Keychain
 - **No Telemetry**: Zero usage tracking, zero data collection
 
+When you use cloud AI providers (OpenAI, Claude, etc.), only the messages you send go to those providers. SAM never sends telemetry or analytics anywhere.
+
 ### Security Features
-- Authorization system for file/terminal operations
-- Working directory sandboxing
-- Per-conversation memory isolation
-- Optional auto-approve for trusted operations
-- Full audit trail of all tool executions
+
+- Authorization system for file and terminal operations
+- Per-conversation memory isolation prevents data leakage
+- Optional auto-approve for operations you trust
+- Full audit trail of all actions
 
 ---
 
-## Use Cases
+## What Can You Do with SAM?
 
 **For Everyone:**
-- Answer questions and provide information
-- Help write and edit documents
-- Research topics and summarize findings
-- Organize and manage files
-- Generate images from descriptions
+- Get answers to questions with AI that can search the web and your documents
+- Write and edit documents with AI assistance
+- Research topics and get comprehensive summaries
+- Organize and manage files on your Mac
+- Generate images from text descriptions
 
 **For Developers:**
-- Code review and debugging
-- Documentation generation
-- Build automation and testing
-- Git operations and version control
-- Codebase search and refactoring
+- Review code and find bugs
+- Generate documentation automatically
+- Automate builds and testing
+- Work with Git repositories
+- Search and refactor codebases
 
 **For Researchers:**
-- Document analysis and summarization
-- Web research and fact-checking
-- Data visualization
+- Analyze and summarize documents
+- Research topics across the web
 - Cross-reference multiple sources
-- Literature review automation
+- Create visualizations and diagrams
 
 **For Content Creators:**
 - Writing assistance and editing
-- Image generation for blogs/social media
-- Content organization
-- Research and fact-checking
-- SEO optimization
+- Generate images for blogs and social media
+- Organize research and content
+- Fact-checking and research
 
 ---
 
-## File Locations
+## Where SAM Stores Your Data
 
-### Application Data
+### Your Conversations and Settings
 ```
 ~/Library/Application Support/SAM/
-├── conversations/              # Conversation files (JSON)
-├── config.json                 # Global configuration
+├── conversations/              # Your conversation files
+├── config.json                 # App settings
 └── conversations/{id}/
-    └── memory.db              # Per-conversation memory
+    └── memory.db              # Memories for each conversation
 ```
 
-### Models
+### Downloaded AI Models
 ```
 ~/Library/Caches/sam/models/
 ├── mlx/                       # MLX models (Apple Silicon)
-├── gguf/                      # GGUF models (llama.cpp)
-└── stable-diffusion/          # SD models and LoRAs
+├── gguf/                      # llama.cpp models
+└── stable-diffusion/          # Stable Diffusion models and LoRAs
 ```
 
-### Working Directories
+### Working Files
 ```
 ~/SAM/
-├── conversation-{number}/     # Per-conversation workspace
-└── {topic-name}/              # Shared Topic workspace
+├── conversation-{number}/     # Working files for each conversation
+└── {topic-name}/              # Shared workspace for topics
 ```
 
-### Generated Content
+### Generated Images
 ```
-~/Library/Caches/sam/
-├── images/                    # Generated images
-└── staging/                   # Temporary files
+~/Library/Caches/sam/images/   # Images created by Stable Diffusion
 ```
 
 ---
 
 ## Contributing
 
-We welcome contributions! Here's how you can help:
+We welcome contributions! To contribute:
 
-### Getting Started
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Make your changes following our code style
-4. Run tests and linting
-5. Commit with clear messages: `git commit -m "feat(scope): description"`
+3. Make your changes
+4. Test your changes
+5. Commit with clear messages
 6. Push and create a pull request
 
-### Commit Message Format
-Follow Conventional Commits:
-- `feat(scope): Add new feature`
-- `fix(scope): Fix bug`
-- `refactor(scope): Refactor code`
-- `docs(scope): Update documentation`
-- `test(scope): Add or update tests`
-
-### Areas for Contribution
-- New MCP tools
-- Additional AI provider support
-- UI/UX improvements
-- Documentation
-- Bug fixes
-- Performance optimization
-
-**For contribution guidelines**, see [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
-## Support
+## Getting Help
 
-### Getting Help
-- **Documentation**: [`project-docs/`](project-docs/) directory
-- **Issues**: [GitHub Issues](https://github.com/SyntheticAutonomicMind/SAM/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/SyntheticAutonomicMind/SAM/discussions)
+### Having Trouble?
 
-### Troubleshooting
-
-**SAM won't open?**
+**SAM won't open after downloading?**
 ```bash
 # Remove macOS quarantine attribute
 xattr -d com.apple.quarantine /Applications/SAM.app
 ```
 
-**Model not showing up?**
-```bash
-# Check model directory
-ls ~/Library/Caches/sam/models/mlx/
-ls ~/Library/Caches/sam/models/gguf/
-# Restart SAM
-```
+**Model not showing up in the model list?**
+- Check that models are in `~/Library/Caches/sam/models/mlx/` or `~/Library/Caches/sam/models/gguf/`
+- Restart SAM after adding new models
 
 **API key issues?**
-- Verify key in Preferences → AI Providers
-- Check provider website for key status
-- Review error messages in conversation
+- Verify your API key in Settings → AI Providers
+- Check that your API key is active on the provider's website
+- Review any error messages in the conversation
+
+### Need More Help?
+
+- **Documentation**: [Website](https://www.syntheticautonomicmind.org) and [project-docs/](project-docs/)
+- **Report Issues**: [GitHub Issues](https://github.com/SyntheticAutonomicMind/SAM/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/SyntheticAutonomicMind/SAM/discussions)
 
 ---
 
-## Technology Stack
+## Technical Details
 
-- **Language**: Swift 6.2.1+
-- **Build Requirements**: Xcode 26.1+, Swift 6.2.1+
-- **UI Framework**: SwiftUI (native macOS)
-- **Server**: Vapor 4 (embedded HTTP/SSE)
-- **Persistence**: SQLite (conversations, memory)
-- **AI Integration**: OpenAI-compatible APIs
-- **Local Models**: MLX (Apple Silicon), llama.cpp
-- **Image Generation**: Stable Diffusion (CoreML + Python)
-- **Concurrency**: Swift 6 strict concurrency enabled
+SAM is built with:
+- **Swift 6** with strict concurrency
+- **SwiftUI** for native macOS interface
+- **Vapor** for embedded HTTP/SSE server
+- **SQLite** for conversation and memory storage
+- **MLX** for Apple Silicon AI models
+- **llama.cpp** for cross-platform AI models
+- **Stable Diffusion** (CoreML + Python) for image generation
 
-### System Requirements
-
-**For Users:**
-- macOS 14.0 (Sonoma) or later
-- Apple Silicon (M1/M2/M3) recommended for local models
-- 8GB RAM minimum, 16GB+ recommended
-- 10GB free disk space (more for local models)
-
-**For Developers:**
-- macOS 14.0+ (Sonoma or later)
-- Xcode 26.1 or later
-- Swift 6.2.1 or later
-- Command Line Tools installed
-- Homebrew (for dependencies like cmake)
+For developers interested in the technical architecture, see [project-docs/](project-docs/).
 
 ---
 
@@ -481,15 +337,15 @@ ls ~/Library/Caches/sam/models/gguf/
 **Website**: https://syntheticautonomicmind.org  
 **Repository**: https://github.com/SyntheticAutonomicMind/SAM
 
-**Built with:**
-- Vapor (Web framework)
-- MLX (Apple machine learning)
-- llama.cpp (LLM inference)
-- Stable Diffusion (Image generation)
-- Sparkle (App updates)
+**Built with open source:**
+- [Vapor](https://vapor.codes) - Web framework
+- [MLX](https://github.com/ml-explore/mlx-swift) - Apple machine learning
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) - LLM inference
+- [Stable Diffusion](https://github.com/apple/ml-stable-diffusion) - Image generation
+- [Sparkle](https://sparkle-project.org) - App updates
 
 Special thanks to all contributors and the Swift/AI communities.
 
 ---
 
-**Ready to get started?** [Download SAM](https://github.com/SyntheticAutonomicMind/SAM/releases) or explore our [documentation](project-docs/) to learn more!
+**Ready to get started?** [Download SAM](https://github.com/SyntheticAutonomicMind/SAM/releases) and experience AI that respects your privacy while getting real work done.
