@@ -26,6 +26,7 @@ public class CivitAIService {
         query: String? = nil,
         limit: Int = 20,
         page: Int = 1,
+        cursor: String? = nil,
         types: [String]? = nil,
         sort: String = "Highest Rated",
         period: String = "AllTime",
@@ -38,21 +39,35 @@ public class CivitAIService {
             URLQueryItem(name: "period", value: period)
         ]
 
-        // CivitAI API: Cannot use page param with query search
-        // Use page-based pagination ONLY when query is empty
-        if let query = query, !query.isEmpty {
-            queryItems.append(URLQueryItem(name: "query", value: query))
-            // Don't include page parameter when using query
+        // CivitAI uses query parameter for authentication, not header
+        if let apiKey = apiKey {
+            queryItems.append(URLQueryItem(name: "token", value: apiKey))
         } else {
-            // Page-based pagination only works without query
-            queryItems.append(URLQueryItem(name: "page", value: "\(page)"))
+            logger.warning("No CivitAI API key configured - may be rate limited")
+        }
+
+        // CivitAI API pagination:
+        // - Use cursor for reliable pagination beyond page ~20
+        // - Fall back to page-based for initial requests
+        if let cursor = cursor {
+            queryItems.append(URLQueryItem(name: "cursor", value: cursor))
+            logger.debug("Using cursor pagination: \(cursor.prefix(50))")
+        } else {
+            // CivitAI API: Cannot use page param with query search
+            // Use page-based pagination ONLY when query is empty AND no cursor
+            if let query = query, !query.isEmpty {
+                queryItems.append(URLQueryItem(name: "query", value: query))
+                // Don't include page parameter when using query
+            } else {
+                // Page-based pagination only works without query
+                queryItems.append(URLQueryItem(name: "page", value: "\(page)"))
+            }
         }
 
         if let types = types, !types.isEmpty {
             queryItems.append(URLQueryItem(name: "types", value: types.joined(separator: ",")))
         }
 
-        /// Only include nsfw parameter if explicitly set
         if let nsfw = nsfw {
             queryItems.append(URLQueryItem(name: "nsfw", value: nsfw ? "true" : "false"))
         }
@@ -67,9 +82,7 @@ public class CivitAIService {
         logger.debug("CivitAI search URL: \(url.absoluteString)")
 
         var request = URLRequest(url: url)
-        if let apiKey = apiKey {
-            request.setValue(apiKey, forHTTPHeaderField: "Authorization")
-        }
+        // Note: Authentication is via query parameter, not header
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -98,11 +111,18 @@ public class CivitAIService {
 
     /// Get detailed information about a specific model
     public func getModelDetails(modelId: Int) async throws -> CivitAIModel {
-        let url = URL(string: "\(baseURL)/models/\(modelId)")!
-        var request = URLRequest(url: url)
+        var components = URLComponents(string: "\(baseURL)/models/\(modelId)")!
+        
+        // CivitAI uses query parameter for authentication, not header
         if let apiKey = apiKey {
-            request.setValue(apiKey, forHTTPHeaderField: "Authorization")
+            components.queryItems = [URLQueryItem(name: "token", value: apiKey)]
         }
+        
+        guard let url = components.url else {
+            throw CivitAIError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -129,6 +149,7 @@ public class CivitAIService {
         baseModel: String? = nil,
         limit: Int = 100,  /// CivitAI API max is 100, not 200
         page: Int = 1,
+        cursor: String? = nil,
         sort: String = "Highest Rated",
         nsfw: Bool? = nil
     ) async throws -> CivitAISearchResponse {
@@ -138,6 +159,7 @@ public class CivitAIService {
             query: query,
             limit: limit,
             page: page,
+            cursor: cursor,
             types: nil,  /// Don't filter by type in API
             sort: sort,
             period: "AllTime",
@@ -149,20 +171,22 @@ public class CivitAIService {
 // MARK: - Data Models
 
 /// Search response from CivitAI
-public struct CivitAISearchResponse: Codable {
+public struct CivitAISearchResponse: Codable, Sendable {
     public let items: [CivitAIModel]
     public let metadata: SearchMetadata?
 
-    public struct SearchMetadata: Codable {
+    public struct SearchMetadata: Codable, Sendable {
         public let totalItems: Int?
         public let currentPage: Int?
         public let pageSize: Int?
         public let totalPages: Int?
+        public let nextCursor: String?
+        public let prevCursor: String?
     }
 }
 
 /// CivitAI model information
-public struct CivitAIModel: Codable, Identifiable, Hashable {
+public struct CivitAIModel: Codable, Identifiable, Hashable, Sendable {
     public let id: Int
     public let name: String
     public let description: String?
@@ -221,12 +245,12 @@ public struct CivitAIModel: Codable, Identifiable, Hashable {
         return false
     }
 
-    public struct Creator: Codable, Hashable {
+    public struct Creator: Codable, Hashable, Sendable {
         public let username: String
         public let image: String?
     }
 
-    public struct ModelVersion: Codable, Identifiable, Hashable {
+    public struct ModelVersion: Codable, Identifiable, Hashable, Sendable {
         public let id: Int
         public let name: String
         public let description: String?
@@ -245,7 +269,7 @@ public struct CivitAIModel: Codable, Identifiable, Hashable {
             lhs.id == rhs.id
         }
 
-        public struct ModelFile: Codable, Hashable {
+        public struct ModelFile: Codable, Hashable, Sendable {
             public let id: Int?
             public let name: String
             public let sizeKB: Double
@@ -254,14 +278,14 @@ public struct CivitAIModel: Codable, Identifiable, Hashable {
             public let hashes: [String: String]?
             public let metadata: FileMetadata?
 
-            public struct FileMetadata: Codable, Hashable {
+            public struct FileMetadata: Codable, Hashable, Sendable {
                 public let format: String?
                 public let size: String?
                 public let fp: String?
             }
         }
 
-        public struct ModelImage: Codable, Identifiable, Hashable {
+        public struct ModelImage: Codable, Identifiable, Hashable, Sendable {
             public let id: Int
             public let url: String
             public let nsfwLevel: Int?
