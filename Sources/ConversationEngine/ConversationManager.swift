@@ -105,7 +105,11 @@ public class ConversationManager: ObservableObject {
         self.vectorRAGService = VectorRAGService(memoryManager: memoryManager)
 
         /// Initialize YaRN Context Processor with default configuration.
-        self.yarnContextProcessor = YaRNContextProcessor(memoryManager: memoryManager)
+        /// Fallback token estimator: ~4 characters per token (standard approximation).
+        self.yarnContextProcessor = YaRNContextProcessor(
+            memoryManager: memoryManager,
+            tokenEstimator: { text in text.count / 4 }
+        )
 
         logger.debug("ConversationManager initializing")
         logger.debug("ConversationManager: Initializing conversation system")

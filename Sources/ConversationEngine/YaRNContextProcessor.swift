@@ -17,6 +17,7 @@ import Logging
 public class YaRNContextProcessor: ObservableObject {
     private let logger = Logger(label: "com.sam.yarn")
     private let memoryManager: MemoryManager
+    private let tokenEstimator: (String) async -> Int
 
     @Published public var isInitialized: Bool = false
     @Published public var contextWindowSize: Int = 32768
@@ -74,8 +75,9 @@ public class YaRNContextProcessor: ObservableObject {
     private var attentionPatterns: [AttentionPattern] = []
 
     // MARK: - Lifecycle
-    public init(memoryManager: MemoryManager, config: YaRNConfig = .universal) {
+    public init(memoryManager: MemoryManager, tokenEstimator: @escaping (String) async -> Int, config: YaRNConfig = .universal) {
         self.memoryManager = memoryManager
+        self.tokenEstimator = tokenEstimator
         self.config = config
         self.contextWindowSize = config.extendedContextLength
 
@@ -115,7 +117,7 @@ public class YaRNContextProcessor: ObservableObject {
         }
 
         /// Step 1: Estimate current token count.
-        let totalTokenCount = estimateContextTokenCount(messages)
+        let totalTokenCount = await estimateContextTokenCount(messages)
         currentTokenCount = totalTokenCount
 
         logger.debug("WARNING: Current context: \(totalTokenCount) tokens")
@@ -173,7 +175,7 @@ public class YaRNContextProcessor: ObservableObject {
         logger.debug("ERROR: Applying YaRN scaling for extended context")
 
         /// Calculate scaling factor based on context length.
-        let currentTokens = estimateContextTokenCount(messages)
+        let currentTokens = await estimateContextTokenCount(messages)
         let scalingRatio = Double(targetTokens) / Double(currentTokens)
         let attentionScale = calculateAttentionScaling(scalingRatio)
 
@@ -220,7 +222,7 @@ public class YaRNContextProcessor: ObservableObject {
             scalingFactor: scalingFactor
         )
 
-        let finalTokenCount = estimateContextTokenCount(finalMessages)
+        let finalTokenCount = await estimateContextTokenCount(finalMessages)
 
         return ProcessedContext(
             conversationId: conversationId,
@@ -288,13 +290,13 @@ public class YaRNContextProcessor: ObservableObject {
         /// Add system messages first.
         for analyzed in systemMessages {
             compressedMessages.append(analyzed.original)
-            currentTokenCount += estimateTokenCount(analyzed.original.content)
+            currentTokenCount += await tokenEstimator(analyzed.original.content)
         }
 
         /// Add important messages if space allows.
         let sortedImportant = importantMessages.sorted { $0.importance > $1.importance }
         for analyzed in sortedImportant {
-            let messageTokens = estimateTokenCount(analyzed.original.content)
+            let messageTokens = await tokenEstimator(analyzed.original.content)
             if currentTokenCount + messageTokens <= targetTokenCount * 80 / 100 {
                 compressedMessages.append(analyzed.original)
                 currentTokenCount += messageTokens
@@ -306,7 +308,7 @@ public class YaRNContextProcessor: ObservableObject {
             /// Skip if already included in system messages to avoid duplicates.
             if !systemMessages.contains(where: { $0.original.id == analyzed.original.id }) {
                 compressedMessages.append(analyzed.original)
-                currentTokenCount += estimateTokenCount(analyzed.original.content)
+                currentTokenCount += await tokenEstimator(analyzed.original.content)
             }
         }
 
@@ -408,26 +410,16 @@ public class YaRNContextProcessor: ObservableObject {
         return averageRelevance
     }
 
-    /// Estimate token count for messages.
-    private func estimateContextTokenCount(_ messages: [Message]) -> Int {
-        return messages.map { estimateTokenCount($0.content) }.reduce(0, +)
-    }
-
-    /// Estimate token count for text.
-    private func estimateTokenCount(_ text: String) -> Int {
-        /// Enhanced token estimation based on YaRN research Accounts for different content types.
-
-        if text.contains("```") {
-            /// Code blocks are more token-dense.
-            return Int(Double(text.count) / 3.0)
-        } else if text.contains("http") {
-            /// URLs are less token-dense.
-            return Int(Double(text.count) / 5.0)
-        } else {
-            /// Regular text.
-            return Int(Double(text.count) / 3.5)
+    /// Estimate token count for messages using accurate token estimation.
+    private func estimateContextTokenCount(_ messages: [Message]) async -> Int {
+        var total = 0
+        for message in messages {
+            total += await tokenEstimator(message.content)
         }
+        return total
     }
+
+
 
     /// Generate base attention patterns for YaRN processing.
     private func generateBaseAttentionPatterns() -> [AttentionPattern] {
@@ -553,12 +545,12 @@ extension YaRNContextProcessor {
 
         let queryContext = "Query: \(query)\n\nRelevant Memory Context:\n"
         contextParts.append(queryContext)
-        currentTokens += estimateTokenCount(queryContext)
+        currentTokens += await tokenEstimator(queryContext)
 
         /// Add memories with YaRN-aware token management.
         for (index, memory) in memories.enumerated() {
             let memoryText = "\n[\(index + 1)] \(memory.content)"
-            let memoryTokens = estimateTokenCount(memoryText)
+            let memoryTokens = await tokenEstimator(memoryText)
 
             if currentTokens + memoryTokens <= maxTokens {
                 contextParts.append(memoryText)
