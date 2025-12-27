@@ -1253,6 +1253,86 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         }
     }
 
+    /// Enforce message alternation (required by GitHub Copilot)
+    /// Merges consecutive same-role messages to prevent token counting errors
+    private func enforceMessageAlternation(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
+        guard !messages.isEmpty else {
+            return messages
+        }
+
+        var result: [OpenAIChatMessage] = []
+        var currentMessage: OpenAIChatMessage?
+
+        for message in messages {
+            if let current = currentMessage {
+                if current.role == message.role {
+                    /// Same role - merge content
+                    let mergedContent: String?
+                    if let currentContent = current.content, let newContent = message.content {
+                        mergedContent = currentContent + "\n\n" + newContent
+                    } else if let currentContent = current.content {
+                        mergedContent = currentContent
+                    } else if let newContent = message.content {
+                        mergedContent = newContent
+                    } else {
+                        mergedContent = nil
+                    }
+
+                    /// Merge tool_calls if both have them
+                    var mergedToolCalls: [OpenAIToolCall]? = current.toolCalls
+                    if let newToolCalls = message.toolCalls {
+                        if mergedToolCalls != nil {
+                            mergedToolCalls?.append(contentsOf: newToolCalls)
+                        } else {
+                            mergedToolCalls = newToolCalls
+                        }
+                    }
+
+                    /// Create merged message using appropriate initializer
+                    if let toolCalls = mergedToolCalls, !toolCalls.isEmpty {
+                        currentMessage = OpenAIChatMessage(
+                            role: current.role,
+                            content: mergedContent,
+                            toolCalls: toolCalls
+                        )
+                    } else if let toolCallId = current.toolCallId ?? message.toolCallId, let content = mergedContent {
+                        currentMessage = OpenAIChatMessage(
+                            role: current.role,
+                            content: content,
+                            toolCallId: toolCallId
+                        )
+                    } else if let content = mergedContent {
+                        currentMessage = OpenAIChatMessage(
+                            role: current.role,
+                            content: content
+                        )
+                    } else {
+                        /// No content and no tool calls - use empty content
+                        currentMessage = OpenAIChatMessage(
+                            role: current.role,
+                            content: ""
+                        )
+                    }
+
+                    logger.debug("MESSAGE_ALTERNATION: Merged consecutive \(current.role) messages")
+                } else {
+                    /// Different role - save current and start new
+                    result.append(current)
+                    currentMessage = message
+                }
+            } else {
+                currentMessage = message
+            }
+        }
+
+        /// Add the last message
+        if let final = currentMessage {
+            result.append(final)
+        }
+
+        return result
+    }
+
     /// Truncate messages for Chat Completions API to fit within Claude token limits Uses actual TokenCounter for accurate token counting instead of estimation.
     private func truncateMessagesForChatCompletions(
         _ messages: [OpenAIChatMessage],
@@ -1388,7 +1468,15 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             logger.debug("CHAT_COMPLETIONS: Including stateful marker for context continuation: \(marker.prefix(20))...")
         }
 
-        let messages = request.messages.map { message in
+        /// MESSAGE_ALTERNATION FIX: Enforce strict user/assistant alternation
+        /// GitHub Copilot requires alternating roles (user → assistant → user → assistant)
+        /// Without this, consecutive same-role messages cause token counting errors
+        let alternationFixedMessages = enforceMessageAlternation(request.messages)
+        if alternationFixedMessages.count != request.messages.count {
+            logger.debug("MESSAGE_ALTERNATION: Applied fix - \(request.messages.count) → \(alternationFixedMessages.count) messages")
+        }
+
+        let messages = alternationFixedMessages.map { message in
             var messageDict: [String: Any] = [
                 "role": message.role
             ]

@@ -137,8 +137,17 @@ public actor TokenCounter {
     /// Get context size for a model First checks API-provided sizes, then model config, then falls back to hardcoded defaults.
     public func getContextSize(modelName: String) -> Int {
         /// PRIORITY 1: Check API-provided context size (most accurate).
+        /// Try full model name first (e.g., "github_copilot/gpt-5-mini").
         if let apiSize = apiContextSizes[modelName] {
             logger.debug("CONTEXT_SIZE: Using API-provided size for '\(modelName)': \(apiSize) tokens")
+            return apiSize
+        }
+        
+        /// Try without provider prefix (e.g., "gpt-5-mini" when cache has "gpt-5-mini").
+        /// GitHub Copilot API returns model names without prefix, but we query with prefix.
+        let modelWithoutProvider = modelName.components(separatedBy: "/").last ?? modelName
+        if modelWithoutProvider != modelName, let apiSize = apiContextSizes[modelWithoutProvider] {
+            logger.debug("CONTEXT_SIZE: Using API-provided size for '\(modelName)' (found as '\(modelWithoutProvider)'): \(apiSize) tokens")
             return apiSize
         }
 
