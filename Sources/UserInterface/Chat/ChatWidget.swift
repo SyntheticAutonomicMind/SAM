@@ -5031,15 +5031,26 @@ public struct ChatWidget: View {
             )
 
             await MainActor.run {
-                /// Check if this is a context size / 400 error
-                let errorDesc = error.localizedDescription
-                let isContextError = errorDesc.contains("400") ||
-                                    errorDesc.lowercased().contains("payload") ||
-                                    errorDesc.lowercased().contains("context") ||
-                                    errorDesc.lowercased().contains("token")
+                /// Log the actual error for debugging BEFORE classification
+                logger.debug("ERROR_CLASSIFICATION: Full error description: \(error.localizedDescription)")
+                
+                /// Check if this is a REAL context/payload size error
+                /// Must be specific to avoid false positives (e.g., "invalid token" auth errors)
+                let errorDesc = error.localizedDescription.lowercased()
+                
+                /// Specific patterns that indicate actual context/payload overflow:
+                /// - "payload too large" or "payload size"
+                /// - "context" + "limit" or "context" + "exceed"
+                /// - "token" + "limit" or "token" + "exceed"
+                /// - "too many tokens" or "maximum context"
+                let isContextError = (errorDesc.contains("payload") && (errorDesc.contains("too large") || errorDesc.contains("size"))) ||
+                                    (errorDesc.contains("context") && (errorDesc.contains("limit") || errorDesc.contains("exceed"))) ||
+                                    (errorDesc.contains("token") && (errorDesc.contains("limit") || errorDesc.contains("exceed"))) ||
+                                    errorDesc.contains("too many tokens") ||
+                                    errorDesc.contains("maximum context")
                 
                 if isContextError {
-                    /// Show user-friendly error notification
+                    /// Show user-friendly error notification ONLY for real context errors
                     apiErrorMessage = """
                     The conversation context has exceeded the API limit.
                     
@@ -5054,7 +5065,9 @@ public struct ChatWidget: View {
                     • The issue may resolve itself (large results are now persisted to disk)
                     """
                     showAPIError = true
-                    logger.error("CONTEXT_OVERFLOW: 400 error detected, showing user notification")
+                    logger.error("CONTEXT_OVERFLOW: Real context error detected - showing user notification. Error: \(errorDesc)")
+                } else {
+                    logger.debug("ERROR_CLASSIFICATION: Not a context error (pattern mismatch)")
                 }
                 
                 if let msgId = assistantMessageId,

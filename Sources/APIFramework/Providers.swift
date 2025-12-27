@@ -1375,39 +1375,20 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         urlRequest.setValue(initiator, forHTTPHeaderField: "X-Initiator")
         logger.debug("X-Initiator: \(initiator) (iteration: \(request.iterationNumber ?? 0))")
 
-        /// Token-aware message truncation for Claude Sonnet 4.5 Strip provider prefix to get actual model name.
+        /// YARN (YaRN Context Processor) handles all context management BEFORE provider
+        /// Provider should NEVER re-truncate - trust YARN compression output
+        /// See AgentOrchestrator.processAllMessagesWithYARN() for context management
         let modelWithoutPrefix = request.model.components(separatedBy: "/").last ?? request.model
-
-        /// Get system prompt for token counting.
-        let systemPrompt = request.messages.first(where: { $0.role == "system" })?.content ?? ""
-
-        /// Apply token-aware truncation using actual TokenCounter.
-        let truncatedMessages: [OpenAIChatMessage]
+        
+        /// Use messages as-is from YARN processing (no provider-level truncation)
+        /// YARN has already compressed context to fit model limits (see AgentOrchestrator line 5202-5218)
+        logger.debug("CHAT_COMPLETIONS: Using YARN-processed messages (\(request.messages.count) messages)")
+        
         if let marker = request.statefulMarker {
-            /// Use stateful marker for context continuation.
-            logger.debug("CHAT_COMPLETIONS: Using stateful truncation with marker=\(marker.prefix(20))...")
-            truncatedMessages = await truncateMessagesForChatCompletions(
-                request.messages,
-                statefulMarker: marker,
-                modelName: modelWithoutPrefix,
-                systemPrompt: systemPrompt,
-                tools: request.tools
-            )
-        } else {
-            /// No marker - just ensure we're within token limits.
-            logger.debug("CHAT_COMPLETIONS: No marker - applying basic token limit check")
-            truncatedMessages = await truncateMessagesForChatCompletions(
-                request.messages,
-                statefulMarker: nil,
-                modelName: modelWithoutPrefix,
-                systemPrompt: systemPrompt,
-                tools: request.tools
-            )
+            logger.debug("CHAT_COMPLETIONS: Including stateful marker for context continuation: \(marker.prefix(20))...")
         }
 
-        logger.debug("CHAT_COMPLETIONS: Message count: \(request.messages.count) → \(truncatedMessages.count)")
-
-        let messages = truncatedMessages.map { message in
+        let messages = request.messages.map { message in
             var messageDict: [String: Any] = [
                 "role": message.role
             ]
@@ -1483,8 +1464,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         if let tools = request.tools {
             let MAX_TOOLS = 128
 
-            /// Determine which tools are actually referenced in the truncated messages.
-            let referencedToolNames = Set(truncatedMessages.compactMap { msg -> [String]? in
+            /// Determine which tools are actually referenced in the messages (YARN-processed).
+            let referencedToolNames = Set(request.messages.compactMap { msg -> [String]? in
                 guard let toolCalls = msg.toolCalls else { return nil }
                 return toolCalls.map { $0.function.name }
             }.flatMap { $0 })
