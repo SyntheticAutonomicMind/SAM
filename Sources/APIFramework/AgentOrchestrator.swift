@@ -312,7 +312,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         let providerType: String
         let modelLower = model.lowercased()
 
-        if modelLower.starts(with: "gpt-") || modelLower.starts(with: "o1-") || modelLower.starts(with: "claude-") {
+        /// Check for explicit provider prefix FIRST (e.g., "github_copilot/gpt-5-mini")
+        if modelLower.contains("github_copilot/") {
+            providerType = "github_copilot"
+        } else if modelLower.starts(with: "gpt-") || modelLower.starts(with: "o1-") || modelLower.starts(with: "claude-") {
+            /// Implicit GitHub Copilot (models without provider prefix)
             providerType = "github_copilot"
         } else if modelLower.starts(with: "openai/") {
             providerType = "openai"
@@ -5196,7 +5200,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.debug("callLLMStreaming: Injected status signal reminder at END of messages (workflow mode enabled)")
         }
 
-        logger.debug("callLLMStreaming: Built complete message array with \(messages.count) messages (before YARN)")
+        logger.debug("callLLMStreaming: Built complete message array with \(messages.count) messages (before alternation fix)")
+
+        /// CRITICAL: Fix message alternation BEFORE YARN compression
+        /// Claude requires strict user/assistant alternation with no empty messages
+        /// This MUST happen before YARN because YARN compresses individual messages
+        /// If we merge AFTER YARN, we concatenate compressed content and blow up token count!
+        messages = ensureMessageAlternation(messages)
+        logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
 
         /// CRITICAL: Get model's actual context limit BEFORE YaRN processing
         /// This ensures YaRN compresses to the correct target for this specific model
@@ -5262,25 +5273,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         /// Inject MCP tools.
         logger.debug("callLLMStreaming: Injecting MCP tools")
-        let requestWithTools = await conversationService.injectMCPToolsIntoRequest(baseRequest)
-
-        /// CRITICAL: Ensure message alternation for Claude API compatibility
-        /// Claude requires strict user/assistant alternation with no empty messages
-        /// Apply this AFTER all message construction is complete but BEFORE sending to API
-        let fixedMessages = ensureMessageAlternation(requestWithTools.messages)
-        let finalRequest = OpenAIChatRequest(
-            model: requestWithTools.model,
-            messages: fixedMessages,
-            temperature: requestWithTools.temperature,
-            maxTokens: requestWithTools.maxTokens,
-            stream: requestWithTools.stream,
-            tools: requestWithTools.tools,
-            samConfig: requestWithTools.samConfig,
-            sessionId: requestWithTools.sessionId,
-            statefulMarker: requestWithTools.statefulMarker,
-            iterationNumber: requestWithTools.iterationNumber
-        )
-        logger.debug("callLLMStreaming: Applied message alternation validation for Claude compatibility")
+        let finalRequest = await conversationService.injectMCPToolsIntoRequest(baseRequest)
 
         /// Validate request size before sending Most timeouts occur because agent sends too much data to API.
         let (estimatedTokens, isSafe, contextLimit) = await validateRequestSize(

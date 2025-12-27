@@ -49,7 +49,11 @@ public struct GitHubCopilotModelInfo: Codable {
 
     /// Get context window size from nested structure.
     public var maxInputTokens: Int? {
-        return capabilities?.limits?.maxContextWindowTokens
+        /// CRITICAL: Use max_prompt_tokens instead of max_context_window_tokens
+        /// GitHub Copilot enforces PROMPT limit, not total context limit.
+        /// Example: gpt-5-mini has 264k context but only 128k prompt tokens allowed.
+        /// Fallback to context window if prompt limit unavailable (older API responses).
+        return capabilities?.limits?.maxPromptTokens ?? capabilities?.limits?.maxContextWindowTokens
     }
 
     public var maxOutputTokens: Int? {
@@ -77,10 +81,12 @@ public struct GitHubCopilotModelInfo: Codable {
         public struct ModelLimits: Codable {
             public let maxContextWindowTokens: Int?
             public let maxOutputTokens: Int?
+            public let maxPromptTokens: Int?
 
             enum CodingKeys: String, CodingKey {
                 case maxContextWindowTokens = "max_context_window_tokens"
                 case maxOutputTokens = "max_output_tokens"
+                case maxPromptTokens = "max_prompt_tokens"
             }
         }
     }
