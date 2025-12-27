@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "20251228.1",
+      "release_date": "December 28, 2025",
+      "introduction": "This update fixes a critical bug that was preventing long conversations from working. If you've seen errors about \"prompt token count exceeds the limit,\" this fixes it! SAM can now properly compress conversations to fit within model limits.",
+      "highlights": [
+        {
+          "id": "yarn-compression-fix",
+          "icon": "arrow.down.square.fill",
+          "title": "Fixed Long Conversation Errors",
+          "description": "Conversations with 100+ messages work again! YARN compression now actually compresses your messages instead of just pretending to, reducing tokens by 60-70%."
+        },
+        {
+          "id": "accurate-token-counting",
+          "icon": "number.square.fill",
+          "title": "Accurate Token Estimation",
+          "description": "SAM now uses real token counting instead of character-based guessing. Estimates are accurate to within 5-10% of what the AI sees."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "github-copilot-limits",
+          "icon": "checkmark.shield.fill",
+          "title": "Respects Model Limits",
+          "description": "GitHub Copilot and other models now get properly sized requests. No more token limit errors - SAM compresses conversations to fit."
+        }
+      ]
+    },
+    {
       "version": "20251225.1",
       "release_date": "December 25, 2025",
       "introduction": "This update brings major improvements to CivitAI model browsing with smarter caching, multi-page loading, and fixed API authentication. Browse thousands of Stable Diffusion models efficiently without hammering the API.",
