@@ -123,6 +123,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Initialize YARN processor with mega 128M token profile for massive document workflows.
         self.yarnProcessor = YaRNContextProcessor(
             memoryManager: conversationManager.memoryManager,
+            tokenEstimator: { [weak tokenCounter] text in
+                guard let tokenCounter = tokenCounter else { return text.count / 4 }
+                return await tokenCounter.estimateTokensRemote(text: text)
+            },
             config: .mega
         )
     }
