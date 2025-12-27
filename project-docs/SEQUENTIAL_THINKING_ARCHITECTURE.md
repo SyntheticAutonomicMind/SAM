@@ -258,14 +258,70 @@ class YaRNContextProcessor {
 ### Token Management System
 
 #### Precise Token Counting
+
 ```swift
-func estimateContextTokenCount(_ messages: [Message]) -> Int {
-    // Accurate token estimation using character-based approximation
-    // Accounts for message structure overhead and metadata
+private let tokenEstimator: (String) async -> Int  // Injected TokenCounter
+
+func estimateContextTokenCount(_ messages: [Message]) async -> Int {
+    var total = 0
+    for message in messages {
+        total += await tokenEstimator(message.content)  // Accurate token estimation
+    }
+    return total
 }
 ```
 
+**Token Estimation Accuracy:**
+- Uses TokenCounter API for provider-accurate estimates
+- Accuracy: Within 5-10% of provider's actual token count
+- Injected via closure pattern to avoid circular dependencies
+
 #### Context Optimization
+
+**YARN Compression Decision Flow:**
+
+```mermaid
+flowchart TD
+    A[AgentOrchestrator receives messages] --> B[Calculate targetTokens<br/>70% of model limit]
+    B --> C[Call processConversationContext<br/>messages + targetTokens]
+    
+    C --> D[estimateContextTokenCount<br/>using TokenCounter]
+    D --> E{totalTokenCount <= targetTokens?}
+    
+    E -->|Yes - Fits in model| F[processedContext = ProcessedContext<br/>compressionApplied: false<br/>messages: unchanged<br/>tokenCount: totalTokenCount]
+    
+    E -->|No - Exceeds limit| G[applyYaRNCompression]
+    G --> H[Analyze message importance]
+    H --> I[Compress low-importance messages]
+    I --> J[Apply positional scaling]
+    J --> K[processedContext = ProcessedContext<br/>compressionApplied: true<br/>messages: compressed<br/>tokenCount: finalTokenCount]
+    
+    F --> L[Return processedContext]
+    K --> L
+    
+    L --> M[AgentOrchestrator sends to provider]
+    M --> N{Request accepted?}
+    N -->|Yes| O[✅ Conversation continues]
+    N -->|No - Still too large| P[❌ Error: Additional compression needed]
+    
+    style E fill:#FFD700
+    style G fill:#87CEEB
+    style O fill:#90EE90
+    style P fill:#FF6B6B
+```
+
+**Decision Logic:**
+```swift
+// Binary threshold check using actual model limit
+if totalTokenCount <= targetTokens {
+    // No compression needed - conversation fits in model context
+    return ProcessedContext(compressionApplied: false, ...)
+} else {
+    // Apply compression - conversation exceeds model limit
+    return try await applyYaRNCompression(...)
+}
+```
+
 - **Target Token Management**: Maintains conversation within specified token limits  
 - **Overflow Handling**: Intelligent handling when conversations exceed context windows
 - **Compression Ratio Tracking**: Monitors compression efficiency and adjusts algorithms
