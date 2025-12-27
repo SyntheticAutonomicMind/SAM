@@ -125,7 +125,7 @@ public class YaRNContextProcessor: ObservableObject {
         /// Step 2: Apply YaRN processing based on token count.
         let processedContext: ProcessedContext
 
-        if totalTokenCount <= config.baseContextLength {
+        if totalTokenCount <= targetTokens {
             /// Direct processing - no compression needed.
             processedContext = ProcessedContext(
                 conversationId: conversationId,
@@ -134,14 +134,6 @@ public class YaRNContextProcessor: ObservableObject {
                 compressionApplied: false,
                 attentionScaling: 1.0,
                 processingMethod: .direct
-            )
-
-        } else if totalTokenCount <= config.extendedContextLength {
-            /// Apply YaRN scaling without compression.
-            processedContext = try await applyYaRNScaling(
-                messages: messages,
-                conversationId: conversationId,
-                targetTokens: targetTokens
             )
 
         } else {
