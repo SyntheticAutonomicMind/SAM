@@ -3,33 +3,33 @@
     {
       "version": "20251227.1",
       "release_date": "December 27, 2025",
-      "introduction": "This update fixes critical bugs including long conversation errors and Sparkle update version detection. If you've seen errors about \"prompt token count exceeds the limit,\" this fixes it! SAM can now properly compress conversations to fit within model limits.",
+      "introduction": "This update fixes critical issues affecting long conversations and the automatic update system. SAM now properly handles conversations with hundreds of messages and won't incorrectly suggest updates when you're already on the latest version.",
       "highlights": [
         {
           "id": "yarn-compression-fix",
           "icon": "arrow.down.square.fill",
-          "title": "Fixed Long Conversation Errors",
-          "description": "Conversations with 100+ messages work again! YARN compression now actually compresses your messages instead of just pretending to, reducing tokens by 60-70%."
+          "title": "Long Conversation Support Fixed",
+          "description": "Resolved token limit errors in extended conversations. YARN compression now properly reduces message sizes by 60-70%, allowing conversations to continue without interruption."
         },
         {
           "id": "accurate-token-counting",
           "icon": "number.square.fill",
-          "title": "Accurate Token Estimation",
-          "description": "SAM now uses real token counting instead of character-based guessing. Estimates are accurate to within 5-10% of what the AI sees."
+          "title": "Improved Token Estimation",
+          "description": "Token counts now use the actual tokenizer instead of character-based approximations, providing estimates accurate to within 5-10% of model limits."
         },
         {
           "id": "sparkle-versioning-fix",
           "icon": "arrow.clockwise.circle.fill",
-          "title": "Fixed Update Version Detection",
-          "description": "Sparkle now correctly compares version numbers. No more phantom update prompts when you're already on the latest release!"
+          "title": "Update Detection Corrected",
+          "description": "Fixed an issue where the update checker would prompt for updates even when already on the current version."
         }
       ],
       "improvements": [
         {
           "id": "github-copilot-limits",
           "icon": "checkmark.shield.fill",
-          "title": "Respects Model Limits",
-          "description": "GitHub Copilot and other models now get properly sized requests. No more token limit errors - SAM compresses conversations to fit."
+          "title": "Model Limit Compliance",
+          "description": "Requests to GitHub Copilot and other providers now respect model context limits, with automatic conversation compression when needed."
         }
       ]
     },
