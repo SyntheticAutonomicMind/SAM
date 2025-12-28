@@ -293,12 +293,13 @@ public class ConversationMessageBus: ObservableObject {
         logger.debug("COMPLETE_STREAMING: id=\(id.uuidString.prefix(8)), metrics=\(performanceMetrics != nil)")
     }
 
-    /// Update non-streaming message (for tool completions, status changes, content parts)
-    /// Use this for updating tool messages after execution completes or adding images to messages
+    /// Update non-streaming message (for tool completions, status changes, content parts, tool calls)
+    /// Use this for updating tool messages after execution completes or adding images/tool calls to messages
     public func updateMessage(
         id: UUID,
         content: String? = nil,
         contentParts: [MessageContentPart]? = nil,
+        toolCalls: [SimpleToolCall]? = nil,
         status: ToolStatus? = nil,
         duration: TimeInterval? = nil
     ) {
@@ -324,7 +325,7 @@ public class ConversationMessageBus: ObservableObject {
             toolCategory: current.toolCategory,
             parentToolName: current.parentToolName,
             toolMetadata: current.toolMetadata,
-            toolCalls: current.toolCalls,
+            toolCalls: toolCalls ?? current.toolCalls,
             toolCallId: current.toolCallId,
             processingTime: current.processingTime,
             reasoningContent: current.reasoningContent,
@@ -344,7 +345,7 @@ public class ConversationMessageBus: ObservableObject {
         /// PERFORMANCE: Use delta sync for single message update
         notifyConversationOfMessageUpdate(id: id, index: index, message: updated)
 
-        logger.debug("UPDATE_MESSAGE: id=\(id.uuidString.prefix(8)) status=\(status?.rawValue ?? "nil") duration=\(duration != nil ? String(format: "%.2f", duration!) : "nil") hasParts=\(contentParts != nil)")
+        logger.debug("UPDATE_MESSAGE: id=\(id.uuidString.prefix(8)) status=\(status?.rawValue ?? "nil") duration=\(duration != nil ? String(format: "%.2f", duration!) : "nil") hasParts=\(contentParts != nil) toolCalls=\(toolCalls?.count ?? 0)")
     }
 
     /// Remove a message by ID

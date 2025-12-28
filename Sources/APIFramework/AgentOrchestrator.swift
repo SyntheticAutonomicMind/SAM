@@ -3024,9 +3024,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                                            context.lastResponse == "Running terminal command" ||
                                                            context.lastResponse.contains("Getting terminal history")
 
-                                /// Save if: (1) NOT tool progress, AND ((2) has statefulMarker OR (3) substantial content).
-                                if !context.lastResponse.isEmpty && !isToolProgressMessage && (hasStatefulMarker || isSubstantial) {
-                                    logger.debug("DEBUG_WORKFLOW_STREAMING: iteration=\(context.iteration), toolsExecutedInWorkflow=\(context.toolsExecutedInWorkflow), lastResponse.count=\(context.lastResponse.count), lastFinishReason=\(context.lastFinishReason), hasStatefulMarker=\(hasStatefulMarker)")
+                                /// Save if: (1) NOT tool progress, AND ((2) has tool calls OR (3) has statefulMarker OR (4) substantial content).
+                                let hasToolCalls = llmResponse.toolCalls != nil && !llmResponse.toolCalls!.isEmpty
+                                if (hasToolCalls || (!context.lastResponse.isEmpty && !isToolProgressMessage && (hasStatefulMarker || isSubstantial))) {
+                                    logger.debug("DEBUG_WORKFLOW_STREAMING: iteration=\(context.iteration), toolsExecutedInWorkflow=\(context.toolsExecutedInWorkflow), lastResponse.count=\(context.lastResponse.count), lastFinishReason=\(context.lastFinishReason), hasStatefulMarker=\(hasStatefulMarker), hasToolCalls=\(hasToolCalls)")
 
                                     /// Check for duplicate before adding (prevents duplicate thinking messages).
                                     let isDuplicate = conversation.messages.contains(where: {
@@ -3034,10 +3035,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                     })
 
                                     if !isDuplicate {
-                                        logger.debug("DEBUG_MISSING_RESPONSE: Adding response to conversation (finish_reason=\(context.lastFinishReason))")
+                                        logger.debug("DEBUG_MISSING_RESPONSE: Adding response to conversation (finish_reason=\(context.lastFinishReason), hasToolCalls=\(hasToolCalls))")
                                         logger.debug("BILLING_DEBUG: About to add message with githubCopilotResponseId=\(context.currentStatefulMarker?.prefix(20) ?? "nil"), length=\(context.lastResponse.count)")
                                         let cleanedResponse = stripSystemReminders(from: context.lastResponse)
-                                        if !cleanedResponse.isEmpty {
+                                        if !cleanedResponse.isEmpty || hasToolCalls {
                                             /// REMOVED: Duplicate message creation - MessageBus already created this during streaming
                                             /// conversation.addMessage(text: cleanedResponse, isUser: false, githubCopilotResponseId: context.currentStatefulMarker)
                                             /// PERSISTENCE FIX: Save immediately after adding message to prevent data loss.
@@ -3058,9 +3059,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                         logger.warning("DEBUG_MISSING_RESPONSE: SKIPPED - Duplicate response detected in conversation")
                                         logger.debug("SKIPPED: Duplicate LLM response content already in conversation")
                                     }
-                                } else if context.lastResponse.count <= 5 {
-                                    /// Only skip VERY short responses (likely thinking indicators or single characters).
-                                    logger.debug("DEBUG_MISSING_RESPONSE: SKIPPED - Response too short (\(context.lastResponse.count) chars), likely just thinking indicator")
+                                } else if context.lastResponse.count <= 5 && !hasToolCalls {
+                                    /// Only skip VERY short responses WITHOUT tool calls (likely thinking indicators or single characters).
+                                    logger.debug("DEBUG_MISSING_RESPONSE: SKIPPED - Response too short (\(context.lastResponse.count) chars) with no tool calls, likely just thinking indicator")
                                 } else {
                                     logger.warning("DEBUG_MISSING_RESPONSE: SKIPPED - context.lastResponse is empty")
                                 }
@@ -5693,6 +5694,35 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Content was already updated via updateStreamingMessage() calls during chunking
         /// If no assistant message was created (only tool calls), skip completion
         if let msgId = assistantMessageId {
+            /// CRITICAL: Add toolCalls metadata to message BEFORE completing
+            /// This fixes Gemini (and other providers) tool call message format
+            /// Without this, tool calls appear as plain text instead of proper metadata
+            if let toolCalls = finalToolCalls, !toolCalls.isEmpty {
+                /// Convert ToolCall to SimpleToolCall for message storage
+                let simpleToolCalls = toolCalls.map { toolCall -> SimpleToolCall in
+                    /// Serialize arguments dict back to JSON string for SimpleToolCall
+                    let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments)
+                    let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                    
+                    return SimpleToolCall(
+                        id: toolCall.id,
+                        type: "function",
+                        function: SimpleFunctionCall(
+                            name: toolCall.name,
+                            arguments: argsString
+                        )
+                    )
+                }
+                
+                /// Update message with toolCalls metadata
+                conversation.messageBus?.updateMessage(
+                    id: msgId,
+                    toolCalls: simpleToolCalls
+                )
+                
+                logger.debug("MESSAGEBUS_TOOLCALLS: Added \(simpleToolCalls.count) tool calls to message id=\(msgId.uuidString.prefix(8))")
+            }
+            
             conversation.messageBus?.completeStreamingMessage(
                 id: msgId
             )

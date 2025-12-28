@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "version": "20260101.1",
+      "release_date": "January 1, 2026",
+      "introduction": "This update adds comprehensive Google Gemini API support with full pricing visibility and rate limit notifications, plus critical bug fixes for document imports, long conversations, and update detection.",
+      "highlights": [
+        {
+          "id": "gemini-api-support",
+          "icon": "sparkles",
+          "title": "Google Gemini API Integration",
+          "description": "Full support for Google Gemini models with automatic metadata discovery, pricing display, and rate limit notifications. Gemini models now show accurate context sizes and costs in the UI."
+        },
+        {
+          "id": "document-import-path-fix",
+          "icon": "doc.text.fill",
+          "title": "Document Import Path Resolution Fixed",
+          "description": "Agents can now correctly import documents using relative paths like 'book/file.md' without encountering authorization errors. Paths are properly resolved against the workspace directory."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "gemini-pricing-display",
+          "icon": "dollarsign.circle.fill",
+          "title": "Gemini Cost Visibility",
+          "description": "All Gemini models now display pricing information ($X/$Y/1M format) with helpful tooltips explaining input/output costs per million tokens."
+        },
+        {
+          "id": "gemini-rate-limits",
+          "icon": "clock.fill",
+          "title": "Rate Limit Notifications",
+          "description": "When Gemini rate limits are hit, SAM now shows an alert with the retry countdown instead of silently waiting."
+        },
+        {
+          "id": "non-chat-model-filtering",
+          "icon": "line.3.horizontal.decrease.circle.fill",
+          "title": "Smart Model Filtering",
+          "description": "Image and video generation models (Imagen, Veo) are automatically filtered from the chat picker. These will be integrated with Stable Diffusion UI in future updates."
+        },
+        {
+          "id": "workspace-file-access",
+          "icon": "folder.fill",
+          "title": "Improved Workspace File Access",
+          "description": "Document import operations now use consistent path resolution, ensuring agents have seamless access to files within their designated workspace."
+        }
+      ]
+    },
+    {
       "version": "20251227.1",
       "release_date": "December 27, 2025",
       "introduction": "This update fixes critical issues affecting long conversations and the automatic update system. SAM now properly handles conversations with hundreds of messages and won't incorrectly suggest updates when you're already on the latest version.",

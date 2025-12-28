@@ -18,6 +18,13 @@ extension Notification.Name {
 
     /// Posted when ALICE remote models are loaded and available.
     public static let aliceModelsLoaded = Notification.Name("com.sam.alice.modelsLoaded")
+    
+    /// Posted when a provider hits rate limit and is waiting to retry.
+    /// userInfo contains: "retryAfterSeconds" (Double), "providerName" (String)
+    public static let providerRateLimitHit = Notification.Name("com.sam.provider.rateLimitHit")
+    
+    /// Posted when rate limit retry is complete and request is being retried.
+    public static let providerRateLimitRetrying = Notification.Name("com.sam.provider.rateLimitRetrying")
 }
 
 /// Comprehensive endpoint manager for multi-provider AI integrations Handles routing requests to different AI providers (OpenAI, Anthropic, GitHub Copilot, DeepSeek, custom) with fallback chains, load balancing, and response normalization to OpenAI format.
@@ -93,6 +100,15 @@ public class EndpointManager: ObservableObject {
         }
 
         return try await githubProvider.fetchModelCapabilities()
+    }
+    
+    /// Get model capabilities (context sizes) from Gemini API Returns dictionary of modelId -> inputTokenLimit.
+    public func getGeminiModelCapabilities() async throws -> [String: Int]? {
+        guard let geminiProvider = providers.values.first(where: { $0.config.providerType == .gemini }) as? GeminiProvider else {
+            return nil
+        }
+
+        return try await geminiProvider.fetchModelCapabilities()
     }
 
     /// Get billing information for a specific GitHub Copilot model
@@ -682,6 +698,15 @@ public class EndpointManager: ObservableObject {
                 models: []
             )
 
+        case .gemini:
+            return ProviderConfiguration(
+                providerId: "gemini",
+                providerType: .gemini,
+                isEnabled: false,
+                baseURL: "https://generativelanguage.googleapis.com/v1beta",
+                models: []
+            )
+
         case .localLlama:
             return ProviderConfiguration(
                 providerId: "local-llama",
@@ -724,6 +749,9 @@ public class EndpointManager: ObservableObject {
 
         case .deepseek:
             return DeepSeekProvider(config: config)
+
+        case .gemini:
+            return GeminiProvider(config: config)
 
         case .localLlama:
             /// Local llama providers must specify model path - use addLocalModelProvider() instead.

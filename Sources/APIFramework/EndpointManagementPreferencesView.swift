@@ -275,6 +275,7 @@ struct ProviderConfigurationRow: View {
         case .anthropic: return "message"
         case .githubCopilot: return "chevron.left.forwardslash.chevron.right"
         case .deepseek: return "magnifyingglass"
+        case .gemini: return "globe"
         case .localLlama: return "laptopcomputer"
         case .localMLX: return "flame"
         case .custom: return "gear"
@@ -287,6 +288,7 @@ struct ProviderConfigurationRow: View {
         case .anthropic: return .orange
         case .githubCopilot: return .purple
         case .deepseek: return .indigo
+        case .gemini: return .blue
         case .localLlama: return .cyan
         case .localMLX: return .orange
         case .custom: return .gray

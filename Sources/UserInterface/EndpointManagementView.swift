@@ -263,6 +263,9 @@ struct EndpointManagementView: View {
         case .deepseek:
             return "Get your API key from platform.deepseek.com"
 
+        case .gemini:
+            return "Get your API key from aistudio.google.com"
+
         case .localLlama:
             return "No API key required - local models loaded from ~/Library/Caches/sam/models"
 
@@ -408,6 +411,7 @@ struct ProviderRowView: View {
         case .anthropic: return "message"
         case .githubCopilot: return "arrow.triangle.branch"
         case .deepseek: return "magnifyingglass"
+        case .gemini: return "globe"
         case .localLlama: return "laptopcomputer"
         case .localMLX: return "flame"
         case .custom: return "gear"
@@ -741,7 +745,9 @@ struct ProviderConfigurationSheet: View {
             retryCount = provider.retryCount.map(String.init) ?? "2"
         } else {
             /// Initialize with defaults for new provider.
-            providerId = providerType.defaultIdentifier
+            /// Generate unique ID for new providers by adding timestamp suffix
+            let timestamp = Int(Date().timeIntervalSince1970)
+            providerId = "\(providerType.defaultIdentifier)-\(timestamp)"
             baseURL = providerType.defaultBaseURL ?? ""
             models = providerType.defaultModels.joined(separator: ", ")
         }
@@ -815,9 +821,11 @@ struct ProviderConfigurationSheet: View {
             apiKey = ""
         }
 
-        /// Update provider ID to match the new type (unless user has customized it).
-        if providerId.isEmpty || providerId == "openai" || providerId == providerType.defaultIdentifier {
-            providerId = newType.defaultIdentifier
+        /// Update provider ID to match the new type ONLY if this is a new provider being created
+        /// Don't update if editing an existing provider (provider != nil)
+        if provider == nil {
+            let timestamp = Int(Date().timeIntervalSince1970)
+            providerId = "\(newType.defaultIdentifier)-\(timestamp)"
         }
     }
 
@@ -853,6 +861,9 @@ struct ProviderConfigurationSheet: View {
 
         case .deepseek:
             return "Get your API key from DeepSeek's developer platform"
+
+        case .gemini:
+            return "Create an API key at aistudio.google.com"
 
         case .localLlama:
             return "No API key required for local models - models are loaded from ~/Library/Caches/sam/models"
@@ -895,8 +906,18 @@ struct ProviderConfigurationSheet: View {
     private func fetchModelsFromProvider() async throws -> [String] {
         let modelsURL = baseURL.hasSuffix("/models") ? baseURL : "\(baseURL)/models"
 
-        guard let url = URL(string: modelsURL) else {
+        guard var url = URL(string: modelsURL) else {
             throw URLError(.badURL)
+        }
+
+        /// For Gemini, add API key as query parameter
+        if providerType == .gemini && !apiKey.isEmpty {
+            if var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+                if let urlWithKey = components.url {
+                    url = urlWithKey
+                }
+            }
         }
 
         var request = URLRequest(url: url)
@@ -914,6 +935,10 @@ struct ProviderConfigurationSheet: View {
 
             case .githubCopilot:
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+            case .gemini:
+                /// Gemini uses API key as query parameter (already added to URL above)
+                break
 
             case .localLlama, .localMLX:
                 /// No authentication required for local providers.
@@ -943,6 +968,16 @@ struct ProviderConfigurationSheet: View {
             for item in dataArray {
                 if let id = item["id"] as? String {
                     modelIds.append(id)
+                }
+            }
+        }
+        /// Try Gemini format (models array with name field in format "models/model-name").
+        else if providerType == .gemini, let modelsArray = json["models"] as? [[String: Any]] {
+            for item in modelsArray {
+                if let name = item["name"] as? String {
+                    /// Gemini returns names like "models/gemini-pro" - extract just the model name
+                    let modelName = name.replacingOccurrences(of: "models/", with: "")
+                    modelIds.append(modelName)
                 }
             }
         }

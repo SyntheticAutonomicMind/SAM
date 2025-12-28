@@ -179,6 +179,7 @@ public enum ProviderType: String, CaseIterable, Codable {
     case anthropic = "anthropic"
     case githubCopilot = "github-copilot"
     case deepseek = "deepseek"
+    case gemini = "gemini"
     case localLlama = "local-llama"
     case localMLX = "local-mlx"
     case custom = "custom"
@@ -189,6 +190,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .anthropic: return "Anthropic"
         case .githubCopilot: return "GitHub Copilot"
         case .deepseek: return "DeepSeek"
+        case .gemini: return "Google Gemini"
         case .localLlama: return "Local Models (llama.cpp)"
         case .localMLX: return "Local Models (MLX)"
         case .custom: return "Custom"
@@ -206,6 +208,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .anthropic: return "anthropic"
         case .githubCopilot: return "github_copilot"
         case .deepseek: return "deepseek"
+        case .gemini: return "gemini"
         case .localLlama: return "llama"
         case .localMLX: return "mlx"
         case .custom: return "custom"
@@ -215,7 +218,7 @@ public enum ProviderType: String, CaseIterable, Codable {
     public var requiresApiKey: Bool {
         switch self {
         case .localLlama, .localMLX: return false
-        case .openai, .anthropic, .githubCopilot, .deepseek, .custom: return true
+        case .openai, .anthropic, .githubCopilot, .deepseek, .gemini, .custom: return true
         }
     }
 
@@ -225,6 +228,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .anthropic: return "https://api.anthropic.com"
         case .githubCopilot: return "https://api.githubcopilot.com"
         case .deepseek: return "https://api.deepseek.com/v1"
+        case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
         case .localLlama, .localMLX, .custom: return nil
         }
     }
@@ -242,6 +246,9 @@ public enum ProviderType: String, CaseIterable, Codable {
 
         case .deepseek:
             return ["deepseek-chat", "deepseek-coder"]
+
+        case .gemini:
+            return []
 
         case .localLlama:
             return []
@@ -265,6 +272,9 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .deepseek:
             return "d.circle.fill"
 
+        case .gemini:
+            return "g.circle.fill"
+
         case .localLlama:
             return "laptopcomputer"
         case .localMLX:
@@ -287,6 +297,9 @@ public enum ProviderType: String, CaseIterable, Codable {
 
         case .deepseek:
             return .red
+
+        case .gemini:
+            return .blue
 
         case .localLlama:
             return .cyan

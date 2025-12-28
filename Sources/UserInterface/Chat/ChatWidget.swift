@@ -212,6 +212,11 @@ public struct ChatWidget: View {
     /// API error notification
     @State private var showAPIError = false
     @State private var apiErrorMessage = ""
+    
+    /// Rate limit notification
+    @State private var showRateLimitAlert = false
+    @State private var rateLimitMessage = ""
+    @State private var rateLimitRetrySeconds: Double = 0
 
     /// Stable Diffusion model management.
     @StateObject private var sdModelManager = StableDiffusionModelManager()
@@ -351,6 +356,13 @@ public struct ChatWidget: View {
             } message: {
                 Text(apiErrorMessage)
             }
+            .alert("Rate Limited", isPresented: $showRateLimitAlert) {
+                Button("OK", role: .cancel) {
+                    showRateLimitAlert = false
+                }
+            } message: {
+                Text(rateLimitMessage)
+            }
             .onChange(of: showingMemoryPanel) { _, newValue in
                 savePanelState(panel: "memory", value: newValue)
                 if newValue { loadMemoryStatistics() }
@@ -459,17 +471,7 @@ public struct ChatWidget: View {
             }
 
             /// Initialize cost display for current model on first load
-            let modelIdForBilling = selectedModel.contains("/") ? String(selectedModel.split(separator: "/").last ?? "") : selectedModel
-            let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: modelIdForBilling)
-            if let multiplier = billingInfo?.multiplier {
-                if multiplier.truncatingRemainder(dividingBy: 1) == 0 {
-                    currentModelCost = String(format: "%.0fx", multiplier)
-                } else {
-                    currentModelCost = String(format: "%.2fx", multiplier)
-                }
-            } else {
-                currentModelCost = "0x"
-            }
+            currentModelCost = getCostDisplay(for: selectedModel)
             logger.info("CHATWIDGET INIT: selectedModel=\(selectedModel), cost=\(currentModelCost)")
 
             /// Setup voice manager callbacks via bridge
@@ -507,6 +509,32 @@ public struct ChatWidget: View {
                 Task {
                     await loadAvailableModels()
                 }
+            }
+            
+            /// Listen for rate limit notifications
+            NotificationCenter.default.addObserver(
+                forName: .providerRateLimitHit,
+                object: nil,
+                queue: .main
+            ) { notification in
+                guard let userInfo = notification.userInfo,
+                      let retrySeconds = userInfo["retryAfterSeconds"] as? Double,
+                      let providerName = userInfo["providerName"] as? String else {
+                    return
+                }
+                
+                rateLimitRetrySeconds = retrySeconds
+                rateLimitMessage = "\(providerName) rate limit reached. Retrying in \(Int(retrySeconds)) seconds..."
+                showRateLimitAlert = true
+            }
+            
+            /// Listen for rate limit retry
+            NotificationCenter.default.addObserver(
+                forName: .providerRateLimitRetrying,
+                object: nil,
+                queue: .main
+            ) { _ in
+                showRateLimitAlert = false
             }
 
             /// Auto-focus input box when chat opens.
@@ -790,20 +818,7 @@ public struct ChatWidget: View {
             preloadModel()
 
             /// Update cost display for quota header
-            /// Strip provider prefix if present (e.g., "github_copilot/claude-sonnet-4.5" → "claude-sonnet-4.5")
-            let modelIdForBilling = newValue.contains("/") ? String(newValue.split(separator: "/").last ?? "") : newValue
-            let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: modelIdForBilling)
-
-            /// Format cost: "1x" for whole numbers, "0.33x" for decimals
-            if let multiplier = billingInfo?.multiplier {
-                if multiplier.truncatingRemainder(dividingBy: 1) == 0 {
-                    currentModelCost = String(format: "%.0fx", multiplier)
-                } else {
-                    currentModelCost = String(format: "%.2fx", multiplier)
-                }
-            } else {
-                currentModelCost = "0x"
-            }
+            currentModelCost = getCostDisplay(for: newValue)
 
             /// Check loading status for local models.
             Task {
@@ -1223,9 +1238,25 @@ public struct ChatWidget: View {
 
                         HStack(spacing: 4) {
                             /// Cost display (always shown)
-                            Text("Cost: \(currentModelCost)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            Group {
+                                /// Format cost with "per 1M" suffix for pricing display
+                                let formattedCost: String = {
+                                    if currentModelCost == "0x" || currentModelCost.hasSuffix("x") {
+                                        return currentModelCost  // Keep multiplier format as-is
+                                    } else if currentModelCost.contains("/") {
+                                        return "\(currentModelCost)/1M"  // Add per-million suffix
+                                    } else {
+                                        return currentModelCost
+                                    }
+                                }()
+                                
+                                Text("Cost: \(formattedCost)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .help(currentModelCost.contains("/") 
+                                ? "Cost per million tokens (input/output)"
+                                : "Cost multiplier (0x = free)")
 
                             /// Quota status (GitHub Copilot only)
                             if isGitHubCopilot, let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() {
@@ -3210,27 +3241,53 @@ public struct ChatWidget: View {
                     }
                 }
 
-                /// If local read failed or it's a remote model, try GitHub Copilot API.
+                /// If local read failed, try provider-specific APIs for remote models.
                 if maxTokens == nil {
-                    if let capabilities = try await endpointManager.getGitHubCopilotModelCapabilities() {
-                        logger.debug("GitHub Copilot API returned capabilities: \(capabilities.keys.joined(separator: ", "))")
-
-                        /// Try exact match first.
-                        if let apiTokens = capabilities[selectedModel] {
-                            maxTokens = apiTokens
-                            logger.debug("Read context size from API (exact match): \(apiTokens/1000)k tokens")
-                        } else {
-                            /// Try without provider prefix (github_copilot/gpt-4 → gpt-4).
+                    /// Check if this is a Gemini model (gemini/ prefix)
+                    if selectedModel.hasPrefix("gemini/") {
+                        if let capabilities = try await endpointManager.getGeminiModelCapabilities() {
                             let modelWithoutProvider = selectedModel.components(separatedBy: "/").last ?? selectedModel
                             if let apiTokens = capabilities[modelWithoutProvider] {
                                 maxTokens = apiTokens
-                                logger.debug("Read context size from API (stripped prefix): \(apiTokens/1000)k tokens for \(modelWithoutProvider)")
+                                logger.debug("Read context size from Gemini API: \(apiTokens/1000)k tokens for \(modelWithoutProvider)")
                             } else {
-                                logger.warning("Model \(selectedModel) not found in GitHub Copilot capabilities (tried '\(selectedModel)' and '\(modelWithoutProvider)')")
+                                logger.debug("Gemini model \(modelWithoutProvider) not found in API response")
                             }
+                        } else {
+                            logger.debug("Gemini API returned nil capabilities")
                         }
-                    } else {
-                        logger.debug("GitHub Copilot API returned nil capabilities")
+                    }
+                    /// Try GitHub Copilot API for github_copilot/ models
+                    else if selectedModel.hasPrefix("github_copilot/") {
+                        if let capabilities = try await endpointManager.getGitHubCopilotModelCapabilities() {
+                            logger.debug("GitHub Copilot API returned capabilities: \(capabilities.keys.joined(separator: ", "))")
+
+                            /// Try exact match first.
+                            if let apiTokens = capabilities[selectedModel] {
+                                maxTokens = apiTokens
+                                logger.debug("Read context size from API (exact match): \(apiTokens/1000)k tokens")
+                            } else {
+                                /// Try without provider prefix (github_copilot/gpt-4 → gpt-4).
+                                let modelWithoutProvider = selectedModel.components(separatedBy: "/").last ?? selectedModel
+                                if let apiTokens = capabilities[modelWithoutProvider] {
+                                    maxTokens = apiTokens
+                                    logger.debug("Read context size from API (stripped prefix): \(apiTokens/1000)k tokens for \(modelWithoutProvider)")
+                                } else {
+                                    logger.warning("Model \(selectedModel) not found in GitHub Copilot capabilities (tried '\(selectedModel)' and '\(modelWithoutProvider)')")
+                                }
+                            }
+                        } else {
+                            logger.debug("GitHub Copilot API returned nil capabilities")
+                        }
+                    }
+                }
+                
+                /// If still not found via provider APIs, try model_config.json as fallback.
+                if maxTokens == nil {
+                    let modelWithoutProvider = selectedModel.components(separatedBy: "/").last ?? selectedModel
+                    if let contextWindow = ModelConfigurationManager.shared.getContextWindow(for: modelWithoutProvider) {
+                        maxTokens = contextWindow
+                        logger.debug("Read context size from model_config.json (fallback): \(contextWindow/1000)k tokens for \(modelWithoutProvider)")
                     }
                 }
 
@@ -5256,9 +5313,27 @@ public struct ChatWidget: View {
                         uniqueModelIds.append(modelId)
                     }
                 }
+                
+                /// Filter out non-chat models that don't belong in the chat picker
+                /// - Gemini image generation: imagen-*
+                /// - Gemini video generation: veo-*
+                /// - Gemini text-only (not chat): gemma-*
+                /// These will be integrated with Stable Diffusion UI in the future
+                let chatModelsOnly = uniqueModelIds.filter { modelId in
+                    let baseId = modelId.split(separator: "/").last.map(String.init) ?? modelId
+                    let isNonChatModel = baseId.hasPrefix("imagen-") || 
+                                       baseId.hasPrefix("veo-") ||
+                                       baseId.hasPrefix("gemma-")
+                    
+                    if isNonChatModel {
+                        logger.debug("Filtering non-chat model from picker: \(modelId)")
+                    }
+                    
+                    return !isNonChatModel
+                }
 
                 /// Sort models: Free (0x) first, then Premium, both alphabetical within tier
-                let sortedModels = uniqueModelIds.sorted { model1, model2 in
+                let sortedModels = chatModelsOnly.sorted { model1, model2 in
                     /// Extract base model ID for billing lookup
                     let base1 = model1.split(separator: "/").last.map(String.init) ?? model1
                     let base2 = model2.split(separator: "/").last.map(String.init) ?? model2
@@ -6607,6 +6682,34 @@ public struct ChatWidget: View {
             return toolName.isEmpty ? nil : toolName
         }
         return nil
+    }
+
+    // MARK: - Helper Functions
+    
+    /// Get cost display string for a model
+    /// Tries GitHub Copilot billing first, then falls back to model_config.json
+    private func getCostDisplay(for modelName: String) -> String {
+        /// Strip provider prefix for billing lookup
+        let baseModelId = modelName.contains("/") ? String(modelName.split(separator: "/").last ?? "") : modelName
+        
+        /// Priority 1: GitHub Copilot billing info (multiplier system)
+        if let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: baseModelId) {
+            if let multiplier = billingInfo.multiplier {
+                if multiplier.truncatingRemainder(dividingBy: 1) == 0 {
+                    return String(format: "%.0fx", multiplier)
+                } else {
+                    return String(format: "%.2fx", multiplier)
+                }
+            }
+        }
+        
+        /// Priority 2: model_config.json pricing
+        if let costString = ModelConfigurationManager.shared.getCostDisplayString(for: baseModelId) {
+            return costString
+        }
+        
+        /// Default: assume free
+        return "0x"
     }
 
     // MARK: - UI Setup
