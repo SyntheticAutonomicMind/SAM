@@ -1,9 +1,9 @@
 {
   "releases": [
     {
-      "version": "20251228.1",
-      "release_date": "December 28, 2025",
-      "introduction": "This update fixes a critical bug that was preventing long conversations from working. If you've seen errors about \"prompt token count exceeds the limit,\" this fixes it! SAM can now properly compress conversations to fit within model limits.",
+      "version": "20251227.1",
+      "release_date": "December 27, 2025",
+      "introduction": "This update fixes critical bugs including long conversation errors and Sparkle update version detection. If you've seen errors about \"prompt token count exceeds the limit,\" this fixes it! SAM can now properly compress conversations to fit within model limits.",
       "highlights": [
         {
           "id": "yarn-compression-fix",
@@ -16,6 +16,12 @@
           "icon": "number.square.fill",
           "title": "Accurate Token Estimation",
           "description": "SAM now uses real token counting instead of character-based guessing. Estimates are accurate to within 5-10% of what the AI sees."
+        },
+        {
+          "id": "sparkle-versioning-fix",
+          "icon": "arrow.clockwise.circle.fill",
+          "title": "Fixed Update Version Detection",
+          "description": "Sparkle now correctly compares version numbers. No more phantom update prompts when you're already on the latest release!"
         }
       ],
       "improvements": [
