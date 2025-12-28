@@ -246,9 +246,12 @@ public class DocumentOperationsTool: ConsolidatedMCP, ToolDisplayInfoProvider, @
                 /// Already a proper URL.
                 urlString = path
             } else {
-                /// Plain file path - convert to file:// URL Handle tilde expansion.
-                let expandedPath = (path as NSString).expandingTildeInPath
-                urlString = "file://\(expandedPath)"
+                /// Plain file path - resolve against working directory to get absolute path
+                /// This ensures relative paths like "book/file.md" are resolved correctly
+                /// before being converted to file:// URLs.
+                let resolvedPath = MCPAuthorizationGuard.resolvePath(path, workingDirectory: context.workingDirectory)
+                /// Create file:// URL with absolute path (will have 3 slashes: file:///...)
+                urlString = "file://\(resolvedPath)"
             }
 
             mappedParameters["url"] = urlString
