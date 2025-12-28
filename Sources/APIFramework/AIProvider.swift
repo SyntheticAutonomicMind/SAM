@@ -115,7 +115,7 @@ public struct ResponseNormalizer {
     ) throws -> ServerOpenAIChatResponse {
 
         switch providerType {
-        case .openai, .localLlama, .localMLX:
+        case .openai, .localLlama, .localMLX, .gemini:
             /// Already in OpenAI format or uses OpenAI format.
             if let openAIResponse = providerResponse as? ServerOpenAIChatResponse {
                 return openAIResponse

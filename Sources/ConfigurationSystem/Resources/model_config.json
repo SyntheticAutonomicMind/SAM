@@ -287,6 +287,160 @@
       "supports_stateful_marker": true,
       "context_window": 128000,
       "requires_alternating_messages": false
+    },
+    "gemini-2.5-flash": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0,
+      "cost_per_million_output_tokens": 0
+    },
+    "gemini-2.5-flash-paid": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.30,
+      "cost_per_million_output_tokens": 2.50
+    },
+    "gemini-2.5-pro": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0,
+      "cost_per_million_output_tokens": 0
+    },
+    "gemini-2.5-pro-paid": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 1.25,
+      "cost_per_million_output_tokens": 10.00
+    },
+    "gemini-2.0-flash": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0,
+      "cost_per_million_output_tokens": 0
+    },
+    "gemini-2.0-flash-paid": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.10,
+      "cost_per_million_output_tokens": 0.40
+    },
+    "gemini-3-flash-preview": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0,
+      "cost_per_million_output_tokens": 0
+    },
+    "gemini-3-flash-preview-paid": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.50,
+      "cost_per_million_output_tokens": 3.00
+    },
+    "gemini-3-pro-preview": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 2.00,
+      "cost_per_million_output_tokens": 12.00
+    },
+    "gemini-1.5-pro": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 2000000,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0,
+      "cost_per_million_output_tokens": 0
+    },
+    "gemini-1.5-flash": {
+      "provider": "gemini",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0,
+      "cost_per_million_output_tokens": 0
     }
   },
   "provider_defaults": {

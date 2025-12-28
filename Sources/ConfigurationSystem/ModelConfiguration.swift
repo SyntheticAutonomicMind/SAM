@@ -30,6 +30,10 @@ public struct ModelConfig: Codable {
     public let supportsStatefulMarker: Bool
     public let contextWindow: Int
     public let requiresAlternatingMessages: Bool
+    
+    /// Pricing information (per million tokens)
+    public let costPerMillionInputTokens: Double?
+    public let costPerMillionOutputTokens: Double?
 
     enum CodingKeys: String, CodingKey {
         case provider
@@ -38,6 +42,8 @@ public struct ModelConfig: Codable {
         case supportsStatefulMarker = "supports_stateful_marker"
         case contextWindow = "context_window"
         case requiresAlternatingMessages = "requires_alternating_messages"
+        case costPerMillionInputTokens = "cost_per_million_input_tokens"
+        case costPerMillionOutputTokens = "cost_per_million_output_tokens"
     }
 
     /// Check if this model uses cumulative deltas (like Claude)
@@ -48,6 +54,34 @@ public struct ModelConfig: Codable {
     /// Check if this model needs XML tag formatting
     public var usesXMLTags: Bool {
         return promptFormat.useXMLTags
+    }
+    
+    /// Get cost display string for UI
+    public var costDisplayString: String {
+        guard let inputCost = costPerMillionInputTokens,
+              let outputCost = costPerMillionOutputTokens else {
+            return "-"
+        }
+        
+        /// Free tier check
+        if inputCost == 0 && outputCost == 0 {
+            return "0x"
+        }
+        
+        /// Paid tier - show simplified cost
+        /// Format: "$0.10/$0.40" (input/output per million)
+        return "$\(formatCost(inputCost))/$\(formatCost(outputCost))"
+    }
+    
+    /// Format cost value, removing unnecessary decimals
+    private func formatCost(_ cost: Double) -> String {
+        if cost.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.0f", cost)
+        } else if cost < 1 {
+            return String(format: "%.2f", cost)
+        } else {
+            return String(format: "%.1f", cost)
+        }
     }
 }
 
@@ -222,5 +256,16 @@ public class ModelConfigurationManager {
             return config.contextWindow
         }
         return nil
+    }
+    
+    /// Get cost display string for a model
+    /// - Parameter modelName: Full model name
+    /// - Returns: Cost display string (e.g., "0x", "$0.10/$0.40", or nil if not configured)
+    public func getCostDisplayString(for modelName: String) -> String? {
+        guard let config = getConfiguration(for: modelName) else {
+            return nil
+        }
+        let costString = config.costDisplayString
+        return costString == "-" ? nil : costString
     }
 }
