@@ -12,6 +12,26 @@
             <description><![CDATA[
                 <h2>What's New in SAM 20251227.1</h2>
                 <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251227.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sun, 28 Dec 2025 11:30:55 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251227.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20251227.1/SAM-20251227.1.zip"
+                sparkle:version="20251227.1"
+                sparkle:shortVersionString="20251227.1"
+                sparkle:edSignature="FNRGB2Pe7lMnx8eTfTR46LiPdXYx9VqiTffP5NZcmxsJGSsgHdADNsDE7Hix0N/FxZQZVTJtrjSh5hHLX/tNCQ=="
+                length="798607889"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20251227.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20251227.1</h2>
+                <ul>
                     <li>Fixed Sparkle update versioning bug</li>
                     <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251227.1">GitHub Releases</a> for details</li>
                 </ul>
