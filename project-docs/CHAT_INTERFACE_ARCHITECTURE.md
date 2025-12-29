@@ -115,6 +115,57 @@ struct StreamingMessageInput: View {
 - Keyboard shortcuts and accessibility
 - Placeholder for future attachment support
 
+### 6. Session Intelligence Toolbar (Context Visibility)
+**Purpose**: Provide visibility into agent's knowledge and context state
+**Location**: `Sources/UserInterface/Chat/ChatWidget.swift` (sessionIntelligencePanel)
+**Pattern**: VStack with three distinct sections
+
+```swift
+struct SessionIntelligencePanel: View {
+    // Memory Status section
+    // Context Management section  
+    // Enhanced Search section with multi-source capabilities
+}
+```
+
+**Key Features**:
+
+**Memory Status Section**:
+- Total stored memories with type breakdown (interactions, facts, preferences, etc.)
+- Memory access statistics (total accesses, average importance)
+- Memory span indicator (days between oldest and newest memories)
+- Clear memories action button
+
+**Context Management Section**:
+- Active context window usage (current tokens / max tokens with percentage)
+- YaRN compression status indicator (compression ratio, active/inactive state)
+- Archived context statistics (chunk count, total archived tokens)
+- Archive topic preview (top 5 topics from archived chunks)
+
+**Enhanced Multi-Source Search**:
+- **Stored Search**: Vector RAG semantic search across stored memories in database
+- **Active Search**: Text matching in current conversation messages (real-time context)
+- **Archive Search**: Query archived context chunks via ContextArchiveManager
+- **Combined Search**: Parallel search across all three sources with unified results
+- Source-specific toggle controls (enable/disable each search mode independently)
+- Result display with source badges (STORED/ACTIVE/ARCHIVE)
+- Color-coded results (green for stored, blue for active, orange for archive)
+
+**Integration Points**:
+- `ConversationManager.getActiveConversationMemoryStats()` - Memory statistics
+- `ConversationManager.getActiveConversationArchiveStats()` - Archive data
+- `ConversationManager.getYaRNContextStats()` - Context window statistics
+- `MemoryManager.retrieveRelevantMemories()` - Stored search
+- `ContextArchiveManager.recallHistory()` - Archive search
+- Active message search via conversation.messages array
+
+**User Experience**:
+- Collapsible panel accessed via brain icon in toolbar
+- Real-time updates when switching conversations or shared topics
+- Clear visual separation between sections with dividers
+- Tooltips and help text for all interactive elements
+- Graceful degradation when data unavailable (shows "No data" messages)
+
 ## Integration with Existing Components
 
 ### Leveraging Completed Streaming Implementation
