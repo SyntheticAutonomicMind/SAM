@@ -3,13 +3,19 @@
     {
       "version": "20260101.1",
       "release_date": "January 1, 2026",
-      "introduction": "This update adds comprehensive Google Gemini API support with full pricing visibility and rate limit notifications, plus critical bug fixes for document imports, long conversations, and update detection.",
+      "introduction": "This update adds comprehensive Google Gemini API support with full pricing visibility and rate limit notifications, plus significant terminal improvements for shared topics and critical bug fixes for document imports, long conversations, and update detection.",
       "highlights": [
         {
           "id": "gemini-api-support",
           "icon": "sparkles",
           "title": "Google Gemini API Integration",
           "description": "Full support for Google Gemini models with automatic metadata discovery, pricing display, and rate limit notifications. Gemini models now show accurate context sizes and costs in the UI."
+        },
+        {
+          "id": "terminal-auto-restart",
+          "icon": "terminal.fill",
+          "title": "Terminal Auto-Restart on Directory Change",
+          "description": "Terminal now automatically restarts when switching shared topics, ensuring the terminal is always in the correct directory. Running processes are gracefully terminated and the session is recreated with a clean state."
         },
         {
           "id": "document-import-path-fix",
@@ -19,6 +25,12 @@
         }
       ],
       "improvements": [
+        {
+          "id": "terminal-dead-session-recovery",
+          "icon": "arrow.clockwise",
+          "title": "Terminal Session Recovery",
+          "description": "Terminal now detects when shell processes exit (e.g., after 'exit' or 'logout') and automatically restarts the session when Reset is clicked, eliminating 'errno 5' errors."
+        },
         {
           "id": "gemini-pricing-display",
           "icon": "dollarsign.circle.fill",
