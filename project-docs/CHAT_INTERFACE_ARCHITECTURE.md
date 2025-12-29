@@ -131,33 +131,38 @@ struct SessionIntelligencePanel: View {
 **Key Features**:
 
 **Memory Status Section**:
-- Total stored memories with type breakdown (interactions, facts, preferences, etc.)
+- Total stored memories (count)
 - Memory access statistics (total accesses, average importance)
 - Memory span indicator (days between oldest and newest memories)
 - Clear memories action button
 
-**Context Management Section**:
-- Active context window usage (current tokens / max tokens with percentage)
-- YaRN compression status indicator (compression ratio, active/inactive state)
-- Archived context statistics (chunk count, total archived tokens)
-- Archive topic preview (top 5 topics from archived chunks)
+**Intelligence Activity Section** (replaces Context Management):
+- **Telemetry Tracking**: Real-time counters for agent intelligence operations
+  - Archive Recalls: How many times agent fetched from archived context (via recall_history tool)
+  - Memory Searches: How many times agent searched RAG database (via retrieveRelevantMemories)
+  - YaRN Compressions: How many times context was compressed to fit API limits
+- **Context Statistics**:
+  - Active Tokens: Current conversation token count (calculated from messages)
+  - Archived Chunks: Number of archived context chunks
+  - Archived Tokens: Total tokens in archived chunks
+- **Archive Topics**: Top 5 topics from archived chunks (when available)
+- **Compact 2x3 Grid Layout**: Space-efficient display of all statistics
 
-**Enhanced Multi-Source Search**:
+**Enhanced Search Section**:
 - **Stored Search**: Vector RAG semantic search across stored memories in database
-- **Active Search**: Text matching in current conversation messages (real-time context)
-- **Archive Search**: Query archived context chunks via ContextArchiveManager
-- **Combined Search**: Parallel search across all three sources with unified results
-- Source-specific toggle controls (enable/disable each search mode independently)
-- Result display with source badges (STORED/ACTIVE/ARCHIVE)
-- Color-coded results (green for stored, blue for active, orange for archive)
+- **Active/Archive Search**: Disabled pending backend support for ConversationMemory creation from UI
+- Single-source search with real-time results
+- Result display with enhanced memory item view showing content preview
 
 **Integration Points**:
 - `ConversationManager.getActiveConversationMemoryStats()` - Memory statistics
 - `ConversationManager.getActiveConversationArchiveStats()` - Archive data
-- `ConversationManager.getYaRNContextStats()` - Context window statistics
+- `ConversationManager.getContextStats(for:)` - Per-conversation token counts
+- `ConversationManager.incrementArchiveRecall()` - Telemetry tracking
+- `ConversationManager.incrementMemoryRetrieval()` - Telemetry tracking
+- `ConversationManager.incrementCompressionEvent()` - Telemetry tracking
 - `MemoryManager.retrieveRelevantMemories()` - Stored search
-- `ContextArchiveManager.recallHistory()` - Archive search
-- Active message search via conversation.messages array
+- `conversation.settings.telemetry` - Persisted telemetry counters
 
 **User Experience**:
 - Collapsible panel accessed via brain icon in toolbar

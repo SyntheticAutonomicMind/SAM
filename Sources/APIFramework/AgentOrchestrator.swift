@@ -4588,6 +4588,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                     /// Update yarnCompressed flag since we just compressed again
                     yarnCompressed = true
+                    
+                    /// Track compression telemetry
+                    await conversationManager.incrementCompressionEvent(for: conversationId)
 
                     /// Rebuild request with compressed messages
                     /// Need to create new baseRequest with compressed messages
@@ -7395,6 +7398,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             "compression_active": "\(stats.isCompressionActive)",
             "method": "\(processedContext.processingMethod)"
         ])
+        
+        /// Track compression telemetry if compression was applied
+        if processedContext.compressionApplied {
+            await conversationManager.incrementCompressionEvent(for: conversationId)
+        }
 
         return processedMessages
     }

@@ -155,22 +155,34 @@ Users can inspect and search agent memory through the Session Intelligence toolb
 #### Statistics Display
 
 **Memory Status:**
-- Total stored memories with type breakdown (interactions, facts, preferences, tasks, documents)
+- Total stored memories (count)
 - Memory access count and average importance scores
 - Memory span (temporal range from oldest to newest memory)
+- Clear memories action button
 
-**Context Management:**
-- Active context window usage (current tokens / maximum tokens with percentage)
-- YaRN compression status and ratio
-- Compression state indicator (active/inactive)
-- Archived context statistics (chunk count, total tokens archived)
-- Archive topic preview (top 5 topics)
+**Intelligence Activity** (replaces Context Management):
+- **Real-time Telemetry Tracking**:
+  - Archive Recalls: Count of recall_history tool executions (agent fetching from archives)
+  - Memory Searches: Count of RAG database queries (agent searching stored memories)
+  - YaRN Compressions: Count of context compression events (when hitting API token limits)
+- **Context Statistics**:
+  - Active Tokens: Current conversation token count (estimated from messages)
+  - Archived Chunks: Number of archived context chunks
+  - Archived Tokens: Total tokens stored in archives
+- **Archive Topics**: Top 5 topics from archived chunks (when available)
+- **Compact 2x3 Grid Layout**: All statistics visible in space-efficient display
+
+**Telemetry Persistence**:
+- Stored in `conversation.settings.telemetry` (ConversationTelemetry struct)
+- Automatically persisted with conversation JSON
+- Backward compatible (defaults to zero for old conversations)
+- Updated in real-time as agent performs operations
 
 **User Benefits:**
-- Complete visibility into what the agent knows
-- Ability to verify information sources (stored vs. active vs. archive)
-- Understanding of context limits and compression state
-- Discovery of relevant information across all knowledge layers
+- Complete visibility into agent intelligence activity
+- Understanding of how often agent accesses different knowledge sources
+- Awareness of context compression events (performance insights)
+- Discovery of archived content through topic preview
 
 #### Memory Configuration Through Conversation
 ```swift

@@ -5,6 +5,38 @@ import Foundation
 import ConfigurationSystem
 import Combine
 
+// MARK: - Conversation Telemetry
+
+/// Tracks intelligence system usage statistics for Session Intelligence UI.
+/// Provides visibility into memory, archive, and context operations.
+public struct ConversationTelemetry: Codable, Sendable {
+    /// Archive recalls - how many times agent fetched from archived context
+    public var archiveRecallCount: Int = 0
+    
+    /// Memory retrievals - how many times agent searched stored memories
+    public var memoryRetrievalCount: Int = 0
+    
+    /// YaRN compression events - how many times context was compressed
+    public var compressionEventCount: Int = 0
+    
+    /// Context window overflow events - how many times we hit token limits
+    public var contextOverflowCount: Int = 0
+    
+    /// Last telemetry update timestamp
+    public var lastUpdated: Date = Date()
+    
+    public init() {}
+    
+    /// Reset all counters (for testing or user request)
+    public mutating func reset() {
+        archiveRecallCount = 0
+        memoryRetrievalCount = 0
+        compressionEventCount = 0
+        contextOverflowCount = 0
+        lastUpdated = Date()
+    }
+}
+
 // MARK: - Conversation Settings
 
 public struct ConversationSettings: Codable, Sendable {
@@ -51,6 +83,9 @@ public struct ConversationSettings: Codable, Sendable {
     public var showingWorkingDirectoryPanel: Bool
     public var showAdvancedParameters: Bool
     public var showingPerformanceMetrics: Bool
+    
+    /// Telemetry for Session Intelligence UI - tracks memory/archive/compression usage
+    public var telemetry: ConversationTelemetry
 
     public init(
         selectedModel: String = UserDefaults.standard.string(forKey: "defaultModel") ?? "gpt-4",
@@ -87,7 +122,8 @@ public struct ConversationSettings: Codable, Sendable {
         showingTerminalPanel: Bool = false,
         showingWorkingDirectoryPanel: Bool = false,
         showAdvancedParameters: Bool = false,
-        showingPerformanceMetrics: Bool = false
+        showingPerformanceMetrics: Bool = false,
+        telemetry: ConversationTelemetry = ConversationTelemetry()
     ) {
         self.selectedModel = selectedModel
         self.temperature = temperature
@@ -126,6 +162,7 @@ public struct ConversationSettings: Codable, Sendable {
         self.showingWorkingDirectoryPanel = showingWorkingDirectoryPanel
         self.showAdvancedParameters = showAdvancedParameters
         self.showingPerformanceMetrics = showingPerformanceMetrics
+        self.telemetry = telemetry
 
         /// Default to SAM Default system prompt if none specified This ensures guard rails are always active in API calls and UI.
         if let providedPromptId = selectedSystemPromptId {
@@ -149,6 +186,7 @@ public struct ConversationSettings: Codable, Sendable {
         case sdEngine, sdDevice, sdUpscaleModel
         case sdStrength, sdInputImagePath
         case showingMemoryPanel, showingTerminalPanel, showingWorkingDirectoryPanel, showAdvancedParameters, showingPerformanceMetrics
+        case telemetry
     }
 
     public init(from decoder: Decoder) throws {
@@ -209,6 +247,9 @@ public struct ConversationSettings: Codable, Sendable {
         showingWorkingDirectoryPanel = try container.decodeIfPresent(Bool.self, forKey: .showingWorkingDirectoryPanel) ?? false
         showAdvancedParameters = try container.decodeIfPresent(Bool.self, forKey: .showAdvancedParameters) ?? false
         showingPerformanceMetrics = try container.decodeIfPresent(Bool.self, forKey: .showingPerformanceMetrics) ?? false
+        
+        /// Telemetry - default to empty if not present (for old conversations)
+        telemetry = try container.decodeIfPresent(ConversationTelemetry.self, forKey: .telemetry) ?? ConversationTelemetry()
     }
 }
 
