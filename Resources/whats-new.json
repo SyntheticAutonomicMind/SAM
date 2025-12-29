@@ -6,6 +6,12 @@
       "introduction": "This update adds comprehensive Google Gemini API support with full pricing visibility and rate limit notifications, plus significant terminal improvements for shared topics and critical bug fixes for document imports, long conversations, and update detection.",
       "highlights": [
         {
+          "id": "session-intelligence-toolbar",
+          "icon": "brain",
+          "title": "Session Intelligence Toolbar",
+          "description": "New toolbar provides real-time visibility into agent intelligence activity. Track archive recalls, memory searches, and YaRN compressions as they happen, plus view active token counts and archived context statistics."
+        },
+        {
           "id": "gemini-api-support",
           "icon": "sparkles",
           "title": "Google Gemini API Integration",
@@ -25,6 +31,24 @@
         }
       ],
       "improvements": [
+        {
+          "id": "intelligence-telemetry",
+          "icon": "chart.bar.fill",
+          "title": "Real-Time Intelligence Telemetry",
+          "description": "Session Intelligence toolbar tracks and displays live counters for archive recalls (recall_history tool), memory searches (RAG queries), and YaRN compression events. Provides complete visibility into agent's knowledge access patterns."
+        },
+        {
+          "id": "per-conversation-tokens",
+          "icon": "number.circle.fill",
+          "title": "Accurate Per-Conversation Token Counts",
+          "description": "Active token counts now calculated from actual conversation messages instead of global YaRN state, showing precise token usage for each conversation."
+        },
+        {
+          "id": "compact-stats-layout",
+          "icon": "square.grid.2x2.fill",
+          "title": "Space-Efficient Statistics Display",
+          "description": "Intelligence Activity section uses a compact 2x3 grid layout showing archive recalls, memory searches, compressions, active tokens, archived chunks, and archived tokens in minimal space."
+        },
         {
           "id": "terminal-dead-session-recovery",
           "icon": "arrow.clockwise",
