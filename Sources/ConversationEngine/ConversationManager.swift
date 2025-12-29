@@ -1349,6 +1349,23 @@ public class ConversationManager: ObservableObject {
         }
     }
 
+    /// Get archive statistics for active conversation (for Session Intelligence UI).
+    public func getActiveConversationArchiveStats() async -> MemoryMap? {
+        guard let conversation = activeConversation else { return nil }
+
+        do {
+            return try await contextArchiveManager.getMemoryMap(conversationId: conversation.id)
+        } catch {
+            logger.debug("No archive data for conversation: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Get YaRN context statistics (for Session Intelligence UI).
+    public func getYaRNContextStats() -> ContextStatistics {
+        return yarnContextProcessor.getContextStatistics()
+    }
+
     // MARK: - MCP Tool Methods
 
     /// Execute an MCP tool in the context of the active conversation.
