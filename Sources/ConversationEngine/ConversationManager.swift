@@ -1264,6 +1264,10 @@ public class ConversationManager: ObservableObject {
                 similarityThreshold: 0.4
             )
             logger.debug("MEMORY_TOOL_CALL: Retrieved \(memories.count) relevant memories for query: \(query.prefix(50)) (ACTUAL TOOL CALL EXECUTION)")
+            
+            // Track memory retrieval in telemetry
+            incrementMemoryRetrieval(for: conversationId)
+            
             return memories
         } catch {
             logger.error("Failed to retrieve memories: \(error)")
@@ -1327,6 +1331,9 @@ public class ConversationManager: ObservableObject {
                 limit: 5,
                 similarityThreshold: 0.3
             )
+            
+            // Track memory retrieval in telemetry
+            incrementMemoryRetrieval(for: conversationId)
 
             if relevantMemories.isEmpty {
                 return ""
@@ -1364,6 +1371,58 @@ public class ConversationManager: ObservableObject {
     /// Get YaRN context statistics (for Session Intelligence UI).
     public func getYaRNContextStats() -> ContextStatistics {
         return yarnContextProcessor.getContextStatistics()
+    }
+
+    /// Get context statistics for a specific conversation.
+    /// This calculates the actual token count from the conversation's messages.
+    public func getContextStats(for conversation: ConversationModel) -> ContextStatistics {
+        /// Calculate total tokens from all messages in conversation
+        let totalTokens = conversation.messages.reduce(0) { sum, message in
+            sum + estimateTokenCount(message.content)
+        }
+
+        /// Get context window size from YaRN processor
+        let globalStats = yarnContextProcessor.getContextStatistics()
+
+        /// Return conversation-specific stats
+        return ContextStatistics(
+            cacheSize: globalStats.cacheSize,
+            currentTokenCount: totalTokens,
+            contextWindowSize: globalStats.contextWindowSize,
+            compressionRatio: globalStats.compressionRatio,
+            attentionScalingFactor: globalStats.attentionScalingFactor,
+            isCompressionActive: globalStats.isCompressionActive
+        )
+    }
+    
+    // MARK: - Telemetry Tracking
+    
+    /// Increment archive recall telemetry for a conversation.
+    public func incrementArchiveRecall(for conversationId: UUID) {
+        guard let conversation = conversations.first(where: { $0.id == conversationId }) else { return }
+        conversation.settings.telemetry.archiveRecallCount += 1
+        conversation.settings.telemetry.lastUpdated = Date()
+    }
+    
+    /// Increment memory retrieval telemetry for a conversation.
+    public func incrementMemoryRetrieval(for conversationId: UUID) {
+        guard let conversation = conversations.first(where: { $0.id == conversationId }) else { return }
+        conversation.settings.telemetry.memoryRetrievalCount += 1
+        conversation.settings.telemetry.lastUpdated = Date()
+    }
+    
+    /// Increment compression event telemetry for a conversation.
+    public func incrementCompressionEvent(for conversationId: UUID) {
+        guard let conversation = conversations.first(where: { $0.id == conversationId }) else { return }
+        conversation.settings.telemetry.compressionEventCount += 1
+        conversation.settings.telemetry.lastUpdated = Date()
+    }
+    
+    /// Increment context overflow telemetry for a conversation.
+    public func incrementContextOverflow(for conversationId: UUID) {
+        guard let conversation = conversations.first(where: { $0.id == conversationId }) else { return }
+        conversation.settings.telemetry.contextOverflowCount += 1
+        conversation.settings.telemetry.lastUpdated = Date()
     }
 
     // MARK: - MCP Tool Methods
@@ -1434,6 +1493,14 @@ public class ConversationManager: ObservableObject {
         do {
             let result = try await mcpManager.executeTool(name: name, parameters: parameters, context: context)
             logger.debug("Executed MCP tool \(name): success=\(result.success), toolCallId=\(toolCallId ?? "none")")
+            
+            // Track telemetry for specific tools
+            if result.success {
+                if name == "recall_history" || name == "recall_history_by_time" {
+                    incrementArchiveRecall(for: conversation.id)
+                }
+            }
+            
             return result
         } catch {
             logger.error("Failed to execute MCP tool \(name): \(error)")

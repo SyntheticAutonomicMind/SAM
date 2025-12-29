@@ -401,7 +401,7 @@ public struct ChatWidget: View {
 
         if showingMemoryPanel {
             Divider()
-            memoryManagementPanel
+            sessionIntelligencePanel
         }
 
         if showingWorkingDirectoryPanel {
@@ -920,10 +920,10 @@ public struct ChatWidget: View {
 
     // MARK: - UI Setup
 
-    private var memoryManagementPanel: some View {
+    private var sessionIntelligencePanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Conversation Memory")
+                Text("Session Intelligence")
                     .font(.headline)
                     .foregroundColor(.primary)
 
@@ -937,19 +937,60 @@ public struct ChatWidget: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Close memory panel")
+                .help("Close Session Intelligence panel")
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
 
-            /// Memory statistics.
+            /// SECTION 1: Memory Status
+            memoryStatusSection
+                .padding(.horizontal, 16)
+
+            Divider()
+                .padding(.horizontal, 16)
+
+            /// SECTION 2: Context Management
+            contextManagementSection
+                .padding(.horizontal, 16)
+
+            Divider()
+                .padding(.horizontal, 16)
+
+            /// SECTION 3: Enhanced Search
+            enhancedSearchSection
+                .padding(.horizontal, 16)
+        }
+        .padding(.bottom, 8)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .onAppear {
+            loadMemoryStatistics()
+        }
+        .onChange(of: activeConversation?.id) { _, _ in
+            loadMemoryStatistics()
+            conversationMemories.removeAll()
+            memorySearchQuery = ""
+        }
+        .onChange(of: activeConversation?.settings.sharedTopicId) { _, _ in
+            loadMemoryStatistics()
+            conversationMemories.removeAll()
+            memorySearchQuery = ""
+        }
+    }
+
+    private var memoryStatusSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("MEMORY STATUS")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+
             if let stats = memoryStatistics {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(stats.totalMemories)")
                             .font(.title3)
                             .fontWeight(.semibold)
-                        Text("Memories")
+                        Text("Total Stored")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -973,6 +1014,25 @@ public struct ChatWidget: View {
                     }
 
                     Spacer()
+                }
+
+                /// Memory span and clear button
+                HStack {
+                    if let oldest = stats.oldestMemory, let newest = stats.newestMemory {
+                        let span = newest.timeIntervalSince(oldest)
+                        let days = Int(span / 86400)
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Memory span: \(days) days")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Spacer()
 
                     Button("Clear Memories") {
                         clearConversationMemories()
@@ -981,67 +1041,174 @@ public struct ChatWidget: View {
                     .controlSize(.small)
                     .help("Remove all stored memories from this conversation")
                 }
-                .padding(.horizontal, 16)
+            } else {
+                Text("No memory statistics available")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
+        }
+    }
 
-            /// Memory search.
+    private var contextManagementSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("INTELLIGENCE ACTIVITY")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+
+            if let conversation = activeConversation {
+                let telemetry = conversation.settings.telemetry
+                
+                /// Compact 2x3 grid of stats
+                VStack(spacing: 8) {
+                    HStack(spacing: 12) {
+                        statBox(value: "\(telemetry.archiveRecallCount)", label: "Archive Recalls")
+                        statBox(value: "\(telemetry.memoryRetrievalCount)", label: "Memory Searches")
+                        statBox(value: "\(telemetry.compressionEventCount)", label: "Compressions")
+                    }
+                    
+                    HStack(spacing: 12) {
+                        if let context = contextStatistics {
+                            statBox(value: formatTokenCount(context.currentTokenCount), label: "Active Tokens")
+                        } else {
+                            statBox(value: "—", label: "Active Tokens")
+                        }
+                        
+                        if let archive = archiveStatistics, archive.totalChunks > 0 {
+                            statBox(value: "\(archive.totalChunks)", label: "Archived Chunks")
+                            statBox(value: formatTokenCount(archive.totalTokensArchived), label: "Archived Tokens")
+                        } else {
+                            statBox(value: "0", label: "Archived Chunks")
+                            statBox(value: "0", label: "Archived Tokens")
+                        }
+                    }
+                }
+
+                /// Archive topics (if available)
+                if let archive = archiveStatistics, archive.totalChunks > 0, !archive.chunks.isEmpty {
+                    let topics = Set(archive.chunks.flatMap { $0.keyTopics }).prefix(5)
+                    if !topics.isEmpty {
+                        Divider()
+                            .padding(.vertical, 4)
+                        
+                        HStack(spacing: 6) {
+                            Image(systemName: "tag.fill")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                            Text("Topics: \(topics.joined(separator: ", "))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .italic()
+                        }
+                    }
+                }
+            } else {
+                Text("No active conversation")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    /// Helper view for compact stat boxes
+    private func statBox(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(.body, design: .rounded))
+                .fontWeight(.semibold)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var enhancedSearchSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SEARCH")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+
+            /// Search input
             HStack {
-                TextField("Search memories...", text: $memorySearchQuery)
+                TextField("Search memories, context, or archives...", text: $memorySearchQuery)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
-                        searchMemories()
+                        performEnhancedSearch()
                     }
 
                 Button("Search") {
-                    searchMemories()
+                    performEnhancedSearch()
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(memorySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .help("Search through stored memories in this conversation")
             }
-            .padding(.horizontal, 16)
 
-            /// Memory list.
+            /// Search mode toggles (disabled pending backend support)
+            /// Note: Active and Archive search require backend API changes
+            /// to support creating ConversationMemory instances from UI layer
+            /*
+            HStack(spacing: 12) {
+                Toggle(isOn: $searchInStored) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "tray.full")
+                            .font(.caption2)
+                        Text("Stored")
+                            .font(.caption2)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .help("Search stored memories in vector database")
+
+                Toggle(isOn: $searchInActive) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "message")
+                            .font(.caption2)
+                        Text("Active")
+                            .font(.caption2)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .help("Search current conversation messages")
+
+                Toggle(isOn: $searchInArchive) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "archivebox")
+                            .font(.caption2)
+                        Text("Archive")
+                            .font(.caption2)
+                    }
+                }
+                .toggleStyle(.checkbox)
+                .help("Search archived context chunks")
+            }
+            .padding(.horizontal, 4)
+            */
+
+            /// Results display (enhanced to show source type)
             if !conversationMemories.isEmpty {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(conversationMemories) { memory in
-                            MemoryItemView(memory: memory)
+                            EnhancedMemoryItemView(memory: memory)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 4)
                 }
                 .frame(maxHeight: 200)
             } else if memorySearchQuery.isEmpty {
-                Text("No memories stored for this conversation yet")
+                Text("Enter a query and select search modes")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 4)
             } else {
-                Text("No memories found matching '\(memorySearchQuery)'")
+                Text("No results found")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 4)
             }
-        }
-        .padding(.bottom, 8)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-        .onAppear {
-            loadMemoryStatistics()
-        }
-        .onChange(of: activeConversation?.id) { _, _ in
-            loadMemoryStatistics()
-            conversationMemories.removeAll()
-            memorySearchQuery = ""
-        }
-        .onChange(of: activeConversation?.settings.sharedTopicId) { _, _ in
-            /// BUG FIX: Reload memory stats when shared topic changes
-            /// When user switches topics, conversation ID stays same but effective scope changes
-            /// (topic ID vs conversation ID), so we need to reload the stats
-            loadMemoryStatistics()
-            conversationMemories.removeAll()
-            memorySearchQuery = ""
         }
     }
 
@@ -2636,7 +2803,7 @@ public struct ChatWidget: View {
                     .buttonStyle(.bordered)
                     .frame(width: 36)
                     .fixedSize()
-                    .help("Memory Panel")
+                    .help("Session Intelligence")
 
                     Button(action: { showingPerformanceMetrics.toggle() }) {
                         Image(systemName: "chart.line.uptrend.xyaxis")
@@ -5894,7 +6061,7 @@ public struct ChatWidget: View {
 
     private func loadMemoryStatistics() {
         guard conversationManager.memoryInitialized,
-              activeConversation != nil else {
+              let conversation = activeConversation else {
             memoryStatistics = nil
             archiveStatistics = nil
             contextStatistics = nil
@@ -5908,8 +6075,8 @@ public struct ChatWidget: View {
             // Load archive stats
             let archive = await conversationManager.getActiveConversationArchiveStats()
             
-            // Get YaRN context stats (synchronous)
-            let context = conversationManager.getYaRNContextStats()
+            // Get context stats for this specific conversation (synchronous)
+            let context = conversationManager.getContextStats(for: conversation)
             
             await MainActor.run {
                 memoryStatistics = stats
@@ -5919,7 +6086,14 @@ public struct ChatWidget: View {
         }
     }
 
-    private func searchMemories() {
+    private func formatTokenCount(_ count: Int) -> String {
+        if count >= 1000 {
+            return String(format: "%.1fK", Double(count) / 1000.0)
+        }
+        return "\(count)"
+    }
+
+    private func performEnhancedSearch() {
         guard conversationManager.memoryInitialized,
               let conversation = activeConversation,
               !memorySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -5931,9 +6105,11 @@ public struct ChatWidget: View {
 
         Task {
             do {
-                /// Use effective scope ID (topic ID if shared data enabled, conversation ID otherwise)
+                /// Search stored memories only
+                /// Note: Active/Archive search modes require backend changes
+                /// to allow creating ConversationMemory instances from UI
                 let scopeId = conversationManager.getEffectiveScopeId(for: conversation)
-                let memories = try await conversationManager.memoryManager.retrieveRelevantMemories(
+                let results = try await conversationManager.memoryManager.retrieveRelevantMemories(
                     for: query,
                     conversationId: scopeId,
                     limit: 10,
@@ -5941,10 +6117,10 @@ public struct ChatWidget: View {
                 )
 
                 await MainActor.run {
-                    conversationMemories = memories
+                    conversationMemories = results
                 }
             } catch {
-                logger.error("Failed to search memories: \(error)")
+                logger.error("Memory search failed: \(error)")
                 await MainActor.run {
                     conversationMemories = []
                 }
@@ -7056,6 +7232,104 @@ struct MemoryItemView: View {
         case .contextInfo: return .secondary
         case .document: return .indigo
         }
+    }
+}
+
+struct EnhancedMemoryItemView: View {
+    let memory: ConversationMemory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            /// Header with source badge
+            HStack(spacing: 6) {
+                sourceIcon
+
+                Text(sourceLabel)
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundColor(sourceColor)
+
+                Spacer()
+
+                if memory.similarity > 0 && memory.similarity < 1.0 {
+                    Text(String(format: "%.0f%%", memory.similarity * 100))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            /// Content
+            Text(memory.content.prefix(200))
+                .font(.caption)
+                .foregroundColor(.primary)
+                .lineLimit(3)
+
+            /// Context from tags
+            if !memory.tags.isEmpty {
+                Text(memory.tags.first ?? "")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .italic()
+            }
+        }
+        .padding(8)
+        .background(sourceBackground)
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(sourceColor.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private var sourceIcon: some View {
+        Group {
+            switch memory.contentType {
+            case .message:
+                if isFromActiveConversation {
+                    Image(systemName: "message.fill")
+                } else {
+                    Image(systemName: "tray.full.fill")
+                }
+            case .contextInfo:
+                Image(systemName: "archivebox.fill")
+            default:
+                Image(systemName: "tray.full.fill")
+            }
+        }
+        .font(.caption2)
+        .foregroundColor(sourceColor)
+    }
+
+    private var isFromActiveConversation: Bool {
+        memory.tags.first?.contains("active conversation") ?? false
+    }
+
+    private var isFromArchive: Bool {
+        memory.tags.first?.contains("archive") ?? false
+    }
+
+    private var sourceLabel: String {
+        if isFromActiveConversation {
+            return "ACTIVE"
+        } else if isFromArchive {
+            return "ARCHIVE"
+        } else {
+            return "STORED"
+        }
+    }
+
+    private var sourceColor: Color {
+        if isFromActiveConversation {
+            return .blue
+        } else if isFromArchive {
+            return .orange
+        } else {
+            return .green
+        }
+    }
+
+    private var sourceBackground: Color {
+        sourceColor.opacity(0.05)
     }
 }
 
