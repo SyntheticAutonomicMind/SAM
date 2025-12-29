@@ -4,8 +4,8 @@
 
 # Configuration System
 
-**Version:** 2.2  
-**Last Updated:** December 1, 2025  
+**Version:** 2.3  
+**Last Updated:** December 28, 2025  
 **Location:** `Sources/ConfigurationSystem/`
 
 ## Overview
@@ -316,6 +316,144 @@ public class PerformanceMonitor: ObservableObject {
 
 ---
 
+### ModelConfigurationManager
+
+**File:** `ModelConfiguration.swift`  
+**Type:** Singleton  
+**Purpose:** Centralized model metadata and configuration system
+
+**Key Features:**
+- **Model Metadata**: Context windows, prompt formats, provider defaults
+- **Pricing Information**: Cost per million tokens (input/output)
+- **Format Specifications**: Delta mode, XML tags, stateful markers
+- **Runtime Configuration**: Provider-specific behavior settings
+
+**ModelConfig Structure:**
+
+```swift
+public struct ModelConfig: Codable {
+    public let provider: String                    // "anthropic", "openai", etc.
+    public let promptFormat: PromptFormat          // System prompt, XML tags
+    public let providerDefaults: ModelProviderDefaults  // Delta mode, streaming
+    public let supportsStatefulMarker: Bool        // For conversational state
+    public let contextWindow: Int                  // Maximum context tokens
+    public let requiresAlternatingMessages: Bool   // Claude requirement
+    
+    // Pricing (per million tokens)
+    public let costPerMillionInputTokens: Double?
+    public let costPerMillionOutputTokens: Double?
+    
+    /// Computed cost display string
+    public var costDisplayString: String {
+        // Returns: "0x" (free), "$0.10/$0.40" (paid), or "-" (unknown)
+    }
+}
+
+public struct PromptFormat: Codable {
+    public let systemPromptKey: String    // "system", "systemInstruction"
+    public let useXMLTags: Bool          // Claude optimization
+}
+
+public struct ModelProviderDefaults: Codable {
+    public let deltaMode: String         // "cumulative" or "incremental"
+    public let supportsStreaming: Bool
+}
+```
+
+**Storage Location:**
+
+```
+Sources/ConfigurationSystem/Resources/model_config.json
+```
+
+**Configuration File Structure:**
+
+```json
+{
+  "model_configurations": {
+    "gemini-2.5-pro": {
+      "provider": "gemini",
+      "prompt_format": {
+        "system_prompt_key": "systemInstruction",
+        "use_xml_tags": false
+      },
+      "provider_defaults": {
+        "delta_mode": "cumulative",
+        "supports_streaming": true
+      },
+      "supports_stateful_marker": false,
+      "context_window": 2097152,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 1.25,
+      "cost_per_million_output_tokens": 10.0
+    }
+  }
+}
+```
+
+**Public Interface:**
+
+```swift
+public class ModelConfigurationManager {
+    public static let shared = ModelConfigurationManager()
+    
+    /// Get configuration for model (tries exact match, then base name)
+    public func getConfiguration(for modelName: String) -> ModelConfig?
+    
+    /// Get context window size
+    public func getContextWindow(for modelName: String) -> Int?
+    
+    /// Get cost display string (e.g., "$0.10/$0.40", "0x")
+    public func getCostDisplayString(for modelName: String) -> String?
+}
+```
+
+**Pricing Display Format:**
+
+The cost display uses a smart formatting system:
+- **Free models**: `"0x"` (zero multiplier)
+- **Paid models**: `"$0.10/$0.40"` (input/output per million tokens)
+- **Unknown**: `nil` or `"-"`
+
+Cost formatting rules:
+- Whole numbers: `$2/$12` (no decimals)
+- Decimals < 1: `$0.10/$0.40` (two decimals)
+- Decimals ≥ 1: `$1.25/$10.0` (one decimal)
+
+**Supported Models:**
+
+The system includes configurations for:
+- **Gemini Models**: gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash, etc.
+- **Claude Models**: claude-3-opus, claude-3-sonnet, claude-3-haiku
+- **OpenAI Models**: gpt-4, gpt-3.5-turbo, etc.
+- **Other Providers**: DeepSeek, GitHub Copilot models
+
+**Usage Example:**
+
+```swift
+// Get cost for display in UI
+let manager = ModelConfigurationManager.shared
+if let cost = manager.getCostDisplayString(for: "gemini-2.5-pro") {
+    print("Cost: \(cost)/1M")  // "Cost: $1.25/$10.0/1M"
+}
+
+// Get context window
+if let contextSize = manager.getContextWindow(for: "gemini-2.5-flash") {
+    print("Context: \(contextSize) tokens")  // "Context: 1048576 tokens"
+}
+```
+
+**Fallback Strategy:**
+
+When querying model configurations:
+1. Try exact model name match (e.g., `"gemini/gemini-2.5-pro"`)
+2. Try base model name (strip provider prefix: `"gemini-2.5-pro"`)
+3. Return `nil` if not found
+
+This allows flexible lookups regardless of provider prefix.
+
+---
+
 ### BuildConfiguration
 
 **File:** `BuildConfiguration.swift`  
@@ -594,21 +732,6 @@ Only for simple boolean flags:
 - `workingDirectory.basePath`
 
 **Everything else uses JSON files via ConfigurationManager**
-
----
-
-## Recent Changes
-
-### December 2, 2025
-- **TodoReminderInjector:** Updated to inject todo context on EVERY request (not periodically)
-- **SystemPromptConfiguration:** Rewrote multi-step workflow guidance for clarity and consistency
-- **buildWorkflowContinuationProtocol():** Added mandatory status signals for ANY multi-step task
-- Added comprehensive TodoReminderInjector documentation
-
-### December 1, 2025
-- Created comprehensive configuration system documentation
-- Documented atomic write patterns
-- Explained directory structure and organization
 
 ---
 

@@ -486,45 +486,7 @@ public struct NativeVoice: Identifiable, Hashable {
 
 ---
 
-## Recent Changes
-
-### December 4-5, 2025
-
-#### New Sound Preferences Pane
-
-- Added dedicated Sound preferences section
-- Input/output device selection
-- Voice selection with available system voices
-- Speech rate slider (0.5x - 1.5x)
-- Test voice button for preview
-
-#### Streaming TTS Implementation
-
-- Sentences spoken as they are generated during LLM streaming
-- Queue-based architecture for smooth playback
-- Automatic sentence detection during streaming
-- Completion callbacks when all speech finished
-
-#### NSSpeechSynthesizer Migration
-
-- Switched from AVSpeechSynthesizer to NSSpeechSynthesizer
-- More natural-sounding native macOS voices
-- Better voice enumeration and selection
-- Improved speech rate control
-
-#### Shared AudioDeviceManager
-
-- Single shared instance across app
-- Preferences changes immediately affect TTS
-- Voice/device changes applied on next sentence
-- Automatic device refresh on hardware changes
-
-#### Voice Input Device Changes
-
-- Restart listening when input device changes in preferences
-- Proper device configuration for AVAudioEngine
-- Graceful handling of device disconnection
-
+##
 ---
 
 ## Related Documentation

@@ -659,14 +659,7 @@ Llama-3.2-3B-Instruct-4bit-MLX/
 
 ---
 
-## Recent Changes
-
-### December 1, 2025
-- Created comprehensive MLX integration documentation
-- Documented Metal GPU acceleration
-- Explained model caching and LRU eviction
-- Added performance monitoring details
-
+##
 ---
 
 ## See Also

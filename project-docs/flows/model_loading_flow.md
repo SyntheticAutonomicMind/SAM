@@ -134,6 +134,7 @@ flowchart TD
     D --> F{Provider Type?}
     
     F -->|github_copilot| G[GitHubCopilotProvider]
+    F -->|gemini| GEM[GeminiProvider]
     F -->|anthropic| H[AnthropicProvider]
     F -->|openai| I[OpenAIProvider]
     F -->|deepseek| J[DeepSeekProvider]
@@ -141,6 +142,7 @@ flowchart TD
     F -->|sd| L[StableDiffusionPipeline]
     
     G --> M[Process Request]
+    GEM --> M
     H --> M
     I --> M
     J --> M
@@ -159,6 +161,7 @@ flowchart TD
     Q --> S
     
     style G fill:#90EE90
+    style GEM fill:#FFA07A
     style H fill:#87CEEB
     style I fill:#FFE4B5
     style K fill:#FFB6C1
@@ -379,8 +382,125 @@ Loading this model may cause system instability.
 
 ---
 
+## Model Metadata Discovery
+
+SAM dynamically discovers model capabilities from provider APIs to ensure accurate context sizes and pricing information.
+
+### Remote Model Metadata Flow
+
+```mermaid
+flowchart TD
+    A[ChatWidget Loads] --> B[Select Model]
+    
+    B --> C{Check Provider}
+    
+    C -->|gemini/*| D[Query Gemini API]
+    C -->|github_copilot/*| E[Query GitHub Copilot API]
+    C -->|Other| F[Fallback: model_config.json]
+    
+    D --> G[GET /v1beta/models?key=API_KEY]
+    G --> H[Parse Response JSON]
+    H --> I[Extract inputTokenLimit]
+    I --> J[Filter Non-Chat Models<br/>imagen*, veo*, gemma*]
+    J --> K[Cache Capabilities]
+    
+    E --> L[GET /models]
+    L --> M[Parse max_input_tokens]
+    M --> K
+    
+    F --> N[Read model_config.json]
+    N --> O[Lookup context_window]
+    O --> K
+    
+    K --> P[Update UI with Context Size]
+    P --> Q[Set maxContextWindowSize]
+    Q --> R[Enable Chat Interface]
+    
+    style D fill:#FFA07A
+    style E fill:#90EE90
+    style F fill:#FFD700
+    style J fill:#FFB6C1
+```
+
+### Pricing Discovery Flow
+
+```mermaid
+flowchart TD
+    A[Model Selected in Picker] --> B{Provider?}
+    
+    B -->|GitHub Copilot| C[Query Billing API]
+    B -->|Gemini| D[Lookup model_config.json]
+    B -->|Other| D
+    
+    C --> E[Get Multiplier<br/>0x = free<br/>1x-3x = premium]
+    E --> F[Cache for 10 minutes]
+    
+    D --> G[Get costPerMillionInputTokens<br/>+ costPerMillionOutputTokens]
+    G --> H[Format: $X/$Y]
+    
+    F --> I[Display in ChatWidget Header]
+    H --> I
+    
+    I --> J[Show Tooltip:<br/>"Cost per million tokens"]
+    
+    style C fill:#90EE90
+    style D fill:#FFD700
+    style I fill:#87CEEB
+```
+
+### Rate Limit Notification Flow
+
+```mermaid
+flowchart TD
+    A[Send Request to Provider] --> B[Provider Returns HTTP 429]
+    
+    B --> C[Parse retryAfterSeconds]
+    C --> D[Post .providerRateLimitHit<br/>notification]
+    
+    D --> E[ChatWidget Shows Alert:<br/>"Rate Limited - Retrying in Xs"]
+    
+    E --> F[Wait for retryAfterSeconds]
+    
+    F --> G[Post .providerRateLimitRetrying<br/>notification]
+    
+    G --> H[ChatWidget Dismisses Alert]
+    
+    H --> I[Retry Original Request]
+    
+    I --> J{Success?}
+    J -->|Yes| K[Return Response]
+    J -->|No, 429 again| C
+    
+    style D fill:#FFB6C1
+    style E fill:#FFA07A
+    style G fill:#90EE90
+```
+
+**Key Features:**
+
+1. **Provider-Based Routing**: Models query their own provider's API for metadata
+   - `gemini/gemini-2.5-pro` → Gemini API
+   - `github_copilot/gpt-4.1` → GitHub Copilot API
+   
+2. **Fallback Chain**: 
+   - Try provider API first
+   - Fall back to `model_config.json`
+   - Final fallback to safe defaults (32k/16k)
+
+3. **Smart Caching**:
+   - Gemini capabilities cached per session
+   - GitHub Copilot billing cached for 10 minutes
+   - Reduces API calls and improves responsiveness
+
+4. **User Notifications**:
+   - Rate limits show countdown timer
+   - Alerts auto-dismiss when retry begins
+   - Clear visibility into provider behavior
+
+---
+
 ## Related Documentation
 
-- [API Framework Subsystem](../subsystems/API_FRAMEWORK.md)
+- [API Framework Subsystem](../API_FRAMEWORK.md)
 - [Local Model Manager Specification](../MLX_AND_MODEL_MANAGEMENT_SPECIFICATION.md)
 - [Provider Configuration Guide](../DEVELOPER_GUIDE.md#provider-configuration)
