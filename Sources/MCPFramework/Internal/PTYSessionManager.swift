@@ -5,12 +5,19 @@ import Foundation
 import Darwin
 import Logging
 
+/// PTY Session State
+public enum PTYSessionState: String, Sendable {
+    case alive = "alive"      // Session is running normally
+    case dead = "dead"         // Shell process has exited
+}
+
 /// Manages persistent PTY terminal sessions Provides a basic terminal that: - Maintains persistent PTY sessions - Supports single pseudo-TTY per session - CP437 character set support - Command history accessible to agents and users - Bidirectional input/output Each session: - Has unique session ID - Runs bash shell in PTY - Captures all output (history buffer) - Accepts input commands - Persists until explicitly closed.
-public class PTYSessionManager {
+public class PTYSessionManager: @unchecked Sendable {
     public nonisolated(unsafe) static let shared = PTYSessionManager()
 
     private let logger = Logger(label: "com.sam.pty.SessionManager")
     private var sessions: [String: PTYSession] = [:]
+    private var sessionStates: [String: PTYSessionState] = [:]  // Track session states separately
     private let sessionsLock = NSLock()
 
     private init() {
@@ -40,11 +47,15 @@ public class PTYSessionManager {
             ttyName: ttyName,
             workingDirectory: workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path,
             environment: environment,
-            logger: logger
+            logger: logger,
+            stateCallback: { [weak self] sessionId, state in
+                self?.updateSessionState(sessionId: sessionId, state: state)
+            }
         )
 
         sessionsLock.lock()
         sessions[sessionId] = session
+        sessionStates[sessionId] = .alive  // Initialize as alive
         sessionsLock.unlock()
 
         logger.debug("PTY session created: \(sessionId) → \(ttyName)")
@@ -134,6 +145,28 @@ public class PTYSessionManager {
         logger.debug("Killed all processes in session: \(sessionId)")
     }
 
+    /// Get the state of a PTY session
+    /// Returns the session state (alive or dead)
+    public func getSessionState(sessionId: String) throws -> PTYSessionState {
+        sessionsLock.lock()
+        defer { sessionsLock.unlock() }
+        
+        guard sessions[sessionId] != nil else {
+            throw PTYSessionError.sessionNotFound(sessionId)
+        }
+
+        return sessionStates[sessionId] ?? .alive
+    }
+
+    /// Update session state (called by PTYSession via callback)
+    private func updateSessionState(sessionId: String, state: PTYSessionState) {
+        sessionsLock.lock()
+        sessionStates[sessionId] = state
+        sessionsLock.unlock()
+        
+        logger.info("Session \(sessionId) state changed to: \(state.rawValue)")
+    }
+
     private func getSession(_ sessionId: String) -> PTYSession? {
         sessionsLock.lock()
         defer { sessionsLock.unlock() }
@@ -174,6 +207,7 @@ private class PTYSession {
     let created: Date
     let workingDirectory: String
     let logger: Logger
+    let stateCallback: @Sendable (String, PTYSessionState) -> Void  // Callback to update state in manager
 
     private var masterFd: Int32 = -1
     private var childPid: pid_t = -1
@@ -186,13 +220,15 @@ private class PTYSession {
         ttyName: String,
         workingDirectory: String,
         environment: [String: String],
-        logger: Logger
+        logger: Logger,
+        stateCallback: @escaping @Sendable (String, PTYSessionState) -> Void
     ) throws {
         self.sessionId = sessionId
         self.ttyName = ttyName
         self.created = Date()
         self.workingDirectory = workingDirectory
         self.logger = logger
+        self.stateCallback = stateCallback
 
         try startPTY(workingDirectory: workingDirectory, environment: environment)
     }
@@ -299,6 +335,7 @@ private class PTYSession {
         let capturedSessionId = sessionId
         let capturedLogger = logger
         let capturedBufferActor = bufferActor
+        let capturedStateCallback = stateCallback
 
         readTask = Task {
             var buffer = [UInt8](repeating: 0, count: 4096)
@@ -315,7 +352,8 @@ private class PTYSession {
                     }
                 } else if bytesRead == 0 {
                     /// EOF - process has exited.
-                    capturedLogger.debug("PTY session \(capturedSessionId) process exited")
+                    capturedLogger.debug("PTY session \(capturedSessionId) process exited (EOF detected)")
+                    capturedStateCallback(capturedSessionId, .dead)
                     break
                 } else if errno == EAGAIN || errno == EWOULDBLOCK {
                     /// No data available, wait a bit.

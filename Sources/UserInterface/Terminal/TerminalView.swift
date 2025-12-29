@@ -370,7 +370,48 @@ public class TerminalManager: NSObject, ObservableObject, TerminalCommandExecuto
                 return
             }
 
+            /// Check if session is dead and restart it if needed
             do {
+                let state = try PTYSessionManager.shared.getSessionState(sessionId: sessionId)
+                if state == .dead {
+                    logger.info("Terminal session is dead, restarting with new session")
+                    
+                    /// Close dead session
+                    try? PTYSessionManager.shared.closeSession(sessionId: sessionId)
+                    
+                    /// Create new session with same ID (conversation ID)
+                    let (newSessionId, _) = try PTYSessionManager.shared.createSession(
+                        conversationId: sessionId,
+                        workingDirectory: newDirectory,
+                        environment: ProcessInfo.processInfo.environment
+                    )
+                    
+                    self.sessionId = newSessionId
+                    logger.info("Terminal session restarted: \(newSessionId)")
+                    
+                    /// Force terminal view to reconnect to new session
+                    /// Clear the terminal display and reset the connection
+                    if let terminalView = terminalView {
+                        terminalView.evaluateJavaScript("clearTerminal();") { _, error in
+                            if let error = error {
+                                self.logger.error("Failed to clear terminal after session restart: \(error)")
+                            }
+                        }
+                        
+                        /// Reset the session connection state by setting to nil then back
+                        /// This forces the terminal to treat it as a new session
+                        terminalView.sessionId = nil
+                        terminalView.lastOutputIndex = 0
+                        terminalView.connectToSession(newSessionId)
+                    }
+                    
+                    /// Clear resetting state and return (no need to send commands)
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    isResetting = false
+                    return
+                }
+                
+                /// Session is alive, proceed with normal reset
                 /// Change to new directory
                 try PTYSessionManager.shared.sendInput(sessionId: sessionId, input: "cd \"\(newDirectory)\"\r")
 

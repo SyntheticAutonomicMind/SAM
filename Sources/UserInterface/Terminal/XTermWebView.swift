@@ -10,7 +10,7 @@ import Logging
 class XTermWebView: WKWebView {
     internal var sessionId: String?
     nonisolated(unsafe) private var updateTimer: Timer?
-    private var lastOutputIndex = 0
+    internal var lastOutputIndex = 0  // Changed to internal for session restart support
     private let logger = Logger(label: "com.sam.ui.XTermWebView")
     private var isReady = false
     private var isPolling = false
