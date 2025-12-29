@@ -118,6 +118,60 @@ class IntelligenceEngine {
 - **Compression Algorithms**: Context compression while preserving important information
 - **Message Importance**: Analyzes message importance for intelligent retention/compression
 
+### Memory UI Access (Session Intelligence Toolbar)
+
+Users can inspect and search agent memory through the Session Intelligence toolbar, providing complete visibility into SAM's knowledge state across three distinct data layers:
+
+#### Search Capabilities
+
+**1. Stored Memory Search (Vector RAG)**
+- Semantic search across stored memories in vector database
+- Uses 768-dimensional embeddings for relevance matching
+- Returns results with similarity scores (0-100%)
+- Searches conversation-scoped or topic-scoped memories (when shared topics enabled)
+- Threshold-based filtering (default: 15% similarity minimum)
+
+**2. Active Context Search**
+- Text matching in current conversation messages
+- Searches through visible and recent messages in active context
+- Real-time search without database queries
+- Finds exact text matches with context preservation
+- Shows message timestamps for temporal awareness
+
+**3. Archived Context Search**
+- Queries archived context chunks via ContextArchiveManager
+- Searches summaries and key topics of archived chunks
+- Returns chunk metadata (time range, message count, token count)
+- Enables discovery of information from earlier in long conversations
+- Supports both conversation-specific and topic-wide archive search
+
+**4. Combined Multi-Source Search**
+- Parallel search across all three sources (Stored + Active + Archive)
+- User-controlled source toggles (enable/disable each independently)
+- Unified result display with source badges (STORED/ACTIVE/ARCHIVE)
+- Color-coded results for visual source identification
+- Relevance-based result ordering across sources
+
+#### Statistics Display
+
+**Memory Status:**
+- Total stored memories with type breakdown (interactions, facts, preferences, tasks, documents)
+- Memory access count and average importance scores
+- Memory span (temporal range from oldest to newest memory)
+
+**Context Management:**
+- Active context window usage (current tokens / maximum tokens with percentage)
+- YaRN compression status and ratio
+- Compression state indicator (active/inactive)
+- Archived context statistics (chunk count, total tokens archived)
+- Archive topic preview (top 5 topics)
+
+**User Benefits:**
+- Complete visibility into what the agent knows
+- Ability to verify information sources (stored vs. active vs. archive)
+- Understanding of context limits and compression state
+- Discovery of relevant information across all knowledge layers
+
 #### Memory Configuration Through Conversation
 ```swift
 // Enhanced memory configuration with Vector RAG and YaRN
