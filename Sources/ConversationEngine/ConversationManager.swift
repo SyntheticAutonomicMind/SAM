@@ -11,6 +11,9 @@ import ConfigurationSystem
 extension Notification.Name {
     /// Posted when a conversation is updated (messages added, edited, etc.) Object contains the conversation UUID.
     public static let conversationDidUpdate = Notification.Name("conversationDidUpdate")
+    
+    /// Posted when a conversation's working directory changes. Object contains the conversation ID, userInfo contains new path.
+    public static let conversationWorkingDirectoryDidChange = Notification.Name("conversationWorkingDirectoryDidChange")
 }
 
 // MARK: - Logging
@@ -454,6 +457,10 @@ public class ConversationManager: ObservableObject {
             return
         }
 
+        /// Save old effective working directory BEFORE changing settings
+        let oldEffectiveDir = getEffectiveWorkingDirectory(for: conversation)
+        logger.debug("attachSharedTopic: old effective dir = \(oldEffectiveDir)")
+
         if let topicId = topicId {
             conversation.settings.useSharedData = true
             conversation.settings.sharedTopicId = topicId
@@ -469,6 +476,17 @@ public class ConversationManager: ObservableObject {
         conversation.updated = Date()
         saveConversations()
         objectWillChange.send()
+
+        /// Check if effective working directory changed and notify terminal
+        let newEffectiveDir = getEffectiveWorkingDirectory(for: conversation)
+        logger.debug("attachSharedTopic: new effective dir = \(newEffectiveDir)")
+        
+        if newEffectiveDir != oldEffectiveDir {
+            logger.info("Effective working directory changed from \(oldEffectiveDir) to \(newEffectiveDir), triggering terminal reset")
+            resetTerminalForWorkingDirectoryChange(conversation: conversation, newPath: newEffectiveDir)
+        } else {
+            logger.debug("Effective working directory unchanged: \(newEffectiveDir)")
+        }
     }
 
     /// Detach shared topic from active conversation.
@@ -655,8 +673,14 @@ public class ConversationManager: ObservableObject {
         /// 4. Terminal can't respond because main thread is blocked
         /// 5. Result: CLASSIC DEADLOCK
         ///
-        /// Fix: Let terminal detect directory change naturally from conversation.workingDirectory
-        logger.debug("Working directory changed to: \(newPath) - Terminal will update on next access")
+        /// NEW FIX: Post notification for terminal to observe and react to
+        logger.info("Working directory changed to: \(newPath), posting notification for conversation \(conversation.id.uuidString.prefix(8))")
+        
+        NotificationCenter.default.post(
+            name: .conversationWorkingDirectoryDidChange,
+            object: conversation.id,
+            userInfo: ["newPath": newPath]
+        )
     }
 
     /// Start accessing security-scoped resource for conversation - Parameter conversation: The conversation (defaults to active) - Returns: True if access started successfully.

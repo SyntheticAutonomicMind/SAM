@@ -2902,16 +2902,9 @@ public struct ChatWidget: View {
                         }
                         syncSettingsToConversation()
 
-                        // If terminal is open, send cd command to change directory
-                        if showingTerminalPanel, let conversation = conversationManager.activeConversation {
-                            let effectiveDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-                            if let terminalMgr = conversationManager.getTerminalManager(for: conversation.id) as? TerminalManager {
-                                // Send cd command to terminal
-                                Task {
-                                    await terminalMgr.executeCommand("cd \"\(effectiveDir)\"")
-                                }
-                            }
-                        }
+                        /// Terminal directory change is now handled via notification
+                        /// ConversationManager posts conversationWorkingDirectoryDidChange
+                        /// TerminalManager observes and restarts session in new directory
                     }
 
                     /// Topic picker (visible when shared data enabled).
@@ -2946,16 +2939,9 @@ public struct ChatWidget: View {
                                 }
                                 syncSettingsToConversation()
 
-                                // If terminal is open, send cd command to change directory
-                                if showingTerminalPanel, let conversation = conversationManager.activeConversation {
-                                    let effectiveDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-                                    if let terminalMgr = conversationManager.getTerminalManager(for: conversation.id) as? TerminalManager {
-                                        // Send cd command to terminal
-                                        Task {
-                                            await terminalMgr.executeCommand("cd \"\(effectiveDir)\"")
-                                        }
-                                    }
-                                }
+                                /// Terminal directory change is now handled via notification
+                                /// ConversationManager posts conversationWorkingDirectoryDidChange
+                                /// TerminalManager observes and restarts session in new directory
                             }
                         }
                     }

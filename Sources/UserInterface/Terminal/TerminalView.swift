@@ -111,7 +111,8 @@ public struct TerminalView: View {
 
         /// Use the same reset logic as directory changes
         /// This ensures consistent behavior across all reset scenarios
-        terminalManager.resetSessionForNewDirectory(terminalManager.currentDirectory)
+        /// forceRestart=false means try cd first, restart only if session is dead
+        terminalManager.resetSessionForNewDirectory(terminalManager.currentDirectory, forceRestart: false)
     }
 }
 
@@ -186,6 +187,7 @@ public class TerminalManager: NSObject, ObservableObject, TerminalCommandExecuto
         self.conversationId = conversationId
         super.init()
         setupTerminal()
+        setupNotificationObservers()
     }
 
     public func setupTerminal() {
@@ -348,8 +350,11 @@ public class TerminalManager: NSObject, ObservableObject, TerminalCommandExecuto
 
     /// Reset terminal session with new working directory
     /// Changes directory and sends reset command to clear terminal display
-    @objc public func resetSessionForNewDirectory(_ newDirectory: String) {
-        logger.debug("Resetting terminal for new directory: \(newDirectory)")
+    /// - Parameters:
+    ///   - newDirectory: The new working directory
+    ///   - forceRestart: If true, always restart session. If false, try cd first and only restart if session is dead.
+    @objc public func resetSessionForNewDirectory(_ newDirectory: String, forceRestart: Bool = false) {
+        logger.debug("Resetting terminal for new directory: \(newDirectory), forceRestart: \(forceRestart)")
 
         /// Set resetting state FIRST (shows loading indicator)
         isResetting = true
@@ -370,7 +375,71 @@ public class TerminalManager: NSObject, ObservableObject, TerminalCommandExecuto
                 return
             }
 
-            /// Check if session is dead and restart it if needed
+            /// Check if we should force restart (from directory change notification)
+            if forceRestart {
+                logger.info("Force restarting terminal session for directory change (sessionId: \(sessionId))")
+                
+                do {
+                    /// Kill all processes in old session
+                    logger.info("Killing all processes in session \(sessionId)")
+                    try PTYSessionManager.shared.killAllSessionProcesses(sessionId: sessionId)
+                    
+                    /// Wait briefly for processes to die
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                    
+                    /// Close old session
+                    logger.info("Closing old session \(sessionId)")
+                    try PTYSessionManager.shared.closeSession(sessionId: sessionId)
+                    
+                    /// Create new session in new directory
+                    logger.info("Creating new session in directory: \(newDirectory)")
+                    let (newSessionId, _) = try PTYSessionManager.shared.createSession(
+                        conversationId: sessionId,
+                        workingDirectory: newDirectory,
+                        environment: ProcessInfo.processInfo.environment
+                    )
+                    
+                    self.sessionId = newSessionId
+                    logger.info("Terminal session restarted: \(newSessionId)")
+                    
+                    /// Send reset -Q to initialize terminal cleanly
+                    Task {
+                        try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms for shell to start
+                        do {
+                            try PTYSessionManager.shared.sendInput(sessionId: newSessionId, input: "reset -Q\r")
+                            self.logger.debug("Sent reset -Q to new terminal session after force restart")
+                        } catch {
+                            self.logger.error("Failed to send reset -Q after force restart: \(error)")
+                        }
+                    }
+                    
+                    /// Force terminal view to reconnect
+                    if let terminalView = terminalView {
+                        logger.info("Reconnecting terminal view to new session")
+                        terminalView.evaluateJavaScript("clearTerminal();") { _, error in
+                            if let error = error {
+                                self.logger.error("Failed to clear terminal: \(error)")
+                            }
+                        }
+                        
+                        terminalView.sessionId = nil
+                        terminalView.lastOutputIndex = 0
+                        terminalView.connectToSession(newSessionId)
+                        logger.info("Terminal view reconnected")
+                    } else {
+                        logger.warning("No terminal view available for reconnection")
+                    }
+                } catch {
+                    logger.error("Failed to restart terminal: \(error)")
+                }
+                
+                /// Clear resetting state
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                isResetting = false
+                return
+            }
+
+            /// Check if session is dead and restart it if needed (normal reset button behavior)
             do {
                 let state = try PTYSessionManager.shared.getSessionState(sessionId: sessionId)
                 if state == .dead {
@@ -432,7 +501,50 @@ public class TerminalManager: NSObject, ObservableObject, TerminalCommandExecuto
         }
     }
 
+    /// Setup notification observers for working directory changes
+    private func setupNotificationObservers() {
+        logger.info("Setting up notification observer for conversation \(conversationId.prefix(8))")
+        
+        NotificationCenter.default.addObserver(
+            forName: .conversationWorkingDirectoryDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self else { return }
+            
+            self.logger.info("Received working directory change notification")
+            
+            /// Check if this notification is for our conversation
+            guard let notificationConversationId = notification.object as? UUID else {
+                self.logger.warning("Notification object is not a UUID")
+                return
+            }
+            
+            self.logger.info("Notification conversation ID: \(notificationConversationId.uuidString.prefix(8)), my ID: \(self.conversationId.prefix(8))")
+            
+            guard notificationConversationId.uuidString == self.conversationId else {
+                self.logger.debug("Notification is for different conversation, ignoring")
+                return
+            }
+            
+            /// Extract new path from userInfo
+            guard let newPath = notification.userInfo?["newPath"] as? String else {
+                self.logger.warning("Working directory change notification missing newPath")
+                return
+            }
+            
+            self.logger.info("Working directory changed to: \(newPath), restarting terminal session")
+            
+            /// Force restart of terminal session (don't try to cd)
+            /// This ensures we get a clean session in the new directory
+            /// even if there are running processes in the old session
+            Task { @MainActor in
+                self.resetSessionForNewDirectory(newPath, forceRestart: true)
+            }
+        }
+    }
+
     deinit {
-        process?.terminate()
+        NotificationCenter.default.removeObserver(self)
     }
 }

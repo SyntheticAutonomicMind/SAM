@@ -408,7 +408,6 @@ private class PTYSession {
 
     func getOutput(fromIndex: Int) async -> (output: String, endIndex: Int) {
         let (output, endIndex) = await bufferActor.getOutput(fromIndex: fromIndex)
-        logger.debug("PTYSession.getOutput: fromIndex=\(fromIndex), returning output.count=\(output.count), endIndex=\(endIndex)")
         return (output, endIndex)
     }
 
