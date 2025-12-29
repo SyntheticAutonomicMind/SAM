@@ -4,14 +4,8 @@
 
 # APIFramework Subsystem
 
-**Version:** 2.3  
-**Last Updated:** December 5, 2025
-
-## Recent Changes (December 5, 2025)
-
-- **Simplified `isWorkToolCall()`**: Removed outdated `WORK_TOOLS` whitelist; now only `think` and `todo_operations` are classified as planning tools
-- **Fixed memory duplication bug**: `store_memory` operations now correctly classified as WORK, preventing false planning loop detection
-- **Added MemoryReminderInjector integration**: Memory reminder injected in `callLLMStreaming()` at end of messages
+**Version:** 2.4  
+**Last Updated:** December 28, 2025
 
 ## Table of Contents
 
@@ -159,6 +153,18 @@ func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerO
 /// Get all available models from all providers
 func getAvailableModels() async throws -> ServerOpenAIModelsResponse
 
+/// Get model capabilities from GitHub Copilot API (context sizes, billing)
+func getGitHubCopilotModelCapabilities() async throws -> [String: Int]?
+
+/// Get model capabilities from Gemini API (context sizes)
+func getGeminiModelCapabilities() async throws -> [String: Int]?
+
+/// Get billing information for GitHub Copilot model (cached)
+func getGitHubCopilotModelBillingInfo(modelId: String) -> (isPremium: Bool, multiplier: Double?)?
+
+/// Get quota information from GitHub Copilot provider
+func getGitHubCopilotQuotaInfo() -> GitHubCopilotProvider.QuotaInfo?
+
 /// Load local model into memory (GGUF/MLX only)
 func loadLocalModel(modelId: String) async throws -> ModelCapabilities
 
@@ -170,9 +176,35 @@ func getProviderTypeForModel(_ modelId: String) -> String?
 ```
 
 **Model Identifier Format:**
-- Remote: `provider/model` (e.g., `github_copilot/gpt-4.1`)
+- Remote: `provider/model` (e.g., `github_copilot/gpt-4.1`, `gemini/gemini-2.5-pro`)
 - Local: `provider/model` (e.g., `lmstudio-community/Llama-3.2-3B-Instruct-GGUF`)
 - Stable Diffusion: `sd/model` (e.g., `sd/coreml-stable-diffusion-v1-5`)
+
+**Notification Events:**
+
+EndpointManager posts NotificationCenter events for model and provider lifecycle:
+
+```swift
+extension Notification.Name {
+    /// Posted when providers/endpoints are reloaded
+    static let endpointManagerDidReloadProviders
+    
+    /// Posted when local models are scanned
+    static let endpointManagerDidUpdateModels
+    
+    /// Posted when Stable Diffusion model installed
+    static let stableDiffusionModelInstalled
+    
+    /// Posted when ALICE remote models loaded
+    static let aliceModelsLoaded
+    
+    /// Posted when provider hits rate limit (userInfo: retryAfterSeconds, providerName)
+    static let providerRateLimitHit
+    
+    /// Posted when rate limit retry begins
+    static let providerRateLimitRetrying
+}
+```
 
 ---
 
@@ -269,8 +301,10 @@ protocol AIProvider {
 **Implementation Classes:**
 - `OpenAIProvider` - OpenAI API integration
 - `AnthropicProvider` - Claude API with message format conversion
-- `GitHubCopilotProvider` - GitHub Copilot with token-aware truncation
+- `GitHubCopilotProvider` - GitHub Copilot with token-aware truncation and billing
+- `GeminiProvider` - Google Gemini API with metadata discovery
 - `DeepSeekProvider` - DeepSeek API (OpenAI-compatible)
+- `CustomProvider` - Generic OpenAI-compatible providers
 - `LlamaProvider` - Local GGUF models via llama.cpp
 - `MLXProvider` - Local MLX models for Apple Silicon
 
@@ -745,6 +779,86 @@ struct ModelPickerView: View {
 
 ---
 
+## Provider Implementations
+
+### GeminiProvider
+
+**Location:** `Sources/APIFramework/ExtendedProviders.swift`
+
+**Purpose:** Integration with Google Gemini API supporting the full family of Gemini models.
+
+**Key Features:**
+- **Metadata Discovery**: Queries `/v1beta/models` endpoint for context sizes and capabilities
+- **Rate Limit Handling**: Automatic retry with user notifications on HTTP 429
+- **Model Filtering**: Excludes non-chat models (imagen, veo, gemma) from chat interface
+- **Message Conversion**: Transforms OpenAI format to Gemini's native format
+- **Function Calling**: Supports tool/function calling with capability detection
+
+**Supported Models:**
+- `gemini-2.5-flash` - Fast, efficient model with free and paid tiers
+- `gemini-2.5-pro` - Advanced reasoning with free and paid tiers
+- `gemini-2.0-flash` - Next generation flash model
+- `gemini-3-flash-preview` - Preview of Gemini 3 flash variant
+- `gemini-3-pro-preview` - Preview of Gemini 3 pro variant
+- `gemini-1.5-flash`, `gemini-1.5-pro` - Legacy 1.5 series
+
+**API Integration:**
+
+```swift
+class GeminiProvider: AIProvider {
+    /// Fetch model capabilities from Gemini API
+    /// Returns: [modelId: inputTokenLimit]
+    func fetchModelCapabilities() async throws -> [String: Int]
+    
+    /// Check if model supports function calling (cached)
+    private func modelSupportsFunctionCalling(_ modelName: String) async -> Bool
+    
+    /// Process chat completion with native Gemini format
+    func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse
+}
+```
+
+**Rate Limit Behavior:**
+
+When Gemini API returns HTTP 429:
+1. Parse `retryAfterSeconds` from error response
+2. Post `.providerRateLimitHit` notification with retry timing
+3. Wait for specified duration
+4. Post `.providerRateLimitRetrying` notification
+5. Retry request automatically
+
+**Message Format Conversion:**
+
+OpenAI format → Gemini format using `GeminiMessageConverter`:
+- System messages → `systemInstruction` field
+- User/assistant messages → `contents` array
+- Tool calls → `functionCall` format
+- Function results → `functionResponse` format
+
+**Model Filtering:**
+
+The provider automatically filters out non-chat models:
+- Image generation: `imagen-*` models
+- Video generation: `veo-*` models  
+- Text-only (non-chat): `gemma-*` models
+
+These models are excluded from the chat interface but may be integrated with Stable Diffusion UI in future updates.
+
+**Configuration Example:**
+
+```json
+{
+  "providerId": "gemini-api",
+  "providerType": "gemini",
+  "name": "Google Gemini",
+  "baseURL": "https://generativelanguage.googleapis.com/v1beta",
+  "apiKey": "your-gemini-api-key",
+  "isActive": true
+}
+```
+
+---
+
 ## File Locations
 
 ### Source Files
@@ -757,7 +871,9 @@ Sources/APIFramework/
 │   ├── OpenAIProvider
 │   ├── AnthropicProvider
 │   ├── GitHubCopilotProvider
-│   └── DeepSeekProvider
+│   ├── GeminiProvider
+│   ├── DeepSeekProvider
+│   └── CustomProvider
 ├── SAMAPIServer.swift                 # HTTP API server
 └── EndpointManagerProtocol.swift     # Public protocol
 ```
@@ -767,12 +883,6 @@ Sources/APIFramework/
 ~/Library/Caches/sam/models/           # Local models
 ~/Library/Application Support/SAM/providers/  # Provider configs
 ```
-
----
-
-## Recent Changes (Last 24 Hours)
-
-*No changes reported in last 24 hours for APIFramework.*
 
 ---
 
