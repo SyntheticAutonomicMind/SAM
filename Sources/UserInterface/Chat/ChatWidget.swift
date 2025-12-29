@@ -227,11 +227,16 @@ public struct ChatWidget: View {
     /// Todo list manager (shared singleton)
     @ObservedObject private var todoManager = TodoManager.shared
 
-    /// Memory management.
+    /// Memory management - Session Intelligence.
     @State private var showingMemoryPanel = false
     @State private var memoryStatistics: ConversationEngine.MemoryStatistics?
+    @State private var archiveStatistics: MemoryMap?
+    @State private var contextStatistics: ContextStatistics?
     @State private var conversationMemories: [ConversationMemory] = []
     @State private var memorySearchQuery = ""
+    @State private var searchInStored = true
+    @State private var searchInActive = false
+    @State private var searchInArchive = false
 
     /// Terminal panel.
     @State private var showingTerminalPanel = false
@@ -1026,6 +1031,14 @@ public struct ChatWidget: View {
             loadMemoryStatistics()
         }
         .onChange(of: activeConversation?.id) { _, _ in
+            loadMemoryStatistics()
+            conversationMemories.removeAll()
+            memorySearchQuery = ""
+        }
+        .onChange(of: activeConversation?.settings.sharedTopicId) { _, _ in
+            /// BUG FIX: Reload memory stats when shared topic changes
+            /// When user switches topics, conversation ID stays same but effective scope changes
+            /// (topic ID vs conversation ID), so we need to reload the stats
             loadMemoryStatistics()
             conversationMemories.removeAll()
             memorySearchQuery = ""
@@ -5883,13 +5896,25 @@ public struct ChatWidget: View {
         guard conversationManager.memoryInitialized,
               activeConversation != nil else {
             memoryStatistics = nil
+            archiveStatistics = nil
+            contextStatistics = nil
             return
         }
 
         Task {
+            // Load memory stats
             let stats = await conversationManager.getActiveConversationMemoryStats()
+            
+            // Load archive stats
+            let archive = await conversationManager.getActiveConversationArchiveStats()
+            
+            // Get YaRN context stats (synchronous)
+            let context = conversationManager.getYaRNContextStats()
+            
             await MainActor.run {
                 memoryStatistics = stats
+                archiveStatistics = archive
+                contextStatistics = context
             }
         }
     }
