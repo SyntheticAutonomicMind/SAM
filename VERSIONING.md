@@ -74,18 +74,56 @@ This ensures consistent and predictable update behavior.
 
 When creating a new release:
 
-1. Determine today's date: `YYYYMMDD`
-2. Increment release counter (or use 1 for first daily release)
-3. Update `Info.plist`:
+1. **Determine version**: `YYYYMMDD.RELEASE` format
+   - Date: Current date in YYYYMMDD format (e.g., 20251230)
+   - Release: Daily counter starting at 1 (e.g., 1 for first release of the day)
+
+2. **Update Info.plist**:
    ```bash
-   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 20251213.1" Info.plist
-   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 20251213.1" Info.plist
+   VERSION="20251230.1"
+   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Info.plist
+   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" Info.plist
    ```
-4. Update `Resources/whats-new.json` with new version entry
-5. Run `make production` (automatically updates `appcast.xml`)
-6. Verify appcast.xml has correct version
-7. Upload DMG to GitHub releases as `SAM-20251213.1.dmg`
-8. Tag release: `git tag v20251213.1 && git push --tags`
+   
+   **Note:** The build system (`scripts/set-build-version.sh`) automatically ensures both fields match.
+
+3. **Update Resources/whats-new.json** with new version entry:
+   - Add release object with version, date, introduction, highlights, and improvements
+   - See `RELEASE_NOTES.md` for structure details
+
+4. **Generate HTML release notes** (optional but recommended):
+   ```bash
+   ./scripts/generate_release_notes.sh 20251230.1
+   ```
+   This creates styled HTML from whats-new.json for Sparkle's update window.
+
+5. **Build release**: `make build-release`
+
+6. **Sign and notarize**: `make sign-release`
+   - Creates signed DMG and ZIP in `dist/`
+
+7. **Update appcast.xml**:
+   ```bash
+   ./scripts/update_appcast.sh 20251230.1 dist/SAM-20251230.1.zip
+   ```
+
+8. **Commit changes**:
+   ```bash
+   git add Info.plist Resources/whats-new.json appcast.xml
+   git commit -m "chore(release): prepare 20251230.1"
+   ```
+
+9. **Tag release**:
+   ```bash
+   git tag 20251230.1
+   git push origin main --tags
+   ```
+
+10. **Upload to GitHub releases**:
+    - GitHub Actions workflow (`.github/workflows/release.yml`) handles this automatically on tag push
+    - Manual: Upload `dist/SAM-20251230.1.dmg` and `dist/SAM-20251230.1.zip` to GitHub release
+
+See `RELEASE_NOTES.md` for details on the HTML release notes system.
 
 ## Migration Notes
 
