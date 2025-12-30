@@ -230,6 +230,7 @@ public enum ServerOpenAIRole: String, Codable {
 
 /// OpenAI chat message DESIGN NOTE: Content is optional to support OpenAI tool calling where assistant messages may contain only tool_calls without text content.
 public struct OpenAIChatMessage: Content, Sendable {
+    public let id: String?  // Message ID for stateful marker tracking
     public let role: String
     public let content: String?
     public let toolCalls: [OpenAIToolCall]?
@@ -237,6 +238,7 @@ public struct OpenAIChatMessage: Content, Sendable {
 
     /// Standard message constructor (backward compatible).
     public init(role: String, content: String) {
+        self.id = nil  // Legacy messages don't have IDs
         self.role = role
         self.content = content
         self.toolCalls = nil
@@ -245,6 +247,7 @@ public struct OpenAIChatMessage: Content, Sendable {
 
     /// Tool calling constructor (future use).
     public init(role: String, content: String?, toolCalls: [OpenAIToolCall]?) {
+        self.id = nil
         self.role = role
         self.content = content
         self.toolCalls = toolCalls
@@ -253,14 +256,24 @@ public struct OpenAIChatMessage: Content, Sendable {
 
     /// Tool result constructor (future use).
     public init(role: String, content: String, toolCallId: String) {
+        self.id = nil
         self.role = role
         self.content = content
         self.toolCalls = nil
         self.toolCallId = toolCallId
     }
+    
+    /// Message constructor with ID for stateful marker tracking.
+    public init(id: String?, role: String, content: String?, toolCalls: [OpenAIToolCall]? = nil, toolCallId: String? = nil) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.toolCalls = toolCalls
+        self.toolCallId = toolCallId
+    }
 
     enum CodingKeys: String, CodingKey {
-        case role, content
+        case id, role, content
         case toolCalls = "tool_calls"
         case toolCallId = "tool_call_id"
     }
