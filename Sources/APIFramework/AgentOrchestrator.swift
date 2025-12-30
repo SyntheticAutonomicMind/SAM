@@ -4274,22 +4274,27 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         let messagesToAppend = internalMessages[...]
         logger.debug("INTERNAL_MESSAGES: Sending all \(internalMessages.count) internal messages (tool calls + results)")
 
-        /// Delta-only slicing ONLY when statefulMarker exists AND we have tool results
-        /// Previously, slicing happened whenever statefulMarker existed, even for subsequent user messages
-        /// This caused messagesToSend to be empty when user sent a follow-up message, removing all context!
-        /// /// CORRECT BEHAVIOR:
-        /// 1. statefulMarker + hasToolResults = delta-only mode (workflow iteration) - skip conversation history
-        /// 2. statefulMarker + NO tool results = subsequent user message - send FULL conversation history
-        /// 3. NO statefulMarker = first message or fresh start - send FULL conversation history
-        if let marker = statefulMarker, hasToolResults {
-            /// Delta-only mode: This is a workflow iteration with tool results
-            /// Server has full history up to marker, only need to send tool execution delta
+        /// Delta-only slicing when statefulMarker exists (GitHub Copilot session continuity)
+        /// CRITICAL FIX: Always slice when statefulMarker exists, not just for tool results!
+        /// Previous bug: Only sliced when hasToolResults=true, causing Claude to loop by seeing its own responses
+        ///
+        /// CORRECT BEHAVIOR:
+        /// 1. statefulMarker exists = delta-only mode - send ONLY messages after the marker
+        /// 2. NO statefulMarker = first message or fresh start - send FULL conversation history
+        ///
+        /// WHY THIS PREVENTS LOOPS:
+        /// - statefulMarker represents server's knowledge up to that point
+        /// - Sending full history + statefulMarker = model sees its own previous responses
+        /// - Claude sees "I listed directory before" → repeats same action → infinite loop!
+        /// - Slicing = model only sees NEW context since last response → continues forward
+        if let marker = statefulMarker {
+            /// Delta-only mode: Server has full history up to marker, only need to send new messages
             /// PREFERRED: Use message count from when marker was captured (no timing dependencies)
             if let markerMessageCount = statefulMarkerMessageCount {
                 /// Slice to only include messages AFTER the marker count
                 let sliceIndex = markerMessageCount
                 messagesToSend = Array(messagesToSend.suffix(from: min(sliceIndex, messagesToSend.count)))
-                logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(messagesToSend.count) messages after marker (delta-only mode with tool results)")
+                logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(messagesToSend.count) messages after marker (delta-only mode)")
             }
             /// FALLBACK: Search for marker in messages (timing-dependent)
             else if let markerIndex = messagesToSend.lastIndex(where: { $0.githubCopilotResponseId == marker }) {
@@ -4299,10 +4304,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             } else {
                 logger.warning("STATEFUL_MARKER_WARNING: Marker \(marker.prefix(20))... not found in conversation AND no message count available, sending full history (\(messagesToSend.count) messages)")
             }
-        } else if statefulMarker != nil && !hasToolResults {
-            /// Subsequent user message scenario: statefulMarker exists but no tool results yet
-            /// Do NOT slice conversation history - user needs full context for their new message!
-            logger.debug("SUBSEQUENT_USER_MESSAGE: StatefulMarker exists but no tool results - sending FULL conversation history (\(messagesToSend.count) messages) for user context")
         } else {
             logger.debug("INFO: No statefulMarker, sending all \(messagesToSend.count) conversation messages")
         }
