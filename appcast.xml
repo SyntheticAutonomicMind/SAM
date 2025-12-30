@@ -5,7 +5,28 @@
         <link>https://github.com/SyntheticAutonomicMind/SAM</link>
         <description>Updates for SAM (Synthetic Autonomic Mind)</description>
         <language>en</language>
-        <!-- Latest release: v20251227.1 -->
+
+<!-- Latest release: v20251230.1 -->
+        <item>
+            <title>SAM 20251230.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20251230.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251230.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Tue, 30 Dec 2025 14:13:38 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20251230.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20251230.1/SAM-20251230.1.zip"
+                sparkle:version="20251230.1"
+                sparkle:shortVersionString="20251230.1"
+                sparkle:edSignature="AsiSFowbI31cbUq0hy0sfB3r34NZSWGIEio0Vrl2oYAoNuOdJVhFEF/mmeYu1Qws0MMhz28hC0XGuTN7ct8XBw=="
+                length="770460016"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
         <item>
             <title>SAM 20251227.1</title>
             <description><![CDATA[
