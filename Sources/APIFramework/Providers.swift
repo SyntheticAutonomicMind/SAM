@@ -1468,12 +1468,24 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             logger.debug("CHAT_COMPLETIONS: Including stateful marker for context continuation: \(marker.prefix(20))...")
         }
 
+        /// FILTER OUT TOOL RESULT PREVIEW MESSAGES
+        /// These are UI-only messages that should NEVER be sent to the API
+        /// They contain markers like [TOOL_RESULT_STORED] and [TOOL_RESULT_PREVIEW]
+        let filteredMessages = request.messages.filter { message in
+            guard let content = message.content else { return true }
+            let isToolResultPreview = content.contains("[TOOL_RESULT_STORED]") || content.contains("[TOOL_RESULT_PREVIEW]")
+            if isToolResultPreview {
+                logger.debug("FILTER_PREVIEW: Removing tool result preview message (role=\(message.role))")
+            }
+            return !isToolResultPreview
+        }
+        
         /// MESSAGE_ALTERNATION FIX: Enforce strict user/assistant alternation
         /// GitHub Copilot requires alternating roles (user → assistant → user → assistant)
         /// Without this, consecutive same-role messages cause token counting errors
-        let alternationFixedMessages = enforceMessageAlternation(request.messages)
-        if alternationFixedMessages.count != request.messages.count {
-            logger.debug("MESSAGE_ALTERNATION: Applied fix - \(request.messages.count) → \(alternationFixedMessages.count) messages")
+        let alternationFixedMessages = enforceMessageAlternation(filteredMessages)
+        if alternationFixedMessages.count != filteredMessages.count {
+            logger.debug("MESSAGE_ALTERNATION: Applied fix - \(filteredMessages.count) → \(alternationFixedMessages.count) messages")
         }
 
         let messages = alternationFixedMessages.map { message in
@@ -1482,8 +1494,14 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             ]
 
             /// Include content if it exists (can be null for assistant messages with tool_calls).
+            /// CRITICAL FIX: Trim trailing whitespace to prevent GitHub Copilot API rejection
+            /// Claude models sometimes append newlines which cause "trailing whitespace" errors
             if let content = message.content {
-                messageDict["content"] = content
+                let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                /// Only include content if it's not empty after trimming
+                if !trimmedContent.isEmpty {
+                    messageDict["content"] = trimmedContent
+                }
             }
 
             /// Include tool_calls for assistant messages (CRITICAL for GitHub Copilot).
