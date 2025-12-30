@@ -589,11 +589,13 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     ///   - context: Workflow execution context (modified in place)
     ///   - conversationId: UUID of the conversation
     ///   - model: Model name to determine proper message formatting (Claude vs GPT)
+    ///   - enableWorkflowMode: Whether workflow mode is enabled (only remove messages in workflow mode)
     /// - Returns: true if directive was injected, false otherwise
     private func injectAutoContinueIfTodosIncomplete(
         context: inout WorkflowExecutionContext,
         conversationId: UUID,
-        model: String
+        model: String,
+        enableWorkflowMode: Bool
     ) async -> Bool {
         /// Don't attempt if workflow already marked complete.
         guard !context.detectedWorkflowCompleteMarker else { return false }
@@ -677,17 +679,24 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 ///
                 /// FIX: Remove the last assistant message from the conversation before continuing.
                 /// This ensures the agent only sees the reminder, not its own previous output.
-                if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }),
-                   let messageBus = conversation.messageBus {
-                    /// Find and remove the last assistant message
-                    let messages = messageBus.messages
-                    if let lastAssistant = messages.last(where: { !$0.isFromUser }) {
-                        messageBus.removeMessage(id: lastAssistant.id)
-                        logger.info("AUTO_CONTINUE: Removed last assistant message to prevent infinite loop", metadata: [
-                            "messageId": .string(lastAssistant.id.uuidString),
-                            "contentPreview": .string(String(lastAssistant.content.prefix(100)))
-                        ])
+                ///
+                /// IMPORTANT: Only remove messages when workflow mode is enabled. In normal chat mode,
+                /// users expect messages to persist even with incomplete todos.
+                if enableWorkflowMode {
+                    if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }),
+                       let messageBus = conversation.messageBus {
+                        /// Find and remove the last assistant message
+                        let messages = messageBus.messages
+                        if let lastAssistant = messages.last(where: { !$0.isFromUser }) {
+                            messageBus.removeMessage(id: lastAssistant.id)
+                            logger.info("AUTO_CONTINUE: Removed last assistant message to prevent infinite loop (workflow mode)", metadata: [
+                                "messageId": .string(lastAssistant.id.uuidString),
+                                "contentPreview": .string(String(lastAssistant.content.prefix(100)))
+                            ])
+                        }
                     }
+                } else {
+                    logger.debug("AUTO_CONTINUE: Keeping message visible (workflow mode disabled)")
                 }
 
                 return true
@@ -1803,7 +1812,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     }
 
                     /// Default: Natural termination (no continue signal) Before terminating, check for incomplete todos and inject an auto-continue directive if needed.
-                    if await injectAutoContinueIfTodosIncomplete(context: &context, conversationId: conversationId, model: model) {
+                    let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                    if await injectAutoContinueIfTodosIncomplete(context: &context, conversationId: conversationId, model: model, enableWorkflowMode: enableWorkflowMode) {
                         logger.debug("AUTO_CONTINUE: Injected continue directive due to incomplete todos", metadata: [
                             "iteration": .stringConvertible(context.iteration)
                         ])
@@ -1887,10 +1897,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations)
                         ])
 
+                        let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
                         let injected = await injectAutoContinueIfTodosIncomplete(
                             context: &context,
                             conversationId: conversationId,
-                            model: model
+                            model: model,
+                            enableWorkflowMode: enableWorkflowMode
                         )
 
                         if injected {
@@ -3160,10 +3172,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                                     /// Inject auto-continue intervention to break the planning loop
                                     /// Use the planningOnlyIterations count to determine intervention level
+                                    let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
                                     let injected = await injectAutoContinueIfTodosIncomplete(
                                         context: &context,
                                         conversationId: conversationId,
-                                        model: model
+                                        model: model,
+                                        enableWorkflowMode: enableWorkflowMode
                                     )
 
                                     if injected {
@@ -3192,7 +3206,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             }
 
                             /// Natural termination (no tools, no signals) Before finishing the streaming session, attempt auto-continue if there are incomplete todos present.
-                            if await injectAutoContinueIfTodosIncomplete(context: &context, conversationId: conversationId, model: model) {
+                            let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                            if await injectAutoContinueIfTodosIncomplete(context: &context, conversationId: conversationId, model: model, enableWorkflowMode: enableWorkflowMode) {
                                 logger.debug("AUTO_CONTINUE_STREAMING: Injected continue directive due to incomplete todos", metadata: [
                                     "iteration": .stringConvertible(context.iteration)
                                 ])
@@ -3300,10 +3315,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                     "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations)
                                 ])
 
+                                let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
                                 let injected = await injectAutoContinueIfTodosIncomplete(
                                     context: &context,
                                     conversationId: conversationId,
-                                    model: model
+                                    model: model,
+                                    enableWorkflowMode: enableWorkflowMode
                                 )
 
                                 if injected {
