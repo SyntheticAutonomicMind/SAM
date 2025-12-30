@@ -2320,8 +2320,22 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     if count >= limit {
                         logger.warning("LOOP_DETECTION: Tool '\(toolName)' called \(count) times consecutively! Loop detected.")
 
+                        /// Create intervention message to break the loop
+                        let interventionMessage = """
+                        LOOP DETECTED: You've called the '\(toolName)' tool \(count) times in a row without progress.
+                        
+                        This indicates you may be stuck. Please:
+                        1. Review the results you've already received
+                        2. Try a different approach or tool
+                        3. If the task cannot be completed, explain why to the user
+                        
+                        Do NOT call '\(toolName)' again immediately - choose a different action.
+                        """
+                        
+                        context.internalMessages.append(createSystemReminder(content: interventionMessage, model: model))
+                        
                         context.consecutiveToolCounts[toolName] = 0
-                        logger.debug("LOOP_DETECTION: Detected '\(toolName)' loop (system message injection removed)")
+                        logger.debug("LOOP_DETECTION: Injected intervention message for '\(toolName)' loop")
                     }
                 }
 
@@ -3658,8 +3672,22 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             if count >= limit {
                                 logger.warning("LOOP_DETECTION_STREAMING: Tool '\(toolName)' called \(count) times consecutively! Loop detected.")
 
+                                /// Create intervention message to break the loop
+                                let interventionMessage = """
+                                LOOP DETECTED: You've called the '\(toolName)' tool \(count) times in a row without progress.
+                                
+                                This indicates you may be stuck. Please:
+                                1. Review the results you've already received
+                                2. Try a different approach or tool
+                                3. If the task cannot be completed, explain why to the user
+                                
+                                Do NOT call '\(toolName)' again immediately - choose a different action.
+                                """
+                                
+                                context.internalMessages.append(createSystemReminder(content: interventionMessage, model: model))
+                                
                                 context.consecutiveToolCounts[toolName] = 0
-                                logger.debug("LOOP_DETECTION_STREAMING: Injected '\(toolName)' loop intervention message")
+                                logger.debug("LOOP_DETECTION_STREAMING: Injected intervention message for '\(toolName)' loop")
                             }
                         }
 
@@ -5147,6 +5175,13 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
             for (index, historyMessage) in conversationMessages.enumerated() {
                 var cleanContent = historyMessage.content
+
+                /// DIAGNOSTIC: Track isToolMessage flag at conversion
+                let hasPreview = cleanContent.contains("[TOOL_RESULT_PREVIEW]") || cleanContent.contains("[TOOL_RESULT_STORED]")
+                if hasPreview {
+                    let contentPrefix = cleanContent.prefix(60).replacingOccurrences(of: "\n", with: " ")
+                    logger.debug("CONVERT_TOOL_MSG: isToolMessage=\(historyMessage.isToolMessage), type=\(historyMessage.type), contentPrefix=[\(contentPrefix)]")
+                }
 
                 // Handle tool messages with proper role and toolCallId
                 if historyMessage.isToolMessage {

@@ -567,6 +567,10 @@ public class ConversationMessageBus: ObservableObject {
             isToolMessage: true
         )
 
+        /// DIAGNOSTIC: Track isToolMessage flag at creation
+        let contentPrefix = message.content.prefix(60).replacingOccurrences(of: "\n", with: " ")
+        logger.debug("TOOL_MESSAGE_CREATED: id=\(message.id), isToolMessage=\(message.isToolMessage), contentPrefix=[\(contentPrefix)]")
+
         appendMessage(message)
         scheduleSave()
 
