@@ -852,7 +852,11 @@ public class ConversationMessageBus: ObservableObject {
             Task { @MainActor in
                 let beforeCount = conversation.messages.count
                 conversation.messages = nonEmptyMessages
-                conversationManager.saveConversations()
+
+                /// CRITICAL FIX: Use saveConversationsImmediately() instead of saveConversations()
+                /// to avoid double debounce (MessageBus already has 500ms debounce).
+                /// Double debounce was causing 1000ms total delay, risking message loss on crash.
+                conversationManager.saveConversationsImmediately()
 
                 if beforeCount != nonEmptyMessages.count {
                     self.logger.warning("SAVE: Message count changed from \(beforeCount) to \(nonEmptyMessages.count) - FILTERED OUT \(beforeCount - nonEmptyMessages.count) messages")
