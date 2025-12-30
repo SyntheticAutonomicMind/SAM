@@ -825,6 +825,7 @@ public class ConversationMessageBus: ObservableObject {
 
                 /// Filter empty streaming artifacts
                 if message.isStreaming && contentIsEmpty {
+                    self.logger.warning("SAVE_FILTER: Removing empty streaming message id=\(message.id.uuidString.prefix(8)), isStreaming=\(message.isStreaming)")
                     return false
                 }
 
@@ -839,14 +840,23 @@ public class ConversationMessageBus: ObservableObject {
                 }
 
                 /// Filter empty assistant messages
-                return !contentIsEmpty
+                if contentIsEmpty {
+                    self.logger.warning("SAVE_FILTER: Removing empty assistant message id=\(message.id.uuidString.prefix(8)), isStreaming=\(message.isStreaming), contentLength=0")
+                    return false
+                }
+                
+                return true
             }
 
             /// Update on main thread (ConversationModel is @MainActor)
             Task { @MainActor in
+                let beforeCount = conversation.messages.count
                 conversation.messages = nonEmptyMessages
                 conversationManager.saveConversations()
 
+                if beforeCount != nonEmptyMessages.count {
+                    self.logger.warning("SAVE: Message count changed from \(beforeCount) to \(nonEmptyMessages.count) - FILTERED OUT \(beforeCount - nonEmptyMessages.count) messages")
+                }
                 self.logger.debug("SAVE: Persisted \(nonEmptyMessages.count) messages")
             }
         }
