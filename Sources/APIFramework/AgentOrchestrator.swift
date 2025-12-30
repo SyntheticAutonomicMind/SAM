@@ -4310,19 +4310,36 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         logger.debug("DEBUG_DUPLICATION: Adding \(messagesToSend.count) conversation messages to request")
 
-        /// When statefulMarker exists AND we have internal messages, send ONLY internalMessages (delta-only mode)
+        /// When statefulMarker exists, send delta (sliced messages + tool results)
         /// This prevents duplicate assistant messages that cause Claude 400 errors
-        /// ROOT CAUSE: Assistant responses are in BOTH conversation.messages AND internalMessages
-        /// Our approach: internalMessages IS the delta (tool calls + results from previous iteration)
+        /// CRITICAL FIX: Always use delta mode when statefulMarker exists (not just when hasToolResults)
+        /// ROOT CAUSE: Sending full history + statefulMarker causes Claude to loop (sees own responses)
+        /// Our approach: Sliced messagesToSend + internalMessages IS the complete delta
         /// Do NOT inject "Please continue" into messages array
         /// GitHub Copilot API: "Please continue" is query param only, NOT a synthetic message
         var currentMarker = statefulMarker  /// Make mutable copy
-        if let marker = currentMarker, hasToolResults {
-            /// Delta-only mode: Server has full history up to marker, only send new tool execution context
+        if let marker = currentMarker {
+            /// Delta-only mode: Server has full history up to marker, only send new context
             /// The stateful marker tells the API to continue from the previous response
-            /// We send ONLY the tool results (delta), not the full conversation history
+            /// We send ONLY the delta: sliced conversation messages + tool results
+            
+            /// Add sliced conversation messages (already filtered by statefulMarkerMessageCount)
+            for (index, historyMessage) in messagesToSend.enumerated() {
+                let role = historyMessage.isFromUser ? "user" : "assistant"
+                var cleanContent = historyMessage.content
+
+                /// Clean tool call markers from assistant messages
+                if role == "assistant" {
+                    cleanContent = cleanToolCallMarkers(from: cleanContent)
+                }
+
+                messages.append(OpenAIChatMessage(role: role, content: cleanContent))
+                logger.debug("DELTA_MESSAGE: Message \(index): role=\(role), content=\(cleanContent.safePrefix(50))")
+            }
+            
+            /// Add internal messages (tool calls + results from current iteration)
             messages.append(contentsOf: messagesToAppend)
-            logger.debug("STATEFUL_MARKER_DELTA_MODE: Sending \(internalMessages.count) internal messages (delta-only mode, no synthetic user message)")
+            logger.debug("STATEFUL_MARKER_DELTA_MODE: Sending \(messagesToSend.count) conversation + \(internalMessages.count) internal messages (delta-only mode)")
 
             /// CRITICAL: Enforce 16KB payload limit (vscode-copilot-chat pattern)
             /// Even with cached large tool results, accumulated deltas can exceed limit
