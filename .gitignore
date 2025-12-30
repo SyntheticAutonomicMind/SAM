@@ -62,3 +62,6 @@ scratch/
 .fseventsd
 .Spotlight-V100
 .TemporaryItems
+
+# Generated release notes
+release-notes/

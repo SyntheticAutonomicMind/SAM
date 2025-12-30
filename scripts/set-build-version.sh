@@ -4,11 +4,11 @@
 
 set -e
 
-# set-build-version.sh - Update CFBundleVersion with date when version changes
+# set-build-version.sh - Ensure CFBundleVersion matches CFBundleShortVersionString
 # 
-# This script automatically updates the CFBundleVersion in Info.plist
-# to use the current date (YYYYMMDD format) ONLY when CFBundleShortVersionString
-# changes. This provides a stable build identifier tied to version releases.
+# Since SAM migrated to unified YYYYMMDD.RELEASE versioning (December 2025),
+# both CFBundleVersion and CFBundleShortVersionString use the same value.
+# This script ensures they stay synchronized.
 #
 # Usage:
 #   ./scripts/set-build-version.sh [configuration]
@@ -20,10 +20,10 @@ set -e
 #   - Info.plist in project root (source template)
 #   - Info.plist in build output (if exists)
 #
-# Example:
-#   When version changes from 1.0.86 to 1.0.87:
-#   Before: Version 1.0.86 (20251129)
-#   After:  Version 1.0.87 (20251129) <- updates to current date
+# Versioning scheme (see VERSIONING.md):
+#   Format: YYYYMMDD.RELEASE
+#   Example: 20251230.1 (first release on Dec 30, 2025)
+#   Both CFBundleShortVersionString and CFBundleVersion use this value.
 
 # Get current version from Info.plist
 CURRENT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist 2>/dev/null)
@@ -34,39 +34,23 @@ if [ -z "$CURRENT_VERSION" ]; then
     exit 1
 fi
 
-# Version tracking file
-VERSION_FILE=".last_version"
-
-# Read last version
-LAST_VERSION=""
-if [ -f "$VERSION_FILE" ]; then
-    LAST_VERSION=$(cat "$VERSION_FILE")
-fi
-
-# Check if version changed
-if [ "$CURRENT_VERSION" != "$LAST_VERSION" ]; then
-    # Version changed - update build number to current date
-    NEW_BUILD=$(date +%Y%m%d)
+# Ensure CFBundleVersion matches CFBundleShortVersionString (unified versioning)
+if [ "$CURRENT_VERSION" != "$CURRENT_BUILD" ]; then
+    echo "Synchronizing CFBundleVersion to match CFBundleShortVersionString: $CURRENT_VERSION"
     
-    echo "Version changed: $LAST_VERSION -> $CURRENT_VERSION"
-    echo "Updating CFBundleVersion to: $NEW_BUILD"
-    
-    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" Info.plist 2>/dev/null
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CURRENT_VERSION" Info.plist 2>/dev/null
     
     if [ $? -ne 0 ]; then
         echo "ERROR: Failed to update Info.plist"
         exit 1
     fi
     
-    # Save current version
-    echo "$CURRENT_VERSION" > "$VERSION_FILE"
-    
-    echo "SUCCESS: Build version updated to $NEW_BUILD"
+    echo "SUCCESS: CFBundleVersion synchronized to $CURRENT_VERSION"
 else
-    echo "Version unchanged ($CURRENT_VERSION), keeping build number: $CURRENT_BUILD"
+    echo "Version already synchronized: $CURRENT_VERSION"
 fi
 
-# Also update build outputs if they exist (use current build number from Info.plist)
+# Also update build outputs if they exist
 CONFIGURATION="${1:-}"
 BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Info.plist 2>/dev/null)
 
