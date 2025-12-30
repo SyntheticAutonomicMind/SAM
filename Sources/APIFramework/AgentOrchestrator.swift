@@ -4341,6 +4341,15 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             messages.append(contentsOf: messagesToAppend)
             logger.debug("STATEFUL_MARKER_DELTA_MODE: Sending \(messagesToSend.count) conversation + \(internalMessages.count) internal messages (delta-only mode)")
 
+            /// CRITICAL FIX: Ensure messages start with USER role
+            /// GitHub Copilot API requires first message to be user role
+            /// If slicing resulted in only assistant/tool messages, prepend continue message
+            if !messages.isEmpty && messages.first?.role != "user" {
+                let continueMessage = OpenAIChatMessage(role: "user", content: "<system-reminder>continue</system-reminder>")
+                messages.insert(continueMessage, at: 0)
+                logger.debug("DELTA_USER_MESSAGE: Prepended <system-reminder>continue</system-reminder> (messages started with \(messages[1].role))")
+            }
+
             /// CRITICAL: Enforce 16KB payload limit (vscode-copilot-chat pattern)
             /// Even with cached large tool results, accumulated deltas can exceed limit
             /// If trimming occurs, clear marker (it may reference removed message)
