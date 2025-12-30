@@ -1652,11 +1652,11 @@ AVAILABLE TOOLS:
             /// First, try to find conversation in loaded conversations
             var existing = conversationManager.conversations.first(where: { $0.id == conversationId })
 
-            /// If not found in memory, reload conversations from disk in case it was created in UI
+            /// If not found in memory, load SINGLE conversation from disk
+            /// CRITICAL: Don't reload ALL conversations - it destroys MessageBus instances and breaks UI
             if existing == nil {
-                logger.debug("Conversation \(conversationId) not found in memory, reloading conversations from disk...")
-                conversationManager.loadConversationsFromDisk()
-                existing = conversationManager.conversations.first(where: { $0.id == conversationId })
+                logger.debug("Conversation \(conversationId) not found in memory, loading single conversation from disk...")
+                existing = conversationManager.loadSingleConversation(id: conversationId)
 
                 if existing != nil {
                     logger.debug("Successfully loaded conversation \(conversationId) from disk")
@@ -2036,11 +2036,11 @@ AVAILABLE TOOLS:
                 /// First, try to find conversation in loaded conversations
                 var existing = conversationManager.conversations.first(where: { $0.id == conversationId })
 
-                /// If not found in memory, reload conversations from disk in case it was created in UI
+                /// If not found in memory, load SINGLE conversation from disk
+                /// CRITICAL: Don't reload ALL conversations - it destroys MessageBus instances and breaks UI
                 if existing == nil {
-                    logger.debug("Conversation \(conversationId) not found in memory, reloading conversations from disk...")
-                    conversationManager.loadConversationsFromDisk()
-                    existing = conversationManager.conversations.first(where: { $0.id == conversationId })
+                    logger.debug("Conversation \(conversationId) not found in memory, loading single conversation from disk...")
+                    existing = conversationManager.loadSingleConversation(id: conversationId)
 
                     if existing != nil {
                         logger.debug("Successfully loaded conversation \(conversationId) from disk")

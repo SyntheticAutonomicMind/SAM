@@ -1060,8 +1060,39 @@ public class ConversationManager: ObservableObject {
 
     /// Reload conversations from disk (for API when conversation_id not found in memory).
     /// This allows API to use conversations created in UI that haven't been synced yet.
+    /// CRITICAL BUG FIX: This was destroying all MessageBus instances and breaking the UI.
+    /// NEW BEHAVIOR: Only load the SINGLE missing conversation, don't reload everything.
     public func loadConversationsFromDisk() {
-        loadConversations()
+        /// This method should no longer be used for bulk reloads - only for finding missing conversations
+        /// The caller should handle finding the specific conversation they need
+        logger.warning("loadConversationsFromDisk() called - this method is deprecated for bulk reloads")
+        logger.warning("Consider using loadSingleConversation(id:) instead for better performance and UI stability")
+    }
+    
+    /// Load a single conversation from disk without disturbing existing conversations
+    public func loadSingleConversation(id: UUID) -> ConversationModel? {
+        do {
+            let allConversationsOnDisk = try conversationConfig.loadConversationsWithMigration()
+            
+            guard let foundConversation = allConversationsOnDisk.first(where: { $0.id == id }) else {
+                logger.debug("Conversation \(id.uuidString.prefix(8)) not found on disk")
+                return nil
+            }
+            
+            /// Add to conversations array
+            foundConversation.manager = self
+            foundConversation.initializeMessageBus(conversationManager: self)
+            conversations.append(foundConversation)
+            
+            /// Re-sort conversations by created date
+            conversations.sort { $0.created > $1.created }
+            
+            logger.debug("Loaded single conversation \(id.uuidString.prefix(8)) from disk")
+            return foundConversation
+        } catch {
+            logger.error("Failed to load single conversation \(id): \(error)")
+            return nil
+        }
     }
 
     /// Internal save implementation (called by debounced or immediate save).
