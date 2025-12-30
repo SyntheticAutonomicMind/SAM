@@ -1,10 +1,22 @@
 {
   "releases": [
     {
-      "version": "20260101.1",
-      "release_date": "January 1, 2026",
-      "introduction": "This update adds comprehensive Google Gemini API support with full pricing visibility and rate limit notifications, plus significant terminal improvements for shared topics and critical bug fixes for document imports, long conversations, and update detection.",
+      "version": "20251230.1",
+      "release_date": "December 30, 2025",
+      "introduction": "This comprehensive update adds Google Gemini API support with full pricing visibility, Session Intelligence toolbar for real-time agent activity tracking, significant terminal improvements, and critical bug fixes for message persistence, document imports, and long conversations.",
       "highlights": [
+        {
+          "id": "message-persistence-fix",
+          "icon": "checkmark.shield.fill",
+          "title": "Message Disappearance Bug Fixed",
+          "description": "Resolved critical bug where messages would vanish after streaming completed when conversations had incomplete todo lists. AUTO_CONTINUE now respects workflow mode settings."
+        },
+        {
+          "id": "double-debounce-fix",
+          "icon": "clock.arrow.2.circlepath",
+          "title": "Faster Message Persistence",
+          "description": "Eliminated double debounce delay that caused up to 1 second before messages were written to disk. Messages now persist within 500ms, reducing risk of data loss on crashes."
+        },
         {
           "id": "session-intelligence-toolbar",
           "icon": "brain",
@@ -31,6 +43,18 @@
         }
       ],
       "improvements": [
+        {
+          "id": "workflow-mode-respect",
+          "icon": "slider.horizontal.3",
+          "title": "Workflow Mode Awareness",
+          "description": "AUTO_CONTINUE feature now correctly checks workflow mode settings before removing messages, preventing unintended message deletion in normal chat mode."
+        },
+        {
+          "id": "optimized-save-path",
+          "icon": "arrow.down.doc.fill",
+          "title": "Optimized Save Architecture",
+          "description": "MessageBus now bypasses redundant debounce layer when saving to disk, maintaining streaming efficiency while improving data reliability."
+        },
         {
           "id": "intelligence-telemetry",
           "icon": "chart.bar.fill",
