@@ -778,15 +778,9 @@ public class DocumentChunker: @unchecked Sendable {
         if document.content.count < minChunkSize {
             logger.warning("CONTENT_TOO_SMALL: Document '\(document.title)' has only \(document.content.count) characters (min: \(minChunkSize))")
             throw VectorRAGError.ingestionFailed("""
-                Content too small to chunk: \(document.content.count) characters (minimum: \(minChunkSize)).
-
-                RECOMMENDATION: Process this content directly without RAG ingestion.
-                The content is brief enough to include in your response without needing semantic search.
-
-                For very short content (summaries, snippets, brief articles):
-                - Use the content directly in your synthesis
-                - No need to store in memory
-                - Reference the source URL for attribution
+                This source did not return useable results (content too small: \(document.content.count) characters, minimum: \(minChunkSize)).
+                
+                Please skip this source and try another.
                 """)
         }
 
@@ -855,15 +849,9 @@ public class DocumentChunker: @unchecked Sendable {
         if chunks.isEmpty {
             logger.warning("ZERO_CHUNKS: Document '\(document.title)' produced no chunks (content: \(document.content.count) chars, min: \(minChunkSize))")
             throw VectorRAGError.ingestionFailed("""
-                No chunks created from content: Document has \(document.content.count) characters but all segments were below minimum chunk size (\(minChunkSize)).
-
-                RECOMMENDATION: Process this content directly without RAG ingestion.
-                The content is too fragmented or brief for semantic chunking.
-
-                For very short or fragmented content:
-                - Use the content directly in your synthesis
-                - No need to store in memory
-                - Reference the source URL for attribution
+                This source did not return useable results (content too fragmented: \(document.content.count) characters but no valid chunks created).
+                
+                Please skip this source and try another.
                 """)
         }
 
