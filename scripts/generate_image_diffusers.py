@@ -455,6 +455,7 @@ def generate_image(
     scheduler: str = "dpm++_sde_karras",
     steps: int = 25,
     guidance_scale: float = 7.5,
+    true_cfg_scale: Optional[float] = None,
     width: int = 512,
     height: int = 512,
     seed: Optional[int] = None,
@@ -475,7 +476,8 @@ def generate_image(
         negative_prompt: Negative prompt
         scheduler: Scheduler name (dpm++_sde_karras, euler, etc.)
         steps: Number of inference steps
-        guidance_scale: Guidance scale
+        guidance_scale: Guidance scale (standard SD models)
+        true_cfg_scale: True CFG scale (Qwen-Image and similar models, overrides guidance_scale)
         width: Image width (text-to-image only)
         height: Image height (text-to-image only)
         seed: Random seed (None for random)
@@ -862,6 +864,23 @@ def generate_image(
                 prompt_embeds, negative_embeds = compel_result
                 print("Using Compel embeddings for SD 1.x")
     
+    # Determine which guidance parameter to use
+    # Qwen-Image uses true_cfg_scale, standard SD uses guidance_scale
+    is_qwen = model_type.lower() in ["qwenimage", "qwen"]
+    
+    # Use true_cfg_scale if provided, otherwise use guidance_scale for both
+    effective_cfg_scale = true_cfg_scale if true_cfg_scale is not None else guidance_scale
+    
+    # Build kwargs for pipeline call
+    guidance_kwargs = {}
+    if is_qwen:
+        # Qwen-Image uses true_cfg_scale parameter
+        guidance_kwargs['true_cfg_scale'] = effective_cfg_scale
+        print(f"  True CFG: {effective_cfg_scale} (Qwen-Image mode)")
+    else:
+        # Standard SD models use guidance_scale
+        guidance_kwargs['guidance_scale'] = guidance_scale
+    
     # Generate image
     print(f"Generating {num_images} image(s)...")
     print(f"  Mode: {'Image-to-Image' if is_img2img else 'Text-to-Image'}")
@@ -873,7 +892,8 @@ def generate_image(
     else:
         print(f"  Resolution: {width}×{height}")
     print(f"  Steps: {steps}")
-    print(f"  Guidance: {guidance_scale}")
+    if not is_qwen:
+        print(f"  Guidance: {guidance_scale}")
     if use_compel and prompt_embeds is not None:
         print(f"  Compel: ENABLED (prompt weighting active)")
     
@@ -886,9 +906,9 @@ def generate_image(
                     image=init_img,
                     strength=strength,
                     num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
                     num_images_per_prompt=num_images,
                     generator=generator,
+                    **guidance_kwargs,
                     **prompt_embeds
                 )
             elif prompt_embeds is not None:
@@ -899,9 +919,9 @@ def generate_image(
                     prompt_embeds=prompt_embeds,
                     negative_prompt_embeds=negative_embeds,
                     num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
                     num_images_per_prompt=num_images,
-                    generator=generator
+                    generator=generator,
+                    **guidance_kwargs
                 )
             else:
                 # Standard prompts
@@ -911,9 +931,9 @@ def generate_image(
                     strength=strength,
                     negative_prompt=negative_prompt if negative_prompt else None,
                     num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
                     num_images_per_prompt=num_images,
-                    generator=generator
+                    generator=generator,
+                    **guidance_kwargs
                 )
         else:
             # Text-to-Image generation
@@ -921,11 +941,11 @@ def generate_image(
                 # SDXL with Compel
                 result = pipe(
                     num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
                     width=width,
                     height=height,
                     num_images_per_prompt=num_images,
                     generator=generator,
+                    **guidance_kwargs,
                     **prompt_embeds
                 )
             elif prompt_embeds is not None:
@@ -934,11 +954,11 @@ def generate_image(
                     prompt_embeds=prompt_embeds,
                     negative_prompt_embeds=negative_embeds,
                     num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
                     width=width,
                     height=height,
                     num_images_per_prompt=num_images,
-                    generator=generator
+                    generator=generator,
+                    **guidance_kwargs
                 )
             else:
                 # Standard prompts
@@ -946,11 +966,11 @@ def generate_image(
                     prompt=prompt,
                     negative_prompt=negative_prompt if negative_prompt else None,
                     num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
                     width=width,
                     height=height,
                     num_images_per_prompt=num_images,
-                    generator=generator
+                    generator=generator,
+                    **guidance_kwargs
                 )
     
     images = result.images
@@ -1043,6 +1063,7 @@ Examples:
     )
     parser.add_argument('--steps', type=int, default=25, help='Number of inference steps (default: 25)')
     parser.add_argument('--guidance', type=float, default=7.5, help='Guidance scale (default: 7.5)')
+    parser.add_argument('--true-cfg-scale', type=float, default=None, help='True CFG scale for Qwen-Image (overrides --guidance)')
     parser.add_argument('--width', type=int, default=512, help='Image width (default: 512)')
     parser.add_argument('--height', type=int, default=512, help='Image height (default: 512)')
     parser.add_argument('--seed', type=int, default=None, help='Random seed (default: random)')
@@ -1064,6 +1085,7 @@ Examples:
             scheduler=args.scheduler,
             steps=args.steps,
             guidance_scale=args.guidance,
+            true_cfg_scale=getattr(args, 'true_cfg_scale', None),
             width=args.width,
             height=args.height,
             seed=args.seed,
