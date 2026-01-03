@@ -176,7 +176,8 @@ public class PythonDiffusersService {
     ///   - modelName: Name of model in staging directory
     ///   - scheduler: Scheduler to use
     ///   - steps: Number of inference steps
-    ///   - guidanceScale: Guidance scale
+    ///   - guidanceScale: Guidance scale (standard SD models)
+    ///   - trueCfgScale: True CFG scale (Qwen-Image and similar models, overrides guidanceScale)
     ///   - width: Image width
     ///   - height: Image height
     ///   - seed: Random seed (nil for random)
@@ -195,6 +196,7 @@ public class PythonDiffusersService {
         scheduler: PythonScheduler = .dpmppSDEKarras,
         steps: Int = 25,
         guidanceScale: Float = 7.5,
+        trueCfgScale: Float? = nil,
         width: Int = 512,
         height: Int = 512,
         seed: Int? = nil,
@@ -225,6 +227,7 @@ public class PythonDiffusersService {
             "scheduler": .string(scheduler.rawValue),
             "steps": .stringConvertible(steps),
             "guidance": .stringConvertible(guidanceScale),
+            "trueCfgScale": trueCfgScale != nil ? .stringConvertible(trueCfgScale!) : .string("nil"),
             "size": .string("\(width)×\(height)"),
             "mode": .string(inputImage != nil ? "img2img" : "txt2img")
         ])
@@ -242,6 +245,11 @@ public class PythonDiffusersService {
             "--height", String(height),
             "--num-images", String(imageCount)
         ]
+
+        /// Add true-cfg-scale if provided (for Qwen-Image and similar models)
+        if let trueCfg = trueCfgScale {
+            args.append(contentsOf: ["--true-cfg-scale", String(trueCfg)])
+        }
 
         if let negPrompt = negativePrompt, !negPrompt.isEmpty {
             args.append(contentsOf: ["-n", negPrompt])
