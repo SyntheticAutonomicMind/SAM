@@ -3047,18 +3047,35 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                 continue
                             }
 
-                            /// Natural termination (no tools, no signals) Before finishing the streaming session, attempt auto-continue if there are incomplete todos present.
-                            let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                            if await injectAutoContinueIfTodosIncomplete(context: &context, conversationId: conversationId, model: model, enableWorkflowMode: enableWorkflowMode) {
-                                logger.debug("AUTO_CONTINUE_STREAMING: Injected continue directive due to incomplete todos", metadata: [
+                            /// Natural termination (no tools, no signals)
+                            /// ORCHESTRATOR FLOW: Check for continuation conditions
+                            /// 1. Active todos exist → Continue
+                            /// 2. Workflow switch enabled → Continue (fallback)
+                            /// 3. Otherwise → Natural stop
+                            
+                            let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
+                            
+                            if hasIncompleteTodos {
+                                logger.debug("WORKFLOW_CONTINUING_STREAMING: Active todos detected", metadata: [
+                                    "incompleteTodos": .stringConvertible(currentTodoList.filter { $0.status.lowercased() != "completed" }.count),
                                     "iteration": .stringConvertible(context.iteration)
                                 ])
-                                completeIteration(context: &context, responseStatus: "auto_continue_injected_streaming")
+                                completeIteration(context: &context, responseStatus: "auto_continue_todos_streaming")
+                                /// Iteration will be incremented at bottom of loop - don't increment here
+                                continue
+                            }
+                            
+                            let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                            if enableWorkflowMode {
+                                logger.debug("WORKFLOW_CONTINUING_STREAMING: Workflow mode enabled", metadata: [
+                                    "iteration": .stringConvertible(context.iteration)
+                                ])
+                                completeIteration(context: &context, responseStatus: "auto_continue_workflow_streaming")
                                 /// Iteration will be incremented at bottom of loop - don't increment here
                                 continue
                             }
 
-                            logger.info("WORKFLOW_COMPLETE_STREAMING: Natural termination (no continue signal)", metadata: [
+                            logger.info("WORKFLOW_COMPLETE_STREAMING: Natural termination", metadata: [
                                 "iteration": .stringConvertible(context.iteration)
                             ])
 
