@@ -1513,10 +1513,13 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// This prevents accumulation of status/reminder messages across iterations.
             context.ephemeralMessages.removeAll()
 
-            /// SIMPLE ORCHESTRATOR PATTERN: Add todo reminder at iteration start if needed
-            /// This replaces the complex pendingAutoContinueMessage injection system
+            /// ORCHESTRATOR PATTERN: Add appropriate reminder based on continuation reason
+            /// From diagram: Every continuation MUST have a reminder message
             let incompleteTodos = currentTodoList.filter { $0.status.lowercased() != "completed" }
+            let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+            
             if !incompleteTodos.isEmpty {
+                /// Case 1: Active todos exist → Add todo reminder
                 let inProgress = incompleteTodos.filter { $0.status.lowercased() == "in-progress" }
                 let notStarted = incompleteTodos.filter { $0.status.lowercased() == "not-started" }
                 
@@ -1529,9 +1532,15 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 """
                 
                 context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
-                logger.debug("TODO_REMINDER: Added todo list reminder to ephemeral messages", metadata: [
+                logger.debug("TODO_REMINDER: Added todo list reminder", metadata: [
                     "incompleteTodos": .stringConvertible(incompleteTodos.count)
                 ])
+            } else if enableWorkflowMode && context.iteration > 0 {
+                /// Case 2: No todos but workflow mode enabled → Add continue reminder
+                /// (Only add if not first iteration - first iteration is user's message)
+                let continueReminderContent = "Workflow mode is active. Continue working on the task."
+                context.ephemeralMessages.append(createSystemReminder(content: continueReminderContent, model: model))
+                logger.debug("WORKFLOW_REMINDER: Added workflow mode reminder")
             }
 
             do {
@@ -1697,10 +1706,13 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                 /// If no tool calls, check if we should continue or stop naturally.
                 if context.lastFinishReason != "tool_calls" {
-                    /// SIMPLE ORCHESTRATOR PATTERN (from orchestrator.txt diagram):
-                    /// Decision point: Tool OR Active Todo OR Workflow Mode?
-                    ///   YES → Continue (todo reminder will be added at next iteration start)
-                    ///   NO  → Natural stop
+                    /// ORCHESTRATOR FLOW (from orchestrator.txt diagram):
+                    /// 1. Check for explicit workflow complete signal
+                    /// 2. Check for explicit continue signal
+                    /// 3. Check for active todos → Set continue flag + add todo reminder
+                    /// 4. Check for workflow switch enabled → Set continue flag + add continue reminder
+                    /// 5. If continue flag set → Increment iteration and loop
+                    /// 6. Otherwise → Natural stop
 
                     /// Signal 1: Explicit workflow complete marker
                     if context.detectedWorkflowCompleteMarker {
@@ -1712,7 +1724,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         break
                     }
 
-                    /// Signal 2: Explicit continue marker
+                    /// Signal 2: Explicit continue marker (agent explicitly requested continuation)
                     if context.detectedContinueMarker {
                         logger.info("WORKFLOW_CONTINUING: [CONTINUE] signal detected", metadata: [
                             "iteration": .stringConvertible(context.iteration)
@@ -1724,18 +1736,31 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         continue
                     }
 
-                    /// Decision point: Check if workflow should continue automatically
-                    /// Based on diagram: Continue if (Active Todo) OR (Workflow Mode enabled)
-                    let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                    /// Check 3: Active todos exist?
+                    /// If yes, ALWAYS continue with todo reminder (regardless of workflow switch)
                     let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
-
-                    if hasIncompleteTodos || enableWorkflowMode {
-                        logger.debug("WORKFLOW_CONTINUING: Auto-continue triggered", metadata: [
-                            "hasIncompleteTodos": .stringConvertible(hasIncompleteTodos),
-                            "workflowMode": .stringConvertible(enableWorkflowMode),
+                    
+                    if hasIncompleteTodos {
+                        logger.debug("WORKFLOW_CONTINUING: Active todos detected", metadata: [
+                            "incompleteTodos": .stringConvertible(currentTodoList.filter { $0.status.lowercased() != "completed" }.count),
                             "iteration": .stringConvertible(context.iteration)
                         ])
-                        completeIteration(context: &context, responseStatus: "auto_continue")
+                        completeIteration(context: &context, responseStatus: "auto_continue_todos")
+                        /// CRITICAL: Increment iteration counter before continuing
+                        context.iteration += 1
+                        self.updateCurrentIteration(context.iteration)
+                        continue
+                    }
+
+                    /// Check 4: Workflow switch enabled?
+                    /// This is a fallback - if no todos but workflow mode is on, continue with reminder
+                    let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                    
+                    if enableWorkflowMode {
+                        logger.debug("WORKFLOW_CONTINUING: Workflow mode enabled", metadata: [
+                            "iteration": .stringConvertible(context.iteration)
+                        ])
+                        completeIteration(context: &context, responseStatus: "auto_continue_workflow")
                         /// CRITICAL: Increment iteration counter before continuing
                         context.iteration += 1
                         self.updateCurrentIteration(context.iteration)
