@@ -14,7 +14,6 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     Web research, search, scraping, and content retrieval.
 
     OPERATIONS (pass via 'operation' parameter):
-    • research - Comprehensive multi-source research + memory storage
     • retrieve - Access previously stored research from memory
     • web_search - Quick web search for top results
     • serpapi - Professional search via SerpAPI (Google, Bing, Amazon, etc.) [if enabled]
@@ -22,14 +21,13 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     • fetch - Retrieve main content from webpage (basic HTTP, faster than scrape)
 
     WORKFLOW:
-    1. Use research to scrape web and STORE results
-    2. Use retrieve to ACCESS stored research from memory
-    3. Use serpapi for professional search engine results (when available)
+    1. Use web_search to find relevant URLs
+    2. Use fetch or scrape to extract content from specific URLs
+    3. Use retrieve to ACCESS previously stored research from memory
 
     WHEN TO USE:
     - Current events, news, live information
     - Documentation lookup
-    - Multi-source research synthesis
     - Shopping/product research (use serpapi with engine=amazon/ebay/walmart)
 
     WHEN NOT TO USE:
@@ -39,24 +37,24 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
     KEY PARAMETERS:
     • operation: REQUIRED - operation type (see above)
-    • query: Search query (research/retrieve/web_search/serpapi)
+    • query: Search query (retrieve/web_search/serpapi)
     • url: Target URL (scrape/fetch) - MUST use HTTPS protocol
-    • depth: shallow/standard/comprehensive (research)
     • engine: Search engine (serpapi) - google/google_ai_overview/bing/amazon/ebay/walmart/tripadvisor/yelp
     • location: Search location (serpapi, optional)
 
     IMPORTANT: All URLs must use HTTPS (not HTTP) for security. HTTP URLs will be automatically converted to HTTPS.
 
     EXAMPLES:
-    SUCCESS: {"operation": "research", "query": "Latest AI developments", "depth": "comprehensive"}
-    SUCCESS: {"operation": "retrieve", "query": "AI research"}
+    SUCCESS: {"operation": "web_search", "query": "Orlando FL news today"}
+    SUCCESS: {"operation": "fetch", "url": "https://www.orlandosentinel.com/article/12345"}
+    SUCCESS: {"operation": "retrieve", "query": "Orlando news"}
     SUCCESS: {"operation": "serpapi", "query": "best laptops 2025", "engine": "amazon"}
     SUCCESS: {"operation": "scrape", "url": "https://example.com"}
     """
 
     public var supportedOperations: [String] {
         var operations = [
-            "research",
+            // "research",  // DISABLED: Causes Claude to use wrong tool for news gathering
             "retrieve",
             "web_search",
             "scrape",
@@ -78,8 +76,8 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 description: "Operation to perform",
                 required: true,
                 enumValues: isSerpAPIAvailable() ?
-                    ["research", "retrieve", "web_search", "serpapi", "scrape", "fetch"] :
-                    ["research", "retrieve", "web_search", "scrape", "fetch"]
+                    ["retrieve", "web_search", "serpapi", "scrape", "fetch"] :
+                    ["retrieve", "web_search", "scrape", "fetch"]
             ),
 
             /// Research/search parameters.
@@ -87,18 +85,6 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 type: .string,
                 description: "Search query or research question",
                 required: false
-            ),
-            "depth": MCPToolParameter(
-                type: .string,
-                description: "Research depth: 'shallow', 'standard', 'comprehensive' (for research operation)",
-                required: false,
-                enumValues: ["shallow", "standard", "comprehensive"]
-            ),
-            "type": MCPToolParameter(
-                type: .string,
-                description: "Research type: 'general', 'news', 'technical' (for research operation)",
-                required: false,
-                enumValues: ["general", "news", "technical"]
             ),
 
             /// Scraping parameters.
@@ -188,47 +174,15 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             return truncated
         }
 
-        do {
-            let metadata = try storage.persistResult(
-                content: content,
-                toolCallId: toolCallId,
-                conversationId: conversationId
-            )
+        /// Use processToolResult for consistent formatting with preview
+        let processedResult = storage.processToolResult(
+            toolCallId: toolCallId,
+            content: content,
+            conversationId: conversationId
+        )
 
-            logger.info("\(operation): Persisted result to disk (\(estimatedTokens) tokens -> \(metadata.filePath))")
-
-            /// Return ONLY instructions - no preview to prevent 400 errors.
-            return """
-            [TOOL_RESULT_STORED]
-
-            CRITICAL: Large result (\(estimatedTokens) tokens) persisted to disk.
-
-            YOU MUST use read_tool_result to access the data BEFORE synthesizing your response.
-            DO NOT proceed without reading the full result.
-
-            REQUIRED NEXT STEP:
-            read_tool_result(toolCallId: "\(toolCallId)", offset: 0, length: 8192)
-
-            Continue reading with increasing offsets until hasMore=false.
-            Each read_tool_result call will indicate if more content remains.
-
-            Metadata:
-            - Tool Call ID: \(toolCallId)
-            - Total Tokens: \(estimatedTokens)
-            - Storage Path: \(metadata.filePath)
-            - Created: \(metadata.created)
-
-            REMINDER: You cannot complete your task without reading this stored data.
-            Call read_tool_result now to retrieve the actual content.
-            """
-
-        } catch {
-            logger.error("\(operation): Failed to persist result: \(error)")
-            /// Fallback to truncated inline (safer than full content).
-            let truncated = TokenEstimator.truncate(content, toTokenLimit: ToolResultStorage.previewTokenLimit)
-            logger.warning("\(operation): Returning truncated result (\(TokenEstimator.estimateTokens(truncated)) tokens) due to persistence failure")
-            return truncated
-        }
+        logger.info("\(operation): Persisted result to disk (\(estimatedTokens) tokens)")
+        return processedResult
     }
 
     public func routeOperation(
@@ -244,8 +198,8 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         }
 
         switch operation {
-        case "research":
-            return await handleResearch(parameters: parameters, context: context)
+        // case "research":  // DISABLED: Causes Claude to use wrong tool
+        //     return await handleResearch(parameters: parameters, context: context)
 
         case "retrieve":
             return await handleRetrieve(parameters: parameters, context: context)
@@ -271,7 +225,7 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
     private func validateParameters(operation: String, parameters: [String: Any]) -> MCPToolResult? {
         switch operation {
-        case "research", "retrieve", "web_search", "serpapi":
+        case "retrieve", "web_search", "serpapi":
             guard parameters["query"] is String else {
                 return operationError(operation, message: """
                     Missing required parameter 'query'.

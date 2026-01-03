@@ -236,6 +236,70 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         return validated
     }
 
+    /// Batch consecutive tool result messages for Claude API
+    /// Claude Messages API requires ALL tool results from one iteration to be in a SINGLE user message
+    /// This function converts: [tool1, tool2, tool3] → [user_with_batched_tools]
+    /// Only used for Claude models to fix the tool result batching issue
+    private func batchToolResultsForClaude(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
+        var processed: [OpenAIChatMessage] = []
+        var pendingToolResults: [(toolCallId: String, content: String)] = []
+        
+        for message in messages {
+            if message.role == "tool" {
+                /// Accumulate tool results
+                if let toolCallId = message.toolCallId {
+                    pendingToolResults.append((toolCallId, message.content ?? ""))
+                    logger.debug("CLAUDE_TOOL_BATCH: Accumulated tool result (id: \(toolCallId))")
+                }
+            } else {
+                /// Flush pending tool results before this message
+                if !pendingToolResults.isEmpty {
+                    /// Create a single user message with ALL tool results as metadata
+                    /// The AnthropicMessageConverter will convert these to tool_result content blocks
+                    logger.info("CLAUDE_TOOL_BATCH: Flushing \(pendingToolResults.count) tool results as batched metadata")
+                    
+                    /// Store tool results as JSON in the message content
+                    /// Format: Special marker that AnthropicMessageConverter can detect
+                    let batchedData = try? JSONSerialization.data(
+                        withJSONObject: pendingToolResults.map { ["tool_use_id": $0.toolCallId, "content": $0.content] },
+                        options: []
+                    )
+                    let batchedJson = batchedData.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+                    
+                    /// Create user message with special marker for batched tools
+                    let batchedMessage = OpenAIChatMessage(
+                        role: "user",
+                        content: "__CLAUDE_BATCHED_TOOL_RESULTS__\n\(batchedJson)"
+                    )
+                    processed.append(batchedMessage)
+                    pendingToolResults.removeAll()
+                }
+                
+                /// Add the current non-tool message
+                processed.append(message)
+            }
+        }
+        
+        /// Flush any remaining tool results at the end
+        if !pendingToolResults.isEmpty {
+            logger.info("CLAUDE_TOOL_BATCH: Flushing final \(pendingToolResults.count) tool results")
+            let batchedData = try? JSONSerialization.data(
+                withJSONObject: pendingToolResults.map { ["tool_use_id": $0.toolCallId, "content": $0.content] },
+                options: []
+            )
+            let batchedJson = batchedData.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            
+            let batchedMessage = OpenAIChatMessage(
+                role: "user",
+                content: "__CLAUDE_BATCHED_TOOL_RESULTS__\n\(batchedJson)"
+            )
+            processed.append(batchedMessage)
+        }
+        
+        logger.debug("CLAUDE_TOOL_BATCH: Processed \(messages.count) → \(processed.count) messages")
+        return processed
+    }
+
     /// Strip system-reminder tags from response content
     /// When Claude echoes back <system-reminder> content, we need to filter it out
     /// before showing to user or saving to conversation
@@ -849,20 +913,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Whether final response has been added to conversation.
         var finalResponseAddedToConversation: Bool
 
-        // MARK: - Loop Detection
-
-        /// Tracks consecutive calls per tool type (LEGACY - for backward compat).
-        var consecutiveToolCounts: [String: Int]
-
-        /// Advanced loop detector (PHASE 4: Advanced Loop Detection).
-        var loopDetector: LoopDetector
-
-        /// Tools currently blocked due to loop detection.
-        var blockedTools: Set<String>
-
-        /// Consecutive TASK_COMPLETE emissions without progress (loop safety).
-        var consecutiveTaskCompleteCount: Int
-
         // MARK: Agent Loop Escape Route
 
         /// Track tool failures per iteration to detect stuck loops.
@@ -983,12 +1033,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             self.lastResponse = ""
             self.lastFinishReason = ""
             self.finalResponseAddedToConversation = false
-
-            /// Loop detection.
-            self.consecutiveToolCounts = [:]
-            self.loopDetector = LoopDetector(configuration: samConfig?.loopDetectorConfig ?? .default)
-            self.blockedTools = []
-            self.consecutiveTaskCompleteCount = 0
 
             /// Agent Loop Escape Route.
             self.toolFailureTracking = [:]
@@ -1290,117 +1334,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         return filteredMessages
     }
 
-    /// Apply advanced loop detection and intervention Analyzes workflow rounds for patterns and applies graduated interventions.
-    private func applyAdvancedLoopDetection(
-        context: inout WorkflowExecutionContext,
-        proposedToolCalls: [ToolCall],
-        conversationId: UUID?,
-        model: String
-    ) -> (allowedCalls: [ToolCall], intervention: InterventionAction?) {
-
-        /// Run pattern analysis.
-        let patterns = context.loopDetector.analyzePatterns(rounds: context.workflowRounds)
-
-        /// Log detected patterns.
-        for pattern in patterns {
-            logger.debug("LOOP_PATTERN_DETECTED", metadata: [
-                "tool": .string(pattern.toolName),
-                "calls": .stringConvertible(pattern.callCount),
-                "score": .stringConvertible(pattern.score.composite),
-                "level": .string("\(pattern.interventionLevel)")
-            ])
-        }
-
-        /// Find highest severity pattern.
-        guard let criticalPattern = patterns.first else {
-            /// No patterns detected, allow all tools.
-            return (proposedToolCalls, nil)
-        }
-
-        /// Get recommended intervention (with metrics reporting).
-        let (intervention, metricsData) = context.loopDetector.recommendIntervention(
-            pattern: criticalPattern
-        )
-
-        /// Report metrics to PerformanceMonitor if available.
-        if let monitor = performanceMonitor {
-            let metrics = LoopDetectionMetrics(
-                timestamp: Date(),
-                conversationId: conversationId,
-                toolName: metricsData["toolName"] as? String ?? "",
-                callCount: metricsData["callCount"] as? Int ?? 0,
-                compositeScore: metricsData["compositeScore"] as? Double ?? 0.0,
-                interventionLevel: metricsData["interventionLevel"] as? String ?? "",
-                actionTaken: metricsData["actionTaken"] as? String ?? ""
-            )
-
-            Task { @MainActor in
-                monitor.recordLoopDetection(metrics)
-            }
-        }
-
-        /// Apply intervention.
-        switch intervention {
-        case .continue:
-            /// No intervention needed.
-            return (proposedToolCalls, nil)
-
-        case .warning(let message):
-            /// Add warning message to context.
-            context.internalMessages.append(createSystemReminder(content: message, model: model))
-            return (proposedToolCalls, .warning(message: message))
-
-        case .requireThinking(let prompt):
-            /// Force think tool with specific prompt.
-            logger.debug("LOOP_INTERVENTION_THINKING_REQUIRED", metadata: [
-                "tool": .string(criticalPattern.toolName),
-                "reason": .string("Pattern score: \(String(format: "%.2f", criticalPattern.score.composite))")
-            ])
-
-            context.internalMessages.append(createSystemReminder(content: prompt, model: model))
-
-            /// Filter out calls to the problematic tool, require think instead.
-            let filteredCalls = proposedToolCalls.filter { $0.name != criticalPattern.toolName }
-            return (filteredCalls, .requireThinking(prompt: prompt))
-
-        case .blockTool(let toolName, let reason, let alternatives):
-            /// Block specific tool completely.
-            logger.warning("LOOP_INTERVENTION_BLOCKING", metadata: [
-                "tool": .string(toolName),
-                "reason": .string(reason),
-                "alternatives": .string(alternatives.joined(separator: ", "))
-            ])
-
-            context.blockedTools.insert(toolName)
-
-            let blockMessage = """
-            Tool Blocked: \(toolName)
-
-            Reason: \(reason)
-
-            Suggested alternatives: \(alternatives.joined(separator: ", "))
-
-            Please try a different approach.
-            """
-
-            context.internalMessages.append(createSystemReminder(content: blockMessage, model: model))
-
-            /// Filter out blocked tool calls.
-            let filteredCalls = proposedToolCalls.filter { !context.blockedTools.contains($0.name) }
-            return (filteredCalls, .blockTool(toolName: toolName, reason: reason, suggestedAlternatives: alternatives))
-
-        case .terminate(let reason):
-            /// Critical loop - terminate workflow.
-            logger.error("LOOP_INTERVENTION_TERMINATION", metadata: [
-                "tool": .string(criticalPattern.toolName),
-                "reason": .string(reason)
-            ])
-
-            /// Return empty calls to stop execution.
-            return ([], .terminate(reason: reason))
-        }
-    }
-
     /// Report workflow completion metrics to PerformanceMonitor.
     private func reportWorkflowMetrics(
         context: WorkflowExecutionContext,
@@ -1543,16 +1476,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             "conversationId": .string(conversationId.uuidString),
             "sessionAge": .stringConvertible(0)
         ])
-
-        /// Configuration: Tool names and their max consecutive call thresholds.
-        let toolLoopLimits: [String: Int] = [
-            "think": 3,
-            "web_operations": 5,
-            "fetch_webpage": 5,
-            "file_operations": 3,
-            "manage_todo_list": 2,
-            "todo_operations": 2
-        ]
 
         /// Autonomous loop - continues until workflow complete or limit hit.
         while context.shouldContinue && context.iteration < context.maxIterations {
@@ -1925,55 +1848,15 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     ])
                 }
 
-                /// Reset consecutive TASK_COMPLETE counter (LLM is making progress by using tools).
-                context.consecutiveTaskCompleteCount = 0
-
-                /// ADVANCED LOOP DETECTION (PHASE 4) Apply intelligent pattern-based loop detection with graduated interventions.
-                /// ADVANCED LOOP DETECTION (PHASE 4) Apply intelligent pattern-based loop detection with graduated interventions.
-                let (filteredToolCalls, intervention) = applyAdvancedLoopDetection(
-                    context: &context,
-                    proposedToolCalls: actualToolCalls,
-                    conversationId: conversationId,
-                    model: model
-                )
-
-                /// Handle critical interventions (termination).
-                if case .terminate(let reason) = intervention {
-                    logger.error("WORKFLOW_TERMINATED_BY_LOOP_DETECTOR", metadata: [
-                        "reason": .string(reason)
-                    ])
-
-                    /// Add termination message to conversation.
-                    if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                        conversation.messageBus?.addAssistantMessage(
-                            id: UUID(),
-                            content: "Workflow Terminated\n\n\(reason)",
-                            timestamp: Date()
-                        )
-                        /// MessageBus handles persistence automatically
-                    }
-
-                    completeIteration(context: &context, responseStatus: "terminated_by_loop_detector")
-                    break
-                }
-
-                /// Check if all tools were filtered/blocked.
-                if filteredToolCalls.isEmpty && !actualToolCalls.isEmpty {
-                    logger.warning("LOOP_INTERVENTION: All tools blocked/filtered")
-                    completeIteration(context: &context, responseStatus: "all_tools_blocked")
-                    /// Iteration will be incremented at bottom of loop - don't increment here
-                    continue
-                }
-
-                /// Execute all tool calls for this iteration (after filtering).
+                /// Execute all tool calls for this iteration.
                 let executionResults = try await self.executeToolCalls(
-                    filteredToolCalls,
+                    actualToolCalls,
                     iteration: context.iteration + 1,
                     conversationId: context.session?.conversationId
                 )
 
                 /// ROUND TRACKING: Capture tool calls and results for this iteration.
-                for toolCall in filteredToolCalls {
+                for toolCall in actualToolCalls {
                     /// Convert arguments dictionary to string for storage.
                     let argsString: String
                     if let jsonData = try? JSONSerialization.data(withJSONObject: toolCall.arguments),
@@ -2302,48 +2185,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                     logger.debug("PLANNING_INTERVENTION: Detected planning tools (\(planningToolsUsed)) - system message injection REMOVED (was causing GitHub Copilot 400 errors)")
 
-                }
-
-                /// 6d.
-                logger.debug("LOOP_DETECTION_START: Checking \(actualToolCalls.count) tool calls for loop tracking")
-                for toolCall in actualToolCalls {
-                    logger.debug("LOOP_DETECTION_CHECK: Tool '\(toolCall.name)' - tracked=\(toolLoopLimits.keys.contains(toolCall.name))")
-                    if toolLoopLimits.keys.contains(toolCall.name) {
-                        context.consecutiveToolCounts[toolCall.name, default: 0] += 1
-                        logger.debug("LOOP_DETECTION: Tool '\(toolCall.name)' consecutive count = \(context.consecutiveToolCounts[toolCall.name]!)")
-                    }
-                }
-
-                /// Check if any tracked tools exceeded their limits.
-                for (toolName, limit) in toolLoopLimits {
-                    let count = context.consecutiveToolCounts[toolName] ?? 0
-                    if count >= limit {
-                        logger.warning("LOOP_DETECTION: Tool '\(toolName)' called \(count) times consecutively! Loop detected.")
-
-                        /// Create intervention message to break the loop
-                        let interventionMessage = """
-                        LOOP DETECTED: You've called the '\(toolName)' tool \(count) times in a row without progress.
-                        
-                        This indicates you may be stuck. Please:
-                        1. Review the results you've already received
-                        2. Try a different approach or tool
-                        3. If the task cannot be completed, explain why to the user
-                        
-                        Do NOT call '\(toolName)' again immediately - choose a different action.
-                        """
-                        
-                        context.internalMessages.append(createSystemReminder(content: interventionMessage, model: model))
-                        
-                        context.consecutiveToolCounts[toolName] = 0
-                        logger.debug("LOOP_DETECTION: Injected intervention message for '\(toolName)' loop")
-                    }
-                }
-
-                /// Reset all counters when non-tracked tools are executed.
-                let hasNonTrackedTools = actualToolCalls.contains { !toolLoopLimits.keys.contains($0.name) }
-                if hasNonTrackedTools && !context.consecutiveToolCounts.isEmpty {
-                    logger.debug("LOOP_DETECTION: Resetting all tool counters due to non-tracked tool execution")
-                    context.consecutiveToolCounts = [:]
                 }
 
                 /// Check if todo_operations, manage_todo_list or memory_operations was called and update current state.
@@ -2813,21 +2654,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     logger.debug("Created session for streaming workflow", metadata: [
                         "conversationId": .string(conversationId.uuidString)
                     ])
-
-                    /// Configuration: Tool names and their max consecutive call thresholds.
-                    let toolLoopLimits: [String: Int] = [
-                        "think": 3,
-                        "web_operations": 5,
-                        "fetch_webpage": 5,
-                        "file_operations": 3,
-                        "manage_todo_list": 2
-                    ]
-
-                    /// LOOP DETECTION: Track consecutive continuation_status(CONTINUE) calls without progress.
-                    var consecutiveContinueCount = 0
-
-                    /// LOOP DETECTION: Track consecutive think tool calls (meta-planning loop detection).
-                    var consecutiveThinkCount = 0
 
                     logger.debug("BEFORE_WHILE_LOOP: About to start autonomous loop with \(context.maxIterations) max iterations")
 
@@ -3357,12 +3183,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             ])
                         }
 
-                        /// LOOP DETECTION: Reset consecutive CONTINUE counter when actual tools are executed.
-                        if consecutiveContinueCount > 0 {
-                            logger.debug("LOOP_DETECTION: Resetting consecutive CONTINUE counter (was \(consecutiveContinueCount)) due to actual tool execution")
-                            consecutiveContinueCount = 0
-                        }
-
                         /// End the current message (assistant's response with tool calls).
                         let finishChunk = ServerOpenAIChatStreamChunk(
                             id: requestId,
@@ -3377,53 +3197,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         )
                         continuation.yield(finishChunk)
 
-                        /// ADVANCED LOOP DETECTION (STREAMING PATH - PHASE 4) Apply intelligent pattern-based loop detection with graduated interventions.
-                        let (filteredToolCalls, intervention) = applyAdvancedLoopDetection(
-                            context: &context,
-                            proposedToolCalls: toolCalls,
-                            conversationId: conversationId,
-                            model: model
-                        )
-
-                        /// Handle critical interventions (termination).
-                        if case .terminate(let reason) = intervention {
-                            logger.error("WORKFLOW_TERMINATED_BY_LOOP_DETECTOR_STREAMING", metadata: [
-                                "reason": .string(reason)
-                            ])
-
-                            /// Add to conversation.
-                            if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                                conversation.messageBus?.addAssistantMessage(
-                                    id: UUID(),
-                                    content: "Workflow Terminated\n\n\(reason)",
-                                    timestamp: Date()
-                                )
-                                /// MessageBus handles persistence automatically
-                            }
-
-                            completeIteration(context: &context, responseStatus: "terminated_by_loop_detector")
-                            continuation.finish()
-                            return
-                        }
-
-                        /// Check if all tools were filtered/blocked.
-                        let blockedToolExecutions: [ToolExecution] = []
-
-                        if filteredToolCalls.isEmpty && !toolCalls.isEmpty {
-                            logger.warning("LOOP_INTERVENTION_STREAMING: All tools blocked/filtered")
-                            completeIteration(context: &context, responseStatus: "all_tools_blocked")
-                            /// Iteration will be incremented at bottom of loop - don't increment here
-                            continue
-                        }
-
                         /// Execute tools and update internal messages Check cancellation before tool execution.
                         try Task.checkCancellation()
 
                         /// Pass continuation to yield progress chunks during tool execution This enables real-time streaming of tool progress instead of batching after completion.
                         var executionResults: [ToolExecution]
-                        if !filteredToolCalls.isEmpty {
+                        if !toolCalls.isEmpty {
                             executionResults = try await self.executeToolCallsStreaming(
-                                filteredToolCalls,
+                                toolCalls,
                                 iteration: context.iteration,
                                 continuation: continuation,
                                 requestId: requestId,
@@ -3636,71 +3417,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             ])
                         }
 
-                        /// THINK TOOL LOOP DETECTION: Check if agent is stuck in meta-planning loop.
-                        let thinkToolCalls = toolCalls.filter { $0.name == "think" }
-                        if !thinkToolCalls.isEmpty {
-                            consecutiveThinkCount += thinkToolCalls.count
-                            logger.debug("LOOP_DETECTION: Consecutive think tool calls = \(consecutiveThinkCount)")
-
-                            if consecutiveThinkCount > 3 {
-                                logger.warning("LOOP_DETECTION: Agent called think tool \(consecutiveThinkCount) times! Meta-planning loop detected.")
-
-                                consecutiveThinkCount = 0
-                                logger.debug("LOOP_DETECTION: Detected think loop (system message injection removed)")
-                            }
-                        } else {
-                            /// Reset think counter when non-think tools are executed.
-                            if consecutiveThinkCount > 0 {
-                                logger.debug("LOOP_DETECTION: Resetting consecutive think counter (was \(consecutiveThinkCount)) due to non-think tool execution")
-                                consecutiveThinkCount = 0
-                            }
-                        }
-
-                        /// GENERIC TOOL LOOP DETECTION (STREAMING PATH): Track consecutive calls for loop-prone tools.
-                        logger.debug("LOOP_DETECTION_START_STREAMING: Checking \(toolCalls.count) tool calls for loop tracking")
-                        for toolCall in toolCalls {
-                            logger.debug("LOOP_DETECTION_CHECK_STREAMING: Tool '\(toolCall.name)' - tracked=\(toolLoopLimits.keys.contains(toolCall.name))")
-                            if toolLoopLimits.keys.contains(toolCall.name) {
-                                context.consecutiveToolCounts[toolCall.name, default: 0] += 1
-                                logger.debug("LOOP_DETECTION_STREAMING: Tool '\(toolCall.name)' consecutive count = \(context.consecutiveToolCounts[toolCall.name]!)")
-                            }
-                        }
-
-                        /// Check if any tracked tools exceeded their limits.
-                        for (toolName, limit) in toolLoopLimits {
-                            let count = context.consecutiveToolCounts[toolName] ?? 0
-                            if count >= limit {
-                                logger.warning("LOOP_DETECTION_STREAMING: Tool '\(toolName)' called \(count) times consecutively! Loop detected.")
-
-                                /// Create intervention message to break the loop
-                                let interventionMessage = """
-                                LOOP DETECTED: You've called the '\(toolName)' tool \(count) times in a row without progress.
-                                
-                                This indicates you may be stuck. Please:
-                                1. Review the results you've already received
-                                2. Try a different approach or tool
-                                3. If the task cannot be completed, explain why to the user
-                                
-                                Do NOT call '\(toolName)' again immediately - choose a different action.
-                                """
-                                
-                                context.internalMessages.append(createSystemReminder(content: interventionMessage, model: model))
-                                
-                                context.consecutiveToolCounts[toolName] = 0
-                                logger.debug("LOOP_DETECTION_STREAMING: Injected intervention message for '\(toolName)' loop")
-                            }
-                        }
-
-                        /// Reset all counters when non-tracked tools are executed.
-                        let hasNonTrackedTools = toolCalls.contains { !toolLoopLimits.keys.contains($0.name) }
-                        if hasNonTrackedTools && !context.consecutiveToolCounts.isEmpty {
-                            logger.debug("LOOP_DETECTION_STREAMING: Resetting all tool counters due to non-tracked tool execution")
-                            context.consecutiveToolCounts = [:]
-                        }
-
-                        /// Check for todo management tool execution.
-
-                        /// Update todo list state if todo_operations was called.
+                        /// Check for todo management tool execution.                        /// Update todo list state if todo_operations was called.
                         for execution in executionResults {
                             /// Support todo_operations, legacy manage_todo_list, and memory_operations with manage_todos.
                             if execution.toolName == "todo_operations" || execution.toolName == "manage_todo_list" || execution.toolName == "memory_operations" {
@@ -4222,6 +3939,41 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.debug("callLLM: Added user-configured system prompt to messages (with conversation ID)")
         }
 
+        /// CLAUDE USERCONTEXT INJECTION
+        /// Per Claude Messages API best practices: Extract important context from ALL pinned messages
+        /// and inject as system message on EVERY request (context doesn't persist in conversation history)
+        /// Reference: claude-messages.txt - "Do not rely on Turn 1 staying in history forever"
+        let modelLower = model.lowercased()
+        if modelLower.contains("claude") {
+            /// Extract userContext from ALL pinned messages
+            let pinnedMessages = conversation.messages.filter { $0.isPinned }
+            var extractedContexts: [String] = []
+            
+            for pinnedMessage in pinnedMessages {
+                let content = pinnedMessage.content
+                if let userContextStart = content.range(of: "\n\n<userContext>\n"),
+                   let userContextEnd = content.range(of: "\n</userContext>", range: userContextStart.upperBound..<content.endIndex) {
+                    /// Extract userContext content (without tags)
+                    let userContextContent = String(content[userContextStart.upperBound..<userContextEnd.lowerBound])
+                    extractedContexts.append(userContextContent)
+                }
+            }
+            
+            /// If we found any userContext blocks in pinned messages, inject them
+            if !extractedContexts.isEmpty {
+                let claudeContextMessage = """
+                ## User Context (Persistent)
+                
+                This context was provided in pinned messages and applies to all turns of this conversation:
+                
+                \(extractedContexts.joined(separator: "\n\n---\n\n"))
+                """
+                
+                messages.append(OpenAIChatMessage(role: "system", content: claudeContextMessage))
+                logger.info("CLAUDE_CONTEXT: Injected userContext from \(extractedContexts.count) pinned message(s) as system content (\(claudeContextMessage.count) chars)")
+            }
+        }
+
         /// AUTOMATIC CONTEXT RETRIEVAL Inject pinned messages + semantic search results BEFORE conversation messages This ensures critical context (initial request, key decisions) is always available CRITICAL FIX: Pass iteration number to skip Phase 3 (high-importance) for iterations > 0 - Phase 1 (pinned) and Phase 2 (semantic search) still run - they provide unique context - Phase 3 (high-importance) skipped for iterations > 0 - prevents duplicate context from internalMessages.
         if let retrievedContext = await retrieveRelevantContext(
             conversation: conversation,
@@ -4592,10 +4344,19 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         logger.debug("callLLM: Injecting MCP tools via SharedConversationService")
         let requestWithTools = await conversationService.injectMCPToolsIntoRequest(baseRequest)
 
+        /// CRITICAL: For Claude models, batch consecutive tool results into single user messages
+        /// Claude Messages API requires ALL tool results from one iteration in ONE user message
+        /// This fixes the tool result batching issue that caused workflow loops
+        var messagesToProcess = requestWithTools.messages
+        if modelLower.contains("claude") {
+            messagesToProcess = batchToolResultsForClaude(messagesToProcess)
+            logger.debug("callLLM: Applied Claude tool result batching")
+        }
+
         /// CRITICAL: Ensure message alternation for Claude API compatibility
         /// Claude requires strict user/assistant alternation with no empty messages
         /// Apply this AFTER all message construction is complete but BEFORE sending to API
-        let fixedMessages = ensureMessageAlternation(requestWithTools.messages)
+        let fixedMessages = ensureMessageAlternation(messagesToProcess)
         let finalRequest = OpenAIChatRequest(
             model: requestWithTools.model,
             messages: fixedMessages,
@@ -4681,8 +4442,15 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     /// Re-inject tools with compressed messages
                     let compressedRequestWithTools = await conversationService.injectMCPToolsIntoRequest(compressedBaseRequest)
 
+                    /// CRITICAL: For Claude models, batch consecutive tool results into single user messages
+                    var compressedMessagesToProcess = compressedRequestWithTools.messages
+                    if modelLower.contains("claude") {
+                        compressedMessagesToProcess = batchToolResultsForClaude(compressedMessagesToProcess)
+                        logger.debug("callLLM: Applied Claude tool result batching to compressed messages")
+                    }
+
                     /// CRITICAL: Ensure message alternation for Claude API compatibility
-                    let fixedCompressedMessages = ensureMessageAlternation(compressedRequestWithTools.messages)
+                    let fixedCompressedMessages = ensureMessageAlternation(compressedMessagesToProcess)
                     let finalCompressedRequest = OpenAIChatRequest(
                         model: compressedRequestWithTools.model,
                         messages: fixedCompressedMessages,
@@ -5041,6 +4809,41 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.debug("callLLMStreaming: Added user-configured system prompt to messages (with conversation ID)")
         }
 
+        /// CLAUDE USERCONTEXT INJECTION
+        /// Per Claude Messages API best practices: Extract important context from ALL pinned messages
+        /// and inject as system message on EVERY request (context doesn't persist in conversation history)
+        /// Reference: claude-messages.txt - "Do not rely on Turn 1 staying in history forever"
+        let modelLower = model.lowercased()
+        if modelLower.contains("claude") {
+            /// Extract userContext from ALL pinned messages
+            let pinnedMessages = conversation.messages.filter { $0.isPinned }
+            var extractedContexts: [String] = []
+            
+            for pinnedMessage in pinnedMessages {
+                let content = pinnedMessage.content
+                if let userContextStart = content.range(of: "\n\n<userContext>\n"),
+                   let userContextEnd = content.range(of: "\n</userContext>", range: userContextStart.upperBound..<content.endIndex) {
+                    /// Extract userContext content (without tags)
+                    let userContextContent = String(content[userContextStart.upperBound..<userContextEnd.lowerBound])
+                    extractedContexts.append(userContextContent)
+                }
+            }
+            
+            /// If we found any userContext blocks in pinned messages, inject them
+            if !extractedContexts.isEmpty {
+                let claudeContextMessage = """
+                ## User Context (Persistent)
+                
+                This context was provided in pinned messages and applies to all turns of this conversation:
+                
+                \(extractedContexts.joined(separator: "\n\n---\n\n"))
+                """
+                
+                messages.append(OpenAIChatMessage(role: "system", content: claudeContextMessage))
+                logger.info("CLAUDE_CONTEXT: Injected userContext from \(extractedContexts.count) pinned message(s) as system content (\(claudeContextMessage.count) chars)")
+            }
+        }
+
         /// AUTOMATIC CONTEXT RETRIEVAL Inject pinned messages + semantic search results BEFORE conversation messages This ensures critical context (initial request, key decisions) is always available CRITICAL FIX: Use message ID tracking to prevent Phase 3 duplication across iterations - Phase 1 (pinned) always runs - core context - Phase 2 (semantic search) always runs - relevant memories - Phase 3 (high-importance) tracks retrieved IDs - prevents duplication while preserving context.
         if let retrievedContext = await retrieveRelevantContext(
             conversation: conversation,
@@ -5288,6 +5091,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         }
 
         logger.debug("callLLMStreaming: Built complete message array with \(messages.count) messages (before alternation fix)")
+
+        /// CRITICAL: For Claude models, batch consecutive tool results into single user messages
+        /// Claude Messages API requires ALL tool results from one iteration in ONE user message
+        /// This fixes the tool result batching issue that caused workflow loops
+        if modelLower.contains("claude") {
+            messages = batchToolResultsForClaude(messages)
+            logger.debug("callLLMStreaming: Applied Claude tool result batching")
+        }
 
         /// CRITICAL: Fix message alternation BEFORE YARN compression
         /// Claude requires strict user/assistant alternation with no empty messages
