@@ -1,7 +1,7 @@
 {
   "releases": [
     {
-      "version": "20250103.1",
+      "version": "20260103.1",
       "release_date": "January 3, 2026",
       "introduction": "This release resolves bugs with Claude models, simplifies agent workflows, and improves image generation by adding fine grained config scale control.",
       "highlights": [
