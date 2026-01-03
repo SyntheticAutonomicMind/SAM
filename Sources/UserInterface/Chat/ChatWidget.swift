@@ -129,14 +129,14 @@ public struct ChatWidget: View {
 
     /// Stable Diffusion default settings.
     @AppStorage("sd_default_steps") private var sdDefaultSteps: Int = 25
-    @AppStorage("sd_default_guidance") private var sdDefaultGuidance: Int = 8
+    @AppStorage("sd_default_guidance") private var sdDefaultGuidance: Double = 8.0
     @AppStorage("sd_default_scheduler") private var sdDefaultScheduler: String = "dpm++"
     @AppStorage("sd_default_negative_prompt") private var sdDefaultNegativePrompt: String = ""
     @AppStorage("sd_remember_settings") private var sdRememberSettings: Bool = false
 
     /// Stable Diffusion UI state variables (synced with conversation.settings)
     @State private var sdSteps: Int = 25
-    @State private var sdGuidanceScale: Int = 8
+    @State private var sdGuidanceScale: Float = 8.0
     @State private var sdScheduler: String = "dpm++"
     @State private var sdNegativePrompt: String = ""
     @State private var sdSeed: Int = -1
@@ -436,118 +436,8 @@ public struct ChatWidget: View {
             .sheet(isPresented: $showingExportOptions) {
                 exportChatDialog
             }
-            .onAppear {
-            SAMLog.chatViewAppear()
-            loadAvailableModels()
-            loadSystemPrompts()
-            loadRecentChatSession()
-            syncWithActiveConversation()
-
-            /// Detect SD-only mode on load (Bug #1 fix) - includes local sd/ and remote alice- models
-            if let activeConv = conversationManager.activeConversation {
-                let isSDModel = activeConv.settings.selectedModel.hasPrefix("sd/") || activeConv.settings.selectedModel.hasPrefix("alice-")
-                isStableDiffusionOnlyMode = isSDModel
-                if isSDModel {
-                    logger.info("Detected SD-only mode on load: \(activeConv.settings.selectedModel)")
-                }
-            }
-
-            /// Check if local model is already loaded on startup (Issue #1: input box disabled)
-            Task {
-                await loadSharedTopics()
-
-                /// Check model loading status for current model
-                if endpointManager.isLocalModel(selectedModel) {
-                    let loaded = await endpointManager.getModelLoadingStatus(selectedModel)
-                    await MainActor.run {
-                        isLocalModelLoaded = loaded
-                        logger.info("STARTUP: Local model \(selectedModel) loaded status: \(loaded)")
-                    }
-                }
-
-                /// Update model max tokens/context from configuration (Issue #2: parameters not set)
-                updateMaxContextForModel()
-            }
-
-            // If this ChatWidget is for a new conversation (no activeConversation),
-            // initialize selectedModel from the global default set in preferences.
-            if activeConversation == nil {
-                selectedModel = appDefaultModel
-            }
-
-            /// Initialize cost display for current model on first load
-            currentModelCost = getCostDisplay(for: selectedModel)
-            logger.info("CHATWIDGET INIT: selectedModel=\(selectedModel), cost=\(currentModelCost)")
-
-            /// Setup voice manager callbacks via bridge
-            setupVoiceCallbacks()
-
-            /// Listen for model updates from file system changes.
-            NotificationCenter.default.addObserver(
-                forName: .endpointManagerDidUpdateModels,
-                object: nil,
-                queue: .main
-            ) { _ in
-                Task {
-                    await loadAvailableModels()
-                }
-            }
-
-            /// Listen for Stable Diffusion model installations
-            NotificationCenter.default.addObserver(
-                forName: .stableDiffusionModelInstalled,
-                object: nil,
-                queue: .main
-            ) { _ in
-                Task {
-                    await loadAvailableModels()
-                }
-            }
-
-            /// Listen for ALICE remote models becoming available
-            NotificationCenter.default.addObserver(
-                forName: .aliceModelsLoaded,
-                object: nil,
-                queue: .main
-            ) { _ in
-                logger.info("ALICE models loaded, refreshing available models list")
-                Task {
-                    await loadAvailableModels()
-                }
-            }
-            
-            /// Listen for rate limit notifications
-            NotificationCenter.default.addObserver(
-                forName: .providerRateLimitHit,
-                object: nil,
-                queue: .main
-            ) { notification in
-                guard let userInfo = notification.userInfo,
-                      let retrySeconds = userInfo["retryAfterSeconds"] as? Double,
-                      let providerName = userInfo["providerName"] as? String else {
-                    return
-                }
-                
-                rateLimitRetrySeconds = retrySeconds
-                rateLimitMessage = "\(providerName) rate limit reached. Retrying in \(Int(retrySeconds)) seconds..."
-                showRateLimitAlert = true
-            }
-            
-            /// Listen for rate limit retry
-            NotificationCenter.default.addObserver(
-                forName: .providerRateLimitRetrying,
-                object: nil,
-                queue: .main
-            ) { _ in
-                showRateLimitAlert = false
-            }
-
-            /// Auto-focus input box when chat opens.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                isInputFocused = true
-            }
-        }
-        .onChange(of: activeConversation?.id) { _, newID in
+            .onAppear(perform: performMainChatViewAppear)
+            .onChange(of: activeConversation?.id) { _, newID in
             /// FEATURE: Save draft message from previous conversation before switching
             if let prevId = previousConversationId,
                let prevConversation = conversationManager.conversations.first(where: { $0.id == prevId }) {
@@ -724,7 +614,7 @@ public struct ChatWidget: View {
                         /// Looks like defaults, initialize from user preferences
                         activeConv.settings.sdNegativePrompt = sdDefaultNegativePrompt
                         activeConv.settings.sdSteps = sdDefaultSteps
-                        activeConv.settings.sdGuidanceScale = sdDefaultGuidance
+                        activeConv.settings.sdGuidanceScale = Float(sdDefaultGuidance)
                         activeConv.settings.sdScheduler = sdDefaultScheduler
                     }
                 }
@@ -2150,20 +2040,20 @@ public struct ChatWidget: View {
     }
 
     /// Get guidance scale range based on model type
-    private var guidanceScaleRange: ClosedRange<Int> {
+    private var guidanceScaleRange: ClosedRange<Float> {
         if isZImageModel {
-            return 0...5  /// Z-Image uses low guidance (0.0-5.0)
+            return 0.0...5.0  /// Z-Image uses low guidance (0.0-5.0)
         } else {
-            return 1...20  /// Standard SD models (1-20)
+            return 1.0...20.0  /// Standard SD models (1.0-20.0)
         }
     }
 
     /// Get default guidance scale based on model type
-    private var defaultGuidanceScale: Int {
+    private var defaultGuidanceScale: Float {
         if isZImageModel {
-            return 0  /// Z-Image works best with 0.0 guidance
+            return 0.0  /// Z-Image works best with 0.0 guidance
         } else {
-            return 8  /// Standard SD default
+            return 8.0  /// Standard SD default
         }
     }
 
@@ -2460,13 +2350,13 @@ public struct ChatWidget: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     HStack {
-                        TextField("", value: $sdGuidanceScale, format: .number)
+                        TextField("", value: $sdGuidanceScale, format: .number.precision(.fractionLength(1)))
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 60)
                             .onChange(of: sdGuidanceScale) { _, _ in
                                 syncSettingsToConversation()
                             }
-                        Stepper("", value: $sdGuidanceScale, in: guidanceScaleRange)
+                        Stepper("", value: $sdGuidanceScale, in: guidanceScaleRange, step: Float(0.1))
                             .labelsHidden()
                     }
                 }
@@ -3205,6 +3095,118 @@ public struct ChatWidget: View {
     }
 
     // MARK: - Actions
+
+    private func performMainChatViewAppear() {
+        SAMLog.chatViewAppear()
+        loadAvailableModels()
+        loadSystemPrompts()
+        loadRecentChatSession()
+        syncWithActiveConversation()
+
+        /// Detect SD-only mode on load (Bug #1 fix) - includes local sd/ and remote alice- models
+        if let activeConv = conversationManager.activeConversation {
+            let isSDModel = activeConv.settings.selectedModel.hasPrefix("sd/") || activeConv.settings.selectedModel.hasPrefix("alice-")
+            isStableDiffusionOnlyMode = isSDModel
+            if isSDModel {
+                logger.info("Detected SD-only mode on load: \\(activeConv.settings.selectedModel)")
+            }
+        }
+
+        /// Check if local model is already loaded on startup (Issue #1: input box disabled)
+        Task {
+            await loadSharedTopics()
+
+            /// Check model loading status for current model
+            if endpointManager.isLocalModel(selectedModel) {
+                let loaded = await endpointManager.getModelLoadingStatus(selectedModel)
+                await MainActor.run {
+                    isLocalModelLoaded = loaded
+                    logger.info("STARTUP: Local model \\(selectedModel) loaded status: \\(loaded)")
+                }
+            }
+
+            /// Update max tokens/context from configuration (Issue #2: parameters not set)
+            updateMaxContextForModel()
+        }
+
+        // If this ChatWidget is for a new conversation (no activeConversation),
+        // initialize selectedModel from the global default set in preferences.
+        if activeConversation == nil {
+            selectedModel = appDefaultModel
+        }
+
+        /// Initialize cost display for current model on first load
+        currentModelCost = getCostDisplay(for: selectedModel)
+        logger.info("CHATWIDGET INIT: selectedModel=\\(selectedModel), cost=\\(currentModelCost)")
+
+        /// Setup voice manager callbacks via bridge
+        setupVoiceCallbacks()
+
+        /// Listen for model updates from file system changes.
+        NotificationCenter.default.addObserver(
+            forName: .endpointManagerDidUpdateModels,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task {
+                await loadAvailableModels()
+            }
+        }
+
+        /// Listen for Stable Diffusion model installations
+        NotificationCenter.default.addObserver(
+            forName: .stableDiffusionModelInstalled,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task {
+                await loadAvailableModels()
+            }
+        }
+
+        /// Listen for ALICE remote models becoming available
+        NotificationCenter.default.addObserver(
+            forName: .aliceModelsLoaded,
+            object: nil,
+            queue: .main
+        ) { _ in
+            logger.info("ALICE models loaded, refreshing available models list")
+            Task {
+                await loadAvailableModels()
+            }
+        }
+        
+        /// Listen for rate limit notifications
+        NotificationCenter.default.addObserver(
+            forName: .providerRateLimitHit,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let userInfo = notification.userInfo,
+                  let retrySeconds = userInfo["retryAfterSeconds"] as? Double,
+                  let providerName = userInfo["providerName"] as? String else {
+                return
+            }
+            
+            rateLimitRetrySeconds = retrySeconds
+            rateLimitMessage = "\\(providerName) rate limit reached. Retrying in \\(Int(retrySeconds)) seconds..."
+            showRateLimitAlert = true
+        }
+        
+        /// Listen for rate limit retry
+        NotificationCenter.default.addObserver(
+            forName: .providerRateLimitRetrying,
+            object: nil,
+            queue: .main
+        ) { _ in
+            showRateLimitAlert = false
+        }
+
+        /// Auto-focus input box when chat opens.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            isInputFocused = true
+        }
+    }
 
     private func syncWithActiveConversation() {
         guard let conversation = activeConversation else {
@@ -4487,7 +4489,7 @@ public struct ChatWidget: View {
         /// Get SD settings from conversation settings
         struct SDSettings {
             var steps: Int
-            var guidanceScale: Int
+            var guidanceScale: Float
             var scheduler: String
             var negativePrompt: String
             var seed: Int
@@ -4522,7 +4524,7 @@ public struct ChatWidget: View {
 
         let settings = SDSettings(
             steps: activeConversation?.settings.sdSteps ?? 25,
-            guidanceScale: activeConversation?.settings.sdGuidanceScale ?? 8,
+            guidanceScale: activeConversation?.settings.sdGuidanceScale ?? 8.0,
             scheduler: activeConversation?.settings.sdScheduler ?? "dpm++",
             negativePrompt: activeConversation?.settings.sdNegativePrompt ?? "",
             seed: activeConversation?.settings.sdSeed ?? -1,

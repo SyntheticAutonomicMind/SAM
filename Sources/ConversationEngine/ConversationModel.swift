@@ -64,7 +64,7 @@ public struct ConversationSettings: Codable, Sendable {
     /// Stable Diffusion parameters
     public var sdNegativePrompt: String
     public var sdSteps: Int
-    public var sdGuidanceScale: Int
+    public var sdGuidanceScale: Float
     public var sdScheduler: String
     public var sdSeed: Int
     public var sdUseKarras: Bool  /// Karras sigma schedule for DPM++
@@ -106,7 +106,7 @@ public struct ConversationSettings: Codable, Sendable {
         draftMessage: String = "",
         sdNegativePrompt: String = "",
         sdSteps: Int = 25,
-        sdGuidanceScale: Int = 8,
+        sdGuidanceScale: Float = 8.0,
         sdScheduler: String = "dpm++",
         sdSeed: Int = -1,
         sdUseKarras: Bool = true,
@@ -228,7 +228,7 @@ public struct ConversationSettings: Codable, Sendable {
         /// Stable Diffusion parameters with defaults for backward compatibility.
         sdNegativePrompt = try container.decodeIfPresent(String.self, forKey: .sdNegativePrompt) ?? ""
         sdSteps = try container.decodeIfPresent(Int.self, forKey: .sdSteps) ?? 25
-        sdGuidanceScale = try container.decodeIfPresent(Int.self, forKey: .sdGuidanceScale) ?? 8
+        sdGuidanceScale = try container.decodeIfPresent(Float.self, forKey: .sdGuidanceScale) ?? 8.0
         sdScheduler = try container.decodeIfPresent(String.self, forKey: .sdScheduler) ?? "dpm++"
         sdSeed = try container.decodeIfPresent(Int.self, forKey: .sdSeed) ?? -1
         sdUseKarras = try container.decodeIfPresent(Bool.self, forKey: .sdUseKarras) ?? true
