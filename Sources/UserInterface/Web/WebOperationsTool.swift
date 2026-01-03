@@ -14,6 +14,7 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     Web research, search, scraping, and content retrieval.
 
     OPERATIONS (pass via 'operation' parameter):
+    • research - Comprehensive multi-source research with synthesis (general/news/technical)
     • retrieve - Access previously stored research from memory
     • web_search - Quick web search for top results
     • serpapi - Professional search via SerpAPI (Google, Bing, Amazon, etc.) [if enabled]
@@ -21,9 +22,10 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     • fetch - Retrieve main content from webpage (basic HTTP, faster than scrape)
 
     WORKFLOW:
-    1. Use web_search to find relevant URLs
-    2. Use fetch or scrape to extract content from specific URLs
-    3. Use retrieve to ACCESS previously stored research from memory
+    1. Use research for comprehensive investigation with automatic synthesis
+    2. Use web_search to find relevant URLs for targeted content
+    3. Use fetch or scrape to extract content from specific URLs
+    4. Use retrieve to ACCESS previously stored research from memory
 
     WHEN TO USE:
     - Current events, news, live information
@@ -54,7 +56,7 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
     public var supportedOperations: [String] {
         var operations = [
-            // "research",  // DISABLED: Causes Claude to use wrong tool for news gathering
+            "research",
             "retrieve",
             "web_search",
             "scrape",
@@ -76,8 +78,8 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 description: "Operation to perform",
                 required: true,
                 enumValues: isSerpAPIAvailable() ?
-                    ["retrieve", "web_search", "serpapi", "scrape", "fetch"] :
-                    ["retrieve", "web_search", "scrape", "fetch"]
+                    ["research", "retrieve", "web_search", "serpapi", "scrape", "fetch"] :
+                    ["research", "retrieve", "web_search", "scrape", "fetch"]
             ),
 
             /// Research/search parameters.
@@ -198,8 +200,8 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         }
 
         switch operation {
-        // case "research":  // DISABLED: Causes Claude to use wrong tool
-        //     return await handleResearch(parameters: parameters, context: context)
+        case "research":
+            return await handleResearch(parameters: parameters, context: context)
 
         case "retrieve":
             return await handleRetrieve(parameters: parameters, context: context)
@@ -225,7 +227,7 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
     private func validateParameters(operation: String, parameters: [String: Any]) -> MCPToolResult? {
         switch operation {
-        case "retrieve", "web_search", "serpapi":
+        case "research", "retrieve", "web_search", "serpapi":
             guard parameters["query"] is String else {
                 return operationError(operation, message: """
                     Missing required parameter 'query'.
