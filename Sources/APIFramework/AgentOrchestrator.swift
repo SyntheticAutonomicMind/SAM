@@ -1767,16 +1767,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     logger.debug("TOOL_EXECUTION: No tool calls to execute")
                 }
 
-                /// REMOVED DUPLICATE NO-TOOLS CHECK (lines 1768-1795)
-                /// This was causing infinite loops by bypassing autoContinueRetryLimit
-                /// All no-tools logic is now handled by lines 1687-1755 above
-                /// which properly calls injectAutoContinueIfTodosIncomplete() and respects the 5-attempt limit
-
                 // MARK: - Track whether tools have been executed in this workflow
-                /// Only set if we actually have tools to execute
-                /// (actualToolCalls.isEmpty cases were already handled and broke out of loop above)
                 guard !actualToolCalls.isEmpty else {
-                    logger.error("BUG: Reached tool execution code with empty actualToolCalls - this should have been caught by earlier no-tools check")
+                    logger.error("BUG: Reached tool execution code with empty actualToolCalls")
                     completeIteration(context: &context, responseStatus: "unexpected_empty_tools")
                     break
                 }
