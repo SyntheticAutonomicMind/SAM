@@ -34,6 +34,41 @@ public struct AnthropicMessageConverter {
                     systemText += content + "\n"
                 }
             } else if message.role == "user" || message.role == "assistant" {
+                /// Check for batched tool results marker (from Claude preprocessing)
+                if message.role == "user",
+                   let content = message.content,
+                   content.hasPrefix("__CLAUDE_BATCHED_TOOL_RESULTS__\n") {
+                    /// Extract batched tool results JSON
+                    let jsonString = String(content.dropFirst("__CLAUDE_BATCHED_TOOL_RESULTS__\n".count))
+                    
+                    if let jsonData = jsonString.data(using: .utf8),
+                       let toolResults = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: String]] {
+                        /// Convert batched tool results to tool_result content blocks
+                        var toolResultBlocks: [[String: Any]] = []
+                        
+                        for toolResult in toolResults {
+                            if let toolUseId = toolResult["tool_use_id"],
+                               let resultContent = toolResult["content"] {
+                                toolResultBlocks.append([
+                                    "type": "tool_result",
+                                    "tool_use_id": toolUseId,
+                                    "content": resultContent
+                                ])
+                            }
+                        }
+                        
+                        if !toolResultBlocks.isEmpty {
+                            /// Add single user message with ALL tool results
+                            anthropicMessages.append([
+                                "role": "user",
+                                "content": toolResultBlocks
+                            ])
+                            logger.debug("Converted batched tool results: \(toolResults.count) results in one message")
+                        }
+                    }
+                    continue
+                }
+                
                 /// Convert user/assistant messages to Anthropic format.
                 let contentBlocks = convertMessageContent(message)
 

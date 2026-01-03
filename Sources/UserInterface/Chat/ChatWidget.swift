@@ -7140,7 +7140,6 @@ public struct ChatWidget: View {
             workingDirectory: nil,
             systemPromptId: nil,
             isExternalAPICall: nil,
-            loopDetectorConfig: nil,
             enableTerminalAccess: enableTerminalAccess,
             enableWorkflowMode: enableWorkflowMode,
             enableDynamicIterations: enableDynamicIterations

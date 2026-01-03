@@ -57,6 +57,9 @@ ai-assisted/20*/
 # Scratch directory (development work, not for release)
 scratch/
 
+# Temp directory (testing artifacts)
+temp/
+
 # macOS
 .Trashes
 .fseventsd

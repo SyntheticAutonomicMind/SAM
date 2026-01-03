@@ -186,12 +186,11 @@ public struct SAMConfig: Content {
     public let workingDirectory: String?
     public let systemPromptId: String?
     public let isExternalAPICall: Bool?
-    public let loopDetectorConfig: LoopDetector.Configuration?
     public let enableTerminalAccess: Bool?
     public let enableWorkflowMode: Bool?
     public let enableDynamicIterations: Bool?
 
-    public init(sharedMemoryEnabled: Bool? = nil, mcpToolsEnabled: Bool? = nil, memoryCollectionId: String? = nil, conversationTitle: String? = nil, maxIterations: Int? = nil, enableReasoning: Bool? = nil, workingDirectory: String? = nil, systemPromptId: String? = nil, isExternalAPICall: Bool? = nil, loopDetectorConfig: LoopDetector.Configuration? = nil, enableTerminalAccess: Bool? = nil, enableWorkflowMode: Bool? = nil, enableDynamicIterations: Bool? = nil) {
+    public init(sharedMemoryEnabled: Bool? = nil, mcpToolsEnabled: Bool? = nil, memoryCollectionId: String? = nil, conversationTitle: String? = nil, maxIterations: Int? = nil, enableReasoning: Bool? = nil, workingDirectory: String? = nil, systemPromptId: String? = nil, isExternalAPICall: Bool? = nil, enableTerminalAccess: Bool? = nil, enableWorkflowMode: Bool? = nil, enableDynamicIterations: Bool? = nil) {
         self.sharedMemoryEnabled = sharedMemoryEnabled
         self.mcpToolsEnabled = mcpToolsEnabled
         self.memoryCollectionId = memoryCollectionId
@@ -201,7 +200,6 @@ public struct SAMConfig: Content {
         self.workingDirectory = workingDirectory
         self.systemPromptId = systemPromptId
         self.isExternalAPICall = isExternalAPICall
-        self.loopDetectorConfig = loopDetectorConfig
         self.enableTerminalAccess = enableTerminalAccess
         self.enableWorkflowMode = enableWorkflowMode
         self.enableDynamicIterations = enableDynamicIterations
@@ -217,7 +215,6 @@ public struct SAMConfig: Content {
         case workingDirectory = "working_directory"
         case systemPromptId = "system_prompt_id"
         case isExternalAPICall = "is_external_api_call"
-        case loopDetectorConfig = "loop_detector_config"
         case enableTerminalAccess = "enable_terminal_access"
         case enableWorkflowMode = "enable_workflow_mode"
         case enableDynamicIterations = "enable_dynamic_iterations"
