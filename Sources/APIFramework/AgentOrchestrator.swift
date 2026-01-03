@@ -2687,13 +2687,34 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         /// This prevents accumulation of status/reminder messages across iterations.
                         context.ephemeralMessages.removeAll()
 
-                        /// CRITICAL FIX: Inject pending auto-continue message from PREVIOUS iteration
-                        /// This message was stored because it couldn't be seen by LLM when appended at end of iteration
-                        /// (since ephemeral gets cleared at start of next iteration before LLM call)
-                        if let pendingMessage = context.pendingAutoContinueMessage {
-                            context.ephemeralMessages.append(pendingMessage)
-                            context.pendingAutoContinueMessage = nil  // Clear after injection
-                            logger.info("AUTO_CONTINUE_STREAMING: Injected pendingAutoContinueMessage into ephemeral (from previous iteration)")
+                        /// ORCHESTRATOR PATTERN: Add appropriate reminder based on continuation reason
+                        /// From diagram: Every continuation MUST have a reminder message
+                        let incompleteTodos = currentTodoList.filter { $0.status.lowercased() != "completed" }
+                        let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                        
+                        if !incompleteTodos.isEmpty {
+                            /// Case 1: Active todos exist → Add todo reminder
+                            let inProgress = incompleteTodos.filter { $0.status.lowercased() == "in-progress" }
+                            let notStarted = incompleteTodos.filter { $0.status.lowercased() == "not-started" }
+                            
+                            let todoReminderContent = """
+                            <todoList>\(incompleteTodos.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
+                            
+                            \(inProgress.isEmpty ? "" : "In Progress: " + inProgress.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
+                            \(notStarted.isEmpty ? "" : "Not Started: " + notStarted.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
+                            </todoList>
+                            """
+                            
+                            context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
+                            logger.debug("TODO_REMINDER: Added todo list reminder", metadata: [
+                                "incompleteTodos": .stringConvertible(incompleteTodos.count)
+                            ])
+                        } else if enableWorkflowMode && context.iteration > 0 {
+                            /// Case 2: No todos but workflow mode enabled → Add continue reminder
+                            /// (Only add if not first iteration - first iteration is user's message)
+                            let continueReminderContent = "Workflow mode is active. Continue working on the task."
+                            context.ephemeralMessages.append(createSystemReminder(content: continueReminderContent, model: model))
+                            logger.debug("WORKFLOW_REMINDER: Added workflow mode reminder")
                         }
 
                         logger.debug("ITERATION_START_STREAMING: Starting iteration \(context.iteration + 1) of \(self.maxIterations)")
@@ -2934,43 +2955,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                         /// Check finish_reason for continuation signal.
                         if context.lastFinishReason != "tool_calls" {
-                            /// Q&A MODE DETECTION (applies to conversations with active workflow AND tools already executed) If user asked a question MID-WORKFLOW (after tools have been used) and agent answered without tools, we're in conversational Q&A, not workflow execution Don't inject workflow continuation prompts during Q&A!.
-                            if context.toolsExecutedInWorkflow {
-                                let lastUserMessage = await MainActor.run {
-                                    conversationManager.conversations
-                                        .first(where: { $0.id == conversationId })?
-                                        .messages
-                                        .last(where: { $0.isFromUser })
-                                }
-
-                                let isUserAskingQuestion = lastUserMessage?.content.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") ?? false
-                                let agentUsedTools = llmResponse.toolCalls?.isEmpty == false
-
-                                if isUserAskingQuestion && !agentUsedTools {
-                                    /// Q&A MODE: User asked a question mid-workflow, agent answered without tools This is a clarifying question, not workflow continuation.
-                                    logger.debug("QA_MODE_DETECTED_STREAMING", metadata: [
-                                        "conversationId": .string(conversationId.uuidString),
-                                        "userQuestion": .string(lastUserMessage?.content.prefix(100).description ?? ""),
-                                        "toolsExecutedInWorkflow": .stringConvertible(context.toolsExecutedInWorkflow)
-                                    ])
-
-                                    /// BREAK from loop to end conversation, wait for next user input Using 'continue' would loop back and call LLM again!.
-                                    let doneChunk = ServerOpenAIChatStreamChunk(
-                                        id: requestId,
-                                        object: "chat.completion.chunk",
-                                        created: created,
-                                        model: model,
-                                        choices: [OpenAIChatStreamChoice(
-                                            index: 0,
-                                            delta: OpenAIChatDelta(content: ""),
-                                            finishReason: "stop"
-                                        )]
-                                    )
-                                    continuation.yield(doneChunk)
-                                    continuation.finish()
-                                    break
-                                }
-                            }
+                            /// ORCHESTRATOR FLOW (from orchestrator.txt diagram):
+                            /// 1. Check for explicit workflow complete signal
+                            /// 2. Check for explicit continue signal
+                            /// 3. Check for active todos → Continue
+                            /// 4. Check for workflow switch enabled → Continue (fallback)
+                            /// 5. Otherwise → Natural stop
 
                             /// Check if agent signaled workflow completion.
                             if context.detectedWorkflowCompleteMarker {
@@ -2995,54 +2985,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                             /// Check if agent signaled continue (simulates user typing "continue") This is how automated workflow continues without user input.
                             if context.detectedContinueMarker {
-                                logger.info("WORKFLOW_CONTINUING_STREAMING: [CONTINUE] signal detected (automated continuation)")
-
-                                /// Add "continue" message to conversation history so agent sees new user input
-                                /// This prevents the agent from repeating the same output when it sees its own previous response
-                                if let conv = conversation {
-                                    conv.messageBus?.addUserMessage(content: "<system-reminder>continue</system-reminder>", isSystemGenerated: true)
-                                    logger.debug("STREAMING: Added 'continue' system message to conversation history")
-                                }
-
-                                /// CRITICAL: Check if agent is in planning loop (emitting continue without doing work)
-                                /// If planningOnlyIterations > 2, inject auto-continue intervention to break the loop
-                                if context.planningOnlyIterations > 2 {
-                                    logger.warning("PLANNING_LOOP_WITH_CONTINUE: Agent emitted continue signal but has done no real work", metadata: [
-                                        "iteration": .stringConvertible(context.iteration),
-                                        "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations)
-                                    ])
-
-                                    /// Inject auto-continue intervention to break the planning loop
-                                    /// Use the planningOnlyIterations count to determine intervention level
-                                    let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                                    let injected = await injectAutoContinueIfTodosIncomplete(
-                                        context: &context,
-                                        conversationId: conversationId,
-                                        model: model,
-                                        enableWorkflowMode: enableWorkflowMode
-                                    )
-
-                                    if injected {
-                                        logger.info("PLANNING_LOOP_INTERVENTION_STREAMING: Auto-continue intervention injected to break planning loop", metadata: [
-                                            "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations),
-                                            "autoContinueAttempts": .stringConvertible(context.autoContinueAttempts)
-                                        ])
-                                    }
-                                }
-
-                                /// Agent Loop Escape - Log if agent might be stuck
-                                let usedMemoryTools = context.lastIterationToolNames.contains("memory_operations") ||
-                                                       context.lastIterationToolNames.contains("manage_todo_list") ||
-                                                       context.lastIterationToolNames.contains("todo_operations")
-                                let hasRecentFailures = !context.toolFailureTracking.isEmpty
-
-                                if usedMemoryTools && hasRecentFailures {
-                                    logger.warning("POTENTIAL_AGENT_BLOCK_STREAMING: Agent used memory/todo tools and has failures", metadata: [
-                                        "iteration": .stringConvertible(context.iteration),
-                                        "failures": .stringConvertible(context.toolFailureTracking.count)
-                                    ])
-                                }
-
+                                logger.info("WORKFLOW_CONTINUING_STREAMING: [CONTINUE] signal detected", metadata: [
+                                    "iteration": .stringConvertible(context.iteration)
+                                ])
+                                completeIteration(context: &context, responseStatus: "continue_signal_streaming")
                                 /// Iteration will be incremented at bottom of loop - don't increment here
                                 continue
                             }
