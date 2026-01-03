@@ -166,7 +166,7 @@ public class ImageGenerationTool: MCPTool, @unchecked Sendable {
             ),
             "guidance_scale": MCPToolParameter(
                 type: .integer,
-                description: "How closely to follow the prompt. Z-Image models: must be 0 (no CFG). Standard SD models: 1-20 (default: 8). Higher values stick closer to prompt. Example: 0 for z-image, 8 for SD models",
+                description: "How closely to follow the prompt (CFG scale). Z-Image models: must be 0.0 (no CFG). Standard SD models: 1.0-20.0 (default: 8.0). Supports decimal values like 7.5 or 5.9 - pass as number. Higher values stick closer to prompt. Example: 7.5 for SD, 0.0 for z-image",
                 required: false
             ),
             "seed": MCPToolParameter(
@@ -704,8 +704,16 @@ public class ImageGenerationTool: MCPTool, @unchecked Sendable {
             if isZImage {
                 /// Z-Image defaults: 8 steps, 0 guidance (no CFG)
                 steps = (parameters["steps"] as? Int) ?? 8
-                let guidanceScaleInt = (parameters["guidance_scale"] as? Int) ?? 0
-                guidanceScale = Float(guidanceScaleInt)
+                /// Accept both Float and Int for guidance_scale
+                if let floatVal = parameters["guidance_scale"] as? Float {
+                    guidanceScale = floatVal
+                } else if let doubleVal = parameters["guidance_scale"] as? Double {
+                    guidanceScale = Float(doubleVal)
+                } else if let intVal = parameters["guidance_scale"] as? Int {
+                    guidanceScale = Float(intVal)
+                } else {
+                    guidanceScale = 0.0
+                }
 
                 /// Validate z-image constraints
                 guard (4...50).contains(steps) else {
@@ -724,10 +732,18 @@ public class ImageGenerationTool: MCPTool, @unchecked Sendable {
                     )
                 }
             } else {
-                /// Standard SD defaults: 25 steps, 8 guidance
+                /// Standard SD defaults: 25 steps, 8.0 guidance
                 steps = (parameters["steps"] as? Int) ?? 25
-                let guidanceScaleInt = (parameters["guidance_scale"] as? Int) ?? 8
-                guidanceScale = Float(guidanceScaleInt)
+                /// Accept both Float and Int for guidance_scale
+                if let floatVal = parameters["guidance_scale"] as? Float {
+                    guidanceScale = floatVal
+                } else if let doubleVal = parameters["guidance_scale"] as? Double {
+                    guidanceScale = Float(doubleVal)
+                } else if let intVal = parameters["guidance_scale"] as? Int {
+                    guidanceScale = Float(intVal)
+                } else {
+                    guidanceScale = 8.0
+                }
 
                 /// Validate standard SD constraints
                 guard (20...100).contains(steps) else {

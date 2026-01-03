@@ -1,6 +1,75 @@
 {
   "releases": [
     {
+      "version": "20250103.1",
+      "release_date": "January 3, 2026",
+      "introduction": "This release resolves bugs with Claude models, simplifies agent workflows, and improves image generation by adding fine grained config scale control.",
+      "highlights": [
+        {
+          "id": "claude-production-ready",
+          "icon": "checkmark.seal.fill",
+          "title": "Claude Model Issues Resolved",
+          "description": "Claude models now complete complex multi-tool workflows. Fixed infinite loops, tool result handling, and context management."
+        },
+        {
+          "id": "simplified-architecture",
+          "icon": "gearshape.2.fill",
+          "title": "Simplified Agent Architecture",
+          "description": "Completely removed the old LoopDetector system and simplified AgentOrchestrator workflow. Agents now work more reliably with cleaner, more maintainable code. No more mysterious edge cases or complex loop detection needed."
+        },
+        {
+          "id": "decimal-cfg-scale",
+          "icon": "slider.horizontal.3",
+          "title": "Fine-Grained Image Generation Control",
+          "description": "CFG scale now accepts decimal values like 5.9 or 7.5 for precise control over how closely images follow your prompts. Perfect for finding the sweet spot between creativity and adherence. Use the stepper for 0.1 increments or type exact values."
+        },
+        {
+          "id": "github-copilot-stability",
+          "icon": "bolt.shield.fill",
+          "title": "Corrected GitHub Copilot Integration Bugs",
+          "description": "Eliminated all known GitHub Copilot API errors through careful message formatting, role ordering, and delta mode fixes. Conversations now flow smoothly without unexpected 400 errors or message slicing issues."
+        },
+        {
+          "id": "consistent-tool-results",
+          "icon": "doc.plaintext.fill",
+          "title": "Smarter Tool Result Previews",
+          "description": "All tools now show you the first 8KB of results immediately, so models can see actual content before deciding whether to read more. Prevents unnecessary read_tool_result calls and makes workflows more efficient."
+        },
+        {
+          "id": "better-release-notes",
+          "icon": "doc.richtext.fill",
+          "title": "Better Release Notes",
+          "description": "Release notes now display in HTML format through the Sparkle updater. See what's new in an easier-to-read format with proper formatting and organization."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "claude-no-more-loops",
+          "icon": "arrow.triangle.2.circlepath.circle.badge.checkmark.fill",
+          "title": "Claude No Longer Loops Infinitely",
+          "description": "Fixed the frustrating issue where Claude would call the same tool 25+ times. Root causes were: missing context re-injection, seeing preview markers without actual data, and choosing the wrong web search tool. All fixed."
+        },
+        {
+          "id": "api-errors-gone",
+          "icon": "xmark.seal.fill",
+          "title": "GitHub Copilot API Errors Eliminated",
+          "description": "No more 'at least one message required' or role validation errors. Fixed message slicing edge cases, proper role ordering, delta mode activation logic, and whitespace handling."
+        },
+        {
+          "id": "tools-show-real-data",
+          "icon": "doc.text.magnifyingglass",
+          "title": "Tool Results Show Actual Content",
+          "description": "Web operations and other tools now use the standard preview system that shows the first 8KB of actual content. Previously some tools only showed storage markers, causing models to call read_tool_result unnecessarily."
+        },
+        {
+          "id": "auto-update-version-logic",
+          "icon": "arrow.clockwise.circle.fill",
+          "title": "Auto-Update Version Comparison Fixed",
+          "description": "Sparkle updater now correctly compares date-based versions (YYYYMMDD.N format). Previously it compared them as strings which could miss updates."
+        }
+      ]
+    },
+    {
       "version": "20251230.1",
       "release_date": "December 30, 2025",
       "introduction": "This comprehensive update adds Google Gemini API support with full pricing visibility, Session Intelligence toolbar for real-time agent activity tracking, significant terminal improvements, and critical bug fixes for message persistence, document imports, and long conversations.",
