@@ -1718,6 +1718,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             "iteration": .stringConvertible(context.iteration)
                         ])
                         completeIteration(context: &context, responseStatus: "continue_signal")
+                        /// CRITICAL: Increment iteration counter before continuing
+                        context.iteration += 1
+                        self.updateCurrentIteration(context.iteration)
                         continue
                     }
 
@@ -1733,6 +1736,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             "iteration": .stringConvertible(context.iteration)
                         ])
                         completeIteration(context: &context, responseStatus: "auto_continue")
+                        /// CRITICAL: Increment iteration counter before continuing
+                        context.iteration += 1
+                        self.updateCurrentIteration(context.iteration)
                         continue
                     }
 
