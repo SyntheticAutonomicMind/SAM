@@ -1516,10 +1516,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// CRITICAL FIX: Inject pending auto-continue message from PREVIOUS iteration
             /// This message was stored because it couldn't be seen by LLM when appended at end of iteration
             /// (since ephemeral gets cleared at start of next iteration before LLM call)
+            /// IMPORTANT: Do NOT clear pendingAutoContinueMessage here - let it persist until agent makes progress
             if let pendingMessage = context.pendingAutoContinueMessage {
                 context.ephemeralMessages.append(pendingMessage)
-                context.pendingAutoContinueMessage = nil  // Clear after injection
-                logger.info("AUTO_CONTINUE: Injected pendingAutoContinueMessage into ephemeral (from previous iteration)")
+                logger.info("AUTO_CONTINUE: Re-injected pendingAutoContinueMessage (persists until agent makes progress)")
             }
 
             do {
@@ -1820,11 +1820,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     /// Agent called at least one WORK tool - real progress is being made
                     context.planningOnlyIterations = 0
                     context.autoContinueAttempts = 0
+                    context.pendingAutoContinueMessage = nil  // Clear reminder - agent is making progress!
                     let workToolNames = workToolsCalled.map { $0.name }.joined(separator: ", ")
                     logger.debug("WORK_TOOL_EXECUTED", metadata: [
                         "iteration": .stringConvertible(context.iteration),
                         "workTools": .string(workToolNames),
-                        "message": .string("Work tools called - resetting planningOnlyIterations and autoContinueAttempts")
+                        "message": .string("Work tools called - resetting counters and clearing pending reminder")
                     ])
                 }
 
