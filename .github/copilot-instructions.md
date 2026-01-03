@@ -435,7 +435,8 @@ ls -lt ai-assisted/ | head -20
 ❌ Edit code without investigation + checkpoint  
 ❌ Commit without testing + checkpoint  
 ❌ End session without user approval  
-❌ Respond with text only (no tool calls)
+❌ **Respond with text only - EVERY response MUST call at least one tool** (usually collaboration tool)
+❌ **Respond without using collaboration tool during active session** (session failure)
 
 ### Methodology Violations
 ❌ Label bugs as "out of scope" (fix them - Complete Ownership)  
