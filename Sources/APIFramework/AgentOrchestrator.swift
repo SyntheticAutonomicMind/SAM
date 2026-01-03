@@ -1513,13 +1513,25 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// This prevents accumulation of status/reminder messages across iterations.
             context.ephemeralMessages.removeAll()
 
-            /// CRITICAL FIX: Inject pending auto-continue message from PREVIOUS iteration
-            /// This message was stored because it couldn't be seen by LLM when appended at end of iteration
-            /// (since ephemeral gets cleared at start of next iteration before LLM call)
-            /// IMPORTANT: Do NOT clear pendingAutoContinueMessage here - let it persist until agent makes progress
-            if let pendingMessage = context.pendingAutoContinueMessage {
-                context.ephemeralMessages.append(pendingMessage)
-                logger.info("AUTO_CONTINUE: Re-injected pendingAutoContinueMessage (persists until agent makes progress)")
+            /// SIMPLE ORCHESTRATOR PATTERN: Add todo reminder at iteration start if needed
+            /// This replaces the complex pendingAutoContinueMessage injection system
+            let incompleteTodos = currentTodoList.filter { $0.status.lowercased() != "completed" }
+            if !incompleteTodos.isEmpty {
+                let inProgress = incompleteTodos.filter { $0.status.lowercased() == "in-progress" }
+                let notStarted = incompleteTodos.filter { $0.status.lowercased() == "not-started" }
+                
+                let todoReminderContent = """
+                <todoList>\(incompleteTodos.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
+                
+                \(inProgress.isEmpty ? "" : "In Progress: " + inProgress.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
+                \(notStarted.isEmpty ? "" : "Not Started: " + notStarted.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
+                </todoList>
+                """
+                
+                context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
+                logger.debug("TODO_REMINDER: Added todo list reminder to ephemeral messages", metadata: [
+                    "incompleteTodos": .stringConvertible(incompleteTodos.count)
+                ])
             }
 
             do {
@@ -1683,15 +1695,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     break
                 }
 
-                /// If no tool calls, we're done with this iteration.
+                /// If no tool calls, check if we should continue or stop naturally.
                 if context.lastFinishReason != "tool_calls" {
-                    /// No tools to execute - check if we need to continue or terminate.
+                    /// SIMPLE ORCHESTRATOR PATTERN (from orchestrator.txt diagram):
+                    /// Decision point: Tool OR Active Todo OR Workflow Mode?
+                    ///   YES → Continue (todo reminder will be added at next iteration start)
+                    ///   NO  → Natural stop
 
-                    /// If processMarkerEvent handled the iteration (injected continuation), skip to next iteration (This case is already handled by the 'handled' check above after processMarkerEvent).
-
-                    /// NO TOOLS CALLED - Only terminate naturally (don't check continue marker here) Continue marker should ONLY be checked after tools are executed This prevents premature continuation before SAM completes actual work.
-
-                    /// Signal 1: Agent signals workflow complete.
+                    /// Signal 1: Explicit workflow complete marker
                     if context.detectedWorkflowCompleteMarker {
                         logger.info("WORKFLOW_COMPLETE: [WORKFLOW_COMPLETE] signal detected", metadata: [
                             "iteration": .stringConvertible(context.iteration),
@@ -1701,52 +1712,32 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         break
                     }
 
-                    /// Signal 2: Agent signals continue (simulates user typing "continue") This is how automated workflow continues without user input.
+                    /// Signal 2: Explicit continue marker
                     if context.detectedContinueMarker {
-                        logger.info("WORKFLOW_CONTINUING: [CONTINUE] signal detected (automated continuation)", metadata: [
-                            "iteration": .stringConvertible(context.iteration),
-                            "conversationId": .string(conversationId.uuidString)
-                        ])
-
-                        /// Add "continue" message to conversation history so agent sees new user input
-                        /// This prevents the agent from repeating the same output when it sees its own previous response
-                        if let conv = conversation {
-                            conv.messageBus?.addUserMessage(content: "<system-reminder>continue</system-reminder>", isSystemGenerated: true)
-                            logger.debug("Added 'continue' system message to conversation history")
-                        }
-
-                        /// TodoReminderInjector provides periodic reminders.
-                        /// Agent Loop Escape - Log if agent might be stuck
-                        let usedMemoryTools = context.lastIterationToolNames.contains("memory_operations") ||
-                                               context.lastIterationToolNames.contains("manage_todo_list") ||
-                                               context.lastIterationToolNames.contains("todo_operations")
-                        let hasRecentFailures = !context.toolFailureTracking.isEmpty
-
-                        if usedMemoryTools && hasRecentFailures {
-                            logger.warning("POTENTIAL_AGENT_BLOCK: Agent used memory/todo tools and has failures", metadata: [
-                                "iteration": .stringConvertible(context.iteration),
-                                "failures": .stringConvertible(context.toolFailureTracking.count)
-                            ])
-                        }
-
-                        completeIteration(context: &context, responseStatus: "continue_signal")
-                        /// Iteration will be incremented at bottom of loop - don't increment here
-                        continue
-                    }
-
-                    /// Default: Natural termination (no continue signal) Before terminating, check for incomplete todos and inject an auto-continue directive if needed.
-                    let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                    if await injectAutoContinueIfTodosIncomplete(context: &context, conversationId: conversationId, model: model, enableWorkflowMode: enableWorkflowMode) {
-                        logger.debug("AUTO_CONTINUE: Injected continue directive due to incomplete todos", metadata: [
+                        logger.info("WORKFLOW_CONTINUING: [CONTINUE] signal detected", metadata: [
                             "iteration": .stringConvertible(context.iteration)
                         ])
-                        completeIteration(context: &context, responseStatus: "auto_continue_injected")
-                        /// Iteration will be incremented at bottom of loop - don't increment here
+                        completeIteration(context: &context, responseStatus: "continue_signal")
                         continue
                     }
 
-                    /// No auto-continue triggered - end workflow naturally.
-                    logger.info("WORKFLOW_COMPLETE: Natural termination (no continue signal)", metadata: [
+                    /// Decision point: Check if workflow should continue automatically
+                    /// Based on diagram: Continue if (Active Todo) OR (Workflow Mode enabled)
+                    let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                    let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
+
+                    if hasIncompleteTodos || enableWorkflowMode {
+                        logger.debug("WORKFLOW_CONTINUING: Auto-continue triggered", metadata: [
+                            "hasIncompleteTodos": .stringConvertible(hasIncompleteTodos),
+                            "workflowMode": .stringConvertible(enableWorkflowMode),
+                            "iteration": .stringConvertible(context.iteration)
+                        ])
+                        completeIteration(context: &context, responseStatus: "auto_continue")
+                        continue
+                    }
+
+                    /// No continuation conditions met - natural stop
+                    logger.info("WORKFLOW_COMPLETE: Natural termination", metadata: [
                         "iteration": .stringConvertible(context.iteration),
                         "conversationId": .string(conversationId.uuidString)
                     ])
@@ -1820,12 +1811,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     /// Agent called at least one WORK tool - real progress is being made
                     context.planningOnlyIterations = 0
                     context.autoContinueAttempts = 0
-                    context.pendingAutoContinueMessage = nil  // Clear reminder - agent is making progress!
                     let workToolNames = workToolsCalled.map { $0.name }.joined(separator: ", ")
                     logger.debug("WORK_TOOL_EXECUTED", metadata: [
                         "iteration": .stringConvertible(context.iteration),
                         "workTools": .string(workToolNames),
-                        "message": .string("Work tools called - resetting counters and clearing pending reminder")
+                        "message": .string("Work tools called - resetting counters")
                     ])
                 }
 
