@@ -1767,33 +1767,20 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     logger.debug("TOOL_EXECUTION: No tool calls to execute")
                 }
 
-                if actualToolCalls.isEmpty {
-                    logger.debug("NO_TOOLS: LLM response had no tool calls")
-
-                    /// Agent control - only continue if agent explicitly signals continuation Check for [CONTINUE] marker or workflow signals.
-                    let responseContent = response.content.lowercased()
-                    let hasContinueMarker = responseContent.contains("[continue]")
-                    let hasWorkflowMarker = responseContent.contains("[workflow_") || responseContent.contains("[step_")
-                    let isInWorkflow = context.toolsExecutedInWorkflow
-
-                    if hasContinueMarker {
-                        logger.info("CONTINUE_MARKER: Agent signaled [CONTINUE] - continuing workflow")
-                        completeIteration(context: &context, responseStatus: "continue_marker")
-                        /// Iteration will be incremented at bottom of loop - don't increment here
-                        continue
-                    } else if hasWorkflowMarker && isInWorkflow {
-                        logger.info("WORKFLOW_CONTEXT: Agent in workflow context with markers - continuing")
-                        completeIteration(context: &context, responseStatus: "workflow_context")
-                        /// Iteration will be incremented at bottom of loop - don't increment here
-                        continue
-                    } else {
-                        logger.info("WORKFLOW_END: No tools, no [CONTINUE] marker, no workflow context - ending naturally")
-                        completeIteration(context: &context, responseStatus: "no_tools_natural_end")
-                        break
-                    }
-                }
+                /// REMOVED DUPLICATE NO-TOOLS CHECK (lines 1768-1795)
+                /// This was causing infinite loops by bypassing autoContinueRetryLimit
+                /// All no-tools logic is now handled by lines 1687-1755 above
+                /// which properly calls injectAutoContinueIfTodosIncomplete() and respects the 5-attempt limit
 
                 // MARK: - Track whether tools have been executed in this workflow
+                /// Only set if we actually have tools to execute
+                /// (actualToolCalls.isEmpty cases were already handled and broke out of loop above)
+                guard !actualToolCalls.isEmpty else {
+                    logger.error("BUG: Reached tool execution code with empty actualToolCalls - this should have been caught by earlier no-tools check")
+                    completeIteration(context: &context, responseStatus: "unexpected_empty_tools")
+                    break
+                }
+                
                 context.toolsExecutedInWorkflow = true
 
                 /// PLANNING LOOP DETECTION: Check if ANY work tools were called
