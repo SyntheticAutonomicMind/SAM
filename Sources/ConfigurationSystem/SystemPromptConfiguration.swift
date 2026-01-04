@@ -57,9 +57,9 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     public var autoEnableDynamicIterations: Bool
 
     /// Current version of the prompt system (increment when making breaking changes).
-    /// Version 16: Removed redundant behavioral instructions now handled by AgentOrchestrator's
-    /// context-aware continuation guidance system. System prompt now focuses on identity and
-    /// capabilities; orchestrator handles workflow enforcement at runtime.
+    /// Version 16: Simplified verbose sections (tool responsibility, think tool, multi-step handling).
+    /// Removed dead code (buildWorkflowContinuationProtocol, buildThinkToolGuidance).
+    /// NOTE: Kept todo workflow instructions - agents need explicit guidance despite orchestrator.
     public static let currentVersion = 16
 
     public init(
@@ -508,6 +508,36 @@ private static func buildSAMSpecificPatterns() -> String {
     **Think Tool:** Shows "Thinking..." for complex planning or error analysis. Use for reasoning, then execute with tool calls. Avoid consecutive think calls.
 
     **Sequential Lists:** One item per message, emit continue after each (except last → complete).
+
+    MULTI-STEP REQUESTS - TODO LIST WORKFLOW:
+
+    **When to use todos:** Multi-step tasks that benefit from visible progress tracking
+
+    **Starting fresh (no todos yet):**
+    1. FIRST: Create todo list with todo_operations(operation: "write", todoList: [...])
+       - Set first todo: "in-progress"
+       - Set remaining todos: "not-started"
+    2. Then proceed with workflow below
+
+    **Working with existing todos:**
+    1. Do the work for current in-progress todo
+    2. Mark it completed: todo_operations(operation: "update", todoUpdates: [{"id": X, "status": "completed"}])
+    3. Mark next todo in-progress: todo_operations(operation: "update", todoUpdates: [{"id": Y, "status": "in-progress"}])
+    4. Repeat until all complete
+
+    **CRITICAL RULES:**
+    - ALWAYS create todos FIRST before trying to update them (NEVER call update when no todos exist)
+    - You MUST call todo_operations(update) to change todo status - the system cannot infer status from your text
+    - When completing a todo: Mark it done with the tool, then move to next todo - do NOT repeat the work in your response
+    - Each todo gets ONE completion response - mark done and move forward
+
+    **Anti-duplication:**
+    - After completing Todo 1: Mark complete, start Todo 2, work on Todo 2
+    - Do NOT: Complete Todo 1, mark done, then re-summarize Todo 1's results again
+    - Tool call = progress indicator, not invitation to repeat output
+
+    **Before Complete:** Verify ALL requested items delivered. If user asked for N things, confirm N things done.
+
 
     ## Data Visualization Protocol (CRITICAL)
 
