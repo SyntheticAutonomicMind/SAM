@@ -8,35 +8,31 @@
 
 ### Version 16 (January 4, 2026)
 
-**Change:** Removed redundant behavioral instructions now handled by AgentOrchestrator
+**Change:** Simplified verbose sections, removed dead code
 
 **Rationale:**
-The AgentOrchestrator now provides intelligent, context-aware continuation guidance at runtime through:
-1. 4 adaptive guidance variants based on (todos exist × tools used last iteration)
-2. TodoReminderInjector for todo-specific workflow reminders
-3. Fresh todo state reads before every workflow decision
+Initial plan was to remove todo workflow instructions as redundant with AgentOrchestrator.
+**However, testing revealed agents need explicit todo workflow guidance in system prompt.**
+While orchestrator provides runtime reminders, the static instructions serve as educational
+foundation that agents rely on. Reverted todo workflow section after user testing.
 
-This makes static behavioral instructions in the system prompt redundant. The system prompt should define WHO SAM is and WHAT SAM can do; the orchestrator handles HOW to behave during workflow execution.
+**Final Changes:**
 
-**Removals:**
+**KEPT (After Reversion):**
 1. **MULTI-STEP REQUESTS - TODO LIST WORKFLOW section** (buildSAMSpecificPatterns)
-   - Entire todo workflow instructions removed (~350 tokens)
-   - **Why:** AgentOrchestrator Variants 1 & 2 provide identical workflow guidance at runtime
-   - **Coverage:** Orchestrator enforces "mark in-progress → do work → mark completed" every iteration
+   - **Initially removed** as redundant with AgentOrchestrator
+   - **REVERTED** after user testing showed agents need explicit guidance  
+   - **Lesson:** Runtime reminders supplement but don't replace educational foundation
+   - Static instructions serve as reference agents rely on for workflow understanding
 
-2. **buildWorkflowContinuationProtocol() function** (dead code)
+**REMOVED (Dead Code):**
+1. **buildWorkflowContinuationProtocol() function**
    - Entire function removed (~500 tokens)
    - **Why:** Never called, redundant with orchestrator's 4 continuation variants
-   - **Coverage:** Orchestrator provides context-aware guidance for WITH/WITHOUT todos scenarios
 
-3. **buildThinkToolGuidance() function** (dead code)
+2. **buildThinkToolGuidance() function**
    - Entire function removed (~80 tokens)
    - **Why:** Never called, guidance already in buildSAMSpecificPatterns
-
-4. **Anti-duplication guidance** (buildSAMSpecificPatterns)
-   - Removed duplicate output warnings (~80 tokens)
-   - **Why:** TodoReminderInjector enforces "DO NOT repeat the work"
-   - **Coverage:** Runtime reminder system handles this
 
 **Simplifications:**
 
@@ -58,7 +54,8 @@ This makes static behavioral instructions in the system prompt redundant. The sy
    - **Why:** Educational value remains, but enforcement language removed
    - **Token Savings:** ~40 tokens
 
-**Total Token Savings:** ~1150 tokens (~20-25% reduction from affected sections)
+**Total Token Savings:** ~720 tokens (~15% reduction from affected sections)
+**Note:** Original estimate was ~1150 tokens, but todo workflow section was reverted (~430 tokens restored)
 
 **What Remains (Preserved Components):**
 - ✅ Core Identity (WHO SAM is)
@@ -74,18 +71,19 @@ This makes static behavioral instructions in the system prompt redundant. The sy
 - ✅ Dynamic Iterations (iteration monitoring, only when enabled)
 - ✅ Two-Phase Workflow (pattern recommendation)
 - ✅ Sequential Lists (pattern guidance)
+- ✅ **Todo Workflow Instructions (KEPT after reversion)**
 
 **Behavioral Impact:**
-- **No loss of functionality** - Orchestrator enforces all removed instructions at runtime
-- **Better separation of concerns** - Static prompt = identity/capabilities, Runtime guidance = workflow behavior
-- **More maintainable** - Single source of truth for behavioral rules (orchestrator)
-- **Context-aware** - Orchestrator adapts guidance based on current workflow state
+- **Todo workflow preserved** - Agents need explicit static guidance despite runtime reminders
+- **Dead code removed** - Cleaner codebase
+- **Verbose sections simplified** - Clearer, more concise
+- **No breaking changes** - All functionality intact
 
 **Testing Results:**
 - ✅ Build: PASS (`make build-debug`)
 - ✅ No compile errors
 - ✅ System prompt generates correctly
-- Manual testing pending (Test Cases 1-5 from analysis document)
+- ✅ User testing: Agents work correctly with todo workflow restored
 
 **Files Modified:**
 - `Sources/ConfigurationSystem/SystemPromptConfiguration.swift`
