@@ -1,6 +1,57 @@
 {
   "releases": [
     {
+      "version": "20260104.1",
+      "release_date": "January 4, 2026",
+      "introduction": "This release improves workflow reliability through better todo tracking, continuation logic, and error handling. Agents now complete multi-step tasks more reliably.",
+      "highlights": [
+        {
+          "id": "todo-workflow-reliability",
+          "icon": "checkmark.circle.fill",
+          "title": "More Reliable Todo Workflow",
+          "description": "Fixed issues where agents would skip marking todos in-progress or completed. Workflows now properly track all tasks from start to finish."
+        },
+        {
+          "id": "context-aware-guidance",
+          "icon": "lightbulb.fill",
+          "title": "Smarter Continuation Guidance",
+          "description": "Agents receive better instructions based on workflow state. The system now adapts guidance depending on whether todos exist and what tools were just used."
+        },
+        {
+          "id": "web-research-improvements",
+          "icon": "globe",
+          "title": "Cleaner Web Research Results",
+          "description": "Web research now handles partial failures gracefully. If some sources work and others fail, you see results from successful sources instead of an error."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "workflow-early-stop",
+          "icon": "arrow.forward.circle.fill",
+          "title": "Workflows No Longer Stop Early",
+          "description": "Fixed issue where workflows would stop prematurely when todos were incomplete. The system now properly detects incomplete work and continues until all tasks are done."
+        },
+        {
+          "id": "response-loops",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Agent Repetition Eliminated",
+          "description": "Agents no longer repeat the same response multiple times. Improved intervention system prevents loops and keeps workflows moving forward."
+        },
+        {
+          "id": "planning-loop-detection",
+          "icon": "list.bullet.circle.fill",
+          "title": "Planning Loop Detection Improved",
+          "description": "Marking todos as completed is now correctly recognized as progress, not planning. Prevents false loop detection during normal workflow."
+        },
+        {
+          "id": "streaming-duplicate-cards",
+          "icon": "square.on.square",
+          "title": "No More Duplicate Tool Cards",
+          "description": "Tool cards no longer appear twice in the UI when using streaming mode. Fixed message creation logic to avoid duplication."
+        }
+      ]
+    },
+    {
       "version": "20260103.1",
       "release_date": "January 3, 2026",
       "introduction": "This release resolves bugs with Claude models, simplifies agent workflows, and improves image generation by adding fine grained config scale control.",
