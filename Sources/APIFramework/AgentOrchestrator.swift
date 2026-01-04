@@ -1516,6 +1516,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
             /// ORCHESTRATOR PATTERN: Add appropriate reminder based on continuation reason
             /// From diagram: Every continuation MUST have a reminder message
+            /// CRITICAL: Reminders must be VISIBLE in conversation (not just ephemeral to LLM)
+            /// so users can see why the agent continued and exports show proper flow
             let incompleteTodos = currentTodoList.filter { $0.status.lowercased() != "completed" }
             let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
             
@@ -1532,16 +1534,44 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 </todoList>
                 """
                 
-                context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
-                logger.debug("TODO_REMINDER: Added todo list reminder", metadata: [
-                    "incompleteTodos": .stringConvertible(incompleteTodos.count)
-                ])
+                /// Add as VISIBLE user message (system-generated) so it appears in conversation
+                if let conversation = conversation {
+                    let reminderMessageId = conversation.messageBus?.addUserMessage(
+                        content: todoReminderContent,
+                        isPinned: false,
+                        isSystemGenerated: true
+                    )
+                    logger.debug("TODO_REMINDER: Added visible todo reminder", metadata: [
+                        "messageId": .stringConvertible(reminderMessageId?.uuidString.prefix(8) ?? "nil"),
+                        "incompleteTodos": .stringConvertible(incompleteTodos.count)
+                    ])
+                } else {
+                    /// Fallback: If no conversation available, use ephemeral (e.g., API mode)
+                    context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
+                    logger.debug("TODO_REMINDER: Added ephemeral todo reminder (no conversation)", metadata: [
+                        "incompleteTodos": .stringConvertible(incompleteTodos.count)
+                    ])
+                }
             } else if enableWorkflowMode && context.iteration > 0 {
                 /// Case 2: No todos but workflow mode enabled → Add continue reminder
                 /// (Only add if not first iteration - first iteration is user's message)
                 let continueReminderContent = "Workflow mode is active. Continue working on the task."
-                context.ephemeralMessages.append(createSystemReminder(content: continueReminderContent, model: model))
-                logger.debug("WORKFLOW_REMINDER: Added workflow mode reminder")
+                
+                /// Add as VISIBLE user message (system-generated)
+                if let conversation = conversation {
+                    let reminderMessageId = conversation.messageBus?.addUserMessage(
+                        content: continueReminderContent,
+                        isPinned: false,
+                        isSystemGenerated: true
+                    )
+                    logger.debug("WORKFLOW_REMINDER: Added visible workflow reminder", metadata: [
+                        "messageId": .stringConvertible(reminderMessageId?.uuidString.prefix(8) ?? "nil")
+                    ])
+                } else {
+                    /// Fallback: If no conversation available, use ephemeral
+                    context.ephemeralMessages.append(createSystemReminder(content: continueReminderContent, model: model))
+                    logger.debug("WORKFLOW_REMINDER: Added ephemeral workflow reminder (no conversation)")
+                }
             }
 
             do {
