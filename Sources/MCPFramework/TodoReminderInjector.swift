@@ -91,33 +91,49 @@ public class TodoReminderInjector {
         let hasInProgressTask = stats.inProgressTodos > 0
 
         if stats.completedTodos == stats.totalTodos && stats.totalTodos > 0 {
-            // All tasks complete - acknowledge but stay ready for more work
+            // All tasks complete - guide agent on what to do next
             reminder += """
 
         All \(stats.totalTodos) previous tasks completed.
-        Ready for new work. Use todo_operations(operation: "add", newTodos: [...]) to add new tasks when the user requests more work.
+
+        YOU MUST NOW DECIDE:
+        - If more work is needed → Call additional tools and continue working
+        - If all work is truly complete → Provide a BRIEF final message summarizing what was accomplished
+        
+        DO NOT repeat the work you already did. DO NOT re-tell stories, re-create content, or duplicate outputs.
+        Just acknowledge completion and summarize the session's accomplishments concisely.
         </todoList>
         """
         } else if hasInProgressTask {
             // Task already in-progress - agent should continue working, NOT re-mark
             reminder += """
 
-        CURRENT TASK IN PROGRESS - Continue working on it.
-        After completing work → call todo_operations(update) to mark it "completed"
-        Then the next task becomes available.
+        CURRENT TASK IN PROGRESS - You must complete it now.
 
-        DO NOT call todo_operations to mark the task in-progress again - it's already in-progress.
-        Just do the work and mark it completed when done.
+        WORKFLOW (follow exactly):
+        1. DO THE ACTUAL WORK (tell the story, provide content to user, execute the task)
+        2. AFTER the work is done → call todo_operations to mark "completed"
+        
+        DO NOT mark it completed without doing the work first.
+        DO NOT call todo_operations to mark in-progress again (it's already in-progress).
+        
+        PROVIDE YOUR WORK OUTPUT TO THE USER, THEN mark it completed.
         </todoList>
         """
         } else if needsInProgressMarking {
             // No task in progress but tasks remain - agent should pick one
             reminder += """
 
-        NO TASK CURRENTLY IN PROGRESS
-        Pick the next task and mark it "in-progress" before starting work:
-        → call todo_operations(operation: "update", todoUpdates: [{"id": <task_id>, "status": "in-progress"}])
-        Then do the work and mark it "completed" when done.
+        NO TASK CURRENTLY IN PROGRESS - Pick one and begin.
+
+        WORKFLOW (follow exactly):
+        1. Mark the next task "in-progress": call todo_operations(operation: "update", todoUpdates: [{"id": <task_id>, "status": "in-progress"}])
+        2. DO THE ACTUAL WORK (tell the story, provide content to user, execute the task)
+        3. Mark it "completed": call todo_operations(operation: "update", todoUpdates: [{"id": <task_id>, "status": "completed"}])
+        
+        CRITICAL: Steps 1-2-3 must happen across MULTIPLE iterations.
+        DO NOT mark a task completed in the same iteration you marked it in-progress.
+        DO THE WORK between marking in-progress and completed.
         </todoList>
         """
         } else {

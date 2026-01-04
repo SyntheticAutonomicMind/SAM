@@ -99,6 +99,21 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         // Everything else (including memory_operations) produces real work output
         return !ALWAYS_PLANNING_TOOLS.contains(toolName)
     }
+    
+    /// Check if a todo_operations call is marking something as complete
+    /// This indicates work was done, so it shouldn't count as "planning only"
+    private static func isTodoCompletionCall(_ toolName: String, arguments: [String: Any]) -> Bool {
+        guard toolName == "todo_operations" else { return false }
+        
+        // Check if operation is "update" and any todo is being marked "completed"
+        guard let operation = arguments["operation"] as? String, operation == "update" else { return false }
+        guard let updates = arguments["todoUpdates"] as? [[String: Any]] else { return false }
+        
+        return updates.contains { update in
+            guard let status = update["status"] as? String else { return false }
+            return status.lowercased() == "completed"
+        }
+    }
 
     /// Planning loop counter per conversation (persists across API calls) Tracks how many times [PLANNING_COMPLETE] was emitted without successful plan parsing Key: conversationId, Value: counter (resets when plan successfully parsed).
     private var planningLoopCounters: [UUID: Int] = [:]
@@ -525,8 +540,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
     /// Structured result from marker detection.
     private struct MarkerFlags {
-        var detectedWorkflowComplete: Bool = false
-        var detectedContinue: Bool = false
+        /// REMOVED: detectedWorkflowComplete and detectedContinue (legacy markers)
+        /// Only STOP marker remains for fatal error handling
         var detectedStop: Bool = false  // Agent Loop Escape
 
         /// Pattern that matched (for telemetry).
@@ -539,40 +554,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         var flags = MarkerFlags()
         let lower = rawResponse.lowercased()
 
-        /// JSON FORMAT DETECTION (NEW PREFERRED FORMAT) Look for {"status": "continue"} or {"status": "complete"} or {"status": "stop"} on own line This prevents duplication and is easier to parse/strip.
-        let jsonContinuePattern = #"\{\s*"status"\s*:\s*"continue"\s*\}"#
-        let jsonCompletePattern = #"\{\s*"status"\s*:\s*"complete"\s*\}"#
+        /// JSON FORMAT DETECTION: Only STOP marker remains (for fatal errors)
+        /// REMOVED: continue and complete markers (legacy - not in agent prompts)
         let jsonStopPattern = #"\{\s*"status"\s*:\s*"stop"\s*\}"#  // Agent Loop Escape
-
-        if lower.range(of: jsonContinuePattern, options: [.regularExpression, .caseInsensitive]) != nil {
-            flags.detectedContinue = true
-            flags.matchedPattern = "JSON: {\"status\": \"continue\"}"
-        }
-
-        if lower.range(of: jsonCompletePattern, options: [.regularExpression, .caseInsensitive]) != nil {
-            flags.detectedWorkflowComplete = true
-            flags.matchedPattern = "JSON: {\"status\": \"complete\"}"
-        }
 
         // Agent Loop Escape - Detect stop status
         if lower.range(of: jsonStopPattern, options: [.regularExpression, .caseInsensitive]) != nil {
             flags.detectedStop = true
             flags.matchedPattern = "JSON: {\"status\": \"stop\"}"
-        }
-
-        if !flags.detectedContinue {
-            flags.detectedContinue = lower.contains("[continue]")
-            if flags.detectedContinue {
-                flags.matchedPattern = "LEGACY: [CONTINUE]"
-            }
-        }
-
-        if !flags.detectedWorkflowComplete {
-            flags.detectedWorkflowComplete = lower.contains("[workflow_complete]") ||
-                                              lower.contains("[workflow_done]")
-            if flags.detectedWorkflowComplete {
-                flags.matchedPattern = "LEGACY: [WORKFLOW_COMPLETE]"
-            }
         }
 
         return flags
@@ -597,9 +586,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         let markers = detectMarkers(in: rawResponse)
 
         /// Assign detected markers to context for workflow continuation logic.
-        context.detectedContinueMarker = markers.detectedContinue
-        context.detectedWorkflowCompleteMarker = markers.detectedWorkflowComplete
-        context.detectedStopMarker = markers.detectedStop  // Agent Loop Escape
+        context.detectedStopMarker = markers.detectedStop  // Agent Loop Escape (ONLY remaining marker)
 
         /// Check for stop status (agent is stuck and giving up).
         if markers.detectedStop {
@@ -617,7 +604,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 
                 /// Override stop with continue - agent must complete its work
                 context.detectedStopMarker = false
-                context.detectedContinueMarker = true
                 
                 /// Inject a strong reminder that work is incomplete
                 context.shouldContinue = true
@@ -634,15 +620,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             return true
         }
 
-        /// Check for workflow completion.
-        if markers.detectedWorkflowComplete {
-            logger.info("WORKFLOW_COMPLETE_DETECTED", metadata: [
-                "conversationId": .string(conversationId.uuidString)
-            ])
-            context.shouldContinue = false
-            context.completionReason = .workflowComplete
-            return true
-        }
+        /// REMOVED: Legacy WORKFLOW_COMPLETE marker check
+        /// Workflow completion is now determined by the orchestrator flow diagram:
+        /// - No tool calls + no active todos + workflow switch off = natural stop
+        /// - Agent should not control completion via markers
 
         return false
     }
@@ -661,9 +642,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         model: String,
         enableWorkflowMode: Bool
     ) async -> Bool {
-        /// Don't attempt if workflow already marked complete.
-        guard !context.detectedWorkflowCompleteMarker else { return false }
-
+        /// REMOVED: Legacy workflow complete marker check (marker no longer exists)
+        
         /// Respect retry limit to avoid infinite auto-continue loops.
         if context.autoContinueAttempts >= autoContinueRetryLimit {
             logger.debug("AUTO_CONTINUE: retry limit reached (", metadata: ["attempts": .stringConvertible(context.autoContinueAttempts)])
@@ -702,19 +682,36 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 let effectiveLevel = max(context.autoContinueAttempts, context.planningOnlyIterations)
 
                 let promptContent: String
+                
+                /// FIX #8: Check if alternation enforcement is needed
+                /// lastIterationHadToolResults = agent processed tool results last iteration
+                /// If true and agent responded without calling tools this iteration → needs alternation reminder
+                let needsAlternation = context.lastIterationHadToolResults
 
                 switch effectiveLevel {
                 case 1:
                     /// First level: Standard reminder (current behavior)
-                    promptContent = buildAutoContinueLevel1(inProgress: inProgress, notStarted: notStarted)
+                    promptContent = buildAutoContinueLevel1(
+                        inProgress: inProgress,
+                        notStarted: notStarted,
+                        needsAlternation: needsAlternation
+                    )
 
                 case 2:
                     /// Second level: Call out the pattern and demand action
-                    promptContent = buildAutoContinueLevel2(inProgress: inProgress, notStarted: notStarted)
+                    promptContent = buildAutoContinueLevel2(
+                        inProgress: inProgress,
+                        notStarted: notStarted,
+                        needsAlternation: needsAlternation
+                    )
 
                 default:
                     /// Third+ level: Final warning - you're in a failure loop
-                    promptContent = buildAutoContinueLevel3(inProgress: inProgress, notStarted: notStarted)
+                    promptContent = buildAutoContinueLevel3(
+                        inProgress: inProgress,
+                        notStarted: notStarted,
+                        needsAlternation: needsAlternation
+                    )
                 }
 
                 logger.info("AUTO_CONTINUE: Level \(effectiveLevel) intervention injected", metadata: [
@@ -722,6 +719,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations),
                     "effectiveLevel": .stringConvertible(effectiveLevel)
                 ])
+                
+                /// FIX #8: Reset alternation flag after using it
+                /// Flag was checked above to determine if alternation reminder is needed
+                /// Now reset it so next iteration starts fresh
+                context.lastIterationHadToolResults = false
 
                 /// Create properly formatted message based on model type:
                 /// - Claude models: wrap in <system-reminder> tags, send as "user" role
@@ -776,85 +778,101 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
     // MARK: - Graduated Auto-Continue Response Builders
 
-    /// Level 1: Action-forcing reminder - skip planning, execute work
+    /// Level 1: Action-forcing reminder - execute work and mark complete
     /// Used on first auto-continue attempt
-    /// Key insight from SAM: Don't reinforce todo management, force WORK tool execution
-    private func buildAutoContinueLevel1(inProgress: [TodoItem], notStarted: [TodoItem]) -> String {
+    /// CRITICAL: Must explicitly instruct todo completion to break the loop
+    private func buildAutoContinueLevel1(inProgress: [TodoItem], notStarted: [TodoItem], needsAlternation: Bool) -> String {
+        var prompt = ""
+        
+        /// FIX #8: Alternation enforcement - remind agent to use tools when they responded with text only
+        if needsAlternation {
+            prompt += "ALTERNATION REQUIRED: Your last iteration processed tool results. This iteration you MUST call tools to continue work.\n\n"
+        }
+        
         if let firstTask = inProgress.first ?? notStarted.first {
-            var prompt = "EXECUTE NOW - Do not restate your plan or update todos. "
-            prompt += "Your next action MUST be a tool call that produces actual work output. "
-            prompt += "\n\nCurrent task: \"\(firstTask.title)\""
+            prompt += "WORKFLOW REMINDER: Execute your current task and mark it complete.\n\n"
+            prompt += "Current task: \"\(firstTask.title)\""
             if !firstTask.description.isEmpty {
                 prompt += "\nDescription: \(firstTask.description)"
             }
-            prompt += "\n\nUse your available tools to execute this task directly."
-            prompt += "\nDo NOT output any text before your tool call. Just call the tool."
-            prompt += "\nAfter getting results, THEN update your todo status."
+            prompt += "\n\nYou must do 2 things:\n"
+            prompt += "1. Execute the work using appropriate tools (web research, file operations, etc.)\n"
+            prompt += "2. Mark this todo as completed using: todo_operations(operation: \"update\", todoUpdates: [{\"id\": \(firstTask.id), \"status\": \"completed\"}])\n\n"
+            prompt += "Do both steps NOW. Do not just describe what you'll do - actually do it."
             return prompt
         }
 
-        var prompt = "EXECUTE NOW - Do not restate your plan or update todos. "
-        prompt += "Your next action MUST be a tool call that produces actual work output. "
-        prompt += "\n\nDo NOT output any text before your tool call. Just call the tool."
-        prompt += "\nAfter getting results, THEN update your todo status."
+        prompt += "WORKFLOW REMINDER: Complete your current task.\n\n"
+        prompt += "You must:\n"
+        prompt += "1. Execute the work using appropriate tools\n"
+        prompt += "2. Mark the todo as completed using todo_operations\n\n"
+        prompt += "Do both steps NOW."
         return prompt
     }
 
-    /// Level 2: Stronger intervention - explicitly break the planning loop
-    /// Used on second auto-continue attempt - agent is definitely stuck
-    /// Key insight: The reminder itself was reinforcing the loop by talking about todos
-    private func buildAutoContinueLevel2(inProgress: [TodoItem], notStarted: [TodoItem]) -> String {
-        var prompt = "PLANNING LOOP DETECTED - You have outlined your plan multiple times without executing. "
-        prompt += "This is a failure pattern. STOP planning. START executing."
-        prompt += "\n\n=== WHAT YOU'VE BEEN DOING (WRONG) ==="
-        prompt += "\nPlan → Outline todos → Restate plan → Update todos → Restate plan..."
+    /// Level 2: Stronger intervention - you're in a loop, break it now
+    /// Used on second auto-continue attempt
+    private func buildAutoContinueLevel2(inProgress: [TodoItem], notStarted: [TodoItem], needsAlternation: Bool) -> String {
+        var prompt = "WARNING: Planning loop detected. You keep describing your plan without executing.\n\n"
+        
+        /// FIX #8: Alternation enforcement - remind agent to use tools when they responded with text only
+        if needsAlternation {
+            prompt += "ALTERNATION VIOLATION: Your last iteration processed tool results. You responded with text only. You MUST call tools this iteration.\n\n"
+        }
+        
+        prompt += "STOP: Outlining steps, restating plans, talking about what you'll do\n"
+        prompt += "START: Actually calling tools and completing work\n\n"
 
         if let firstTask = inProgress.first ?? notStarted.first {
-            prompt += "\n\n=== WHAT YOU MUST DO NOW (CORRECT) ==="
-            prompt += "\nCall a tool immediately that produces actual work output."
-            prompt += "\nNo text output. No todo updates. Just execute."
-            prompt += "\n\n=== YOUR TASK ==="
-            prompt += "\n\"\(firstTask.title)\""
-            if !firstTask.description.isEmpty {
-                prompt += "\n\(firstTask.description)"
-            }
-            prompt += "\n\nUse your available tools to complete this task. Your response must START with a tool call, not text."
+            prompt += "Your task: \"\(firstTask.title)\"\n\n"
+            prompt += "Required actions:\n"
+            prompt += "1. Call work tool (research, file operations, etc.) - get actual results\n"
+            prompt += "2. Call todo_operations(operation: \"update\", todoUpdates: [{\"id\": \(firstTask.id), \"status\": \"completed\"}])\n\n"
+            prompt += "Your NEXT response must contain tool calls, not explanations."
         } else {
-            prompt += "\n\n=== WHAT YOU MUST DO NOW (CORRECT) ==="
-            prompt += "\nCall a tool immediately. No text output. No todo updates. Just execute."
+            prompt += "Required actions:\n"
+            prompt += "1. Call work tool - get actual results\n"
+            prompt += "2. Call todo_operations to mark complete\n\n"
+            prompt += "Your NEXT response must contain tool calls, not explanations."
         }
 
         return prompt
     }
 
-    /// Level 3: Final warning with escape hatch
-    /// Used on third+ auto-continue attempt - last chance
-    /// Key insight: Provide both a clear action path AND an escape route
-    private func buildAutoContinueLevel3(inProgress: [TodoItem], notStarted: [TodoItem]) -> String {
-        var prompt = "FINAL WARNING: You are stuck in an infinite planning loop. "
-        prompt += "You have been asked to execute 3+ times but produced no work output."
-        prompt += "\n\n=== THE PROBLEM ==="
-        prompt += "\nYou keep restating your plan instead of doing the work."
-        prompt += "\nOutlining steps is NOT progress. Updating todos is NOT progress."
-        prompt += "\nOnly actual work tool output is progress."
-        prompt += "\n\n=== YOUR OPTIONS ==="
-        prompt += "\n\nOPTION 1 - Execute now:"
+    /// Level 3: Final warning - last chance before failure
+    /// Used on third+ auto-continue attempt
+    private func buildAutoContinueLevel3(inProgress: [TodoItem], notStarted: [TodoItem], needsAlternation: Bool) -> String {
+        var prompt = "CRITICAL: You are failing to make progress. This is your final warning.\n\n"
+        
+        /// FIX #8: Alternation enforcement - remind agent to use tools when they responded with text only
+        if needsAlternation {
+            prompt += "ALTERNATION FAILURE: You processed tool results, then responded with text only. You MUST alternate: tool → data → tool → data.\n\n"
+        }
+        
+        prompt += "FAILURE PATTERN DETECTED:\n"
+        prompt += "- You describe plans but don't execute\n"
+        prompt += "- You outline steps but don't call tools\n"
+        prompt += "- You talk about todos but don't mark them complete\n\n"
+        prompt += "TWO OPTIONS:\n\n"
+        prompt += "OPTION 1 - Execute now:\n"
 
         if let firstTask = inProgress.first ?? notStarted.first {
-            prompt += "\nTask: \"\(firstTask.title)\""
-            prompt += "\nUse your available tools to DO this task immediately."
-            prompt += "\nDo not explain. Do not plan. Just call the tool."
+            prompt += "Task: \"\(firstTask.title)\"\n"
+            prompt += "Actions required:\n"
+            prompt += "  a) Call work tool (research, files, etc.)\n"
+            prompt += "  b) Call todo_operations(operation: \"update\", todoUpdates: [{\"id\": \(firstTask.id), \"status\": \"completed\"}])\n"
+            prompt += "Do this NOW. Not later. Not after explaining. NOW.\n\n"
+        } else {
+            prompt += "  a) Call work tool\n"
+            prompt += "  b) Call todo_operations to mark complete\n"
+            prompt += "Do this NOW.\n\n"
         }
 
-        prompt += "\n\nOPTION 2 - Give up gracefully:"
-        prompt += "\nIf you genuinely cannot execute this task, emit: {\"status\":\"stop\"}"
-        prompt += "\nThis will end the workflow and inform the user you could not proceed."
-        prompt += "\n\n=== INVALID RESPONSES ==="
-        prompt += "\n- Any text that restates the plan"
-        prompt += "\n- Calling todo_operations to read/update todos"
-        prompt += "\n- Saying 'I will now...' or 'Let me...'"
-        prompt += "\n- Asking clarifying questions (too late for that)"
-        prompt += "\n\nYou must either EXECUTE with a work tool or STOP. No other response is acceptable."
+        prompt += "OPTION 2 - Stop gracefully:\n"
+        prompt += "If you cannot execute, emit: {\"status\":\"stop\"}\n"
+        prompt += "This ends the workflow and explains the blocker to the user.\n\n"
+        prompt += "Choose one option NOW. This is not negotiable."
+
         return prompt
     }
 
@@ -921,6 +939,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         /// Track which tools were used in the last iteration to prevent repetition.
         var lastIterationToolNames: Set<String>
+        
+        /// FIX #8: Track if previous iteration had tool results for alternation enforcement
+        /// When true: agent processed tool data last iteration and should call tools THIS iteration
+        var lastIterationHadToolResults: Bool
 
         /// Whether agent has been warned about stop status option.
         var hasSeenStopStatusGuidance: Bool
@@ -934,8 +956,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         var continuationToolCalls: [ToolCall]?
 
         /// Detected internal markers from the raw LLM response (set BEFORE filtering).
-        var detectedWorkflowCompleteMarker: Bool
-        var detectedContinueMarker: Bool
+        /// REMOVED: Legacy workflow marker fields
+        /// These markers are deprecated and no longer used
+        /// Continuation is controlled by orchestrator flow diagram
         var detectedStopMarker: Bool  // Agent Loop Escape
 
         // MARK: - GitHub Copilot Session State
@@ -1002,6 +1025,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// The message is set at end of iteration N, then injected into ephemeral at start of N+1
     var pendingAutoContinueMessage: OpenAIChatMessage?
 
+    /// Alternation violation detected (agent responded without tool calls)
+    /// Per orchestrator.txt: Set when finish_reason != "tool_calls"
+    var alternationViolationDetected: Bool
+
+    /// Pending alternation reminder to inject at start of NEXT iteration (if workflow continues)
+    /// Reminds agent that they MUST use tools, not just respond with text
+    var pendingAlternationReminder: OpenAIChatMessage?
+
         // MARK: - Lifecycle
 
         init(
@@ -1037,26 +1068,20 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// Agent Loop Escape Route.
             self.toolFailureTracking = [:]
             self.lastIterationToolNames = []
+            self.lastIterationHadToolResults = false  // FIX #8: Initialize alternation tracking
             self.hasSeenStopStatusGuidance = false
 
             /// Continuation status.
             self.useContinuationResponse = false
             self.continuationToolCalls = nil
 
-            self.detectedWorkflowCompleteMarker = false
-            self.detectedContinueMarker = false
+            /// REMOVED: Legacy workflow marker initialization
             self.detectedStopMarker = false  // Agent Loop Escape
 
             /// GitHub Copilot session state.
             self.currentStatefulMarker = currentStatefulMarker
             self.statefulMarkerMessageCount = nil
             self.sentInternalMessagesCount = 0
-
-            /// Workflow metadata.
-            self.toolsExecutedInWorkflow = false
-            self.retrievedMessageIds = []
-            self.hadErrors = false
-            self.errors = []
 
             /// Workflow metadata.
             self.toolsExecutedInWorkflow = false
@@ -1077,6 +1102,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             self.autoContinueAttempts = 0
             self.planningOnlyIterations = 0
             self.pendingAutoContinueMessage = nil
+            self.alternationViolationDetected = false
+            self.pendingAlternationReminder = nil
         }
     }
     /// Validates and executes a phase transition.
@@ -1128,6 +1155,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         /// Agent Loop Escape - Track tools used in this iteration
         context.lastIterationToolNames = Set(round.toolCalls.map { $0.name })
+        
+        /// FIX #8: Do NOT reset lastIterationHadToolResults here
+        /// It needs to persist into next iteration so graduated intervention can check it
+        /// It will be reset at START of next iteration after check completes
     }
 
     // MARK: - Helper Methods
@@ -1512,90 +1543,98 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
             /// CRITICAL: Clear ephemeral messages at start of each iteration.
             /// This prevents accumulation of status/reminder messages across iterations.
-            /// CRITICAL FIX: Preserve ONLY ephemeral messages that should persist across iterations
-            /// Prevents infinite accumulation while maintaining necessary continuation context
-            ///
-            /// PRESERVE:
-            /// - TOOL_RESULT_CHUNK: Agent needs to see chunks from read_tool_result pagination
-            /// - TODO_REMINDER: Continuation context for incomplete tasks
-            /// - AUTO_CONTINUE: Workflow mode continuation signals
-            ///
-            /// EXCLUDE:
-            /// - ITERATION STATUS: Re-added fresh each iteration (not persistent)
-            /// - Completed tool results: Agent already processed them (sent in internalMessages)
-            ///
-            /// This prevents the ephemeral accumulation bug that causes response loops
-            let preservedMessages = context.ephemeralMessages.filter { message in
-                guard let content = message.content else { return false }
-                
-                /// Keep pagination chunks (agent reading large tool results)
-                if content.contains("[TOOL_RESULT_CHUNK]") {
-                    return true
-                }
-                
-                /// Keep continuation context markers
-                if content.contains("TODO_REMINDER") || content.contains("AUTO_CONTINUE") {
-                    return true
-                }
-                
-                /// Exclude everything else (iteration status, old tool results, etc.)
-                return false
-            }
+            /// FIX #7: DO NOT preserve TOOL_RESULT_CHUNK - they should only appear once per tool call
+            /// If agent wants more chunks, it calls read_tool_result which creates a NEW chunk message
+            /// Preserving chunks causes infinite loops where agent sees same chunk repeatedly
             
-            /// Clear all ephemeral messages
+            /// Clear all ephemeral messages (no preservation needed)
             context.ephemeralMessages.removeAll()
 
-            /// ORCHESTRATOR PATTERN: Add appropriate reminder based on continuation reason
-            /// From diagram: Every continuation MUST have a reminder message
-            /// CRITICAL: Reminders are EPHEMERAL (LLM-only, NOT visible in conversation UI)
-            /// They provide continuation context but should not pollute conversation export
-            let incompleteTodos = currentTodoList.filter { $0.status.lowercased() != "completed" }
-            let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-            
-            if !incompleteTodos.isEmpty {
-                /// Case 1: Active todos exist → Add todo reminder (EPHEMERAL)
-                let inProgress = incompleteTodos.filter { $0.status.lowercased() == "in-progress" }
-                let notStarted = incompleteTodos.filter { $0.status.lowercased() == "not-started" }
-                
-                let todoReminderContent = """
-                TODO_REMINDER: <todoList>\(incompleteTodos.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
-                
-                \(inProgress.isEmpty ? "" : "In Progress: " + inProgress.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
-                \(notStarted.isEmpty ? "" : "Not Started: " + notStarted.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
-                </todoList>
-                """
-                
-                /// Add as ephemeral message (LLM-only context, not visible in conversation)
-                context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
-                logger.debug("TODO_REMINDER: Added ephemeral todo reminder", metadata: [
-                    "incompleteTodos": .stringConvertible(incompleteTodos.count)
-                ])
-            } else if enableWorkflowMode && context.iteration > 0 {
-                /// Case 2: No todos but workflow mode enabled → Add continue reminder (EPHEMERAL)
-                /// (Only add if not first iteration - first iteration is user's message)
-                let continueReminderContent = "AUTO_CONTINUE: Workflow mode is active. Continue working on the task."
-                
-                /// Add as ephemeral message (LLM-only context)
-                context.ephemeralMessages.append(createSystemReminder(content: continueReminderContent, model: model))
-                logger.debug("WORKFLOW_REMINDER: Added ephemeral workflow reminder")
+            /// CRITICAL: Inject pending auto-continue message from graduated intervention system
+            /// This message was set at the END of the previous iteration by injectAutoContinueIfTodosIncomplete()
+            /// and must be injected FIRST (before iteration status) to ensure agent sees it
+            if let pendingMessage = context.pendingAutoContinueMessage {
+                context.ephemeralMessages.append(pendingMessage)
+                context.pendingAutoContinueMessage = nil  // Clear after injection
+                logger.info("GRADUATED_INTERVENTION: Injected pending auto-continue message from previous iteration")
             }
 
-            do {
-                /// Inject iteration awareness into LLM context (not just UI) System sees current iteration count and can self-manage budget.
-                /// CHANGED: Use ephemeralMessages instead of internalMessages to prevent accumulation.
-                let iterationContent = "ITERATION STATUS: Currently on iteration \(context.iteration + 1). Maximum iterations: \(context.maxIterations)."
-                context.ephemeralMessages.append(createSystemReminder(content: iterationContent, model: model))
-                
-                /// CRITICAL: Append preserved messages (tool result chunks, continuation context) AFTER iteration status
-                /// This ensures agent sees tool results from previous read_tool_result calls
-                context.ephemeralMessages.append(contentsOf: preservedMessages)
-                
-                if !preservedMessages.isEmpty {
-                    logger.debug("EPHEMERAL_PRESERVATION: Restored \(preservedMessages.count) preserved messages", metadata: [
-                        "types": .string(preservedMessages.compactMap { $0.content?.components(separatedBy: ":").first }.joined(separator: ", "))
-                    ])
+            /// UNIVERSAL CONTINUATION GUIDANCE: Help agent understand what to do next
+            /// This addresses the alternation problem more intelligently than forcing tool calls
+            /// Agent needs different guidance based on what happened in the previous iteration
+            let hadToolsLastIteration = context.lastIterationHadToolResults
+            
+            /// Check if there are incomplete todos that need workflow discipline
+            let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
+            
+            let continuationGuidance: String
+            
+            if hasIncompleteTodos {
+                /// When todos exist, enforce strict todo workflow discipline
+                if hadToolsLastIteration {
+                    continuationGuidance = """
+                    WORKFLOW GUIDANCE (TODO MODE):
+                    You have incomplete todos and just executed tools.
+                    
+                    MANDATORY TODO WORKFLOW:
+                    1. Before doing work → Mark todo as "in-progress" using todo_operations
+                    2. Do the actual work (tell story, write content, etc.)
+                    3. After completing work → Mark todo as "completed" using todo_operations
+                    
+                    NEVER skip marking todos in-progress before starting work.
+                    NEVER skip marking todos completed after finishing work.
+                    Do NOT provide multiple text responses without tool calls between them.
+                    """
+                } else {
+                    continuationGuidance = """
+                    CRITICAL WORKFLOW GUIDANCE (TODO MODE):
+                    You have incomplete todos but didn't use tools in your last iteration.
+                    
+                    This is ONLY acceptable if you just answered the user's question.
+                    Otherwise, you MUST follow the todo workflow:
+                    
+                    1. Mark next todo as "in-progress" using todo_operations
+                    2. Do the work for that todo
+                    3. Mark todo as "completed" using todo_operations
+                    
+                    Text-only responses are NOT acceptable when todos remain.
+                    """
                 }
+            } else if hadToolsLastIteration {
+                /// No todos - original guidance for tool-to-response flow
+                continuationGuidance = """
+                WORKFLOW GUIDANCE:
+                Your previous iteration included tool execution and results.
+                
+                Now you must decide:
+                - If you need MORE data/analysis → Use tools to gather it
+                - If you have ENOUGH information → Provide your response to the user
+                - If you ALREADY responded to the user → Use tools for next steps (don't repeat your answer)
+                
+                Do NOT provide multiple text responses without tool calls between them.
+                """
+            } else {
+                /// No todos, no tools - suspicious unless answering user
+                continuationGuidance = """
+                CRITICAL WORKFLOW GUIDANCE:
+                Your previous iteration did NOT include any tool execution.
+                
+                If you already answered the user's question → Use tools for follow-up work
+                If you need to do work → You MUST use tools (don't just talk about it)
+                
+                Text-only responses are ONLY acceptable when directly answering the user.
+                """
+            }
+            
+            let guidanceMessage = createSystemReminder(content: continuationGuidance, model: model)
+            context.ephemeralMessages.append(guidanceMessage)
+            logger.debug("CONTINUATION_GUIDANCE: Injected context-aware guidance (hadTools=\(hadToolsLastIteration))")
 
+            /// Add iteration status (always present)
+            let iterationContent = "ITERATION STATUS: Currently on iteration \(context.iteration + 1). Maximum iterations: \(context.maxIterations)."
+            context.ephemeralMessages.append(createSystemReminder(content: iterationContent, model: model))
+
+            do {
                 /// LLM_CALL_START - Track LLM request initiation.
                 logger.debug("LLM_CALL_START", metadata: [
                     "iteration": .stringConvertible(context.iteration + 1),
@@ -1732,8 +1771,21 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                     if !isDuplicate {
                         logger.debug("MESSAGE_PERSISTENCE: Adding response to conversation (iteration=\(context.iteration), length=\(context.lastResponse.count))")
-                        /// REMOVED: Duplicate message creation - MessageBus already created this during streaming
-                        /// conversation.addMessage(text: context.lastResponse, isUser: false, githubCopilotResponseId: context.currentStatefulMarker)
+                        /// CRITICAL FIX: In STREAMING mode, MessageBus creates messages during chunking
+                        /// In NON-STREAMING mode, no MessageBus involvement - we must create message here
+                        /// Check streamContinuation to determine which mode we're in
+                        if streamContinuation == nil {
+                            /// Non-streaming mode - manually add message
+                            conversation.messageBus?.addAssistantMessage(
+                                id: UUID(),
+                                content: context.lastResponse,
+                                timestamp: Date()
+                            )
+                            logger.debug("MESSAGE_PERSISTENCE: Created message via MessageBus (non-streaming mode)")
+                        } else {
+                            /// Streaming mode - MessageBus already created message during chunking
+                            logger.debug("MESSAGE_PERSISTENCE: Message already created during streaming (skipping)")
+                        }
                         conversationManager.saveConversations()
                         context.finalResponseAddedToConversation = true
                         logger.debug("MESSAGE_PERSISTENCE: Response saved successfully", metadata: [
@@ -1800,70 +1852,114 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// If no tool calls, check if we should continue or stop naturally.
                 if context.lastFinishReason != "tool_calls" {
                     /// ORCHESTRATOR FLOW (from orchestrator.txt diagram):
-                    /// 1. Check for explicit workflow complete signal
-                    /// 2. Check for explicit continue signal
-                    /// 3. Check for active todos → Set continue flag + add todo reminder
-                    /// 4. Check for workflow switch enabled → Set continue flag + add continue reminder
-                    /// 5. If continue flag set → Increment iteration and loop
-                    /// 6. Otherwise → Natural stop
+                    /// After "Tools Called? NO":
+                    /// 1. Check for active todos → Set continue flag + add todo reminder
+                    /// 2. Check for workflow switch enabled → Set continue flag + add continue reminder
+                    /// 3. If continue flag set → Increment iteration and loop
+                    /// 4. Otherwise → Natural stop
+                    
+                    /// REMOVED: Legacy workflow complete/continue marker checks
+                    /// These markers are not provided in agent prompts and should not be used
+                    /// The diagram flow relies solely on todo state and workflow switch
 
-                    /// Signal 1: Explicit workflow complete marker
-                    if context.detectedWorkflowCompleteMarker {
-                        logger.info("WORKFLOW_COMPLETE: [WORKFLOW_COMPLETE] signal detected", metadata: [
-                            "iteration": .stringConvertible(context.iteration),
-                            "conversationId": .string(conversationId.uuidString)
-                        ])
-                        completeIteration(context: &context, responseStatus: "workflow_complete_signal")
-                        break
+                    /// CRITICAL: Read fresh todo list state before workflow check
+                    /// currentTodoList may be stale if agent didn't call tools this iteration
+                    if currentTodoList.count > 0 {
+                        logger.debug("WORKFLOW_CHECK: Reading fresh todo state before continuation decision")
+                        if let freshTodoResult = await conversationManager.executeMCPTool(
+                            name: "todo_operations",
+                            parameters: ["operation": "read"],
+                            conversationId: context.session?.conversationId,
+                            isExternalAPICall: self.isExternalAPICall
+                        ) {
+                            let freshTodos = parseTodoList(from: freshTodoResult.output.content)
+                            currentTodoList = freshTodos
+                            logger.debug("WORKFLOW_CHECK: Fresh todo list read", metadata: [
+                                "totalTodos": .stringConvertible(freshTodos.count),
+                                "incompleteTodos": .stringConvertible(freshTodos.filter { $0.status != "completed" }.count)
+                            ])
+                        } else {
+                            logger.warning("WORKFLOW_CHECK: Failed to read fresh todo list - using cached state")
+                        }
                     }
 
-                    /// Signal 2: Explicit continue marker (agent explicitly requested continuation)
-                    if context.detectedContinueMarker {
-                        logger.info("WORKFLOW_CONTINUING: [CONTINUE] signal detected", metadata: [
-                            "iteration": .stringConvertible(context.iteration)
-                        ])
-                        completeIteration(context: &context, responseStatus: "continue_signal")
-                        /// CRITICAL: Increment iteration counter before continuing
-                        context.iteration += 1
-                        self.updateCurrentIteration(context.iteration)
-                        continue
-                    }
-
-                    /// Check 3: Active todos exist?
-                    /// If yes, ALWAYS continue with todo reminder (regardless of workflow switch)
-                    let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
+                    /// Check 1: Active todos exist?
+                    /// Per diagram: "Active Todo? → YES → Set Continue Flag + Add Todo Reminder"
+                    let incompleteTodoList = currentTodoList.filter { $0.status.lowercased() != "completed" }
+                    let hasIncompleteTodos = !incompleteTodoList.isEmpty
+                    var shouldContinueAfterChecks = false  // The "Continue Flag" from diagram
+                    
+                    /// DEBUG: Log todo state before decision
+                    logger.debug("WORKFLOW_CHECK_DEBUG: Checking for incomplete todos", metadata: [
+                        "totalTodos": .stringConvertible(currentTodoList.count),
+                        "incompleteTodos": .stringConvertible(incompleteTodoList.count),
+                        "hasIncompleteTodos": .stringConvertible(hasIncompleteTodos),
+                        "iteration": .stringConvertible(context.iteration)
+                    ])
                     
                     if hasIncompleteTodos {
-                        logger.debug("WORKFLOW_CONTINUING: Active todos detected", metadata: [
+                        logger.debug("WORKFLOW_CHECK: Active todos detected - setting continue flag", metadata: [
                             "incompleteTodos": .stringConvertible(currentTodoList.filter { $0.status.lowercased() != "completed" }.count),
                             "iteration": .stringConvertible(context.iteration)
                         ])
-                        completeIteration(context: &context, responseStatus: "auto_continue_todos")
-                        /// CRITICAL: Increment iteration counter before continuing
-                        context.iteration += 1
-                        self.updateCurrentIteration(context.iteration)
-                        continue
+                        
+                        /// DIAGRAM STEP: "Set Continue Flag"
+                        shouldContinueAfterChecks = true
+                        
+                        /// DIAGRAM STEP: "Add Todo Reminder to Continuation Message"
+                        /// Use the graduated intervention system to add reminder
+                        let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                        let injected = await injectAutoContinueIfTodosIncomplete(
+                            context: &context,
+                            conversationId: conversationId,
+                            model: model,
+                            enableWorkflowMode: enableWorkflowMode
+                        )
+                        
+                        if !injected {
+                            /// Could not inject intervention (retry limit reached)
+                            /// Clear continue flag - we can't continue without guidance
+                            logger.warning("WORKFLOW_WARNING: Could not inject todo intervention - clearing continue flag", metadata: [
+                                "autoContinueAttempts": .stringConvertible(context.autoContinueAttempts)
+                            ])
+                            shouldContinueAfterChecks = false
+                        }
                     }
 
-                    /// Check 4: Workflow switch enabled?
-                    /// This is a fallback - if no todos but workflow mode is on, continue with reminder
-                    let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                    
-                    if enableWorkflowMode {
-                        logger.debug("WORKFLOW_CONTINUING: Workflow mode enabled", metadata: [
-                            "iteration": .stringConvertible(context.iteration)
+                    /// Check 2: Workflow switch enabled?
+                    /// Per diagram: "Workflow Switch Enabled? → YES → Set Continue Flag + Add Continue Reminder"
+                    /// This is a fallback - if no todos but workflow mode is on, set continue flag
+                    if !shouldContinueAfterChecks {
+                        let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
+                        
+                        if enableWorkflowMode {
+                            logger.debug("WORKFLOW_CHECK: Workflow mode enabled - setting continue flag", metadata: [
+                                "iteration": .stringConvertible(context.iteration)
+                            ])
+                            shouldContinueAfterChecks = true
+                        }
+                    }
+
+                    /// DIAGRAM DECISION: "Continue Flag?"
+                    if shouldContinueAfterChecks {
+                        /// Flag is set - continue to next iteration
+                        logger.info("WORKFLOW_CONTINUING: Continue flag set - proceeding to next iteration", metadata: [
+                            "iteration": .stringConvertible(context.iteration),
+                            "reason": .string(hasIncompleteTodos ? "incomplete_todos" : "workflow_mode")
                         ])
-                        completeIteration(context: &context, responseStatus: "auto_continue_workflow")
-                        /// CRITICAL: Increment iteration counter before continuing
+                        completeIteration(context: &context, responseStatus: hasIncompleteTodos ? "auto_continue_todos" : "auto_continue_workflow")
+                        /// DIAGRAM STEP: "Increment Iteration"
                         context.iteration += 1
                         self.updateCurrentIteration(context.iteration)
+                        /// DIAGRAM STEP: "LOOP" (continue)
                         continue
                     }
 
                     /// No continuation conditions met - natural stop
                     logger.info("WORKFLOW_COMPLETE: Natural termination", metadata: [
                         "iteration": .stringConvertible(context.iteration),
-                        "conversationId": .string(conversationId.uuidString)
+                        "conversationId": .string(conversationId.uuidString),
+                        "reason": .string("no_continue_flag")
                     ])
                     completeIteration(context: &context, responseStatus: "natural_completion")
                     break
@@ -1893,18 +1989,20 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                 /// PLANNING LOOP DETECTION: Check if ANY work tools were called
                 /// If only planning tools (think, memory_operations with manage_todos) were called, don't reset counters
+                /// EXCEPTION: Marking a todo as complete indicates work was done, so treat it as progress
                 let workToolsCalled = actualToolCalls.filter { AgentOrchestrator.isWorkToolCall($0.name, arguments: $0.arguments) }
-                let onlyPlanningTools = workToolsCalled.isEmpty && !actualToolCalls.isEmpty
+                let todoCompletionCalls = actualToolCalls.filter { AgentOrchestrator.isTodoCompletionCall($0.name, arguments: $0.arguments) }
+                let onlyPlanningTools = workToolsCalled.isEmpty && todoCompletionCalls.isEmpty && !actualToolCalls.isEmpty
 
                 if onlyPlanningTools {
-                    /// Agent called tools but NONE were work tools - this is a planning loop
+                    /// Agent called tools but NONE were work tools AND no todos marked complete - this is a planning loop
                     context.planningOnlyIterations += 1
                     let toolNames = actualToolCalls.map { $0.name }.joined(separator: ", ")
                     logger.warning("PLANNING_LOOP_DETECTED", metadata: [
                         "iteration": .stringConvertible(context.iteration),
                         "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations),
                         "toolsCalled": .string(toolNames),
-                        "message": .string("Only planning tools called - NOT resetting autoContinueAttempts")
+                        "message": .string("Only planning tools called (no work tools, no todo completions) - NOT resetting autoContinueAttempts")
                     ])
 
                     /// CRITICAL FIX: Inject planning loop intervention even without [CONTINUE] marker
@@ -1931,42 +2029,42 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         }
                     }
                     /// DO NOT reset autoContinueAttempts - let it escalate
-                } else if !workToolsCalled.isEmpty {
-                    /// Agent called at least one WORK tool - real progress is being made
+                } else if !workToolsCalled.isEmpty || !todoCompletionCalls.isEmpty {
+                    /// Agent called at least one WORK tool OR marked todos complete - real progress is being made
                     context.planningOnlyIterations = 0
                     context.autoContinueAttempts = 0
-                    let workToolNames = workToolsCalled.map { $0.name }.joined(separator: ", ")
-                    logger.debug("WORK_TOOL_EXECUTED", metadata: [
+                    
+                    var progressDetails: [String] = []
+                    if !workToolsCalled.isEmpty {
+                        let workToolNames = workToolsCalled.map { $0.name }.joined(separator: ", ")
+                        progressDetails.append("work tools: \(workToolNames)")
+                    }
+                    if !todoCompletionCalls.isEmpty {
+                        progressDetails.append("marked \(todoCompletionCalls.count) todo(s) complete")
+                    }
+                    
+                    logger.debug("WORK_PROGRESS_MADE", metadata: [
                         "iteration": .stringConvertible(context.iteration),
-                        "workTools": .string(workToolNames),
-                        "message": .string("Work tools called - resetting counters")
+                        "progress": .string(progressDetails.joined(separator: ", ")),
+                        "message": .string("Progress made - resetting counters")
                     ])
                 }
 
                 /// Execute all tool calls for this iteration.
-                /// CRITICAL: Use streaming execution if streamContinuation provided (for real-time UI updates)
-                let executionResults: [ToolExecution]
-                if let continuation = streamContinuation {
-                    /// Streaming mode - create tool cards immediately and yield progress chunks
-                    let requestId = UUID().uuidString
-                    let created = Int(Date().timeIntervalSince1970)
-                    executionResults = try await self.executeToolCallsStreaming(
-                        actualToolCalls,
-                        iteration: context.iteration + 1,
-                        continuation: continuation,
-                        requestId: requestId,
-                        created: created,
-                        model: model,
-                        conversationId: context.session?.conversationId
-                    )
-                } else {
-                    /// Non-streaming mode - no UI updates until completion
-                    executionResults = try await self.executeToolCalls(
-                        actualToolCalls,
-                        iteration: context.iteration + 1,
-                        conversationId: context.session?.conversationId
-                    )
-                }
+                /// UNIFIED PATH: Same scheduler for streaming + non-streaming.
+                let executionResults = try await self.executeToolCalls(
+                    actualToolCalls,
+                    iteration: context.iteration + 1,
+                    conversationId: context.session?.conversationId,
+                    streaming: streamContinuation.map { continuation in
+                        ToolStreamingContext(
+                            continuation: continuation,
+                            requestId: UUID().uuidString,
+                            created: Int(Date().timeIntervalSince1970),
+                            model: model
+                        )
+                    }
+                )
 
                 /// ROUND TRACKING: Capture tool calls and results for this iteration.
                 for toolCall in actualToolCalls {
@@ -2022,22 +2120,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     }
                 }
 
-                /// --- MARKER DETECTION INSIDE TOOL OUTPUTS (NON-STREAMING) --- Some tools (think/manage_todo_list/etc.) can emit control markers inside their outputs.
-                for execution in executionResults {
-                    let toolMarkers = detectMarkers(in: execution.result)
-                    if toolMarkers.detectedWorkflowComplete {
-                        logger.debug("MARKER_DETECTED_IN_TOOL_RESULT", metadata: [
-                            "conversationId": .string(conversationId.uuidString),
-                            "tool": .string(execution.toolName),
-                            "workflow_complete": .stringConvertible(toolMarkers.detectedWorkflowComplete),
-                            "matched_pattern": .string(toolMarkers.matchedPattern ?? "none")
-                        ])
-
-                        // MARK: - for graceful completion
-                        logger.info("WORKFLOW_COMPLETE_MARKER_IN_TOOL: Detected workflow complete in tool output - marking workflow complete")
-                        context.detectedWorkflowCompleteMarker = true
-                    }
-                }
+                /// --- MARKER DETECTION INSIDE TOOL OUTPUTS (NON-STREAMING) ---
+                /// REMOVED: Legacy marker detection in tool outputs
+                /// Only STOP marker remains, and tools should not emit workflow control markers
+                /// Workflow completion is determined by orchestrator flow diagram
 
                 /// Capture thinking steps from think tool results.
                 if let thinkingSteps = parseThinkingSteps(from: executionResults) {
@@ -2071,6 +2157,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     "successfulTools": .stringConvertible(successfulTools),
                     "failedTools": .stringConvertible(failedTools)
                 ])
+                
+                /// FIX #8: Track that this iteration had tool results (for alternation enforcement)
+                /// This will be checked in next iteration to remind agent to call tools if they only responded with text
+                /// Also reset the flag from previous iteration now that we're executing tools again
+                context.lastIterationHadToolResults = true
 
                 /// ERROR ADAPTATION: If tools failed, inject guidance to think and adapt approach.
                 /// Agent Loop Escape - Track failures and provide escalating guidance
@@ -2234,33 +2325,38 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// This ensures tool cards appear in subagent conversations and API exports
                 /// EXCEPTION: Skip user_collaboration - its result shouldn't appear as a tool card
                 /// CRITICAL: Use MessageBus for proper message management and performance
-                await MainActor.run {
-                    guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
-                        return
-                    }
-
-                    for execution in executionResults {
-                        /// Skip collaboration tool results - they're internal workflow only
-                        if execution.toolName == "user_collaboration" {
-                            self.logger.info("Skipping tool card for user_collaboration (internal workflow only)")
-                            continue
+                /// CRITICAL FIX: Skip if streaming (streaming path already created tool messages)
+                if streamContinuation == nil {
+                    await MainActor.run {
+                        guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                            return
                         }
 
-                        /// Determine status based on execution.success
-                        let status: ConfigurationSystem.ToolStatus = execution.success ? .success : .error
+                        for execution in executionResults {
+                            /// Skip collaboration tool results - they're internal workflow only
+                            if execution.toolName == "user_collaboration" {
+                                self.logger.info("Skipping tool card for user_collaboration (internal workflow only)")
+                                continue
+                            }
 
-                        /// Add tool message via MessageBus (not legacy conversation.addToolMessage)
-                        conversation.messageBus?.addToolMessage(
-                            id: UUID(),
-                            name: execution.toolName,
-                            status: status,
-                            details: execution.result,
-                            toolDisplayData: nil,
-                            toolCallId: execution.toolCallId
-                        )
+                            /// Determine status based on execution.success
+                            let status: ConfigurationSystem.ToolStatus = execution.success ? .success : .error
+
+                            /// Add tool message via MessageBus (not legacy conversation.addToolMessage)
+                            conversation.messageBus?.addToolMessage(
+                                id: UUID(),
+                                name: execution.toolName,
+                                status: status,
+                                details: execution.result,
+                                toolDisplayData: nil,
+                                toolCallId: execution.toolCallId
+                            )
+                        }
+
+                        logger.debug("MESSAGEBUS_TOOL_PERSISTENCE: Added \(executionResults.count) tool messages via MessageBus (non-streaming)")
                     }
-
-                    logger.debug("MESSAGEBUS_TOOL_PERSISTENCE: Added \(executionResults.count) tool messages via MessageBus")
+                } else {
+                    logger.debug("MESSAGEBUS_TOOL_SKIP: Skipping tool message creation (streaming path already created them)")
                 }
 
                 /// 6d. Check for user_collaboration tool execution and inject continuation directive
@@ -2423,11 +2519,24 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.debug("DEBUG_MISSING_RESPONSE: Adding final response to conversation NOW")
             let cleanedResponse = stripSystemReminders(from: context.lastResponse)
             if !cleanedResponse.isEmpty {
-                /// REMOVED: Duplicate message creation - MessageBus already created this during streaming
-                /// conversation.addMessage(text: cleanedResponse, isUser: false, githubCopilotResponseId: context.currentStatefulMarker)
-                /// conversationManager.saveConversations()
+                /// CRITICAL FIX: In STREAMING mode, MessageBus creates messages during chunking
+                /// In NON-STREAMING mode, no MessageBus involvement - we must create message here
+                /// Check streamContinuation to determine which mode we're in
+                if streamContinuation == nil {
+                    /// Non-streaming mode - manually add final message
+                    conversation.messageBus?.addAssistantMessage(
+                        id: UUID(),
+                        content: cleanedResponse,
+                        timestamp: Date()
+                    )
+                    conversationManager.saveConversations()
+                    logger.debug("DEBUG_MISSING_RESPONSE: Created final message via MessageBus (non-streaming mode)")
+                } else {
+                    /// Streaming mode - MessageBus already created message during chunking
+                    logger.debug("DEBUG_MISSING_RESPONSE: Final message already created during streaming (skipping)")
+                }
             }
-            logger.debug("DEBUG_MISSING_RESPONSE: Final response handled via MessageBus", metadata: [
+            logger.debug("DEBUG_MISSING_RESPONSE: Final response handled", metadata: [
                 "messageCount": .stringConvertible(conversation.messages.count)
             ])
             if let marker = context.currentStatefulMarker {
@@ -4915,59 +5024,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
     // MARK: - Properties
 
-    /// Filters internal markers and debugging output from LLM responses Removes JSON status signals, legacy markers [WORKFLOW_COMPLETE]/[CONTINUE], and INTENT EXTRACTION output before saving to conversation.
-    private func filterInternalMarkers(from text: String) -> String {
-        var cleaned = text
-
-        /// Filter 0: Remove JSON status signals (NEW FORMAT - highest priority) Pattern: {"status": "continue"} or {"status": "complete"} on own line or embedded.
-        if let jsonStatusRegex = try? NSRegularExpression(
-            pattern: #"\{\s*"status"\s*:\s*"(continue|complete)"\s*\}"#,
-            options: [.caseInsensitive]
-        ) {
-            let nsString = cleaned as NSString
-            let range = NSRange(location: 0, length: nsString.length)
-            cleaned = jsonStatusRegex.stringByReplacingMatches(
-                in: cleaned,
-                options: [],
-                range: range,
-                withTemplate: ""
-            )
-        }
-
-        /// Filter 1: Remove legacy bracketed completion markers (BACKWARD COMPATIBILITY).
-        let bracketedMarkers = [
-            "[WORKFLOW_COMPLETE]",
-            "[CONTINUE]"
-        ]
-        for marker in bracketedMarkers {
-            cleaned = cleaned.replacingOccurrences(of: marker, with: "")
-        }
-
-        /// Also remove uppercase non-bracketed variants (defensive).
-        let bareMarkers = ["WORKFLOW_COMPLETE"]
-        for marker in bareMarkers {
-            cleaned = cleaned.replacingOccurrences(of: marker, with: "", options: .caseInsensitive, range: nil)
-        }
-
-        /// Filter 2: Remove INTENT EXTRACTION output (multiline JSON blocks) Pattern: "INTENT EXTRACTION:\n{...}" - remove entire section.
-        if let regex = try? NSRegularExpression(
-            pattern: "INTENT EXTRACTION:\\s*\\n\\{[^}]*\\}",
-            options: [.dotMatchesLineSeparators]
-        ) {
-            let nsString = cleaned as NSString
-            let range = NSRange(location: 0, length: nsString.length)
-            cleaned = regex.stringByReplacingMatches(
-                in: cleaned,
-                options: [],
-                range: range,
-                withTemplate: ""
-            )
-        }
-
-        /// We intentionally DO NOT trim here to preserve internal spacing and newlines.
-        return cleaned
-    }
-
     /// Filters internal markers but preserves surrounding whitespace/newlines.
     private func filterInternalMarkersNoTrim(from text: String) -> String {
         /// Prepare JSON-only-line regex (matches a line that is just the JSON status).
@@ -5020,15 +5076,21 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         return outputLines.joined(separator: "\n")
     }
 
-    /// Executes tool calls and returns results Execute tool calls with streaming progress (for streaming workflow) CRITICAL: Respects tool metadata for blocking/serial execution.
-    private func executeToolCallsStreaming(
+    private struct ToolStreamingContext {
+        let continuation: AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error>.Continuation
+        let requestId: String
+        let created: Int
+        let model: String
+    }
+
+    /// Executes tool calls and returns results.
+    /// UNIFIED PATH: If `streaming` is non-nil, emits tool-card chunks for the UI.
+    /// CRITICAL: Respects tool metadata for blocking/serial execution.
+    private func executeToolCalls(
         _ toolCalls: [ToolCall],
         iteration: Int,
-        continuation: AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error>.Continuation,
-        requestId: String,
-        created: Int,
-        model: String,
-        conversationId: UUID?
+        conversationId: UUID?,
+        streaming: ToolStreamingContext? = nil
     ) async throws -> [ToolExecution] {
         logger.error("TOOL_EXEC_INPUT: count=\(toolCalls.count) ids=\(toolCalls.map { $0.id }.joined(separator: ",")) names=\(toolCalls.map { $0.name }.joined(separator: ","))")
         logger.info("executeToolCalls: Executing \(toolCalls.count) tools with metadata-driven execution control")
@@ -5080,10 +5142,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 let execution = try await executeSingleToolWithStreaming(
                     toolCall,
                     iteration: iteration,
-                    continuation: continuation,
-                    requestId: requestId,
-                    created: created,
-                    model: model,
+                    streaming: streaming,
                     conversationId: conversationId
                 )
 
@@ -5102,10 +5161,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 let execution = try await executeSingleToolWithStreaming(
                     toolCall,
                     iteration: iteration,
-                    continuation: continuation,
-                    requestId: requestId,
-                    created: created,
-                    model: model,
+                    streaming: streaming,
                     conversationId: conversationId
                 )
                 allExecutions.append(execution)
@@ -5116,20 +5172,81 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         /// Execute PARALLEL tools (concurrently for performance).
         if !parallelToolCalls.isEmpty {
-            logger.debug("PARALLEL_PHASE_START: Executing \(parallelToolCalls.count) parallel tools concurrently")
+            if let streaming {
+                logger.debug("PARALLEL_PHASE_START: Executing \(parallelToolCalls.count) parallel tools concurrently")
 
-            let parallelExecutions = try await executeParallelToolsWithStreaming(
-                parallelToolCalls,
-                iteration: iteration,
-                continuation: continuation,
-                requestId: requestId,
-                created: created,
-                model: model,
-                conversationId: conversationId
-            )
+                let parallelExecutions = try await executeParallelToolsWithStreaming(
+                    parallelToolCalls,
+                    iteration: iteration,
+                    continuation: streaming.continuation,
+                    requestId: streaming.requestId,
+                    created: streaming.created,
+                    model: streaming.model,
+                    conversationId: conversationId
+                )
 
-            allExecutions.append(contentsOf: parallelExecutions)
-            logger.debug("PARALLEL_PHASE_COMPLETE: All parallel tools finished")
+                allExecutions.append(contentsOf: parallelExecutions)
+                logger.debug("PARALLEL_PHASE_COMPLETE: All parallel tools finished")
+            } else {
+                logger.debug("PARALLEL_PHASE_START: Executing \(parallelToolCalls.count) parallel tools (non-streaming)")
+
+                let conversationIdForTools = conversationId
+                nonisolated(unsafe) let capturedTerminalManager = self.terminalManager
+
+                let parallelExecutions = await withTaskGroup(of: (Int, ToolExecution).self) { group in
+                    for (index, toolCall) in parallelToolCalls.enumerated() {
+                        let toolCallId = toolCall.id
+                        let toolCallName = toolCall.name
+                        let toolCallArguments = SendableArguments(value: toolCall.arguments)
+
+                        group.addTask { @Sendable in
+                            let startTime = Date()
+
+                            if let result = await self.conversationManager.executeMCPTool(
+                                name: toolCallName,
+                                parameters: toolCallArguments.value,
+                                toolCallId: toolCallId,
+                                conversationId: conversationIdForTools,
+                                isExternalAPICall: self.isExternalAPICall,
+                                terminalManager: capturedTerminalManager,
+                                iterationController: self
+                            ) {
+                                let execution = ToolExecution(
+                                    toolCallId: toolCallId,
+                                    toolName: toolCallName,
+                                    arguments: toolCallArguments.value,
+                                    result: result.output.content,
+                                    success: result.success,
+                                    timestamp: startTime,
+                                    iteration: iteration
+                                )
+                                return (index, execution)
+                            }
+
+                            let execution = ToolExecution(
+                                toolCallId: toolCallId,
+                                toolName: toolCallName,
+                                arguments: toolCallArguments.value,
+                                result: "ERROR: Tool '\(toolCallName)' not found or execution failed",
+                                success: false,
+                                timestamp: startTime,
+                                iteration: iteration
+                            )
+                            return (index, execution)
+                        }
+                    }
+
+                    var indexedExecutions: [(Int, ToolExecution)] = []
+                    for await result in group {
+                        indexedExecutions.append(result)
+                    }
+                    indexedExecutions.sort { $0.0 < $1.0 }
+                    return indexedExecutions.map { $0.1 }
+                }
+
+                allExecutions.append(contentsOf: parallelExecutions)
+                logger.debug("PARALLEL_PHASE_COMPLETE: All parallel tools finished (non-streaming)")
+            }
         }
 
         logger.info("TOOL_EXECUTION_COMPLETE: All \(toolCalls.count) tools finished (blocking:\(blockingToolCalls.count), serial:\(serialToolCalls.count), parallel:\(parallelToolCalls.count))")
@@ -5157,14 +5274,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         return false
     }
 
-    /// Execute a single tool with streaming progress (used for blocking/serial execution).
+    /// Execute a single tool.
+    /// If `streaming` is non-nil, streams tool-card events; otherwise runs silently.
     private func executeSingleToolWithStreaming(
         _ toolCall: ToolCall,
         iteration: Int,
-        continuation: AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error>.Continuation,
-        requestId: String,
-        created: Int,
-        model: String,
+        streaming: ToolStreamingContext?,
         conversationId: UUID?
     ) async throws -> ToolExecution {
         let toolPerfStart = CFAbsoluteTimeGetCurrent()
@@ -5176,11 +5291,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         logger.error("SINGLE_TOOL_START: name=\(toolCall.name) id=\(toolCall.id)")
         let startTime = Date()
 
-        /// CRITICAL: Create tool message in MessageBus BEFORE yielding chunks
-        /// This ensures ChatWidget can track the message via messageId in chunks
-        /// Prevents duplicate message creation and enables instant tool card rendering
         let toolMessageId = UUID()
-        if let conversationId = conversationId,
+          if streaming != nil,
+              let conversationId = conversationId,
            let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
 
             guard conversation.messageBus != nil else {
@@ -5203,7 +5316,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             )
 
             logger.debug("MESSAGEBUS_CREATE_TOOL: Created tool message id=\(toolMessageId.uuidString.prefix(8)) for tool=\(toolCall.name) executionId=\(toolCall.id.prefix(8))")
-        } else {
+        } else if streaming != nil {
             logger.warning("TOOL_EXEC_WARNING: Conversation not found for id=\(conversationId?.uuidString.prefix(8) ?? "nil"), tool message not created in MessageBus")
         }
 
@@ -5211,7 +5324,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         let toolDetail = extractToolActionDetail(toolCall)
         let actionDescription = toolDetail.isEmpty ? getUserFriendlyActionDescription(toolCall.name, toolDetail) : toolDetail
 
-        if !actionDescription.isEmpty {
+        if let streaming, !actionDescription.isEmpty {
             let progressMessage = "SUCCESS: \(actionDescription)..."
 
             let registry = ToolDisplayInfoRegistry.shared
@@ -5219,10 +5332,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             let toolIcon: String? = getToolIcon(toolCall.name)
 
             let progressChunk = ServerOpenAIChatStreamChunk(
-                id: requestId,
+                id: streaming.requestId,
                 object: "chat.completion.chunk",
-                created: created,
-                model: model,
+                created: streaming.created,
+                model: streaming.model,
                 choices: [OpenAIChatStreamChoice(
                     index: 0,
                     delta: OpenAIChatDelta(content: progressMessage + "\n"),
@@ -5241,7 +5354,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.debug("TOOL_PROGRESS_MESSAGE_YIELDED: tool=\(toolCall.name) content=\(progressMessage.prefix(50)) isToolMessage=true")
 
             if toolCall.name.lowercased() != "think" {
-                continuation.yield(progressChunk)
+                streaming.continuation.yield(progressChunk)
             }
         }
 
@@ -5261,7 +5374,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.info("TOOL_EXECUTION_COMPLETE: \(toolCall.name) after \(String(format: "%.2f", duration))s")
 
             /// Update tool status in MessageBus after execution completes
-            if let conversationId = conversationId,
+            if streaming != nil,
+               let conversationId = conversationId,
                let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
                 conversation.messageBus?.updateToolStatus(
                     id: toolMessageId,
@@ -5272,37 +5386,39 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 logger.debug("MESSAGEBUS_UPDATE_TOOL: Updated tool message id=\(toolMessageId.uuidString.prefix(8)) status=\(result.success ? "success" : "error")")
             }
 
-            /// Emit completion chunk with result metadata for UI display
-            let completionChunk = ServerOpenAIChatStreamChunk(
-                id: requestId,
-                object: "chat.completion.chunk",
-                created: created,
-                model: model,
-                choices: [OpenAIChatStreamChoice(
-                    index: 0,
-                    delta: OpenAIChatDelta(content: ""),
-                    finishReason: nil
-                )],
-                isToolMessage: true,
-                toolName: toolCall.name,
-                toolIcon: self.getToolIcon(toolCall.name),
-                toolStatus: result.success ? "success" : "error",
-                toolDetails: nil,
-                parentToolName: nil,
-                toolExecutionId: toolCall.id,
-                toolMetadata: result.metadata.additionalContext,
-                messageId: toolMessageId  /// Include messageId for completion chunk
-            )
-            continuation.yield(completionChunk)
+            if let streaming {
+                /// Emit completion chunk with result metadata for UI display
+                let completionChunk = ServerOpenAIChatStreamChunk(
+                    id: streaming.requestId,
+                    object: "chat.completion.chunk",
+                    created: streaming.created,
+                    model: streaming.model,
+                    choices: [OpenAIChatStreamChoice(
+                        index: 0,
+                        delta: OpenAIChatDelta(content: ""),
+                        finishReason: nil
+                    )],
+                    isToolMessage: true,
+                    toolName: toolCall.name,
+                    toolIcon: self.getToolIcon(toolCall.name),
+                    toolStatus: result.success ? "success" : "error",
+                    toolDetails: nil,
+                    parentToolName: nil,
+                    toolExecutionId: toolCall.id,
+                    toolMetadata: result.metadata.additionalContext,
+                    messageId: toolMessageId  /// Include messageId for completion chunk
+                )
+                streaming.continuation.yield(completionChunk)
+            }
 
             /// Process progress events.
             for event in result.progressEvents {
-                if event.eventType == .toolStarted, let message = event.message {
+                if event.eventType == .toolStarted, let message = event.message, let streaming {
                     let progressChunk = ServerOpenAIChatStreamChunk(
-                        id: requestId,
+                        id: streaming.requestId,
                         object: "chat.completion.chunk",
-                        created: created,
-                        model: model,
+                        created: streaming.created,
+                        model: streaming.model,
                         choices: [OpenAIChatStreamChoice(
                             index: 0,
                             delta: OpenAIChatDelta(content: message + "\n"),
@@ -5318,11 +5434,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         toolExecutionId: toolCall.id,
                         messageId: toolMessageId  /// Include messageId for sub-tool chunks
                     )
-                    continuation.yield(progressChunk)
+                    streaming.continuation.yield(progressChunk)
                 }
 
                 /// Stream .userMessage progressEvents (MODERN: ToolDisplayData only)
                 if event.eventType == .userMessage {
+                    guard let streaming else { continue }
                     guard let displayData = event.display as? ToolDisplayData,
                           let summary = displayData.summary, !summary.isEmpty else {
                         logger.warning("PROGRESS_EVENT_SKIP: userMessage missing ToolDisplayData.summary")
@@ -5348,10 +5465,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     }
 
                     let userMessageChunk = ServerOpenAIChatStreamChunk(
-                        id: requestId,
+                        id: streaming.requestId,
                         object: "chat.completion.chunk",
-                        created: created,
-                        model: model,
+                        created: streaming.created,
+                        model: streaming.model,
                         choices: [OpenAIChatStreamChoice(
                             index: 0,
                             delta: OpenAIChatDelta(
@@ -5371,7 +5488,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         messageId: messageId  /// Pass messageId to chunk for UI correlation
                     )
                     logger.debug("PROGRESS_EVENT_CHUNK: chunk.toolName=\(userMessageChunk.toolName ?? "nil") chunk.isToolMessage=\(userMessageChunk.isToolMessage ?? false) messageId=\(messageId.uuidString.prefix(8))")
-                    continuation.yield(userMessageChunk)
+                    streaming.continuation.yield(userMessageChunk)
                     await Task.yield()
                 }
             }
@@ -5748,152 +5865,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         }
     }
 
-    /// Execute tool calls without streaming (for non-streaming workflow).
-    private func executeToolCalls(
-        _ toolCalls: [ToolCall],
-        iteration: Int,
-        conversationId: UUID?
-    ) async throws -> [ToolExecution] {
-        logger.debug("executeToolCalls: Executing \(toolCalls.count) tools in PARALLEL")
 
-        /// Capture conversationId for use in task group
-        let conversationIdForTools = conversationId
-        nonisolated(unsafe) let capturedTerminalManager = self.terminalManager  /// Capture nonisolated(unsafe) property before async
-
-        /// PERFORMANCE FIX: Execute tools in PARALLEL instead of sequentially Sequential execution was causing 5x+ slowdown when multiple tools were called With parallel execution, all tools run simultaneously.
-        return await withTaskGroup(of: (Int, ToolExecution).self) { group in
-            var executions: [ToolExecution] = []
-
-            for (index, toolCall) in toolCalls.enumerated() {
-                let toolCallId = toolCall.id  /// Capture before async task
-                let toolCallName = toolCall.name
-                let toolCallArguments = SendableArguments(value: toolCall.arguments)  /// Wrap in Sendable container
-
-                group.addTask { @Sendable in
-                    let startTime = Date()
-
-                    /// TOOL_EXECUTION_START - Track individual tool execution start.
-                    await MainActor.run {
-                        self.logger.debug("TOOL_EXECUTION_START", metadata: [
-                            "iteration": .stringConvertible(iteration),
-                            "toolName": .string(toolCallName),
-                            "toolCallId": .string(toolCallId)
-                        ])
-
-                        self.logger.debug("executeToolCalls: Executing tool '\\(toolCallName)' (id: \\(toolCallId))")
-                    }
-
-                    /// Execute via ConversationManager.executeMCPTool() CRITICAL: Pass toolCall.id so tools can use LLM's tool call ID instead of generating their own CRITICAL: Pass terminalManager so terminal_operations uses visible UI terminal.
-                    /// CRITICAL (Task 19): Pass session.conversationId to prevent data leakage
-                    if let result = await self.conversationManager.executeMCPTool(
-                        name: toolCallName,
-                        parameters: toolCallArguments.value,
-                        toolCallId: toolCallId,
-                        conversationId: conversationIdForTools,
-                        isExternalAPICall: self.isExternalAPICall,
-                        terminalManager: capturedTerminalManager,
-                        iterationController: self
-                    ) {
-                        let duration = Date().timeIntervalSince(startTime)
-                        let execution = ToolExecution(
-                            toolCallId: toolCallId,
-                            toolName: toolCallName,
-                            arguments: toolCallArguments.value,
-                            result: result.output.content,
-                            timestamp: startTime,
-                            iteration: iteration
-                        )
-
-                        /// TOOL_EXECUTION_COMPLETE - Track individual tool execution completion.
-                        await MainActor.run {
-                            self.logger.debug("TOOL_EXECUTION_COMPLETE", metadata: [
-                                "iteration": .stringConvertible(iteration),
-                                "toolName": .string(toolCallName),
-                                "success": .stringConvertible(true),
-                                "executionTime": .string(String(format: "%.2fms", duration * 1000)),
-                                "resultLength": .stringConvertible(result.output.content.count)
-                            ])
-
-                            self.logger.debug("executeToolCalls: Tool '\(toolCallName)' succeeded in \(String(format: "%.2f", duration))s")
-
-                            /// Update StateManager: Remove tool from active tools
-                            if let conversationId = conversationIdForTools {
-                                self.conversationManager.stateManager.updateState(conversationId: conversationId) { state in
-                                    state.activeTools.remove(toolCallName)
-                                    /// If no more active tools, set status to idle
-                                    if state.activeTools.isEmpty {
-                                        state.status = .idle
-                                    } else if case .processing = state.status {
-                                        /// Update to next active tool
-                                        state.status = .processing(toolName: state.activeTools.first)
-                                    }
-                                }
-                                self.logger.debug("StateManager: Removed \(toolCallName) from activeTools for conversation \(conversationId.uuidString.prefix(8))")
-                            }
-                        }
-
-                        return (index, execution)
-                    } else {
-                        /// Tool not found or execution failed.
-                        let duration = Date().timeIntervalSince(startTime)
-
-                        /// TOOL_EXECUTION_COMPLETE - Track tool execution failure.
-                        await MainActor.run {
-                            self.logger.error("TOOL_EXECUTION_COMPLETE", metadata: [
-                                "iteration": .stringConvertible(iteration),
-                                "toolName": .string(toolCallName),
-                                "success": .stringConvertible(false),
-                                "executionTime": .string(String(format: "%.2fms", duration * 1000)),
-                                "error": .string("Tool not found or execution failed")
-                            ])
-
-                            self.logger.error("executeToolCalls: Tool '\(toolCallName)' returned nil (not found or failed)")
-
-                            /// Update StateManager: Remove tool from active tools even on failure
-                            if let conversationId = conversationIdForTools {
-                                self.conversationManager.stateManager.updateState(conversationId: conversationId) { state in
-                                    state.activeTools.remove(toolCallName)
-                                    /// If no more active tools, set status to idle
-                                    if state.activeTools.isEmpty {
-                                        state.status = .idle
-                                    } else if case .processing = state.status {
-                                        /// Update to next active tool
-                                        state.status = .processing(toolName: state.activeTools.first)
-                                    }
-                                }
-                                self.logger.debug("StateManager: Removed \(toolCallName) from activeTools (failed) for conversation \(conversationId.uuidString.prefix(8))")
-                            }
-                        }
-
-                        /// Create execution with error result.
-                        let execution = ToolExecution(
-                            toolCallId: toolCallId,
-                            toolName: toolCallName,
-                            arguments: toolCallArguments.value,
-                            result: "ERROR: Tool '\(toolCallName)' not found or execution failed",
-                            timestamp: startTime,
-                            iteration: iteration
-                        )
-                        return (index, execution)
-                    }
-                }
-            }
-
-            /// Collect results in original order.
-            var indexedExecutions: [(Int, ToolExecution)] = []
-            for await result in group {
-                indexedExecutions.append(result)
-            }
-
-            /// Sort by original index to preserve tool call order.
-            indexedExecutions.sort { $0.0 < $1.0 }
-            executions = indexedExecutions.map { $0.1 }
-
-            logger.debug("executeToolCalls: Completed \(executions.count)/\(toolCalls.count) tool executions in PARALLEL")
-
-            return executions
-        }
-    }
 
     /// Format tool execution progress message with details about what each tool is doing.
     private func formatToolExecutionProgress(_ toolCalls: [ToolCall]) -> String {

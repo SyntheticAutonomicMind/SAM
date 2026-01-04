@@ -155,6 +155,33 @@ Ready to end session? Press Enter:"
 
 ---
 
+## CRITICAL: run_in_terminal MUST NEVER USE isBackground=true
+
+**❌ NEVER DO THIS:**
+```bash
+run_in_terminal(command: "make build", isBackground: true)  # WRONG! Causes silent failures
+run_in_terminal(command: "git commit", isBackground: true)   # WRONG! Command gets cancelled
+```
+
+**✅ ALWAYS DO THIS:**
+```bash
+run_in_terminal(command: "make build", isBackground: false)  # CORRECT
+run_in_terminal(command: "git commit", isBackground: false)  # CORRECT
+```
+
+**WHY:**
+- `isBackground=true` causes commands to be cancelled/interrupted
+- You won't see output or know if command succeeded
+- Git commits, builds, and all other commands REQUIRE `isBackground=false`
+- This is a HARD REQUIREMENT - violations cause session failure
+
+**THE RULE:**
+- ALWAYS set `isBackground: false` for ALL commands
+- NEVER use `isBackground: true` for ANY command
+- If unsure, default to `false`
+
+---
+
 ## SAM-SPECIFIC DEVELOPMENT
 
 ### Build System

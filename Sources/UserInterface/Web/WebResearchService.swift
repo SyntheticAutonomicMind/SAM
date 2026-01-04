@@ -81,15 +81,15 @@ public class WebResearchService: ObservableObject, @unchecked Sendable {
             let report = ResearchReport(
                 topic: topic,
                 searchResults: searchResults,
-                extractedContent: extractedContent,
+                extractedContent: processedContent,  /// Use processedContent (successful sources) instead of extractedContent
                 synthesis: synthesis,
-                sources: extractedContent.map { ResearchSource(url: $0.url, title: $0.title, extractedAt: $0.extractedAt) },
+                sources: processedContent.map { ResearchSource(url: $0.url, title: $0.title, extractedAt: $0.extractedAt) },
                 conductedAt: Date(),
                 researchDepth: depth
             )
 
             await updateResearchStatus(isResearching: false, operation: "Research complete", progress: 1.0)
-            logger.debug("Research completed: \(searchResults.count) sources, \(extractedContent.count) pages analyzed")
+            logger.debug("Research completed: \(searchResults.count) sources, \(processedContent.count) pages analyzed")
 
             return report
 
@@ -266,6 +266,9 @@ public class WebResearchService: ObservableObject, @unchecked Sendable {
 
     private func processContentThroughRAG(_ content: [WebPageContent], conversationId: UUID) async throws -> [WebPageContent] {
         /// Process each piece of content through the Vector RAG Service with conversation scope.
+        var successfulContent: [WebPageContent] = []
+        var failedCount = 0
+        
         for webContent in content {
             let ragDocument = RAGDocument(
                 id: UUID(),
@@ -281,10 +284,27 @@ public class WebResearchService: ObservableObject, @unchecked Sendable {
             )
 
             /// Ingest into Vector RAG for semantic processing.
-            _ = try await vectorRAGService.ingestDocument(ragDocument)
+            do {
+                _ = try await vectorRAGService.ingestDocument(ragDocument)
+                successfulContent.append(webContent)
+            } catch let error as VectorRAGError {
+                /// Log warning but continue processing other sources.
+                logger.warning("Source ingestion failed for \(webContent.url.absoluteString): \(error.localizedDescription)")
+                failedCount += 1
+            } catch {
+                /// Unexpected error type - log and continue.
+                logger.warning("Unexpected error ingesting source \(webContent.url.absoluteString): \(error)")
+                failedCount += 1
+            }
         }
 
-        return content
+        /// If ALL sources failed, throw error.
+        if successfulContent.isEmpty && !content.isEmpty {
+            throw VectorRAGError.ingestionFailed("All \(content.count) sources failed ingestion. No useable content found. Please try a different search query or topic.")
+        }
+
+        logger.debug("RAG processing complete: \(successfulContent.count) successful, \(failedCount) failed")
+        return successfulContent
     }
 
     private func deduplicateAndRankResults(_ results: [SearchResult], maxResults: Int) -> [SearchResult] {
