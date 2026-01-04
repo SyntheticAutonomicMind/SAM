@@ -1386,7 +1386,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         initialMessage: String,
         model: String,
         samConfig: SAMConfig? = nil,
-        onProgress: ((String) -> Void)? = nil
+        onProgress: ((String) -> Void)? = nil,
+        streamContinuation: AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error>.Continuation? = nil
     ) async throws -> AgentResult {
         let workflowStartTime = Date()
 
@@ -1570,41 +1571,87 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 let messagesForLLM = filteredMessages + context.ephemeralMessages
 
                 /// Call LLM with combined messages.
+                /// UNIFIED PATH: Support both streaming and non-streaming based on continuation parameter
                 /// RATE LIMIT HANDLING: Retry up to 5 times on rate limit errors invisibly
                 var response: LLMResponse
                 var rateLimitRetryCount = 0
                 let maxRateLimitRetries = 5
 
-                while true {
-                    do {
-                        response = try await self.callLLM(
-                            conversationId: conversationId,
-                            message: context.iteration == 0 ? initialMessage : "Please continue",
-                            model: model,
-                            internalMessages: messagesForLLM,
-                            iteration: context.iteration,
-                            samConfig: samConfig,
-                            statefulMarker: context.currentStatefulMarker,
-                            sentInternalMessagesCount: context.sentInternalMessagesCount,
-                            retrievedMessageIds: &context.retrievedMessageIds
-                        )
-                        break  /// Success - exit retry loop
-                    } catch let error as ProviderError {
-                        if case .rateLimitExceeded = error {
-                            rateLimitRetryCount += 1
-                            if rateLimitRetryCount <= maxRateLimitRetries {
-                                /// Calculate exponential backoff delay
-                                let backoffDelay = pow(2.0, Double(rateLimitRetryCount)) * 2.0  /// 4s, 8s, 16s, 32s, 64s
-                                logger.warning("RATE_LIMIT_RETRY: Attempt \(rateLimitRetryCount)/\(maxRateLimitRetries) after \(String(format: "%.1f", backoffDelay))s delay")
-                                try await Task.sleep(for: .seconds(backoffDelay))
-                                continue  /// Retry
+                if let continuation = streamContinuation {
+                    /// STREAMING MODE - Call callLLMStreaming
+                    let requestId = UUID().uuidString
+                    let created = Int(Date().timeIntervalSince1970)
+                    
+                    while true {
+                        do {
+                            response = try await self.callLLMStreaming(
+                                conversationId: conversationId,
+                                message: context.iteration == 0 ? initialMessage : "Please continue",
+                                model: model,
+                                internalMessages: messagesForLLM,
+                                iteration: context.iteration,
+                                continuation: continuation,
+                                requestId: requestId,
+                                created: created,
+                                samConfig: samConfig,
+                                statefulMarker: context.currentStatefulMarker,
+                                statefulMarkerMessageCount: context.statefulMarkerMessageCount,
+                                sentInternalMessagesCount: context.sentInternalMessagesCount,
+                                retrievedMessageIds: &context.retrievedMessageIds
+                            )
+                            break  /// Success - exit retry loop
+                        } catch let error as ProviderError {
+                            if case .rateLimitExceeded = error {
+                                rateLimitRetryCount += 1
+                                if rateLimitRetryCount <= maxRateLimitRetries {
+                                    /// Calculate exponential backoff delay
+                                    let backoffDelay = pow(2.0, Double(rateLimitRetryCount)) * 2.0  /// 4s, 8s, 16s, 32s, 64s
+                                    logger.warning("RATE_LIMIT_RETRY_STREAMING: Attempt \(rateLimitRetryCount)/\(maxRateLimitRetries) after \(String(format: "%.1f", backoffDelay))s delay")
+                                    try await Task.sleep(for: .seconds(backoffDelay))
+                                    continue  /// Retry
+                                } else {
+                                    /// All retries exhausted - show user-friendly message
+                                    logger.error("RATE_LIMIT_EXHAUSTED_STREAMING: All \(maxRateLimitRetries) retries failed")
+                                    throw ProviderError.rateLimitExceeded("The service is busy. Please wait a moment and try again.")
+                                }
                             } else {
-                                /// All retries exhausted - show user-friendly message
-                                logger.error("RATE_LIMIT_EXHAUSTED: All \(maxRateLimitRetries) retries failed")
-                                throw ProviderError.rateLimitExceeded("The service is busy. Please wait a moment and try again.")
+                                throw error  /// Re-throw non-rate-limit errors
                             }
-                        } else {
-                            throw error  /// Re-throw non-rate-limit errors
+                        }
+                    }
+                } else {
+                    /// NON-STREAMING MODE - Call callLLM
+                    while true {
+                        do {
+                            response = try await self.callLLM(
+                                conversationId: conversationId,
+                                message: context.iteration == 0 ? initialMessage : "Please continue",
+                                model: model,
+                                internalMessages: messagesForLLM,
+                                iteration: context.iteration,
+                                samConfig: samConfig,
+                                statefulMarker: context.currentStatefulMarker,
+                                sentInternalMessagesCount: context.sentInternalMessagesCount,
+                                retrievedMessageIds: &context.retrievedMessageIds
+                            )
+                            break  /// Success - exit retry loop
+                        } catch let error as ProviderError {
+                            if case .rateLimitExceeded = error {
+                                rateLimitRetryCount += 1
+                                if rateLimitRetryCount <= maxRateLimitRetries {
+                                    /// Calculate exponential backoff delay
+                                    let backoffDelay = pow(2.0, Double(rateLimitRetryCount)) * 2.0  /// 4s, 8s, 16s, 32s, 64s
+                                    logger.warning("RATE_LIMIT_RETRY: Attempt \(rateLimitRetryCount)/\(maxRateLimitRetries) after \(String(format: "%.1f", backoffDelay))s delay")
+                                    try await Task.sleep(for: .seconds(backoffDelay))
+                                    continue  /// Retry
+                                } else {
+                                    /// All retries exhausted - show user-friendly message
+                                    logger.error("RATE_LIMIT_EXHAUSTED: All \(maxRateLimitRetries) retries failed")
+                                    throw ProviderError.rateLimitExceeded("The service is busy. Please wait a moment and try again.")
+                                }
+                            } else {
+                                throw error  /// Re-throw non-rate-limit errors
+                            }
                         }
                     }
                 }
@@ -2062,9 +2109,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                     /// VS CODE COPILOT PATTERN: Use XML tags for ALL models
                     /// Send as user message to avoid consecutive assistant messages that violate Claude API
+                    /// CRITICAL: Use ephemeralMessages, NOT internalMessages, to prevent accumulation across iterations
                     let wrappedGuidance = "<system-reminder>\n\(errorGuidanceContent)\n</system-reminder>"
                     let errorGuidance = OpenAIChatMessage(role: "user", content: wrappedGuidance)
-                    context.internalMessages.append(errorGuidance)
+                    context.ephemeralMessages.append(errorGuidance)
 
                     if isStuck {
                         logger.error("TOOL_FAILURE_LOOP_DETECTED", metadata: [
@@ -2172,7 +2220,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         If you need additional information, call user_collaboration again.
                         If the task is complete, provide a summary of what was accomplished.
                         """
-                    context.internalMessages.append(createSystemReminder(content: collaborationContent, model: model))
+                    /// CRITICAL: Use ephemeralMessages, NOT internalMessages, to prevent accumulation across iterations
+                    context.ephemeralMessages.append(createSystemReminder(content: collaborationContent, model: model))
                 }
 
                 let hasThinkTool = executionResults.contains { $0.toolName == "think" }
@@ -2348,6 +2397,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     }
 
     /// Run autonomous workflow with streaming support for real-time UI updates This method yields ServerOpenAIChatStreamChunk for each LLM token and progress message Enables true streaming UX for autonomous multi-step workflows.
+    /// PHASE 5 UNIFICATION: Thin wrapper that delegates to unified runAutonomousWorkflow
+    /// This maintains the streaming API while using the single unified implementation
     public func runStreamingAutonomousWorkflow(
         conversationId: UUID,
         initialMessage: String,
@@ -2360,7 +2411,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         return AsyncThrowingStream { continuation in
             Task { @MainActor in
-                logger.debug("TASK_ENTRY: runStreamingAutonomousWorkflow Task block started")
+                logger.debug("TASK_ENTRY: runStreamingAutonomousWorkflow (unified wrapper)")
 
                 /// Set up observer for user responses - emit as streaming user messages
                 let responseObserver = ToolNotificationCenter.shared.observeUserResponseReceived { toolCallId, userInput, _ in
@@ -2401,7 +2452,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                 /// Set up observer for user collaboration notifications.
                 let observer = ToolNotificationCenter.shared.observeUserInputRequired { toolCallId, prompt, context, conversationId in
-                    /// FIRST: Emit visible assistant message showing the collaboration request This makes the tool call visible in the UI BEFORE the input prompt appears.
+                    /// FIRST: Emit visible assistant message showing the collaboration request
                     let collaborationMessage = "SUCCESS: User Collaboration: \(prompt)"
 
                     /// PERSIST MESSAGE: Add to conversation so it doesn't disappear after UI refresh.
@@ -2413,15 +2464,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                 })
 
                                 if !isDuplicate {
-                                    /// FEATURE: Pin collaboration message for context persistence
-                                    /// Agents should remember what they asked and what users answered
                                     conversation.messageBus?.addAssistantMessage(
                                         id: UUID(),
                                         content: collaborationMessage,
                                         timestamp: Date(),
                                         isPinned: true
                                     )
-                                    /// MessageBus handles persistence automatically
                                     self.logger.debug("Persisted collaboration message to conversation (PINNED)", metadata: [
                                         "toolCallId": .string(toolCallId),
                                         "conversationId": .string(convId.uuidString)
@@ -2454,7 +2502,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         "message": .string(collaborationMessage)
                     ])
 
-                    /// THEN: Emit custom SSE event for user input required We embed the event as a special marker in the content that the client will parse.
+                    /// THEN: Emit custom SSE event for user input required
                     let userInputEvent: [String: Any] = [
                         "type": "user_input_required",
                         "toolCallId": toolCallId,
@@ -2472,7 +2520,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         eventJSON = "{\"error\": \"Failed to serialize event\"}"
                     }
 
-                    /// Create custom chunk with special marker that client will parse Format: [SAM_EVENT:user_input_required]<JSON>.
+                    /// Create custom chunk with special marker that client will parse
                     let customChunk = ServerOpenAIChatStreamChunk(
                         id: UUID().uuidString,
                         object: "chat.completion.chunk",
@@ -2517,7 +2565,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         eventJSON = "{\"error\": \"Failed to serialize event\"}"
                     }
 
-                    /// Emit SSE event with special marker for ChatWidget to parse.
+                    /// Create custom chunk with special marker.
                     let customChunk = ServerOpenAIChatStreamChunk(
                         id: UUID().uuidString,
                         object: "chat.completion.chunk",
@@ -2538,7 +2586,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     continuation.yield(customChunk)
                     self.logger.debug("Emitted image_display SSE event", metadata: [
                         "toolCallId": .string(toolCallId),
-                        "imageCount": .stringConvertible(imagePaths.count)
+                        "imagePaths": .string(imagePaths.joined(separator: ", "))
                     ])
                 }
 
@@ -2547,901 +2595,33 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     ToolNotificationCenter.shared.removeObserver(observer)
                     ToolNotificationCenter.shared.removeObserver(responseObserver)
                     ToolNotificationCenter.shared.removeObserver(imageObserver)
-
-                    /// PTY sessions persist for conversation lifetime, not workflow lifetime Cleanup happens when conversation is closed or app exits.
                 }
 
                 do {
-                    let workflowStartTime = Date()
-
-                    /// WORKFLOW_START - Comprehensive workflow initialization logging (STREAMING).
-                    logger.debug("WORKFLOW_START_STREAMING", metadata: [
-                        "conversationId": .string(conversationId.uuidString),
-                        "model": .string(model),
-                        "maxIterations": .stringConvertible(maxIterations),
-                        "timestamp": .string(ISO8601DateFormatter().string(from: workflowStartTime))
-                    ])
-
-                    logger.debug("SUCCESS: Starting STREAMING autonomous workflow for conversation \(conversationId.uuidString)")
-
-                    /// Ensure conversation exists - create if needed (API calls may use new UUIDs).
-                    var conversation = conversationManager.conversations.first(where: { $0.id == conversationId })
-                    if conversation == nil {
-                        logger.info("CONVERSATION_CREATION_STREAMING: Creating new conversation for API request", metadata: [
-                            "conversationId": .string(conversationId.uuidString)
-                        ])
-                        let newConv = ConversationModel.withId(conversationId, title: "API Conversation")
-                        conversationManager.conversations.append(newConv)
-                        conversation = newConv
-                        conversationManager.saveConversations()
-                    }
-
-                    /// Add initial user message to conversation ONLY if not already present (prevents duplicate from UI) ChatWidget syncs user message before calling API, so we check first.
-                    if let conversation = conversation {
-                        /// Track if this is a NEW conversation (for conversationId bug investigation).
-                        let isNewConversation = conversation.messages.isEmpty
-                        let messageCount = conversation.messages.count
-                        logger.debug("CONV_DEBUG: conversation.messages.count=\(messageCount), isNewConversation=\(isNewConversation)", metadata: [
-                            "conversationId": .string(conversationId.uuidString),
-                            "messageCount": .stringConvertible(messageCount),
-                            "isNew": .stringConvertible(isNewConversation)
-                        ])
-
-                        let userMessageAlreadyExists = conversation.messages.contains(where: {
-                            $0.isFromUser && $0.content == initialMessage
-                        })
-
-                        if !userMessageAlreadyExists {
-                            conversation.messageBus?.addUserMessage(content: initialMessage)
-                            /// MessageBus handles persistence automatically
-                            logger.debug("SUCCESS: Added initial user message to conversation (not present)")
-                        } else {
-                            logger.debug("SKIPPED: User message already in conversation (from UI sync)")
-                        }
-                    }
-
-                    let requestId = UUID().uuidString
-                    let created = Int(Date().timeIntervalSince1970)
-
-                    /// Retrieve previous GitHub Copilot response ID for session continuity.
-                    var initialStatefulMarker: String?
-
-                    if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                        /// PRIORITY 1: Use persisted marker from conversation object.
-                        if let marker = conversation.lastGitHubCopilotResponseId {
-                            initialStatefulMarker = marker
-                            logger.debug("SUCCESS: Retrieved GitHub Copilot response ID: \(marker.prefix(20))... (streaming)")
-                        }
-                        /// PRIORITY 2: Fallback to last assistant message's marker.
-                        else if let lastAssistantMessage = conversation.messages.last(where: { !$0.isFromUser }),
-                                let responseId = lastAssistantMessage.githubCopilotResponseId {
-                            initialStatefulMarker = responseId
-                            logger.debug("SUCCESS: Retrieved GitHub Copilot response ID from last message: \(responseId.prefix(20))... (streaming fallback)")
-                        } else {
-                            logger.debug("INFO: No previous GitHub Copilot response ID found")
-                        }
-
-                        /// Detect if last workflow is complete (STREAMING) If [WORKFLOW_COMPLETE] was detected in the last message, start in conversational mode.
-                        if let lastAssistantMessage = conversation.messages.last(where: { !$0.isFromUser }) {
-                            let lastContent = lastAssistantMessage.content.lowercased()
-                            if lastContent.contains("[workflow_complete]") || lastContent.contains("workflow_complete") {
-                                logger.info("CONVERSATION_MODE_DETECTED (streaming): Last workflow complete")
-                            } else {
-                                logger.debug("WORKFLOW_MODE_DETECTED (streaming): Continuing previous workflow")
-                            }
-                        }
-                    } else {
-                        logger.warning("WARNING: Conversation not found - cannot retrieve statefulMarker")
-                    }
-
-                    /// Initialize workflow execution context.
-                    var context = WorkflowExecutionContext(
+                    logger.debug("UNIFIED_WRAPPER: Calling runAutonomousWorkflow with streaming continuation")
+                    
+                    /// Call unified workflow function with streaming continuation
+                    /// All workflow logic is now in runAutonomousWorkflow - this is just a thin wrapper
+                    _ = try await self.runAutonomousWorkflow(
                         conversationId: conversationId,
+                        initialMessage: initialMessage,
                         model: model,
-                        maxIterations: self.maxIterations,
                         samConfig: samConfig,
-                        isStreaming: true,
-                        currentStatefulMarker: initialStatefulMarker
+                        onProgress: nil,
+                        streamContinuation: continuation
                     )
-
-                    /// CRITICAL: Create conversation session to prevent data leakage (Task 19)
-                    /// Session snapshots conversation context - even if user switches conversations,
-                    /// this workflow continues with original conversation's context
-                    guard let session = conversationManager.createSession(for: conversationId) else {
-                        logger.error("Failed to create session for streaming workflow")
-                        continuation.finish(throwing: SessionError.conversationNotFound)
-                        return
-                    }
-                    context.session = session
-                    logger.debug("Created session for streaming workflow", metadata: [
-                        "conversationId": .string(conversationId.uuidString)
-                    ])
-
-                    logger.debug("BEFORE_WHILE_LOOP: About to start autonomous loop with \(context.maxIterations) max iterations")
-
-                    /// Autonomous loop - continues until workflow complete or limit hit.
-                    while context.shouldContinue && context.iteration < context.maxIterations {
-                        /// ITERATION_START - Track iteration boundaries and cancellation status (STREAMING).
-                        logger.debug("ITERATION_START_STREAMING", metadata: [
-                            "context.iteration": .stringConvertible(context.iteration + 1),
-                            "maxIterations": .stringConvertible(self.maxIterations),
-                            "cancellationRequested": .stringConvertible(Task.isCancelled),
-                            "toolsExecutedSoFar": .stringConvertible(context.toolsExecutedInWorkflow)
-                        ])
-
-                        /// Check cancellation at start of each iteration.
-                        if isCancellationRequested {
-                            logger.info("WORKFLOW_CANCELLED: Cancellation flag set, exiting workflow")
-                            continuation.finish()
-                            return
-                        }
-                        try Task.checkCancellation()
-
-                        logger.debug("SUCCESS: Streaming iteration \(context.iteration + 1)/\(self.maxIterations), statefulMarker=\(context.currentStatefulMarker != nil ? "present" : "nil")")
-
-                        /// Reset continuation tracking at start of each iteration.
-                        context.useContinuationResponse = false
-                        context.continuationToolCalls = nil
-
-                        /// CRITICAL: Clear ephemeral messages at start of each iteration.
-                        /// This prevents accumulation of status/reminder messages across iterations.
-                        context.ephemeralMessages.removeAll()
-
-                        /// ORCHESTRATOR PATTERN: Add appropriate reminder based on continuation reason
-                        /// From diagram: Every continuation MUST have a reminder message
-                        let incompleteTodos = currentTodoList.filter { $0.status.lowercased() != "completed" }
-                        let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                        
-                        if !incompleteTodos.isEmpty {
-                            /// Case 1: Active todos exist → Add todo reminder
-                            let inProgress = incompleteTodos.filter { $0.status.lowercased() == "in-progress" }
-                            let notStarted = incompleteTodos.filter { $0.status.lowercased() == "not-started" }
-                            
-                            let todoReminderContent = """
-                            <todoList>\(incompleteTodos.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
-                            
-                            \(inProgress.isEmpty ? "" : "In Progress: " + inProgress.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
-                            \(notStarted.isEmpty ? "" : "Not Started: " + notStarted.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
-                            </todoList>
-                            """
-                            
-                            context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
-                            logger.debug("TODO_REMINDER: Added todo list reminder", metadata: [
-                                "incompleteTodos": .stringConvertible(incompleteTodos.count)
-                            ])
-                        } else if enableWorkflowMode && context.iteration > 0 {
-                            /// Case 2: No todos but workflow mode enabled → Add continue reminder
-                            /// (Only add if not first iteration - first iteration is user's message)
-                            let continueReminderContent = "Workflow mode is active. Continue working on the task."
-                            context.ephemeralMessages.append(createSystemReminder(content: continueReminderContent, model: model))
-                            logger.debug("WORKFLOW_REMINDER: Added workflow mode reminder")
-                        }
-
-                        logger.debug("ITERATION_START_STREAMING: Starting iteration \(context.iteration + 1) of \(self.maxIterations)")
-
-                        /// LLM_CALL_START - Track LLM request initiation (STREAMING).
-                        logger.debug("LLM_CALL_START_STREAMING", metadata: [
-                            "context.iteration": .stringConvertible(context.iteration + 1),
-                            "provider": .string(model),
-                            "inputMessageCount": .stringConvertible(context.internalMessages.count),
-                            "ephemeralMessageCount": .stringConvertible(context.ephemeralMessages.count),
-                            "hasStatefulMarker": .stringConvertible(context.currentStatefulMarker != nil),
-                            "hasPendingAutoContinue": .stringConvertible(context.ephemeralMessages.count > 0)
-                        ])
-
-                        /// Apply intelligent context filtering before LLM call (STREAMING) Filter out messages from low-value rounds (all tools failed, errors with no thinking) RE-ENABLED: Testing with fixed tool system.
-                        let filteredMessages = filterInternalMessagesByRoundQuality(
-                            messages: context.internalMessages,
-                            workflowRounds: context.workflowRounds
-                        )
-
-                        /// Combine persistent messages + ephemeral messages for this iteration.
-                        /// Ephemeral messages come AFTER persistent to be most recent in context.
-                        let messagesForLLM = filteredMessages + context.ephemeralMessages
-
-                        logger.debug("DEBUG_BEFORE_LLM_STREAMING: About to call LLM")
-
-                        /// Call LLM and get STREAMING response.
-                        /// RATE LIMIT HANDLING: Retry up to 5 times on rate limit errors invisibly
-                        var llmResponse: LLMResponse
-                        var rateLimitRetryCount = 0
-                        let maxRateLimitRetries = 5
-
-                        while true {
-                            do {
-                                llmResponse = try await self.callLLMStreaming(
-                                    conversationId: conversationId,
-                                    message: context.iteration == 0 ? initialMessage : "Please continue",
-                                    model: model,
-                                    internalMessages: messagesForLLM,
-                                    iteration: context.iteration,
-                                    continuation: continuation,
-                                    requestId: requestId,
-                                    created: created,
-                                    samConfig: samConfig,
-                                    statefulMarker: context.currentStatefulMarker,
-                                    statefulMarkerMessageCount: context.statefulMarkerMessageCount,
-                                    sentInternalMessagesCount: context.sentInternalMessagesCount,
-                                    retrievedMessageIds: &context.retrievedMessageIds
-                                )
-                                break  /// Success - exit retry loop
-                            } catch let error as ProviderError {
-                                if case .rateLimitExceeded = error {
-                                    rateLimitRetryCount += 1
-                                    if rateLimitRetryCount <= maxRateLimitRetries {
-                                        /// Calculate exponential backoff delay
-                                        let backoffDelay = pow(2.0, Double(rateLimitRetryCount)) * 2.0  /// 4s, 8s, 16s, 32s, 64s
-                                        logger.warning("RATE_LIMIT_RETRY_STREAMING: Attempt \(rateLimitRetryCount)/\(maxRateLimitRetries) after \(String(format: "%.1f", backoffDelay))s delay")
-                                        try await Task.sleep(for: .seconds(backoffDelay))
-                                        continue  /// Retry
-                                    } else {
-                                        /// All retries exhausted - show user-friendly message
-                                        logger.error("RATE_LIMIT_EXHAUSTED_STREAMING: All \(maxRateLimitRetries) retries failed")
-                                        throw ProviderError.rateLimitExceeded("The service is busy. Please wait a moment and try again.")
-                                    }
-                                } else {
-                                    throw error  /// Re-throw non-rate-limit errors
-                                }
-                            }
-                        }
-
-                        /// Track how many internal messages we sent in this request (for next iteration).
-                        context.sentInternalMessagesCount = context.internalMessages.count
-
-                        /// Capture raw streaming response so we can detect internal markers BEFORE filtering.
-                        let rawStreamingResponse = llmResponse.content
-
-                        /// Centralized marker processing for streaming responses.
-                        let handled = await processMarkerEvent(
-                            context: &context,
-                            conversationId: conversationId,
-                            rawResponse: rawStreamingResponse,
-                            finishReason: llmResponse.finishReason,
-                            requestId: requestId,
-                            isToolOutput: false,
-                            toolName: nil
-                        )
-                        if handled {
-                            /// Save message BEFORE continuing When handled=true, processMarkerEvent injected a directive and we're about to continue the loop But we must persist the LLM's response (the one that contained the marker) to prevent data loss.
-                            await MainActor.run {
-                                if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                                    if !context.lastResponse.isEmpty {
-                                        let isDuplicate = conversation.messages.contains(where: {
-                                            !$0.isFromUser && $0.content == context.lastResponse
-                                        })
-                                        if !isDuplicate {
-                                            logger.debug("MESSAGE_PERSISTENCE_BEFORE_HANDLED_CONTINUE", metadata: [
-                                                "iteration": .stringConvertible(context.iteration),
-                                                "length": .stringConvertible(context.lastResponse.count)
-                                            ])
-                                            let cleanedResponse = stripSystemReminders(from: context.lastResponse)
-                                            if !cleanedResponse.isEmpty {
-                                                /// REMOVED: Duplicate message creation - MessageBus already created this during streaming
-                                                /// conversation.addMessage(text: cleanedResponse, isUser: false, githubCopilotResponseId: context.currentStatefulMarker)
-                                                /// conversationManager.saveConversations()
-                                                context.finalResponseAddedToConversation = true
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            continue
-                        }
-
-                        /// LLM_CALL_COMPLETE - Track LLM response and finish reason (STREAMING).
-                        logger.debug("LLM_CALL_COMPLETE_STREAMING", metadata: [
-                            "context.iteration": .stringConvertible(context.iteration + 1),
-                            "finishReason": .string(llmResponse.finishReason),
-                            "hasToolCalls": .stringConvertible(llmResponse.toolCalls != nil && !llmResponse.toolCalls!.isEmpty),
-                            "toolCallCount": .stringConvertible(llmResponse.toolCalls?.count ?? 0),
-                            "responseLength": .stringConvertible(llmResponse.content.count)
-                        ])
-
-                        /// Check cancellation after LLM call.
-                        try Task.checkCancellation()
-
-                        logger.debug("DEBUG_MISSING_RESPONSE: LLM response received from callLLMStreaming", metadata: [
-                            "context.iteration": .stringConvertible(context.iteration),
-                            "contentLength": .stringConvertible(context.lastResponse.count),
-                            "contentPreview": .string(String(context.lastResponse.safePrefix(150))),
-                            "finishReason": .string(context.lastFinishReason),
-                            "toolCallsCount": .stringConvertible(llmResponse.toolCalls?.count ?? 0)
-                        ])
-
-                        /// Capture statefulMarker for next iteration (GitHub Copilot session continuity).
-                        if let marker = llmResponse.statefulMarker {
-                            context.currentStatefulMarker = marker
-                            /// Capture message count for delta-only slicing in next iteration
-                            /// This avoids timing dependencies - we know exactly where to slice from
-                            if let conversation = await MainActor.run(body: {
-                                conversationManager.conversations.first(where: { $0.id == conversationId })
-                            }) {
-                                context.statefulMarkerMessageCount = conversation.messages.count
-                                logger.debug("BILLING_DEBUG: Captured statefulMarker from LLM response: \(marker.prefix(20))... at message count \(conversation.messages.count)")
-                            } else {
-                                logger.debug("BILLING_DEBUG: Captured statefulMarker from LLM response: \(marker.prefix(20))...")
-                            }
-                            logger.debug("SUCCESS: Updated statefulMarker for next context.iteration: \(marker.prefix(20))...")
-                        } else {
-                            logger.warning("BILLING_WARNING: LLM response had NO statefulMarker!")
-                        }
-
-                        /// processMarkerEvent() already handled all phase transitions All planning/execution logic has been moved to processMarkerEvent() to prevent duplication Check if workflow is complete.
-                        if !context.shouldContinue {
-                            logger.info("WORKFLOW_COMPLETE_STREAMING", metadata: [
-                                "conversationId": .string(conversationId.uuidString),
-                                "iterations": .stringConvertible(context.iteration + 1)
-                            ])
-                            completeIteration(context: &context, responseStatus: "workflow_complete_phase_streaming")
-                            break
-                        }
-
-                        logger.debug("SUCCESS: LLM streaming response complete, finish_reason=\(context.lastFinishReason)")
-
-                        /// Add LLM's response content to conversation (matches non-streaming behavior) Content should ALWAYS be added if non-empty - prevents missing chapter content.
-                        logger.debug("DEBUG_MISSING_RESPONSE: About to attempt adding response to conversation", metadata: [
-                            "context.iteration": .stringConvertible(context.iteration),
-                            "lastResponseLength": .stringConvertible(context.lastResponse.count),
-                            "lastResponsePreview": .string(String(context.lastResponse.safePrefix(100))),
-                            "finishReason": .string(context.lastFinishReason)
-                        ])
-
-                        // MARK: - completed) - Content streams to user but NEVER gets saved to conversation - User sees content during stream, but it vanishes after! NEW BEHAVIOR (FIXED): - Save content if it's substantial (>50 chars), regardless of tool_calls - Prevents losing real content when agent delivers + uses tools together - Still skip pure "thinking" messages (< 50 chars like "SUCCESS: Thinking...")
-                        await MainActor.run {
-                            if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                                /// Always save messages that have a githubCopilotResponseId, regardless of length These messages are checkpoints for billing session continuity - without them, message slicing fails.
-                                let hasStatefulMarker = context.currentStatefulMarker != nil
-                                let isSubstantial = context.lastResponse.count > 50
-
-                                /// TOOL PROGRESS FILTER: Never save streaming tool progress messages, even with statefulMarker These are just UI progress indicators ("Running terminal command", "SUCCESS: Getting..."), not real content.
-                                let isToolProgressMessage = context.lastResponse.hasPrefix("Running") ||
-                                                           context.lastResponse.hasPrefix("SUCCESS:") ||
-                                                           context.lastResponse == "Running terminal command" ||
-                                                           context.lastResponse.contains("Getting terminal history")
-
-                                /// Save if: (1) NOT tool progress, AND ((2) has tool calls OR (3) has statefulMarker OR (4) substantial content).
-                                let hasToolCalls = llmResponse.toolCalls != nil && !llmResponse.toolCalls!.isEmpty
-                                if (hasToolCalls || (!context.lastResponse.isEmpty && !isToolProgressMessage && (hasStatefulMarker || isSubstantial))) {
-                                    logger.debug("DEBUG_WORKFLOW_STREAMING: iteration=\(context.iteration), toolsExecutedInWorkflow=\(context.toolsExecutedInWorkflow), lastResponse.count=\(context.lastResponse.count), lastFinishReason=\(context.lastFinishReason), hasStatefulMarker=\(hasStatefulMarker), hasToolCalls=\(hasToolCalls)")
-
-                                    /// Check for duplicate before adding (prevents duplicate thinking messages).
-                                    let isDuplicate = conversation.messages.contains(where: {
-                                        !$0.isFromUser && $0.content == context.lastResponse
-                                    })
-
-                                    if !isDuplicate {
-                                        logger.debug("DEBUG_MISSING_RESPONSE: Adding response to conversation (finish_reason=\(context.lastFinishReason), hasToolCalls=\(hasToolCalls))")
-                                        logger.debug("BILLING_DEBUG: About to add message with githubCopilotResponseId=\(context.currentStatefulMarker?.prefix(20) ?? "nil"), length=\(context.lastResponse.count)")
-                                        let cleanedResponse = stripSystemReminders(from: context.lastResponse)
-                                        if !cleanedResponse.isEmpty || hasToolCalls {
-                                            /// REMOVED: Duplicate message creation - MessageBus already created this during streaming
-                                            /// conversation.addMessage(text: cleanedResponse, isUser: false, githubCopilotResponseId: context.currentStatefulMarker)
-                                            /// PERSISTENCE FIX: Save immediately after adding message to prevent data loss.
-                                            /// conversationManager.saveConversations()
-                                            context.finalResponseAddedToConversation = true
-                                        }
-                                        logger.debug("DEBUG_MISSING_RESPONSE: Response added successfully to conversation", metadata: [
-                                            "messageCount": .stringConvertible(conversation.messages.count)
-                                        ])
-                                        if let marker = context.currentStatefulMarker {
-                                            logger.debug("BILLING_SUCCESS: Added LLM response to conversation with githubCopilotResponseId: \(marker.prefix(20))...")
-                                            logger.debug("SUCCESS: Added LLM response content to conversation with GitHub Copilot response ID: \(marker.prefix(20))... (\(context.lastResponse.count) chars)")
-                                        } else {
-                                            logger.warning("BILLING_WARNING: Added message WITHOUT githubCopilotResponseId (context.currentStatefulMarker was NIL)")
-                                            logger.debug("SUCCESS: Added LLM response content to conversation (\(context.lastResponse.count) chars)")
-                                        }
-                                    } else {
-                                        logger.warning("DEBUG_MISSING_RESPONSE: SKIPPED - Duplicate response detected in conversation")
-                                        logger.debug("SKIPPED: Duplicate LLM response content already in conversation")
-                                    }
-                                } else if context.lastResponse.count <= 5 && !hasToolCalls {
-                                    /// Only skip VERY short responses WITHOUT tool calls (likely thinking indicators or single characters).
-                                    logger.debug("DEBUG_MISSING_RESPONSE: SKIPPED - Response too short (\(context.lastResponse.count) chars) with no tool calls, likely just thinking indicator")
-                                } else {
-                                    logger.warning("DEBUG_MISSING_RESPONSE: SKIPPED - context.lastResponse is empty")
-                                }
-
-                                /// Always preserve githubCopilotResponseId for session continuity Without this, checkpoint slicing fails → multiple premium charges.
-                                if let marker = context.currentStatefulMarker {
-                                    conversation.lastGitHubCopilotResponseId = marker
-                                    conversationManager.saveConversations()
-                                    logger.debug("BILLING_FIX: Saved lastGitHubCopilotResponseId to conversation: \(marker.prefix(20))...")
-                                }
-                            } else {
-                                logger.error("DEBUG_MISSING_RESPONSE: ERROR - Could not find conversation \(conversationId)")
-                                logger.warning("WARNING: Could not find conversation \(conversationId) to add LLM response")
-                            }
-                        }
-
-                        /// Check finish_reason for continuation signal.
-                        if context.lastFinishReason != "tool_calls" {
-                            /// ORCHESTRATOR FLOW (from orchestrator.txt diagram):
-                            /// 1. Check for explicit workflow complete signal
-                            /// 2. Check for explicit continue signal
-                            /// 3. Check for active todos → Continue
-                            /// 4. Check for workflow switch enabled → Continue (fallback)
-                            /// 5. Otherwise → Natural stop
-
-                            /// Check if agent signaled workflow completion.
-                            if context.detectedWorkflowCompleteMarker {
-                                logger.info("WORKFLOW_COMPLETE_STREAMING: Agent signaled [WORKFLOW_COMPLETE] - terminating")
-
-                                /// Send final done chunk.
-                                let doneChunk = ServerOpenAIChatStreamChunk(
-                                    id: requestId,
-                                    object: "chat.completion.chunk",
-                                    created: created,
-                                    model: model,
-                                    choices: [OpenAIChatStreamChoice(
-                                        index: 0,
-                                        delta: OpenAIChatDelta(content: ""),
-                                        finishReason: "stop"
-                                    )]
-                                )
-                                continuation.yield(doneChunk)
-                                continuation.finish()
-                                break
-                            }
-
-                            /// Check if agent signaled continue (simulates user typing "continue") This is how automated workflow continues without user input.
-                            if context.detectedContinueMarker {
-                                logger.info("WORKFLOW_CONTINUING_STREAMING: [CONTINUE] signal detected", metadata: [
-                                    "iteration": .stringConvertible(context.iteration)
-                                ])
-                                completeIteration(context: &context, responseStatus: "continue_signal_streaming")
-                                /// Iteration will be incremented at bottom of loop - don't increment here
-                                continue
-                            }
-
-                            /// Natural termination (no tools, no signals)
-                            /// ORCHESTRATOR FLOW: Check for continuation conditions
-                            /// 1. Active todos exist → Continue
-                            /// 2. Workflow switch enabled → Continue (fallback)
-                            /// 3. Otherwise → Natural stop
-                            
-                            let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
-                            
-                            if hasIncompleteTodos {
-                                logger.debug("WORKFLOW_CONTINUING_STREAMING: Active todos detected", metadata: [
-                                    "incompleteTodos": .stringConvertible(currentTodoList.filter { $0.status.lowercased() != "completed" }.count),
-                                    "iteration": .stringConvertible(context.iteration)
-                                ])
-                                completeIteration(context: &context, responseStatus: "auto_continue_todos_streaming")
-                                /// Iteration will be incremented at bottom of loop - don't increment here
-                                continue
-                            }
-                            
-                            let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                            if enableWorkflowMode {
-                                logger.debug("WORKFLOW_CONTINUING_STREAMING: Workflow mode enabled", metadata: [
-                                    "iteration": .stringConvertible(context.iteration)
-                                ])
-                                completeIteration(context: &context, responseStatus: "auto_continue_workflow_streaming")
-                                /// Iteration will be incremented at bottom of loop - don't increment here
-                                continue
-                            }
-
-                            logger.info("WORKFLOW_COMPLETE_STREAMING: Natural termination", metadata: [
-                                "iteration": .stringConvertible(context.iteration)
-                            ])
-
-                            /// Send final done chunk.
-                            let doneChunk = ServerOpenAIChatStreamChunk(
-                                id: requestId,
-                                object: "chat.completion.chunk",
-                                created: created,
-                                model: model,
-                                choices: [OpenAIChatStreamChoice(
-                                    index: 0,
-                                    delta: OpenAIChatDelta(content: ""),
-                                    finishReason: "stop"
-                                )]
-                            )
-                            continuation.yield(doneChunk)
-                            continuation.finish()
-                            break
-                        }
-
-                        /// Parse and validate tool calls Use continuationToolCalls if we got work tools from continuation, synthetic tool, or llmResponse.toolCalls.
-                        let toolCalls: [ToolCall]
-                        if context.useContinuationResponse {
-                            guard let calls = context.continuationToolCalls, !calls.isEmpty else {
-                                logger.warning("WARNING: context.useContinuationResponse=true but context.continuationToolCalls is empty")
-                                continuation.finish()
-                                return
-                            }
-                            toolCalls = calls
-                        } else {
-                            guard let calls = llmResponse.toolCalls, !calls.isEmpty else {
-                                logger.warning("WARNING: finish_reason=tool_calls but no actual tool calls found")
-                                continuation.finish()
-                                return
-                            }
-                            toolCalls = calls
-                        }
-
-                        /// TOOL_CALLS_PARSED - Track tool call extraction (STREAMING).
-                        logger.debug("TOOL_CALLS_PARSED_STREAMING", metadata: [
-                            "context.iteration": .stringConvertible(context.iteration + 1),
-                            "toolCallCount": .stringConvertible(toolCalls.count),
-                            "toolNames": .string(toolCalls.map { $0.name }.joined(separator: ", ")),
-                            "usedContinuationResponse": .stringConvertible(context.useContinuationResponse)
-                        ])
-
-                        /// ALWAYS yield content chunk when tool_calls are present Even if content is empty - this creates the assistant message that tool cards attach to GitHub Copilot sends content as complete message when tool_calls are present, NOT as delta chunks during streaming.
-                        logger.debug("CONTENT_WITH_TOOLS: Yielding \(context.lastResponse.count) chars of content before tool execution")
-
-                        let contentChunk = ServerOpenAIChatStreamChunk(
-                            id: requestId,
-                            object: "chat.completion.chunk",
-                            created: created,
-                            model: model,
-                            choices: [OpenAIChatStreamChoice(
-                                index: 0,
-                                delta: OpenAIChatDelta(content: context.lastResponse.isEmpty ? "" : context.lastResponse),
-                                finishReason: nil
-                            )]
-                        )
-                        continuation.yield(contentChunk)
-
-                        /// TOOL_EXECUTION_BATCH_START - Track start of tool execution batch (STREAMING).
-                        logger.debug("TOOL_EXECUTION_BATCH_START_STREAMING", metadata: [
-                            "context.iteration": .stringConvertible(context.iteration + 1),
-                            "toolCount": .stringConvertible(toolCalls.count),
-                            "toolNames": .string(toolCalls.map { $0.name }.joined(separator: ", "))
-                        ])
-
-                        logger.debug("SUCCESS: Found \(toolCalls.count) tool calls to execute")
-
-                        // MARK: - Track whether tools have been executed in this workflow
-                        context.toolsExecutedInWorkflow = true
-
-                        /// PLANNING LOOP DETECTION (STREAMING): Check if ANY work tools were called
-                        /// If only planning tools (think, memory_operations with manage_todos) were called, don't reset counters
-                        let workToolsCalled = toolCalls.filter { AgentOrchestrator.isWorkToolCall($0.name, arguments: $0.arguments) }
-                        let onlyPlanningTools = workToolsCalled.isEmpty && !toolCalls.isEmpty
-
-                        if onlyPlanningTools {
-                            /// Agent called tools but NONE were work tools - this is a planning loop
-                            context.planningOnlyIterations += 1
-                            let toolNames = toolCalls.map { $0.name }.joined(separator: ", ")
-                            logger.warning("PLANNING_LOOP_DETECTED_STREAMING", metadata: [
-                                "iteration": .stringConvertible(context.iteration),
-                                "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations),
-                                "toolsCalled": .string(toolNames),
-                                "message": .string("Only planning tools called - NOT resetting autoContinueAttempts")
-                            ])
-
-                            /// CRITICAL FIX: Inject planning loop intervention even without [CONTINUE] marker
-                            /// Claude models often don't emit [CONTINUE] but keep calling planning tools in a loop
-                            /// If planningOnlyIterations > 3, inject intervention to break the loop
-                            if context.planningOnlyIterations > 3 {
-                                logger.warning("PLANNING_LOOP_INTERVENTION_STREAMING: Agent stuck in planning loop - injecting intervention", metadata: [
-                                    "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations)
-                                ])
-
-                                let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                                let injected = await injectAutoContinueIfTodosIncomplete(
-                                    context: &context,
-                                    conversationId: conversationId,
-                                    model: model,
-                                    enableWorkflowMode: enableWorkflowMode
-                                )
-
-                                if injected {
-                                    logger.info("PLANNING_LOOP_INTERVENTION_INJECTED_STREAMING: Intervention injected to break Claude planning loop", metadata: [
-                                        "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations),
-                                        "autoContinueAttempts": .stringConvertible(context.autoContinueAttempts)
-                                    ])
-                                }
-                            }
-                            /// DO NOT reset autoContinueAttempts - let it escalate
-                        } else if !workToolsCalled.isEmpty {
-                            /// Agent called at least one WORK tool - real progress is being made
-                            context.planningOnlyIterations = 0
-                            context.autoContinueAttempts = 0
-                            let workToolNames = workToolsCalled.map { $0.name }.joined(separator: ", ")
-                            logger.debug("WORK_TOOL_EXECUTED_STREAMING", metadata: [
-                                "iteration": .stringConvertible(context.iteration),
-                                "workTools": .string(workToolNames),
-                                "message": .string("Work tools called - resetting planningOnlyIterations and autoContinueAttempts")
-                            ])
-                        }
-
-                        /// End the current message (assistant's response with tool calls).
-                        let finishChunk = ServerOpenAIChatStreamChunk(
-                            id: requestId,
-                            object: "chat.completion.chunk",
-                            created: created,
-                            model: model,
-                            choices: [OpenAIChatStreamChoice(
-                                index: 0,
-                                delta: OpenAIChatDelta(content: nil),
-                                finishReason: "stop"
-                            )]
-                        )
-                        continuation.yield(finishChunk)
-
-                        /// Execute tools and update internal messages Check cancellation before tool execution.
-                        try Task.checkCancellation()
-
-                        /// Pass continuation to yield progress chunks during tool execution This enables real-time streaming of tool progress instead of batching after completion.
-                        var executionResults: [ToolExecution]
-                        if !toolCalls.isEmpty {
-                            executionResults = try await self.executeToolCallsStreaming(
-                                toolCalls,
-                                iteration: context.iteration,
-                                continuation: continuation,
-                                requestId: requestId,
-                                created: created,
-                                model: model,
-                                conversationId: context.session?.conversationId
-                            )
-                        } else {
-                            /// All tools were blocked/filtered.
-                            executionResults = []
-                        }
-
-                        /// TOOL_EXECUTION_BATCH_COMPLETE - Track completion of tool execution batch (STREAMING).
-                        let successfulTools = executionResults.filter { $0.success }.count
-                        let failedTools = executionResults.count - successfulTools
-                        logger.debug("TOOL_EXECUTION_BATCH_COMPLETE_STREAMING", metadata: [
-                            "context.iteration": .stringConvertible(context.iteration + 1),
-                            "totalTools": .stringConvertible(executionResults.count),
-                            "successfulTools": .stringConvertible(successfulTools),
-                            "failedTools": .stringConvertible(failedTools)
-                        ])
-
-                        /// ERROR ADAPTATION (STREAMING PATH): If tools failed, inject guidance
-                        /// Agent Loop Escape - Track failures and provide escalating guidance
-                        if failedTools > 0 {
-                            let failedToolDetails = executionResults.filter { !$0.success }
-                                .map { "\($0.toolName): \($0.result)" }
-                                .joined(separator: "\n")
-
-                            /// Track tool failures to detect stuck loops
-                            for execution in executionResults where !execution.success {
-                                let toolName = execution.toolName
-                                if let existing = context.toolFailureTracking[toolName] {
-                                    if existing.iteration == context.iteration - 1 {
-                                        context.toolFailureTracking[toolName] = (context.iteration, existing.failureCount + 1)
-                                    } else {
-                                        context.toolFailureTracking[toolName] = (context.iteration, 1)
-                                    }
-                                } else {
-                                    context.toolFailureTracking[toolName] = (context.iteration, 1)
-                                }
-                            }
-
-                            let stuckTools = context.toolFailureTracking.filter { $0.value.failureCount >= 3 }
-                            let isStuck = !stuckTools.isEmpty
-
-                            let errorGuidanceContent: String
-                            if isStuck {
-                                let stuckToolNames = stuckTools.map { $0.key }.joined(separator: ", ")
-                                context.hasSeenStopStatusGuidance = true
-                                errorGuidanceContent = """
-                                CRITICAL: TOOL FAILURE LOOP DETECTED
-
-                                The following tool(s) have failed 3+ consecutive times:
-                                \(stuckToolNames)
-
-                                \(failedTools) tool(s) failed in this iteration:
-                                \(failedToolDetails)
-
-                                YOU MUST TAKE DIFFERENT ACTION:
-                                1. DO NOT retry the same tool with the same parameters
-                                2. DO NOT continue if you cannot fix the problem
-                                3. You have TWO options:
-
-                                OPTION A: Try a completely different approach
-                                - Use a different tool
-                                - Change your strategy entirely
-                                - Break the problem down differently
-
-                                OPTION B: If you cannot proceed, signal stop
-                                - Emit: {"status": "stop"}
-                                - I will gracefully end the workflow
-                                - Explain to the user what you tried and why you're stuck
-
-                                Use the think tool NOW to decide which option to take.
-                                """
-                            } else if !context.hasSeenStopStatusGuidance {
-                                context.hasSeenStopStatusGuidance = true
-                                errorGuidanceContent = """
-                                TOOL ERROR - THINK AND ADAPT
-
-                                \(failedTools) tool(s) failed:
-                                \(failedToolDetails)
-
-                                STOP and THINK:
-                                1. Why did the tool fail? (Read the error message carefully)
-                                2. What parameter should you change?
-                                3. Should you try a different tool instead?
-                                4. Is this error unrecoverable?
-
-                                DO NOT retry the same tool call without changing something.
-
-                                If you cannot proceed after trying alternatives, emit: {"status": "stop"}
-
-                                Use the think tool now to plan your adaptation, OR signal stop if truly stuck.
-                                """
-                            } else {
-                                errorGuidanceContent = """
-                                TOOL ERROR - ADAPT YOUR APPROACH
-
-                                \(failedTools) tool(s) failed:
-                                \(failedToolDetails)
-
-                                You must either:
-                                1. Try a different approach (different tool or parameters)
-                                2. Signal {"status": "stop"} if you cannot proceed
-
-                                DO NOT retry the same failed operation.
-                                """
-                            }
-
-                            /// VS CODE COPILOT PATTERN: Use XML tags for ALL models
-                            /// Send as user message to avoid consecutive assistant messages that violate Claude API
-                            let wrappedGuidance = "<system-reminder>\n\(errorGuidanceContent)\n</system-reminder>"
-                            let errorGuidance = OpenAIChatMessage(role: "user", content: wrappedGuidance)
-                            context.internalMessages.append(errorGuidance)
-
-                            if isStuck {
-                                logger.error("TOOL_FAILURE_LOOP_DETECTED_STREAMING", metadata: [
-                                    "stuckTools": .string(stuckTools.map { "\($0.key):\($0.value.failureCount)" }.joined(separator: ", "))
-                                ])
-                            } else {
-                                logger.warning("ERROR_ADAPTATION_INJECTED_STREAMING: Added guidance for \(failedTools) failed tools")
-                            }
-                        }
-
-                        /// Add assistant message with tool calls to internal tracking.
-                        let openAIToolCalls = toolCalls.map { toolCall -> OpenAIToolCall in
-                            let argsString: String
-                            if let jsonData = try? JSONSerialization.data(withJSONObject: toolCall.arguments),
-                               let jsonString = String(data: jsonData, encoding: .utf8) {
-                                argsString = jsonString
-                            } else {
-                                argsString = "{}"
-                            }
-
-                            return OpenAIToolCall(
-                                id: toolCall.id,
-                                type: "function",
-                                function: OpenAIFunctionCall(name: toolCall.name, arguments: argsString)
-                            )
-                        }
-
-                        context.internalMessages.append(OpenAIChatMessage(
-                            role: "assistant",
-                            content: context.lastResponse,
-                            toolCalls: openAIToolCalls
-                        ))
-
-                        /// Add tool result messages (with size optimization for large results)
-                        for execution in executionResults {
-                            let processedContent = toolResultStorage.processToolResult(
-                                toolCallId: execution.toolCallId,
-                                content: execution.result,
-                                conversationId: conversationId
-                            )
-
-                            context.internalMessages.append(OpenAIChatMessage(
-                                role: "tool",
-                                content: processedContent,
-                                toolCallId: execution.toolCallId
-                            ))
-                        }
-
-                        /// REMOVED: Duplicate tool message persistence
-                        /// Tool messages are already created via MessageBus in callLLMStreaming (line ~4740)
-                        /// This legacy code was creating duplicates: 2x messages, 2x disk writes, 2x UI updates
-                        /// Removing this section restores streaming performance
-
-                        /// --- MARKER DETECTION INSIDE TOOL OUTPUTS (STREAMING) --- Detect markers inside tool outputs and promote them into the workflow context.
-                        var toolEmittedPlanningHandledStreaming = false
-                        for execution in executionResults {
-                            let toolMarkers = detectMarkers(in: execution.result)
-                            if toolMarkers.detectedWorkflowComplete {
-                                logger.debug("MARKER_DETECTED_IN_TOOL_RESULT_STREAMING", metadata: [
-                                    "conversationId": .string(conversationId.uuidString),
-                                    "tool": .string(execution.toolName),
-                                    "workflow_complete": .stringConvertible(toolMarkers.detectedWorkflowComplete),
-                                    "matched_pattern": .string(toolMarkers.matchedPattern ?? "none"),
-                                    "matched_snippet": .string(toolMarkers.matchedSnippet ?? "")
-                                ])
-                            }
-
-                            if toolMarkers.detectedWorkflowComplete {
-                                logger.info("WORKFLOW_COMPLETE_MARKER_IN_TOOL_STREAMING: Detected workflow complete in tool output - marking workflow complete")
-                                context.detectedWorkflowCompleteMarker = true
-                            }
-                        }
-
-                        /// Capture thinking steps from think tool results (STREAMING PATH).
-                        if let thinkingSteps = parseThinkingSteps(from: executionResults) {
-                            context.currentRoundThinkingSteps = thinkingSteps
-                            logger.debug("THINKING_CAPTURED_STREAMING", metadata: [
-                                "iteration": .stringConvertible(context.iteration),
-                                "stepsCount": .stringConvertible(thinkingSteps.count)
-                            ])
-                        }
-
-                        /// Capture structured thinking for transparency and debugging (STREAMING PATH).
-                        if let structuredThinking = captureStructuredThinking(
-                            llmResponse: context.currentRoundLLMResponse,
-                            executionResults: executionResults,
-                            model: context.model
-                        ) {
-                            context.currentRoundStructuredThinking = structuredThinking
-                            logger.debug("STRUCTURED_THINKING_CAPTURED_STREAMING", metadata: [
-                                "iteration": .stringConvertible(context.iteration),
-                                "thinkingSteps": .stringConvertible(structuredThinking.count),
-                                "sources": .string(structuredThinking.map { $0.metadata["source"] ?? "unknown" }.joined(separator: ", "))
-                            ])
-                        }
-
-                        /// Check for todo management tool execution.                        /// Update todo list state if todo_operations was called.
-                        for execution in executionResults {
-                            /// Support todo_operations, legacy manage_todo_list, and memory_operations with manage_todos.
-                            if execution.toolName == "todo_operations" || execution.toolName == "manage_todo_list" || execution.toolName == "memory_operations" {
-                                logger.debug("TODO_EXECUTION: todo management tool detected (name: \(execution.toolName)), reading current state")
-
-                                if let readResult = await conversationManager.executeMCPTool(
-                                    name: "todo_operations",
-                                    parameters: ["operation": "read"],
-                                    conversationId: context.session?.conversationId,
-                                    isExternalAPICall: self.isExternalAPICall
-                                ) {
-                                    let parsedTodos = parseTodoList(from: readResult.output.content)
-                                    currentTodoList = parsedTodos
-                                    logger.debug("TODO_EXECUTION: Updated current todo list: \(currentTodoList.count) items")
-                                }
-                                break
-                            }
-                        }
-
-                        /// Check cancellation at end of iteration before continuing to next
-                        try Task.checkCancellation()
-
-                        context.iteration += 1
-                        self.updateCurrentIteration(context.iteration)
-                    }
-
-                    /// Check why loop exited and log appropriate message
-                    if context.iteration >= context.maxIterations {
-                        logger.warning("WARNING: Hit maxIterations", metadata: [
-                            "actualIterations": .stringConvertible(context.iteration),
-                            "maxIterations": .stringConvertible(context.maxIterations)
-                        ])
-                        let warningChunk = ServerOpenAIChatStreamChunk(
-                            id: requestId,
-                            object: "chat.completion.chunk",
-                            created: created,
-                            model: model,
-                            choices: [OpenAIChatStreamChoice(
-                                index: 0,
-                                delta: OpenAIChatDelta(content: "\n\nWARNING: Reached maximum iterations (\(context.iteration))\n\n"),
-                                finishReason: "length"
-                            )]
-                        )
-                        continuation.yield(warningChunk)
-                    } else {
-                        logger.info("WORKFLOW_COMPLETE_STREAMING: Loop exited naturally", metadata: [
-                            "actualIterations": .stringConvertible(context.iteration),
-                            "maxIterations": .stringConvertible(context.maxIterations),
-                            "reason": .string(context.shouldContinue ? "unknown" : "shouldContinue=false")
-                        ])
-                    }
+                    
+                    /// Finish the stream when workflow completes
                     continuation.finish()
-
+                    logger.debug("UNIFIED_WRAPPER: Workflow completed, stream finished")
+                    
                 } catch {
                     logger.error("ERROR: Streaming autonomous workflow failed: \(error)")
                     continuation.finish(throwing: error)
                 }
             }
         }
+
     }
 
     // MARK: - Helper Methods
