@@ -41,7 +41,7 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     • operation: REQUIRED - operation type (see above)
     • query: Search query (retrieve/web_search/serpapi)
     • url: Target URL (scrape/fetch) - MUST use HTTPS protocol
-    • engine: Search engine (serpapi) - google/google_ai_overview/bing/amazon/ebay/walmart/tripadvisor/yelp
+    • engine: Search engine (serpapi) - google/bing/amazon/ebay/walmart/tripadvisor/yelp
     • location: Search location (serpapi, optional)
 
     IMPORTANT: All URLs must use HTTPS (not HTTP) for security. HTTP URLs will be automatically converted to HTTPS.
@@ -106,9 +106,9 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         if isSerpAPIAvailable() {
             baseParams["engine"] = MCPToolParameter(
                 type: .string,
-                description: "Search engine for serpapi operation: google, google_ai_overview (AI-powered overview), bing, amazon, ebay, walmart, tripadvisor, yelp",
+                description: "Search engine for serpapi operation: google, bing, amazon, ebay, walmart, tripadvisor, yelp",
                 required: false,
-                enumValues: ["google", "google_ai_overview", "bing", "amazon", "ebay", "walmart", "tripadvisor", "yelp"]
+                enumValues: ["google", "bing", "amazon", "ebay", "walmart", "tripadvisor", "yelp"]
             )
             baseParams["location"] = MCPToolParameter(
                 type: .string,
@@ -639,7 +639,7 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                     content: """
                     {
                         "error": true,
-                        "message": "Invalid engine '\(engineString)'. Valid engines: google, google_ai_overview, bing, amazon, ebay, walmart, tripadvisor, yelp"
+                        "message": "Invalid engine '\(engineString)'. Valid engines: google, bing, amazon, ebay, walmart, tripadvisor, yelp"
                     }
                     """,
                     mimeType: "application/json"
@@ -648,8 +648,16 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         }
 
         /// Parse optional parameters.
-        let location = parameters["location"] as? String
+        var location = parameters["location"] as? String
         let numResults = parameters["num_results"] as? Int ?? 10
+
+        /// Auto-fill location from user preferences for Yelp if not provided
+        if engine == .yelp && location == nil {
+            if let userLocation = LocationManager.shared.getEffectiveLocation() {
+                location = userLocation
+                logger.info("Auto-filled Yelp location from user preferences: \(userLocation)")
+            }
+        }
 
         logger.info("SerpAPI search: query='\(query)', engine=\(engine.displayName)")
 

@@ -142,6 +142,80 @@ See tool source files for complete parameter specifications:
 
 **SerpAPI engines:** google, bing, amazon, ebay, walmart, tripadvisor, yelp
 
+**Working engines:** 5/7 (Google, Bing, Amazon, eBay, TripAdvisor)  
+**Limited/Broken:** Walmart (empty results), Yelp (requires location)
+
+#### SerpAPI Engine Requirements
+
+**Google (`google`):**
+- Query parameter: `q`
+- Location: Optional (city/state format)
+- Results: Fixed count (~10 per page)
+- **Status:** ✅ Working
+
+**Bing (`bing`):**
+- Query parameter: `q`
+- Location: Optional (city/state format)
+- Results: Fixed count per page
+- **Status:** ✅ Working
+
+**Amazon (`amazon`):**
+- Query parameter: `k` (keyword, not `q` or `query`)
+- Location: Not supported (uses domain instead)
+- **Required:** Location NOT included
+- Default domain: amazon.com
+- Results: Fixed count per page
+- **Status:** ✅ Working (fixed in v16)
+
+**eBay (`ebay`):**
+- Query parameter: `_nkw` (not `q`)
+- Location: Not supported
+- Results: Fixed count per page
+- **Status:** ✅ Working
+
+**Walmart (`walmart`):**
+- Query parameter: `query` (not `q`)
+- Location: Not supported (uses store_id)
+- Link field: `product_page_url` (not `link`)
+- Price: Nested in `primary_offer.offer_price`
+- Results: Product listings with prices, ratings, reviews
+- **Status:** ✅ WORKING (fixed product_page_url + price parsing)
+
+**TripAdvisor (`tripadvisor`):**
+- Query parameter: `q`
+- Location: GPS coordinates only (lat/lon)
+- Results: Supports `limit` parameter
+- **Status:** ✅ Working
+
+**Yelp (`yelp`):**
+- Query parameter: `find_desc` (not `q`)
+- **Location: REQUIRED** via `find_loc`
+- **Auto-filled:** If no location provided, uses user's location from preferences
+- Must include location (city, state, zip, or address)
+- Results: Fixed count per page
+- **Status:** ✅ Correct (auto-uses user location if not specified)
+
+**Example usage:**
+```json
+{
+  "tool": "web_operations",
+  "operation": "serpapi",
+  "engine": "amazon",
+  "query": "laptop",
+  "num_results": 10
+}
+```
+
+```json
+{
+  "tool": "web_operations",
+  "operation": "serpapi",
+  "engine": "yelp",
+  "query": "pizza",
+  "location": "New York, NY"
+}
+```
+
 ---
 
 ### document_operations
