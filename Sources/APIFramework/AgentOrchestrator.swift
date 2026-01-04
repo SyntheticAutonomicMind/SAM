@@ -1512,66 +1512,72 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
             /// CRITICAL: Clear ephemeral messages at start of each iteration.
             /// This prevents accumulation of status/reminder messages across iterations.
+            /// CRITICAL FIX: Preserve ONLY ephemeral messages that should persist across iterations
+            /// Prevents infinite accumulation while maintaining necessary continuation context
+            ///
+            /// PRESERVE:
+            /// - TOOL_RESULT_CHUNK: Agent needs to see chunks from read_tool_result pagination
+            /// - TODO_REMINDER: Continuation context for incomplete tasks
+            /// - AUTO_CONTINUE: Workflow mode continuation signals
+            ///
+            /// EXCLUDE:
+            /// - ITERATION STATUS: Re-added fresh each iteration (not persistent)
+            /// - Completed tool results: Agent already processed them (sent in internalMessages)
+            ///
+            /// This prevents the ephemeral accumulation bug that causes response loops
+            let preservedMessages = context.ephemeralMessages.filter { message in
+                guard let content = message.content else { return false }
+                
+                /// Keep pagination chunks (agent reading large tool results)
+                if content.contains("[TOOL_RESULT_CHUNK]") {
+                    return true
+                }
+                
+                /// Keep continuation context markers
+                if content.contains("TODO_REMINDER") || content.contains("AUTO_CONTINUE") {
+                    return true
+                }
+                
+                /// Exclude everything else (iteration status, old tool results, etc.)
+                return false
+            }
+            
+            /// Clear all ephemeral messages
             context.ephemeralMessages.removeAll()
 
             /// ORCHESTRATOR PATTERN: Add appropriate reminder based on continuation reason
             /// From diagram: Every continuation MUST have a reminder message
-            /// CRITICAL: Reminders must be VISIBLE in conversation (not just ephemeral to LLM)
-            /// so users can see why the agent continued and exports show proper flow
+            /// CRITICAL: Reminders are EPHEMERAL (LLM-only, NOT visible in conversation UI)
+            /// They provide continuation context but should not pollute conversation export
             let incompleteTodos = currentTodoList.filter { $0.status.lowercased() != "completed" }
             let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
             
             if !incompleteTodos.isEmpty {
-                /// Case 1: Active todos exist → Add todo reminder
+                /// Case 1: Active todos exist → Add todo reminder (EPHEMERAL)
                 let inProgress = incompleteTodos.filter { $0.status.lowercased() == "in-progress" }
                 let notStarted = incompleteTodos.filter { $0.status.lowercased() == "not-started" }
                 
                 let todoReminderContent = """
-                <todoList>\(incompleteTodos.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
+                TODO_REMINDER: <todoList>\(incompleteTodos.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
                 
                 \(inProgress.isEmpty ? "" : "In Progress: " + inProgress.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
                 \(notStarted.isEmpty ? "" : "Not Started: " + notStarted.map { "[\($0.id)] \($0.title)" }.joined(separator: ", "))
                 </todoList>
                 """
                 
-                /// Add as VISIBLE user message (system-generated) so it appears in conversation
-                if let conversation = conversation {
-                    let reminderMessageId = conversation.messageBus?.addUserMessage(
-                        content: todoReminderContent,
-                        isPinned: false,
-                        isSystemGenerated: true
-                    )
-                    logger.debug("TODO_REMINDER: Added visible todo reminder", metadata: [
-                        "messageId": .stringConvertible(reminderMessageId?.uuidString.prefix(8) ?? "nil"),
-                        "incompleteTodos": .stringConvertible(incompleteTodos.count)
-                    ])
-                } else {
-                    /// Fallback: If no conversation available, use ephemeral (e.g., API mode)
-                    context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
-                    logger.debug("TODO_REMINDER: Added ephemeral todo reminder (no conversation)", metadata: [
-                        "incompleteTodos": .stringConvertible(incompleteTodos.count)
-                    ])
-                }
+                /// Add as ephemeral message (LLM-only context, not visible in conversation)
+                context.ephemeralMessages.append(createSystemReminder(content: todoReminderContent, model: model))
+                logger.debug("TODO_REMINDER: Added ephemeral todo reminder", metadata: [
+                    "incompleteTodos": .stringConvertible(incompleteTodos.count)
+                ])
             } else if enableWorkflowMode && context.iteration > 0 {
-                /// Case 2: No todos but workflow mode enabled → Add continue reminder
+                /// Case 2: No todos but workflow mode enabled → Add continue reminder (EPHEMERAL)
                 /// (Only add if not first iteration - first iteration is user's message)
-                let continueReminderContent = "Workflow mode is active. Continue working on the task."
+                let continueReminderContent = "AUTO_CONTINUE: Workflow mode is active. Continue working on the task."
                 
-                /// Add as VISIBLE user message (system-generated)
-                if let conversation = conversation {
-                    let reminderMessageId = conversation.messageBus?.addUserMessage(
-                        content: continueReminderContent,
-                        isPinned: false,
-                        isSystemGenerated: true
-                    )
-                    logger.debug("WORKFLOW_REMINDER: Added visible workflow reminder", metadata: [
-                        "messageId": .stringConvertible(reminderMessageId?.uuidString.prefix(8) ?? "nil")
-                    ])
-                } else {
-                    /// Fallback: If no conversation available, use ephemeral
-                    context.ephemeralMessages.append(createSystemReminder(content: continueReminderContent, model: model))
-                    logger.debug("WORKFLOW_REMINDER: Added ephemeral workflow reminder (no conversation)")
-                }
+                /// Add as ephemeral message (LLM-only context)
+                context.ephemeralMessages.append(createSystemReminder(content: continueReminderContent, model: model))
+                logger.debug("WORKFLOW_REMINDER: Added ephemeral workflow reminder")
             }
 
             do {
@@ -1579,6 +1585,16 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// CHANGED: Use ephemeralMessages instead of internalMessages to prevent accumulation.
                 let iterationContent = "ITERATION STATUS: Currently on iteration \(context.iteration + 1). Maximum iterations: \(context.maxIterations)."
                 context.ephemeralMessages.append(createSystemReminder(content: iterationContent, model: model))
+                
+                /// CRITICAL: Append preserved messages (tool result chunks, continuation context) AFTER iteration status
+                /// This ensures agent sees tool results from previous read_tool_result calls
+                context.ephemeralMessages.append(contentsOf: preservedMessages)
+                
+                if !preservedMessages.isEmpty {
+                    logger.debug("EPHEMERAL_PRESERVATION: Restored \(preservedMessages.count) preserved messages", metadata: [
+                        "types": .string(preservedMessages.compactMap { $0.content?.components(separatedBy: ":").first }.joined(separator: ", "))
+                    ])
+                }
 
                 /// LLM_CALL_START - Track LLM request initiation.
                 logger.debug("LLM_CALL_START", metadata: [
@@ -1928,11 +1944,29 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 }
 
                 /// Execute all tool calls for this iteration.
-                let executionResults = try await self.executeToolCalls(
-                    actualToolCalls,
-                    iteration: context.iteration + 1,
-                    conversationId: context.session?.conversationId
-                )
+                /// CRITICAL: Use streaming execution if streamContinuation provided (for real-time UI updates)
+                let executionResults: [ToolExecution]
+                if let continuation = streamContinuation {
+                    /// Streaming mode - create tool cards immediately and yield progress chunks
+                    let requestId = UUID().uuidString
+                    let created = Int(Date().timeIntervalSince1970)
+                    executionResults = try await self.executeToolCallsStreaming(
+                        actualToolCalls,
+                        iteration: context.iteration + 1,
+                        continuation: continuation,
+                        requestId: requestId,
+                        created: created,
+                        model: model,
+                        conversationId: context.session?.conversationId
+                    )
+                } else {
+                    /// Non-streaming mode - no UI updates until completion
+                    executionResults = try await self.executeToolCalls(
+                        actualToolCalls,
+                        iteration: context.iteration + 1,
+                        conversationId: context.session?.conversationId
+                    )
+                }
 
                 /// ROUND TRACKING: Capture tool calls and results for this iteration.
                 for toolCall in actualToolCalls {
