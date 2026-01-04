@@ -53,6 +53,130 @@ public class SerpAPIService {
         return URLSession(configuration: config)
     }()
 
+    // MARK: - Engine Configuration
+
+    /// Configuration for engine-specific parameters and behavior.
+    private struct EngineConfig {
+        /// Query parameter name (e.g., "q", "query", "_nkw", "find_desc").
+        let queryParamName: String
+        /// Whether query parameter is required (false for Yelp where find_desc is optional).
+        let queryRequired: Bool
+
+        /// Whether this engine supports location parameter.
+        let supportsLocation: Bool
+        /// Location parameter name (e.g., "location", "find_loc").
+        let locationParamName: String?
+        /// Whether location is required (true for Yelp).
+        let locationRequired: Bool
+
+        /// Whether this engine supports result count parameter.
+        let supportsResultCount: Bool
+        /// Result count parameter name (e.g., "limit" for TripAdvisor).
+        let resultCountParamName: String?
+
+        /// JSON key for main results array (e.g., "organic_results", "shopping_results", "places").
+        let resultKey: String
+
+        /// Additional required parameters as key-value pairs.
+        let additionalParams: [String: String]
+    }
+
+    /// Get engine-specific configuration.
+    private func getEngineConfig(for engine: SearchEngine) -> EngineConfig {
+        switch engine {
+        case .google:
+            return EngineConfig(
+                queryParamName: "q",
+                queryRequired: true,
+                supportsLocation: true,
+                locationParamName: "location",
+                locationRequired: false,
+                supportsResultCount: false,  // Google ignores num parameter
+                resultCountParamName: nil,
+                resultKey: "organic_results",
+                additionalParams: [:]
+            )
+
+        case .bing:
+            return EngineConfig(
+                queryParamName: "q",
+                queryRequired: true,
+                supportsLocation: true,
+                locationParamName: "location",
+                locationRequired: false,
+                supportsResultCount: false,  // Bing ignores num parameter
+                resultCountParamName: nil,
+                resultKey: "organic_results",
+                additionalParams: [:]
+            )
+
+        case .amazon:
+            return EngineConfig(
+                queryParamName: "k",
+                queryRequired: true,
+                supportsLocation: false,  // Amazon doesn't use location (uses domain instead)
+                locationParamName: nil,
+                locationRequired: false,
+                supportsResultCount: false,  // Amazon does NOT support num parameter
+                resultCountParamName: nil,
+                resultKey: "organic_results",
+                additionalParams: ["amazon_domain": "amazon.com"]  // Default to .com
+            )
+
+        case .ebay:
+            return EngineConfig(
+                queryParamName: "_nkw",
+                queryRequired: true,
+                supportsLocation: false,
+                locationParamName: nil,
+                locationRequired: false,
+                supportsResultCount: false,  // eBay does NOT support num parameter
+                resultCountParamName: nil,
+                resultKey: "organic_results",
+                additionalParams: [:]
+            )
+
+        case .walmart:
+            return EngineConfig(
+                queryParamName: "query",
+                queryRequired: true,
+                supportsLocation: false,  // Walmart uses store_id, not location
+                locationParamName: nil,
+                locationRequired: false,
+                supportsResultCount: false,  // Walmart does NOT support num parameter
+                resultCountParamName: nil,
+                resultKey: "organic_results",
+                additionalParams: [:]
+            )
+
+        case .tripadvisor:
+            return EngineConfig(
+                queryParamName: "q",
+                queryRequired: true,
+                supportsLocation: false,  // TripAdvisor uses lat+lon, not location text
+                locationParamName: nil,
+                locationRequired: false,
+                supportsResultCount: true,  // TripAdvisor supports "limit" parameter
+                resultCountParamName: "limit",
+                resultKey: "places",  // TripAdvisor uses "places", not "organic_results"
+                additionalParams: [:]
+            )
+
+        case .yelp:
+            return EngineConfig(
+                queryParamName: "find_desc",
+                queryRequired: false,  // Yelp's find_desc is optional
+                supportsLocation: true,
+                locationParamName: "find_loc",
+                locationRequired: true,  // Yelp REQUIRES location via find_loc
+                supportsResultCount: false,  // Yelp does NOT support num parameter
+                resultCountParamName: nil,
+                resultKey: "organic_results",
+                additionalParams: [:]
+            )
+        }
+    }
+
     /// Account information from SerpAPI Account API.
     public struct AccountInfo: Codable {
         public let apiKey: String
@@ -87,7 +211,6 @@ public class SerpAPIService {
     /// Search engine types supported by SerpAPI.
     public enum SearchEngine: String, CaseIterable {
         case google = "google"
-        case googleAIOverview = "google_ai_overview"
         case bing = "bing"
         case amazon = "amazon"
         case ebay = "ebay"
@@ -98,7 +221,6 @@ public class SerpAPIService {
         public var displayName: String {
             switch self {
             case .google: return "Google Search"
-            case .googleAIOverview: return "Google AI Overview"
             case .bing: return "Bing Search"
             case .amazon: return "Amazon Search"
             case .ebay: return "Ebay Search"
@@ -111,7 +233,6 @@ public class SerpAPIService {
         public var icon: String {
             switch self {
             case .google: return "magnifyingglass"
-            case .googleAIOverview: return "brain"
             case .bing: return "globe"
             case .amazon: return "cart"
             case .ebay: return "tag"
@@ -216,34 +337,48 @@ public class SerpAPIService {
             throw SerpAPIError.limitReached
         }
 
+        /// Get engine-specific configuration.
+        let config = getEngineConfig(for: engine)
+
+        /// Validate required parameters.
+        if config.queryRequired && query.isEmpty {
+            throw SerpAPIError.invalidRequest
+        }
+
+        if config.locationRequired && (location == nil || location!.isEmpty) {
+            logger.error("Engine \(engine.displayName) requires location parameter (via \(config.locationParamName ?? "location"))")
+            throw SerpAPIError.missingRequiredParameter(parameter: config.locationParamName ?? "location")
+        }
+
         /// Build request.
         var components = URLComponents(string: "\(baseURL)/search")!
+        var queryItems: [URLQueryItem] = []
 
-        /// Engine-specific query parameter names.
-        let queryParamName: String
-        switch engine {
-        case .ebay:
-            queryParamName = "_nkw"
-        case .walmart, .amazon:
-            queryParamName = "query"
-        default:
-            queryParamName = "q"
+        /// Add engine parameter.
+        queryItems.append(URLQueryItem(name: "engine", value: engine.rawValue))
+
+        /// Add query parameter (if query provided or required).
+        if config.queryRequired || !query.isEmpty {
+            queryItems.append(URLQueryItem(name: config.queryParamName, value: query))
         }
 
-        var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "engine", value: engine.rawValue),
-            URLQueryItem(name: queryParamName, value: query),
-            URLQueryItem(name: "api_key", value: apiKey)
-        ]
-
-        /// Add num parameter only for engines that support it (not eBay).
-        if engine != .ebay {
-            queryItems.append(URLQueryItem(name: "num", value: "\(numResults)"))
+        /// Add location parameter (if supported and provided).
+        if config.supportsLocation, let location = location, !location.isEmpty {
+            queryItems.append(URLQueryItem(name: config.locationParamName!, value: location))
         }
 
-        if let location = location {
-            queryItems.append(URLQueryItem(name: "location", value: location))
+        /// Add result count parameter (if supported).
+        if config.supportsResultCount, let resultCountParam = config.resultCountParamName {
+            queryItems.append(URLQueryItem(name: resultCountParam, value: "\(numResults)"))
         }
+
+        /// Add additional required parameters.
+        for (key, value) in config.additionalParams {
+            queryItems.append(URLQueryItem(name: key, value: value))
+        }
+
+        /// Add API key last.
+        queryItems.append(URLQueryItem(name: "api_key", value: apiKey))
 
         components.queryItems = queryItems
 
@@ -252,7 +387,7 @@ public class SerpAPIService {
         }
 
         logger.info("SerpAPI search: engine=\(engine.displayName), query=\"\(query)\"")
-        logger.info("SerpAPI request URL: \(url.absoluteString.replacingOccurrences(of: apiKey, with: "***API_KEY***"))")
+        logger.debug("SerpAPI request URL: \(url.absoluteString.replacingOccurrences(of: apiKey, with: "***API_KEY***"))")
 
         let (data, response) = try await session.data(from: url)
 
@@ -275,7 +410,7 @@ public class SerpAPIService {
         }
 
         /// Parse response based on engine.
-        let result = try parseSearchResult(data: data, engine: engine)
+        let result = try parseSearchResult(data: data, engine: engine, config: config)
         logger.info("SerpAPI returned \(result.items.count) results")
 
         return result
@@ -283,7 +418,7 @@ public class SerpAPIService {
 
     // MARK: - Response Parsing
 
-    private func parseSearchResult(data: Data, engine: SearchEngine) throws -> SerpAPISearchResult {
+    private func parseSearchResult(data: Data, engine: SearchEngine, config: EngineConfig) throws -> SerpAPISearchResult {
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard let json = json else {
             throw SerpAPIError.parseError
@@ -309,18 +444,7 @@ public class SerpAPIService {
                 }
             }
 
-        case .googleAIOverview:
-            /// Parse AI overview.
-            if let aiOverview = json["ai_overview"] as? [String: Any],
-               let text = aiOverview["text"] as? String {
-                items.append(SerpAPISearchResult.Item(
-                    title: "AI Overview",
-                    link: "",
-                    snippet: text,
-                    source: "Google AI"
-                ))
-            }
-
+        case .google:
             /// Also include organic results.
             if let organicResults = json["organic_results"] as? [[String: Any]] {
                 for result in organicResults {
@@ -369,44 +493,34 @@ public class SerpAPIService {
             }
 
         case .walmart:
-            /// Walmart uses organic_results (needs verification, may also have shopping_results).
+            /// Walmart uses organic_results with product_page_url instead of link.
             if let organicResults = json["organic_results"] as? [[String: Any]] {
                 for result in organicResults {
                     if let title = result["title"] as? String,
-                       let link = result["link"] as? String {
+                       let productURL = result["product_page_url"] as? String {
                         var snippet = ""
-                        if let price = result["price"] as? String {
-                            snippet += price
+                        
+                        /// Extract price from primary_offer.offer_price.
+                        if let primaryOffer = result["primary_offer"] as? [String: Any],
+                           let offerPrice = primaryOffer["offer_price"] as? Double {
+                            snippet += "$\(String(format: "%.2f", offerPrice))"
                         }
-                        if let rating = result["rating"] as? Double {
+                        
+                        /// Add rating if available.
+                        if let rating = result["rating"] as? Double, rating > 0 {
                             snippet += snippet.isEmpty ? "" : " • "
                             snippet += "\(rating)⭐"
                         }
-                        items.append(SerpAPISearchResult.Item(
-                            title: title,
-                            link: link,
-                            snippet: snippet.isEmpty ? nil : snippet,
-                            source: "Walmart"
-                        ))
-                    }
-                }
-            }
-            /// Fallback: Also check shopping_results if organic_results is empty.
-            if items.isEmpty, let shoppingResults = json["shopping_results"] as? [[String: Any]] {
-                for result in shoppingResults {
-                    if let title = result["title"] as? String,
-                       let link = result["link"] as? String {
-                        var snippet = ""
-                        if let price = result["price"] as? String {
-                            snippet += price
-                        }
-                        if let rating = result["rating"] as? Double {
+                        
+                        /// Add reviews count if available.
+                        if let reviews = result["reviews"] as? Int, reviews > 0 {
                             snippet += snippet.isEmpty ? "" : " • "
-                            snippet += "\(rating)⭐"
+                            snippet += "\(reviews) reviews"
                         }
+                        
                         items.append(SerpAPISearchResult.Item(
                             title: title,
-                            link: link,
+                            link: productURL,
                             snippet: snippet.isEmpty ? nil : snippet,
                             source: "Walmart"
                         ))
@@ -449,13 +563,14 @@ public class SerpAPIService {
             }
 
         case .tripadvisor:
-            /// Parse TripAdvisor results.
-            if let results = json["local_results"] as? [[String: Any]] {
+            /// Parse TripAdvisor results (uses "places" key, not "local_results").
+            if let results = json["places"] as? [[String: Any]] {
                 for result in results {
                     if let title = result["title"] as? String {
                         let link = result["link"] as? String ?? ""
                         let rating = result["rating"] as? Double
                         let reviews = result["reviews"] as? Int
+                        let location = result["location"] as? String
                         var snippet = ""
                         if let rating = rating {
                             snippet += "Rating: \(rating)⭐"
@@ -463,6 +578,10 @@ public class SerpAPIService {
                         if let reviews = reviews {
                             snippet += snippet.isEmpty ? "" : " • "
                             snippet += "\(reviews) reviews"
+                        }
+                        if let location = location {
+                            snippet += snippet.isEmpty ? "" : " • "
+                            snippet += location
                         }
                         items.append(SerpAPISearchResult.Item(
                             title: title,
@@ -527,6 +646,7 @@ public enum SerpAPIError: LocalizedError {
     case apiError(statusCode: Int)
     case rateLimited
     case limitReached
+    case missingRequiredParameter(parameter: String)
 
     public var errorDescription: String? {
         switch self {
@@ -548,6 +668,8 @@ public enum SerpAPIError: LocalizedError {
             return "SerpAPI rate limit exceeded. Please wait and try again."
         case .limitReached:
             return "SerpAPI monthly search limit reached. Service temporarily disabled."
+        case .missingRequiredParameter(let parameter):
+            return "Missing required parameter: \(parameter)"
         }
     }
 }
