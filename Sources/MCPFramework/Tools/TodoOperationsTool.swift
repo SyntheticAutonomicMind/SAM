@@ -16,12 +16,47 @@ public class TodoOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     public let description = """
     Manage a structured todo list to track progress and plan tasks. Use this tool VERY frequently to ensure task visibility and proper planning.
 
-    WHEN TO USE:
+    OPERATIONS:
+    • read - Get current todo list
+    • write - Create/replace todo list (requires todoList array)
+    • update - Partial update (requires todoUpdates array)
+    • add - Add new todos to existing list (requires newTodos array)
+
+    ═══════════════════════════════════════════════════════════════
+    WORKFLOW - READ THIS CAREFULLY, FOLLOW EXACTLY:
+    ═══════════════════════════════════════════════════════════════
+
+    STEP 1 - CREATE THE LIST (First time only):
+    When user asks for multi-step work and NO todo list exists yet:
+    → Call: {"operation": "write", "todoList": [{"id": 1, "title": "...", "description": "...", "status": "not-started"}]}
+    → This creates the list with all todos marked "not-started"
+    
+    ❌ CRITICAL ERROR TO AVOID:
+    Do NOT try to mark a todo as "in-progress" if the list doesn't exist yet!
+    Always create the list FIRST with 'write', then update status with 'update'.
+
+    STEP 2 - MARK ONE TODO IN-PROGRESS:
+    After list exists, before starting work on a todo:
+    → Call: {"operation": "update", "todoUpdates": [{"id": 1, "status": "in-progress"}]}
+    → Only ONE todo can be in-progress at a time
+
+    STEP 3 - DO THE WORK:
+    Execute the actual task using appropriate tools (research, files, etc.)
+
+    STEP 4 - MARK TODO COMPLETE:
+    Immediately after finishing the work:
+    → Call: {"operation": "update", "todoUpdates": [{"id": 1, "status": "completed"}]}
+    → Do this IMMEDIATELY, don't batch multiple completions
+
+    STEP 5 - REPEAT:
+    Go back to STEP 2 for next todo
+
+    ═══════════════════════════════════════════════════════════════
+
+    WHEN TO USE THIS TOOL:
     - Complex multi-step work requiring planning and tracking
     - User provides multiple tasks or requests (numbered/comma-separated)
     - After receiving new instructions requiring multiple steps
-    - BEFORE starting work on any todo (mark as in-progress)
-    - IMMEDIATELY after completing each todo (mark completed individually)
     - When breaking down larger tasks into smaller actionable steps
     - To give users visibility into your progress and planning
 
@@ -30,28 +65,13 @@ public class TodoOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     - Purely conversational/informational requests
     - Simple code samples or explanations
 
-    OPERATIONS:
-    • read - Get current todo list
-    • write - Create/replace todo list (requires todoList array)
-    • update - Partial update (requires todoUpdates array)
-    • add - Add new todos to existing list (requires newTodos array). Preserves all existing todos including completed ones.
-
-    CRITICAL WORKFLOW:
-    1. Plan tasks by writing todo list with specific, actionable items
-    2. Mark ONE todo as in-progress BEFORE starting work
-    3. Complete the work for that specific todo
-    4. Mark that todo as completed IMMEDIATELY after finishing
-    5. Move to next todo and repeat
-
-    ADDING NEW TASKS:
-    When user requests more work after completing initial tasks, use 'add' operation:
+    ADDING NEW TASKS (when list already exists):
+    Use 'add' operation to append new todos:
     • Automatically preserves completed todos
     • Auto-assigns IDs starting after highest existing ID
     • Example: {"operation": "add", "newTodos": [{"title": "New task", "description": "Details"}]}
 
     PROGRESS RULES:
-    • Mark ONE todo in-progress before starting work
-    • Mark completed IMMEDIATELY after finishing (do not batch)
     • Describing progress in your response is NOT the same as updating - you MUST call this tool
     • Before ending your turn: call update to mark any completed work
 

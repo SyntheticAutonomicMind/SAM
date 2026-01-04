@@ -4,6 +4,7 @@
 import Foundation
 import MCPFramework
 import Logging
+import ConversationEngine  // For VectorRAGError
 
 /// MCP tool for web research capabilities Provides conversational access to comprehensive web research functionality.
 public class WebResearchTool: MCPTool, @unchecked Sendable {
@@ -230,7 +231,20 @@ public class WebResearchTool: MCPTool, @unchecked Sendable {
             }
         } catch {
             logger.error("Web research failed: \(error)")
-            /// Provide more specific error message based on error type.
+            
+            /// CRITICAL: Check if error is VectorRAGError and pass through its helpful message
+            /// VectorRAGError messages were carefully crafted to guide agents (e.g., "skip this source")
+            /// Don't wrap them with generic "Research failed" text that loses the guidance
+            if let ragError = error as? VectorRAGError {
+                /// Pass through VectorRAGError message directly - it's already agent-friendly
+                return MCPToolResult(
+                    success: false,
+                    output: MCPOutput(content: ragError.localizedDescription, mimeType: "text/plain"),
+                    toolName: name
+                )
+            }
+            
+            /// For other errors, provide specific error message based on error type.
             let errorMessage: String
             if error.localizedDescription.contains("API") || error.localizedDescription.contains("key") {
                 errorMessage = """

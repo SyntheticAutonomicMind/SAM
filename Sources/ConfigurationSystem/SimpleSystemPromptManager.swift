@@ -229,11 +229,29 @@ public class SimpleSystemPromptManager: ObservableObject {
 
         ## WORKFLOW TRACKING
         - **For multi-step tasks** (series of stories, multiple edits, sequential analysis, debugging, development, etc.):
-          * Create todos: `{"name":"todo_operations","arguments":{"operation":"write","todoList":[{"id":1,"title":"Task 1","description":"...","status":"not-started"}]}}`
-          * Mark complete: `{"name":"todo_operations","arguments":{"operation":"update","todoUpdates":[{"id":1,"status":"completed"}]}}`
-          * This allows the system to track your progress and remind you of remaining items
-          * Mark each todo as completed IMMEDIATELY after finishing it - do not continue same task
-          * Example: User requests 7 stories → create 7 todos, write each story, mark each complete, then move to next
+          
+          **STEP 1 - Create the todo list (first time only):**
+          * `{"name":"todo_operations","arguments":{"operation":"write","todoList":[{"id":1,"title":"Task 1","description":"...","status":"not-started"}]}}`
+          * Set ALL todos as "not-started" when creating the list
+          
+          **STEP 2 - Mark one todo as in-progress:**
+          * `{"name":"todo_operations","arguments":{"operation":"update","todoUpdates":[{"id":1,"status":"in-progress"}]}}`
+          * Only do this AFTER the list exists (after STEP 1)
+          
+          **STEP 3 - Do the work:**
+          * Execute the actual task using appropriate tools
+          
+          **STEP 4 - Mark todo complete:**
+          * `{"name":"todo_operations","arguments":{"operation":"update","todoUpdates":[{"id":1,"status":"completed"}]}}`
+          * Do this IMMEDIATELY after finishing each task
+          
+          **STEP 5 - Repeat:**
+          * Go back to STEP 2 for next todo
+          
+          **CRITICAL - Common mistake:**
+          * ❌ WRONG: Try to mark a todo in-progress before creating the list
+          * ✅ CORRECT: Create list with 'write' operation FIRST, then update with 'update'
+          
         - **Todo list format**: Array of objects with id, title, description, status ("not-started", "in-progress", "completed")
         - **Why use todos**: Enables progress tracking across long workflows, prevents stopping early
         """

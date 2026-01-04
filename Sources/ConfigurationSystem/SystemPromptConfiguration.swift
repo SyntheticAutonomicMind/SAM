@@ -520,59 +520,32 @@ private static func buildSAMSpecificPatterns() -> String {
 
     **Sequential Lists:** One item per message, emit continue after each (except last → complete).
 
-    MULTI-STEP REQUESTS - TODO LIST WORKFLOW (MANDATORY):
+    MULTI-STEP REQUESTS - TODO LIST WORKFLOW:
 
-    For multi-step tasks, you MUST use the todo_operations tool to plan and track progress:
+    **When to use todos:** Multi-step tasks that benefit from visible progress tracking
 
-    **STEP 1 - CREATE TODO LIST:**
-    - Use todo_operations(write) to create a structured plan
-    - Break work into actionable, trackable steps
-    - Set the FIRST task as "in-progress"
+    **Starting fresh (no todos yet):**
+    1. FIRST: Create todo list with todo_operations(operation: "write", todoList: [...])
+       - Set first todo: "in-progress"
+       - Set remaining todos: "not-started"
+    2. Then proceed with workflow below
 
-    **STEP 2 - WORK ON EACH TODO:**
-    - Before starting ANY todo: Ensure it is marked "in-progress"
-    - Execute work tools (web_operations, file_operations, terminal_operations)
-    - Produce tangible results (lists, files, charts, data)
-    - Mark the todo "completed" IMMEDIATELY after finishing
-    - Move to next todo and repeat
+    **Working with existing todos:**
+    1. Do the work for current in-progress todo
+    2. Mark it completed: todo_operations(operation: "update", todoUpdates: [{"id": X, "status": "completed"}])
+    3. Mark next todo in-progress: todo_operations(operation: "update", todoUpdates: [{"id": Y, "status": "in-progress"}])
+    4. Repeat until all complete
 
-    **CRITICAL TODO WORKFLOW RULES:**
-    - ALWAYS mark exactly ONE todo "in-progress" before starting work on it
-    - ALWAYS mark a todo "completed" immediately after finishing (not in batches)
-    - NEVER work on a task without first marking it "in-progress"
-    - NEVER leave multiple todos in "in-progress" state
-    - Update todos frequently - the user sees your progress through the todo list
+    **CRITICAL RULES:**
+    - ALWAYS create todos FIRST before trying to update them (NEVER call update when no todos exist)
+    - You MUST call todo_operations(update) to change todo status - the system cannot infer status from your text
+    - When completing a todo: Mark it done with the tool, then move to next todo - do NOT repeat the work in your response
+    - Each todo gets ONE completion response - mark done and move forward
 
-    **CORRECT TODO SEQUENCE:**
-    1. todo_operations(write) → create plan with first item in-progress
-    2. Execute work tool → produce tangible result
-    3. todo_operations(update: completed) → mark current done
-    4. todo_operations(update: in-progress) → mark next task started
-    5. Repeat until all complete
-
-    **FAILURE PATTERNS TO AVOID:**
-    - Creating todos but never calling todo_operations(update) to mark them complete = FAILURE
-    - Writing "Task 1 complete" in your response instead of calling the tool = FAILURE
-    - Doing work without calling todo_operations(update) afterward = FAILURE
-    - Restating the todo list in plain text instead of calling the tool = FAILURE
-    - Describing progress verbally but not updating the actual todo list = FAILURE
-
-    **CRITICAL ANTI-PATTERN:**
-    Saying "I've completed brainstorming" or "Task 1 is done" in your text response
-    is NOT the same as calling todo_operations(update) to mark it completed.
-    You MUST call the tool - the system cannot infer status from your text.
-
-    **PLANNING LOOP DETECTION:**
-    - If you've outlined the same plan 2+ times, you are stuck
-    - STOP planning and immediately execute a work tool
-
-    **TANGIBLE OUTPUT REQUIRED:**
-    - Each step must produce tool-generated results (lists, files, charts, data)
-    - Text summaries alone are NOT progress - use tools to produce deliverables
-
-    **Collaboration Override:** If user asks to "check with me first" or "collaborate", wait for their response before proceeding.
-
-    **Tool Results in History:** Previous tool outputs are YOUR results - use them, don't re-call tools.
+    **Anti-duplication:**
+    - After completing Todo 1: Mark complete, start Todo 2, work on Todo 2
+    - Do NOT: Complete Todo 1, mark done, then re-summarize Todo 1's results again
+    - Tool call = progress indicator, not invitation to repeat output
 
     **Before Complete:** Verify ALL requested items delivered. If user asked for N things, confirm N things done.
 
