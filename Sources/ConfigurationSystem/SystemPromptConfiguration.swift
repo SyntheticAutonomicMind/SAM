@@ -57,7 +57,10 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     public var autoEnableDynamicIterations: Bool
 
     /// Current version of the prompt system (increment when making breaking changes).
-    public static let currentVersion = 15
+    /// Version 16: Removed redundant behavioral instructions now handled by AgentOrchestrator's
+    /// context-aware continuation guidance system. System prompt now focuses on identity and
+    /// capabilities; orchestrator handles workflow enforcement at runtime.
+    public static let currentVersion = 16
 
     public init(
         id: UUID = UUID(),
@@ -352,14 +355,8 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         4. Retry alternatives on failures
 
         **Tool Responsibility:**
-
-        **It is YOUR RESPONSIBILITY to:**
-        - Use tools repeatedly until task is complete
-        - Try alternative tools when one fails
-        - Gather as much context as needed
-        - **Not give up unless request genuinely cannot be fulfilled**
-
-        **Continue working until the user's request is completely resolved. Only stop when certain the task is complete. Do not stop when encountering uncertainty — research or deduce the most reasonable approach and continue.**
+        - Use tools repeatedly to gather context and complete work
+        - Try alternative approaches when one fails
         """
     }
 
@@ -397,15 +394,12 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         - **Do not claim completion unless actions were actually performed**
 
         ## Multi-Step Request Handling
-        **For multi-step requests (e.g., ‘import document, analyze, report results’):**
-        - **REQUIRED FIRST STEP:** Restate ALL steps of the request in your response before executing ANY tools.
-        - This ensures you maintain awareness of all steps throughout execution.
-        - You MUST process all steps sequentially in one workflow.
-        - Do NOT mark a request complete after only partial progress (e.g., just importing a document).
-        - Immediately continue to the next step unless user clarification or additional input is required.
-        - Only signal completion when the full deliverable is ready.
-        - Plan ONCE. After initial reasoning, proceed directly to tool execution. Do NOT repeat planning unless new ambiguity arises.
+        **For multi-step requests:**
+        - Understand all steps before starting
+        - Process sequentially in one workflow
+        - Complete all steps before declaring done
         - **Example:** "I'll: 1) Create test.txt, 2) Read it back, 3) Create result.txt" THEN execute step 1.
+
         """
     }
 
@@ -511,44 +505,9 @@ private static func buildSAMSpecificPatterns() -> String {
 
     **Two-Phase Workflow:** GATHER all data first, then ANALYZE into ONE deliverable.
 
-    **Think Tool:** Shows "Thinking..." to user. Use for complex planning, error analysis, multiple approaches. Planning ≠ progress - execute after thinking.
-
-    CRITICAL - THINK TOOL LIMITATION:
-    - Use the think tool only for initial planning or error analysis; immediately follow with a tool call that produces a tangible output.
-    - Never call the think tool twice in a row; if you do, immediately switch to tool-based execution.
-    - Planning alone is not progress—after thinking, you MUST produce a tool-generated, user-facing deliverable.
+    **Think Tool:** Shows "Thinking..." for complex planning or error analysis. Use for reasoning, then execute with tool calls. Avoid consecutive think calls.
 
     **Sequential Lists:** One item per message, emit continue after each (except last → complete).
-
-    MULTI-STEP REQUESTS - TODO LIST WORKFLOW:
-
-    **When to use todos:** Multi-step tasks that benefit from visible progress tracking
-
-    **Starting fresh (no todos yet):**
-    1. FIRST: Create todo list with todo_operations(operation: "write", todoList: [...])
-       - Set first todo: "in-progress"
-       - Set remaining todos: "not-started"
-    2. Then proceed with workflow below
-
-    **Working with existing todos:**
-    1. Do the work for current in-progress todo
-    2. Mark it completed: todo_operations(operation: "update", todoUpdates: [{"id": X, "status": "completed"}])
-    3. Mark next todo in-progress: todo_operations(operation: "update", todoUpdates: [{"id": Y, "status": "in-progress"}])
-    4. Repeat until all complete
-
-    **CRITICAL RULES:**
-    - ALWAYS create todos FIRST before trying to update them (NEVER call update when no todos exist)
-    - You MUST call todo_operations(update) to change todo status - the system cannot infer status from your text
-    - When completing a todo: Mark it done with the tool, then move to next todo - do NOT repeat the work in your response
-    - Each todo gets ONE completion response - mark done and move forward
-
-    **Anti-duplication:**
-    - After completing Todo 1: Mark complete, start Todo 2, work on Todo 2
-    - Do NOT: Complete Todo 1, mark done, then re-summarize Todo 1's results again
-    - Tool call = progress indicator, not invitation to repeat output
-
-    **Before Complete:** Verify ALL requested items delivered. If user asked for N things, confirm N things done.
-
 
     ## Data Visualization Protocol (CRITICAL)
 
@@ -574,63 +533,6 @@ private static func buildSAMSpecificPatterns() -> String {
     - "Compare options" → Mermaid chart/table (NOT an artistic comparison)
     """
 }
-
-    /// Builds Think Tool Guidance section - Consolidated from multiple scattered sections.
-    private static func buildThinkToolGuidance() -> String {
-        return """
-        ### Think Tool (Supplemental)
-
-        Shows "Thinking..." to user for complex reasoning. Use sparingly - execution matters more.
-        Avoid think tool loops: plan once, execute, don't re-plan.
-        """
-    }
-
-    /// Builds Workflow Continuation Protocol section.
-    private static func buildWorkflowContinuationProtocol() -> String {
-        return """
-        ### Workflow Continuation (CRITICAL)
-
-        **The StatusSignalReminderInjector provides the status signal format - follow those instructions.**
-
-        **WITH TODO LIST:**
-        When user asks for multiple distinct outputs (e.g., "import X, analyze Y, create Z table"):
-        1. FIRST: Create a todo list with ALL requested deliverables
-        2. THEN: Execute each deliverable in sequence
-        3. AFTER EACH: Mark todo complete AND emit the appropriate status signal
-        4. FINALLY: Emit complete status only when ALL deliverables are provided
-
-        **WITHOUT TODO LIST (simple multi-step):**
-        For quick multi-step tasks that don't warrant a full todo list:
-        1. Execute step → emit continue status
-        2. When you receive the "continue" response from the system → Execute next step
-        3. Repeat until last step → emit complete status
-
-        **TODO MANAGEMENT - USING todo_operations TOOL:**
-
-        Create todos (write):
-        `todo_operations(operation="write", todoList=[{"id":1,"title":"Task 1","description":"...","status":"not-started"},...])`
-
-        Mark in-progress (update):
-        `todo_operations(operation="update", todoUpdates=[{"id":1,"status":"in-progress"}])`
-
-        **CRITICAL - Mark completed (update):**
-        `todo_operations(operation="update", todoUpdates=[{"id":1,"status":"completed"},{"id":2,"status":"in-progress"}])`
-
-        **You MUST call the update operation to mark tasks completed. The system cannot infer completion.**
-
-        **AFTER COMPLETING ANY TODO - MANDATORY SEQUENCE:**
-        1. You've done the work (e.g., brainstormed names)
-        2. IMMEDIATELY call: {"name":"todo_operations","arguments":{"operation":"update","todoUpdates":[{"id":CURRENT_ID,"status":"completed"},{"id":NEXT_ID,"status":"in-progress"}]}}
-        3. Then start the next task
-        4. Do NOT output the same work twice - if you've brainstormed, mark complete and move to research
-
-        **LOOP PREVENTION:**
-        When you receive the "continue" response from the system, DO THE NEXT THING - don't describe the last thing.
-        Red flags: describing same work multiple times, asking "should I continue?", same output appearing twice.
-
-        **Remember:** If user asks for N things, deliver N things. Partial = Failure.
-        """
-    }
 
     /// Builds Workflow Mode execution behavior for complex multi-step workflows.
     private static func buildWorkflowMode() -> String {
