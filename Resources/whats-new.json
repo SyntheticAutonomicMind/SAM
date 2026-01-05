@@ -1,6 +1,63 @@
 {
   "releases": [
     {
+      "version": "20260105.1",
+      "release_date": "January 5, 2026",
+      "introduction": "This release fixes a todo workflow regression affecting web research and completes SerpAPI search engine support. System prompt optimization reduces duplication while maintaining behavioral effectiveness.",
+      "highlights": [
+        {
+          "id": "research-first-principle",
+          "icon": "magnifyingglass.circle.fill",
+          "title": "Research-First Principle Enforced",
+          "description": "Fixed regression where agents using todo lists would generate fake URLs or product listings from training data instead of using web research tools. Todo workflow reminders now align with system prompt to enforce research-first behavior."
+        },
+        {
+          "id": "all-serpapi-engines-working",
+          "icon": "globe.badge.chevron.backward",
+          "title": "All 7 SerpAPI Engines Working",
+          "description": "Complete validation and fixes for all search engines. Amazon, Walmart, and Yelp now work correctly with proper parameter handling and result parsing. Each engine configured per official SerpAPI documentation."
+        },
+        {
+          "id": "system-prompt-optimization",
+          "icon": "doc.text.magnifyingglass",
+          "title": "System Prompt Optimized",
+          "description": "Reduced system prompt duplication by 14% while maintaining effectiveness. Clearer hierarchy between high-level context and detailed guidance, with research-first principle as authoritative source."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "agents-hallucinating-urls",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Todo Workflow Research Regression Fixed",
+          "description": "Fixed regression where todo workflow reminders conflicted with system prompt, causing agents to generate fake URLs from training data. TodoReminderInjector now defers to system prompt's research-first behavior."
+        },
+        {
+          "id": "amazon-search-400-error",
+          "icon": "cart.fill.badge.minus",
+          "title": "Amazon Search Fixed",
+          "description": "Resolved 400 error by using correct 'k' parameter instead of 'query'. Amazon product searches now return 20+ results with prices and links."
+        },
+        {
+          "id": "walmart-zero-results",
+          "icon": "building.2.fill",
+          "title": "Walmart Parsing Fixed",
+          "description": "Fixed parser to use 'product_page_url' instead of 'link' field and extract prices from nested structure. Walmart searches now return 10 products correctly."
+        },
+        {
+          "id": "yelp-auto-location",
+          "icon": "location.fill",
+          "title": "Yelp Auto-Location",
+          "description": "Yelp searches now automatically use your configured location from preferences. No need to manually specify location for local business searches."
+        },
+        {
+          "id": "todo-workflow-alignment",
+          "icon": "list.bullet.rectangle",
+          "title": "Todo Workflow Instructions Restored",
+          "description": "Reverted removal of todo workflow section from system prompt after testing revealed agents need static instructions as educational foundation. Runtime reminders supplement but don't replace base guidance."
+        }
+      ]
+    },
+    {
       "version": "20260104.1",
       "release_date": "January 4, 2026",
       "introduction": "This release improves workflow reliability through better todo tracking, continuation logic, and error handling. Agents now complete multi-step tasks more reliably.",
