@@ -300,10 +300,13 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
 
 
         **For current information, MUST use tools:**
+        - Internet research, web search, online queries → Use web_operations
+        - Product listings, prices, availability → Use web_operations (try serpapi if available, otherwise web_search/research)
         - Fetch real, current information with available tools
         - Provide source links
         - Be transparent about live vs training data
-        - DO NOT hallucinate news or current events
+        - DO NOT hallucinate news, current events, or generate fake URLs/listings
+        - Example, mock, sample, stub, or historical data is a failure condition for current/live information, do not use it unless the user specifically requests it
         """
 
         return context
@@ -357,6 +360,26 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         **Tool Responsibility:**
         - Use tools repeatedly to gather context and complete work
         - Try alternative approaches when one fails
+        - When uncertain, research using available tools rather than relying on internal knowledge
+        - For user requests requiring current/live information, use appropriate tools (web_operations for internet research, file_operations for local files, etc.)
+
+        **RESEARCH-FIRST PRINCIPLE:**
+        For ANY request requiring data, information, or research:
+        1. Use tools FIRST to gather current information
+        2. Use ONLY the results from tools in your response
+        3. Training data is a FAILURE condition for current/live information
+        4. If tools fail, state "I was unable to find current information" - do NOT fall back to training data
+
+        **Examples of research-requiring requests:**
+        - "Find listings", "search for", "look up" → Use web_operations
+        - "Current prices", "for sale", "available" → Use web_operations  
+        - "Latest news", "recent events" → Use web_operations
+        - Product/service information → Use web_operations
+        
+        **Prohibited fallbacks:**
+        - DO NOT generate fake URLs from memory
+        - DO NOT synthesize from "prior context" or "general knowledge"
+        - DO NOT provide training data disguised as current information
         """
     }
 
@@ -1173,48 +1196,14 @@ public class SystemPromptManager: ObservableObject {
         /// VS CODE COPILOT PATTERN: Use XML tags for ALL models
         /// Previously this was conditional on usesXMLTags, but VS Code applies universally
 
-        /// Prepend current date for agent awareness (prevents defaulting to training cutoff date) Must be FIRST in system prompt for maximum visibility and KV cache consistency.
-        let currentDateString = SystemPromptConfiguration.getCurrentDateString()
-        let locationContext = SystemPromptConfiguration.getEffectiveLocationFromDefaults()
-        var systemPrompt = """
-        # CRITICAL CONTEXT - CURRENT DATE\(locationContext != nil ? " & LOCATION" : "")
-        **TODAY'S DATE IS: \(currentDateString)**\(locationContext.map { "\n\nNote: User location available if needed: \($0)" } ?? "")
-
-        You MUST use this date for all time-sensitive operations, current events, news searches, and date-based queries.
-        Do NOT default to your training cutoff date (October 2023) or any other date.
-        When users say "today", "this week", "recent", "current", or "latest", they mean relative to \(currentDateString).\(locationContext != nil ? "\n\nThe user's location is provided for context only. Use it ONLY when explicitly relevant to the request (weather, local recommendations, time zones). Do NOT mention location in general responses." : "")
-
-        **CRITICAL: For current information, you MUST use tools:**
-
-        **DO NOT:**
-        - Generate fake/simulated current content from your training data
-        - Hallucinate news stories or headlines
-        - Provide outdated information as if it's current
-
-        **ALWAYS:**
-        - Use your available tools to fetch real, current information (use the current date as reference)
-        - Provide source links for all current information
-        - Be transparent about what information is live vs from your knowledge
-
-
-        # CRITICAL - TOOL USAGE
-        Provide general guidance on tool usage and validation. Refer to tool schemas when available and prefer natural-language descriptions when speaking to users.
-
-        When planning multi-step work:
-        - Provide a concise, human-readable plan when appropriate. The system orchestrator may parse plans and coordinate step-by-step execution.
-        - Avoid interleaving large-scale execution with planning in the same message unless the user explicitly requested immediate execution.
-
-        """
-
         /// Get user-configured system prompt components (pass toolsEnabled, workflowModeEnabled, and dynamicIterationsEnabled).
         let componentPrompt = configuration?.generateSystemPrompt(toolsEnabled: toolsEnabled, workflowModeEnabled: workflowModeEnabled, dynamicIterationsEnabled: dynamicIterationsEnabled) ?? ""
 
         /// VS CODE COPILOT PATTERN: Use XML tags for ALL models (not just Claude)
         /// VS Code uses <instructions>, <toolUseInstructions>, etc. universally
         /// This provides consistent structure that all models can leverage
-        systemPrompt = """
+        let systemPrompt = """
         <instructions>
-        \(systemPrompt)
         \(componentPrompt)
         </instructions>
 

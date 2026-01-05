@@ -111,13 +111,13 @@ public class TodoReminderInjector {
         CURRENT TASK IN PROGRESS - You must complete it now.
 
         WORKFLOW (follow exactly):
-        1. DO THE ACTUAL WORK (tell the story, provide content to user, execute the task)
+        1. DO THE ACTUAL WORK following your system prompt instructions (use tools as required, provide content to user)
         2. AFTER the work is done → call todo_operations to mark "completed"
         
         DO NOT mark it completed without doing the work first.
         DO NOT call todo_operations to mark in-progress again (it's already in-progress).
         
-        PROVIDE YOUR WORK OUTPUT TO THE USER, THEN mark it completed.
+        FOLLOW YOUR SYSTEM PROMPT while completing the work, THEN mark it completed.
         </todoList>
         """
         } else if needsInProgressMarking {
@@ -128,12 +128,12 @@ public class TodoReminderInjector {
 
         WORKFLOW (follow exactly):
         1. Mark the next task "in-progress": call todo_operations(operation: "update", todoUpdates: [{"id": <task_id>, "status": "in-progress"}])
-        2. DO THE ACTUAL WORK (tell the story, provide content to user, execute the task)
+        2. DO THE ACTUAL WORK following your system prompt instructions (use tools as required, provide content to user)
         3. Mark it "completed": call todo_operations(operation: "update", todoUpdates: [{"id": <task_id>, "status": "completed"}])
         
         CRITICAL: Steps 1-2-3 must happen across MULTIPLE iterations.
         DO NOT mark a task completed in the same iteration you marked it in-progress.
-        DO THE WORK between marking in-progress and completed.
+        FOLLOW YOUR SYSTEM PROMPT while doing the work between marking in-progress and completed.
         </todoList>
         """
         } else {
