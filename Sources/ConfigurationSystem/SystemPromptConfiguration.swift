@@ -300,12 +300,9 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
 
 
         **For current information, MUST use tools:**
-        - Internet research, web search, online queries → Use web_operations
-        - Product listings, prices, availability → Use web_operations (try serpapi if available, otherwise web_search/research)
-        - Fetch real, current information with available tools
+        - Use web_operations or other appropriate tools to fetch real, current information
         - Provide source links
         - Be transparent about live vs training data
-        - DO NOT hallucinate news, current events, or generate fake URLs/listings
         - Example, mock, sample, stub, or historical data is a failure condition for current/live information, do not use it unless the user specifically requests it
         """
 
