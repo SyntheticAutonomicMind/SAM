@@ -133,7 +133,7 @@ struct ClassRelationshipView: View {
                 at: toPos,
                 angle: atan2(toPos.y - fromPos.y, toPos.x - fromPos.x)
             )
-            .stroke(Color.accentColor.opacity(0.6), lineWidth: 2)
+            .fill(Color.accentColor.opacity(0.6))
         }
     }
 

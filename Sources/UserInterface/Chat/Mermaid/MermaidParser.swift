@@ -994,9 +994,13 @@ struct MermaidParser {
         }
 
         // Parse root node (remove parentheses if present)
-        let rootLabel = rootLine.trimmingCharacters(in: .whitespaces)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "()"))
-            .trimmingCharacters(in: .whitespaces)
+        // Handle formats: "root", "root(text)", "root((text))"
+        var rootLabel = rootLine.trimmingCharacters(in: .whitespaces)
+        
+        // Remove surrounding parentheses (single or double)
+        while rootLabel.hasPrefix("(") && rootLabel.hasSuffix(")") {
+            rootLabel = String(rootLabel.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+        }
 
         // Parse hierarchy - build list of (label, level) pairs
         var nodeData: [(label: String, level: Int)] = [(rootLabel, 0)]
