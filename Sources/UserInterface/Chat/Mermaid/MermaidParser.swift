@@ -626,8 +626,11 @@ struct MermaidParser {
                 }
             }
             // Parse relationship
+            // Check for specific arrows first to avoid false matches
+            // (e.g., "-->" in state diagrams vs "--" in class diagrams)
             else if line.contains("<|--") || line.contains("*--") || line.contains("o--") ||
-                    line.contains("--") || line.contains("..>") || line.contains("..|>") {
+                    line.contains("..>") || line.contains("..|>") ||
+                    (line.contains("--") && !line.contains("-->")) {
                 if let relationship = parseClassRelationship(line, classMap: &classMap, classes: &classes) {
                     relationships.append(relationship)
                 }
@@ -993,13 +996,18 @@ struct MermaidParser {
             return .unsupported(code)
         }
 
-        // Parse root node (remove parentheses if present)
-        // Handle formats: "root", "root(text)", "root((text))"
+        // Parse root node (remove shape indicators)
+        // Mindmap format: "root((text))" or "id(text)" or just "text"
         var rootLabel = rootLine.trimmingCharacters(in: .whitespaces)
         
-        // Remove surrounding parentheses (single or double)
-        while rootLabel.hasPrefix("(") && rootLabel.hasSuffix(")") {
-            rootLabel = String(rootLabel.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+        // Extract text from parentheses: "root((Project))" -> "Project"
+        if let openParen = rootLabel.firstIndex(of: "("),
+           let closeParen = rootLabel.lastIndex(of: ")") {
+            let labelStart = rootLabel.index(after: openParen)
+            let labelEnd = closeParen
+            rootLabel = String(rootLabel[labelStart..<labelEnd])
+                .trimmingCharacters(in: CharacterSet(charactersIn: "()"))
+                .trimmingCharacters(in: .whitespaces)
         }
 
         // Parse hierarchy - build list of (label, level) pairs
