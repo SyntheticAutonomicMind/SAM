@@ -16,6 +16,15 @@ public class ReadToolResultTool: MCPTool, @unchecked Sendable {
     - Tool response includes `toolCallId` and `totalLength` metadata
     - You need to access large web scraping/research results (>16KB)
 
+    **How to Use Efficiently**:
+    - ALWAYS check if the first chunk contains a complete answer or summary
+    - If first chunk fully answers the user's question, respond immediately - DO NOT read more chunks
+    - Only continue reading additional chunks if:
+      * The summary/answer is incomplete or missing key details
+      * User explicitly requested the full/raw output
+      * You need specific information not in the first chunk
+    - Most research results include complete summaries in first chunk - check before continuing
+
     **Chunked Retrieval**:
     - Default chunk size: 8192 characters (8KB)
     - Maximum chunk size: 32768 characters (32KB)
