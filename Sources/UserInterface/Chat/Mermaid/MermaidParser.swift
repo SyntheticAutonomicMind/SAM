@@ -576,24 +576,54 @@ struct MermaidParser {
         var classes: [ClassNode] = []
         var relationships: [ClassRelationship] = []
         var classMap: [String: ClassNode] = [:]
+        var currentClass: String?
+        var currentAttributes: [String] = []
+        var currentMethods: [String] = []
 
         for line in lines {
-            // Parse class definition
-            if line.hasPrefix("class ") {
+            // Check if we're ending a class definition
+            if line == "}" && currentClass != nil {
+                // Save the class with its attributes and methods
+                if let className = currentClass {
+                    let classNode = ClassNode(
+                        id: className,
+                        name: className,
+                        attributes: currentAttributes,
+                        methods: currentMethods,
+                        stereotype: nil
+                    )
+                    if let existingIndex = classes.firstIndex(where: { $0.id == className }) {
+                        classes[existingIndex] = classNode
+                    } else {
+                        classes.append(classNode)
+                    }
+                    classMap[className] = classNode
+                }
+                currentClass = nil
+                currentAttributes = []
+                currentMethods = []
+            }
+            // Parse class definition start
+            else if line.hasPrefix("class ") {
                 let className = line.replacingOccurrences(of: "class ", with: "")
                     .trimmingCharacters(in: .whitespaces)
                     .components(separatedBy: "{")[0]
                     .trimmingCharacters(in: .whitespaces)
 
-                let classNode = ClassNode(
-                    id: className,
-                    name: className,
-                    attributes: [],
-                    methods: [],
-                    stereotype: nil
-                )
-                classes.append(classNode)
-                classMap[className] = classNode
+                currentClass = className
+                currentAttributes = []
+                currentMethods = []
+            }
+            // Parse attributes and methods inside class body
+            else if currentClass != nil {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.contains("(") {
+                    // It's a method
+                    currentMethods.append(trimmed)
+                } else if !trimmed.isEmpty && trimmed != "{" {
+                    // It's an attribute
+                    currentAttributes.append(trimmed)
+                }
             }
             // Parse relationship
             else if line.contains("<|--") || line.contains("*--") || line.contains("o--") ||
@@ -602,6 +632,23 @@ struct MermaidParser {
                     relationships.append(relationship)
                 }
             }
+        }
+
+        // Handle case where class definition doesn't have closing brace
+        if let className = currentClass {
+            let classNode = ClassNode(
+                id: className,
+                name: className,
+                attributes: currentAttributes,
+                methods: currentMethods,
+                stereotype: nil
+            )
+            if let existingIndex = classes.firstIndex(where: { $0.id == className }) {
+                classes[existingIndex] = classNode
+            } else {
+                classes.append(classNode)
+            }
+            classMap[className] = classNode
         }
 
         let diagram = ClassDiagram(classes: classes, relationships: relationships)
@@ -938,16 +985,64 @@ struct MermaidParser {
 
     private func parseMindmap(_ code: String) -> MermaidDiagram {
         let lines = code.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && $0 != "mindmap" && !$0.hasPrefix("%%") }
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty &&
+                      $0.trimmingCharacters(in: .whitespaces) != "mindmap" &&
+                      !$0.trimmingCharacters(in: .whitespaces).hasPrefix("%%") }
 
         guard let rootLine = lines.first else {
             return .unsupported(code)
         }
 
-        let root = MindmapNode(id: "root", label: rootLine, children: [], level: 0)
+        // Parse root node (remove parentheses if present)
+        let rootLabel = rootLine.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "()"))
+            .trimmingCharacters(in: .whitespaces)
+
+        // Parse hierarchy - build list of (label, level) pairs
+        var nodeData: [(label: String, level: Int)] = [(rootLabel, 0)]
+
+        for line in lines.dropFirst() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+
+            let leadingSpaces = line.prefix(while: { $0 == " " }).count
+            let level = leadingSpaces / 2 + 1  // Each 2 spaces = 1 level
+
+            nodeData.append((trimmed, level))
+        }
+
+        // Build tree recursively
+        let (root, _) = buildMindmapTree(nodeData: nodeData, startIndex: 0, parentLevel: -1)
+
         let mindmap = Mindmap(root: root)
         return .mindmap(mindmap)
+    }
+
+    /// Recursively build mindmap tree from flat node data
+    private func buildMindmapTree(nodeData: [(label: String, level: Int)], startIndex: Int, parentLevel: Int) -> (MindmapNode, Int) {
+        guard startIndex < nodeData.count else {
+            return (MindmapNode(id: "empty", label: "", children: [], level: 0), startIndex)
+        }
+
+        let (label, level) = nodeData[startIndex]
+        let nodeId = "node_\(startIndex)"
+
+        var children: [MindmapNode] = []
+        var currentIndex = startIndex + 1
+
+        // Collect all direct children (level = current + 1)
+        while currentIndex < nodeData.count && nodeData[currentIndex].level > level {
+            if nodeData[currentIndex].level == level + 1 {
+                let (child, nextIndex) = buildMindmapTree(nodeData: nodeData, startIndex: currentIndex, parentLevel: level)
+                children.append(child)
+                currentIndex = nextIndex
+            } else {
+                currentIndex += 1
+            }
+        }
+
+        let node = MindmapNode(id: nodeId, label: label, children: children, level: level)
+        return (node, currentIndex)
     }
 
     // MARK: - Timeline Parsing
@@ -1137,18 +1232,17 @@ struct MermaidParser {
                 yAxisLabel = line.replacingOccurrences(of: "y-axis ", with: "")
                     .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             }
-            // Parse bar with label:value format (e.g., "bar January: 35" or "bar \"January\": 35")
-            else if line.hasPrefix("bar ") {
-                let rest = line.replacingOccurrences(of: "bar ", with: "")
-                // Split by colon to get label and value
-                if let colonIndex = rest.lastIndex(of: ":") {
-                    let label = String(rest[..<colonIndex])
+            // Parse data with label:value format (e.g., "Apples: 35" or "\"January\": 35")
+            // Note: barChart syntax does NOT require "bar" prefix
+            else if line.contains(":") && !line.hasPrefix("title") && !line.hasPrefix("x-axis") && !line.hasPrefix("y-axis") {
+                if let colonIndex = line.lastIndex(of: ":") {
+                    let label = String(line[..<colonIndex])
                         .trimmingCharacters(in: .whitespaces)
                         .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-                    let valueStr = String(rest[rest.index(after: colonIndex)...])
+                    let valueStr = String(line[line.index(after: colonIndex)...])
                         .trimmingCharacters(in: .whitespaces)
 
-                    if let value = Double(valueStr) {
+                    if let value = Double(valueStr), !label.isEmpty {
                         categories.append(label)
                         values.append(value)
                     }
@@ -1247,6 +1341,19 @@ struct MermaidParser {
                     dataSeries.append(series)
                 }
             }
+            // Parse series data with label (e.g., "Series1: [1, 20], [2, 22], [3, 21]")
+            else if line.contains(":") && line.contains("[") {
+                // Extract series label and data
+                if let colonIndex = line.firstIndex(of: ":") {
+                    let seriesLabel = String(line[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+                    let dataStr = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+                    
+                    // Check if this is coordinate pairs format: [x, y], [x, y]
+                    if let series = parseCoordinatePairs(dataStr, label: seriesLabel) {
+                        dataSeries.append(series)
+                    }
+                }
+            }
         }
 
         let chart = XYChart(
@@ -1287,5 +1394,31 @@ struct MermaidParser {
         guard !values.isEmpty else { return nil }
 
         return XYDataSeries(type: type, values: values, label: label)
+    }
+    
+    /// Parse coordinate pairs format: [1, 20], [2, 22], [3, 21], [4, 23]
+    /// Extracts just the Y values since X values are typically sequential
+    private func parseCoordinatePairs(_ line: String, label: String) -> XYDataSeries? {
+        // Match all [x, y] pairs
+        let pattern = "\\[(\\d+(?:\\.\\d+)?),\\s*(\\d+(?:\\.\\d+)?)\\]"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        
+        let nsString = line as NSString
+        let matches = regex.matches(in: line, range: NSRange(location: 0, length: nsString.length))
+        
+        var yValues: [Double] = []
+        for match in matches {
+            // Extract Y value (second capture group)
+            if match.numberOfRanges >= 3 {
+                let yRange = match.range(at: 2)
+                if let yValue = Double(nsString.substring(with: yRange)) {
+                    yValues.append(yValue)
+                }
+            }
+        }
+        
+        guard !yValues.isEmpty else { return nil }
+        
+        return XYDataSeries(type: .line, values: yValues, label: label)
     }
 }

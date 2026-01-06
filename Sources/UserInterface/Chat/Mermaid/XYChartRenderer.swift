@@ -174,7 +174,7 @@ struct XYChartRenderer: View {
             }
 
             // Draw bar series
-            ForEach(Array(chart.dataSeries.enumerated()), id: \.offset) { seriesIndex, series in
+            ForEach(Array(chart.dataSeries.enumerated()), id: \.element.id) { seriesIndex, series in
                 if series.type == .bar {
                     barSeries(
                         series: series,
@@ -191,7 +191,7 @@ struct XYChartRenderer: View {
             }
 
             // Draw line series on top
-            ForEach(Array(chart.dataSeries.enumerated()), id: \.offset) { seriesIndex, series in
+            ForEach(Array(chart.dataSeries.enumerated()), id: \.element.id) { seriesIndex, series in
                 if series.type == .line {
                     lineSeries(
                         series: series,
@@ -226,7 +226,8 @@ struct XYChartRenderer: View {
     /// Draw a bar series with value labels
     @ViewBuilder
     private func barSeries(series: XYDataSeries, seriesIndex: Int, width: CGFloat, height: CGFloat, barWidth: CGFloat, barGroupWidth: CGFloat, valueRange: Double, zeroY: CGFloat, color: Color) -> some View {
-        ForEach(Array(series.values.enumerated()), id: \.offset) { index, value in
+        ForEach(0..<series.values.count, id: \.self) { index in
+            let value = series.values[index]
             // Calculate bar height: from 0 line to value
             let valueY = height * CGFloat((maxValue - value) / valueRange)
             let barHeight = abs(zeroY - valueY)

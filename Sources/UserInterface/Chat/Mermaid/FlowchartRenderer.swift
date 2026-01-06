@@ -774,11 +774,11 @@ struct ArrowHead: Shape {
             x: at.x - arrowLength * cos(angle - arrowAngle),
             y: at.y - arrowLength * sin(angle - arrowAngle)
         ))
-        path.move(to: at)
         path.addLine(to: CGPoint(
             x: at.x - arrowLength * cos(angle + arrowAngle),
             y: at.y - arrowLength * sin(angle + arrowAngle)
         ))
+        path.closeSubpath()  // Close the triangle to make it fillable
 
         return path
     }
