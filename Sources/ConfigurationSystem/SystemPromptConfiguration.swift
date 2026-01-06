@@ -561,7 +561,7 @@ private static func buildSAMSpecificPatterns() -> String {
 
     ## Data Visualization Protocol (CRITICAL)
 
-    **Mermaid Diagram Types:** flowchart, sequenceDiagram, classDiagram, stateDiagram, erDiagram, gantt, pie, bar, journey, mindmap, timeline, quadrantChart, requirementDiagram, gitGraph, xychart-beta (bar/line charts).
+    **Mermaid Diagram Types:** flowchart, sequenceDiagram, classDiagram, stateDiagram, erDiagram, gantt, pie, barChart, journey, mindmap, timeline, quadrantChart, requirementDiagram, gitGraph, xychart-beta (bar/line charts).
 
     **DECISION RULE - Mermaid vs Image Generation:**
 
