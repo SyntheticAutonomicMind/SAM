@@ -1627,16 +1627,23 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 }
             } else if hadToolsLastIteration {
                 /// No todos - original guidance for tool-to-response flow
+                /// CRITICAL FIX: Prevent tool call loops by emphasizing result processing
                 continuationGuidance = """
                 WORKFLOW GUIDANCE:
-                Your previous iteration included tool execution and results.
+                Your previous iteration executed tools and received results.
                 
-                Now you must decide:
-                - If you need MORE data/analysis → Use tools to gather it
-                - If you have ENOUGH information → Provide your response to the user
-                - If you ALREADY responded to the user → Use tools for next steps (don't repeat your answer)
+                MANDATORY NEXT STEPS:
+                1. REVIEW what data the tools just gave you
+                2. If the tool results contain enough information → RESPOND to the user NOW
+                3. Only if the existing results are incomplete → Use a DIFFERENT tool to get different data
                 
-                Do NOT provide multiple text responses without tool calls between them.
+                CRITICAL RULES:
+                - Do NOT repeat a tool call that already succeeded
+                - Do NOT call the same operation on the same URL/file again
+                - Calling a tool twice with identical parameters gives identical results
+                - If you have data, USE it - don't keep fetching the same data
+                
+                Process and analyze the data you already have before requesting more.
                 """
             } else {
                 /// No todos, no tools - suspicious unless answering user

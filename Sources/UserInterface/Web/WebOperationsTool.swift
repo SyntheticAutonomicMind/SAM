@@ -122,6 +122,17 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
     private let logger = Logger(label: "com.sam.mcp.WebOperations")
 
+    /// OPERATION DEDUPLICATION: Prevent AI from running identical operations multiple times.
+    /// Pattern copied from RunInTerminalTool to fix redundant web_operations calls.
+    private struct OperationCacheEntry {
+        let operation: String
+        let parameters: String  // Serialized parameters for cache key
+        let result: MCPToolResult
+        let timestamp: Date
+    }
+    nonisolated(unsafe) private static var operationCache: [String: OperationCacheEntry] = [:]
+    private static let cacheWindow: TimeInterval = 30.0
+
     /// Delegate tools for operations.
     private var webResearchTool: WebResearchTool
     private var webSearchTool: WebSearchTool
@@ -194,6 +205,28 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     ) async -> MCPToolResult {
         logger.debug("WebOperationsTool routing to operation: \(operation)")
 
+        /// DEDUPLICATION: Check if this exact operation was recently executed.
+        /// Create cache key from operation + parameters (sorted to handle order variance)
+        let sortedParams = parameters.sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: "&")
+        let cacheKey = "\(operation):\(sortedParams)"
+
+        /// Check cache (no lock needed - nonisolated(unsafe) dictionary access)
+        let cachedResult = Self.operationCache[cacheKey]
+
+        if let cached = cachedResult {
+            let age = Date().timeIntervalSince(cached.timestamp)
+            if age < Self.cacheWindow {
+                logger.warning("DEDUPLICATION: Identical web_operations call executed \(String(format: "%.1f", age))s ago - returning cached result")
+                logger.warning("DEDUPLICATION: Operation: \(operation), Parameters: \(sortedParams)")
+                return cached.result
+            } else {
+                /// Cache expired, remove it.
+                Self.operationCache.removeValue(forKey: cacheKey)
+            }
+        }
+
         /// Validate parameters before routing.
         if let validationError = validateParameters(operation: operation, parameters: parameters) {
             return validationError
@@ -201,26 +234,57 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
         switch operation {
         case "research":
-            return await handleResearch(parameters: parameters, context: context)
+            let result = await handleResearch(parameters: parameters, context: context)
+            cacheResult(cacheKey: cacheKey, operation: operation, parameters: sortedParams, result: result)
+            return result
 
         case "retrieve":
-            return await handleRetrieve(parameters: parameters, context: context)
+            let result = await handleRetrieve(parameters: parameters, context: context)
+            cacheResult(cacheKey: cacheKey, operation: operation, parameters: sortedParams, result: result)
+            return result
 
         case "web_search":
-            return await handleSearch(parameters: parameters, context: context)
+            let result = await handleSearch(parameters: parameters, context: context)
+            cacheResult(cacheKey: cacheKey, operation: operation, parameters: sortedParams, result: result)
+            return result
 
         case "serpapi":
-            return await handleSerpAPI(parameters: parameters, context: context)
+            let result = await handleSerpAPI(parameters: parameters, context: context)
+            cacheResult(cacheKey: cacheKey, operation: operation, parameters: sortedParams, result: result)
+            return result
 
         case "scrape":
-            return await handleScrape(parameters: parameters, context: context)
+            let result = await handleScrape(parameters: parameters, context: context)
+            cacheResult(cacheKey: cacheKey, operation: operation, parameters: sortedParams, result: result)
+            return result
 
         case "fetch":
-            return await handleFetch(parameters: parameters, context: context)
+            let result = await handleFetch(parameters: parameters, context: context)
+            cacheResult(cacheKey: cacheKey, operation: operation, parameters: sortedParams, result: result)
+            return result
 
         default:
             return operationError(operation, message: "Unknown operation")
         }
+    }
+
+    /// Cache successful operation result to prevent redundant calls.
+    private func cacheResult(cacheKey: String, operation: String, parameters: String, result: MCPToolResult) {
+        /// Only cache successful results.
+        guard result.success else {
+            logger.debug("DEDUPLICATION: Not caching failed result for \(operation)")
+            return
+        }
+
+        /// Store in cache (no lock needed - nonisolated(unsafe) dictionary access)
+        Self.operationCache[cacheKey] = OperationCacheEntry(
+            operation: operation,
+            parameters: parameters,
+            result: result,
+            timestamp: Date()
+        )
+
+        logger.debug("DEDUPLICATION: Cached result for \(operation) (expires in \(Int(Self.cacheWindow))s)")
     }
 
     // MARK: - Parameter Validation
