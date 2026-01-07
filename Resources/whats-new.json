@@ -1,6 +1,89 @@
 {
   "releases": [
     {
+      "version": "20260107.1",
+      "release_date": "January 7, 2026",
+      "introduction": "Critical release fixing Claude model context loss and infinite loops. This release resolves three major bugs affecting agent workflow quality: tool result trimming causing infinite loops, delta mode sending incomplete context to Claude, and duplicate message alternation losing tool results. Additionally fixes false 'no tools' warnings and improves workflow guidance.",
+      "highlights": [
+        {
+          "id": "claude-context-loss-fix",
+          "icon": "brain.fill",
+          "title": "Claude Context Loss Fixed",
+          "description": "Fixed critical bug where Claude models received only tool results without conversation history. When stateful marker wasn't found, delta mode incorrectly sent only 4 internal messages instead of full conversation history (e.g., 19 messages). Claude now receives complete context, eliminating 'this is the FIRST message' errors and memory issues."
+        },
+        {
+          "id": "infinite-loop-elimination",
+          "icon": "arrow.triangle.2.circlepath.circle.fill",
+          "title": "Infinite Tool Loop Eliminated",
+          "description": "Fixed infinite loop where agents repeatedly called the same tool. Root cause: 16KB payload limit was trimming tool results before they reached the LLM, causing the agent to retry endlessly. Payload limit now only applies to Claude models (32KB) and preserves message pairs together."
+        },
+        {
+          "id": "github-copilot-claude-batching",
+          "icon": "chevron.left.forwardslash.chevron.right",
+          "title": "GitHub Copilot + Claude Format Handling",
+          "description": "Disabled Claude-specific tool result batching for GitHub Copilot provider. GitHub Copilot's API handles Claude conversion internally and expects OpenAI format. Only direct Anthropic provider uses batching, preventing format conflicts and alternation issues."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "delta-mode-context-loss",
+          "icon": "chevron.left.chevron.right",
+          "title": "Delta Mode Context Loss Fixed",
+          "description": "When stateful marker wasn't found in conversation, system logged 'sending full history' but still used delta-only mode. Added useDeltaMode flag that only enables delta mode when marker is successfully found, preventing context loss."
+        },
+        {
+          "id": "payload-limit-tool-trimming",
+          "icon": "scissors",
+          "title": "Payload Size Limit Tool Trimming Fixed",
+          "description": "16KB payload limit was applied to ALL models, causing tool results to be trimmed before reaching the LLM. Now only enforced for Claude models (32KB limit) and improved trimming logic keeps message pairs together (assistant+toolcalls with corresponding tool_result)."
+        },
+        {
+          "id": "double-alternation-merging",
+          "icon": "arrow.left.arrow.right",
+          "title": "Double Message Alternation Eliminated",
+          "description": "Messages were being alternated/merged twice: once in AgentOrchestrator.ensureMessageAlternation() and again in GitHubCopilotProvider.enforceMessageAlternation(). Removed duplicate alternation from provider, keeping orchestrator version with better logging."
+        },
+        {
+          "id": "claude-batching-provider-specific",
+          "icon": "server.rack",
+          "title": "Claude Tool Batching Made Provider-Specific",
+          "description": "batchToolResultsForClaude now only runs for direct Anthropic provider (anthropic/*). GitHub Copilot provider (github_copilot/claude-*) skips batching since the proxy handles conversion internally, preventing marker burial in alternation."
+        },
+        {
+          "id": "workflow-guidance-improvement",
+          "icon": "text.quote",
+          "title": "Workflow Guidance Improved",
+          "description": "Changed aggressive guidance from 'If tool results contain enough information → RESPOND NOW' to 'ANALYZE the data to address the user's specific request. Complete that task with the data you have.' Encourages proper analysis instead of premature responses."
+        },
+        {
+          "id": "false-no-tools-warning",
+          "icon": "exclamationmark.triangle",
+          "title": "False 'No Tools' Warning Eliminated",
+          "description": "Fixed premature reset of lastIterationHadToolResults causing false 'Agent executed no tools in iteration X' warnings. System now correctly tracks tool execution state across iterations, only warning when genuinely stuck."
+        },
+        {
+          "id": "operation-deduplication",
+          "icon": "arrow.triangle.merge",
+          "title": "Web Operations Deduplication Added",
+          "description": "WebOperationsTool now prevents calling the same operation with identical parameters multiple times. Reduces wasted API calls and improves efficiency when agents retry unnecessarily."
+        },
+        {
+          "id": "diagnostic-message-logging",
+          "icon": "doc.text.magnifyingglass",
+          "title": "Comprehensive Diagnostic Logging Added",
+          "description": "Added detailed logging to ensureMessageAlternation showing input/output message arrays with roles, sizes, tool info, and each filtering/merging decision. Critical for debugging message transformation bugs."
+        }
+      ],
+      "known_issues": [
+        {
+          "id": "mindmap-children-not-rendering",
+          "icon": "diagram.tree",
+          "title": "Mindmap Children Not Rendering",
+          "description": "Mindmap shows only root node. Children are parsed correctly but have layout/positioning issues preventing display. Recursive rendering exists but child nodes render outside visible frame bounds."
+        }
+      ]
+    },
+    {
       "version": "20260106.1",
       "release_date": "January 6, 2026",
       "introduction": "This release delivers comprehensive Mermaid diagram improvements with 9 bug fixes across multiple diagram types. Critical parser contamination issues resolved, and problematic diagram types temporarily disabled to ensure stability.",
