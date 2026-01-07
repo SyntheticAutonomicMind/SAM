@@ -3849,9 +3849,44 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                     /// CRITICAL: Ensure message alternation for Claude API compatibility
                     let fixedCompressedMessages = ensureMessageAlternation(compressedMessagesToProcess)
+                    
+                    /// CRITICAL: Re-validate size after compression to prevent 400 errors
+                    /// GitHub Copilot and other providers enforce hard token limits (e.g., 64K for GitHub Copilot)
+                    /// If compression didn't bring us under limit, force aggressive message trimming
+                    var finalMessages = fixedCompressedMessages
+                    let (postCompressionTokens, postCompressionSafe, _) = await validateRequestSize(
+                        messages: finalMessages,
+                        model: model,
+                        tools: compressedRequestWithTools.tools
+                    )
+                    
+                    if !postCompressionSafe {
+                        logger.warning("POST_COMPRESSION_CHECK: Still exceeds limit (\(postCompressionTokens) tokens), forcing message trimming to prevent 400 error")
+                        
+                        /// Force trim to 70% of context limit by removing oldest messages
+                        let targetTokens = Int(Double(contextLimit) * 0.70)
+                        var currentTokens = postCompressionTokens
+                        var trimCount = 0
+                        
+                        while currentTokens > targetTokens && finalMessages.count > 2 {
+                            /// Remove oldest message (keep system prompt at index 0 if present)
+                            let startIndex = finalMessages[0].role == "system" ? 1 : 0
+                            if finalMessages.count > startIndex {
+                                let removed = finalMessages.remove(at: startIndex)
+                                let removedTokens = await tokenCounter.estimateTokensRemote(text: removed.content ?? "")
+                                currentTokens -= removedTokens
+                                trimCount += 1
+                            } else {
+                                break
+                            }
+                        }
+                        
+                        logger.warning("POST_COMPRESSION_TRIM: Removed \(trimCount) oldest messages, \(postCompressionTokens) → \(currentTokens) tokens")
+                    }
+                    
                     let finalCompressedRequest = OpenAIChatRequest(
                         model: compressedRequestWithTools.model,
-                        messages: fixedCompressedMessages,
+                        messages: finalMessages,
                         temperature: compressedRequestWithTools.temperature,
                         maxTokens: compressedRequestWithTools.maxTokens,
                         stream: compressedRequestWithTools.stream,
@@ -4379,10 +4414,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// This was causing tool results to be trimmed away → infinite loop bug
             let modelLower = model.lowercased()
             if modelLower.contains("claude") {
-                /// CRITICAL: Enforce 32KB payload limit for Claude (increased from 16KB to accommodate large tool results)
+                /// CRITICAL: Enforce 64KB payload limit for Claude (increased from 32KB to match GitHub Copilot limit)
                 /// Even with cached large tool results, accumulated deltas can exceed limit
                 /// If trimming occurs, clear marker (it may reference removed message)
-                if enforcePayloadSizeLimit(&messages, maxBytes: 32000) {
+                if enforcePayloadSizeLimit(&messages, maxBytes: 64000) {
                     currentMarker = nil
                     logger.warning("PAYLOAD_SIZE: Cleared statefulMarker after trimming (marker may reference removed message)")
                 }
