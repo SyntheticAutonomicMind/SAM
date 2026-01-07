@@ -1,6 +1,95 @@
 {
   "releases": [
     {
+      "version": "20260106.1",
+      "release_date": "January 6, 2026",
+      "introduction": "This release delivers comprehensive Mermaid diagram improvements with 9 bug fixes across multiple diagram types. Critical parser contamination issues resolved, and problematic diagram types temporarily disabled to ensure stability.",
+      "highlights": [
+        {
+          "id": "mermaid-comprehensive-fixes",
+          "icon": "chart.bar.doc.horizontal.fill",
+          "title": "9 Mermaid Diagram Rendering Fixes",
+          "description": "Fixed critical bugs in bar charts, flowcharts, xy-charts, class diagrams, and mindmaps. Improved arrow rendering, parser accuracy, and cross-diagram isolation."
+        },
+        {
+          "id": "cross-diagram-contamination",
+          "icon": "exclamationmark.shield.fill",
+          "title": "Cross-Diagram Contamination Eliminated",
+          "description": "Fixed critical bug where class diagrams were contaminated with state diagram nodes. Parser now correctly distinguishes '-->' (state transitions) from '--' (class associations), preventing syntax from one diagram type affecting another."
+        },
+        {
+          "id": "read-tool-loop-prevention",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Read Tool Result Loop Prevention",
+          "description": "Added efficiency guidance to prevent agents from repeatedly calling read_tool_result. Tool now includes clear guidance: 'Use sparingly - most tools return output directly. Only needed when tool signals more data available.'"
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "bar-chart-rendering",
+          "icon": "chart.bar.fill",
+          "title": "Bar Chart Rendering Fixed",
+          "description": "Fixed bar chart value text rendering. Values now display correctly above bars using proper SwiftUI text rendering instead of attempting to use non-existent NSAttributedString API."
+        },
+        {
+          "id": "flowchart-arrows-invisible",
+          "icon": "arrow.right",
+          "title": "Flowchart Arrows Now Visible",
+          "description": "Arrow heads were invisible due to using .stroke() on closed paths. Changed to .fill() for proper rendering. Arrows with .closeSubpath() now display correctly."
+        },
+        {
+          "id": "xy-chart-axis-labels",
+          "icon": "chart.xyaxis.line",
+          "title": "XY Chart Axis Labels Fixed",
+          "description": "Axis labels were clipped and invisible. Added proper padding (.padding(.vertical, 20)) to ensure labels render within visible bounds."
+        },
+        {
+          "id": "class-diagram-arrows",
+          "icon": "arrow.triangle.branch",
+          "title": "Class Diagram Relationship Arrows Fixed",
+          "description": "Changed relationship arrows from .stroke() to .fill() for visibility. Inheritance, composition, and association arrows now render correctly."
+        },
+        {
+          "id": "class-diagram-contamination",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Class Diagram Contamination Eliminated",
+          "description": "State diagram syntax ('Idle --> Loading') was being parsed as class relationships due to substring matching. Parser now checks for '-->' before '--', preventing cross-diagram contamination."
+        },
+        {
+          "id": "mindmap-label-extraction",
+          "icon": "brain.head.profile",
+          "title": "Mindmap Label Extraction Fixed",
+          "description": "Mindmap nodes with shape syntax like 'root((Project))' displayed raw syntax instead of labels. Parser now correctly extracts 'Project' by finding first '(' and last ')' then stripping inner parentheses."
+        },
+        {
+          "id": "state-er-disabled",
+          "icon": "eye.slash.fill",
+          "title": "State and ER Diagrams Temporarily Disabled",
+          "description": "State and ER diagrams have rendering issues and are disabled until fixes are implemented. Removed from system prompt (SystemPromptConfiguration.swift) and parser returns .unsupported for these types to prevent rendering attempts."
+        },
+        {
+          "id": "read-tool-efficiency",
+          "icon": "speedometer",
+          "title": "Read Tool Result Efficiency Improved",
+          "description": "Added usage guidance to prevent unnecessary read_tool_result calls. Tool description now includes: 'Use sparingly. Most tools return all output directly in their response.'"
+        },
+        {
+          "id": "barchart-parser-mismatch",
+          "icon": "chart.bar.xaxis",
+          "title": "Bar Chart Parser/Prompt Mismatch Fixed",
+          "description": "System prompt advertised 'barChart' syntax but parser only recognized 'bar'. Updated parser to accept both 'barChart' and 'bar' for consistency with documentation."
+        }
+      ],
+      "known_issues": [
+        {
+          "id": "mindmap-children-not-rendering",
+          "icon": "diagram.tree",
+          "title": "Mindmap Children Not Rendering",
+          "description": "Mindmap shows only root node. Children are parsed correctly but have layout/positioning issues preventing display. Recursive rendering exists but child nodes render outside visible frame bounds."
+        }
+      ]
+    },
+    {
       "version": "20260105.1",
       "release_date": "January 5, 2026",
       "introduction": "This release fixes a todo workflow regression affecting web research and completes SerpAPI search engine support. System prompt optimization reduces duplication while maintaining behavioral effectiveness.",
