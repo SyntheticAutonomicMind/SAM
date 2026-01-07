@@ -1661,6 +1661,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             let guidanceMessage = createSystemReminder(content: continuationGuidance, model: model)
             context.ephemeralMessages.append(guidanceMessage)
             logger.debug("CONTINUATION_GUIDANCE: Injected context-aware guidance (hadTools=\(hadToolsLastIteration))")
+            logger.debug("CONTINUATION_GUIDANCE: Guidance content: \(continuationGuidance.prefix(200))...")
+            logger.debug("CONTINUATION_GUIDANCE: ephemeralMessages now has \(context.ephemeralMessages.count) messages")
 
             /// BUG FIX: Reset alternation flag AFTER using it to generate guidance
             /// This ensures the flag persists across iterations so continuation guidance can be accurate
@@ -3911,6 +3913,17 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             }
         }
 
+        /// DIAGNOSTIC: Log full message array to understand what LLM actually sees
+        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.debug("DIAGNOSTIC_MESSAGES: Full message array being sent to LLM (\(finalRequest.messages.count) messages)")
+        for (index, msg) in finalRequest.messages.enumerated() {
+            let contentPreview = msg.content?.prefix(150) ?? "nil"
+            let toolCallsInfo = msg.toolCalls.map { "toolCalls=\($0.count)" } ?? "no-tools"
+            let toolCallId = msg.toolCallId ?? "no-id"
+            logger.debug("  [\(index)] role=\(msg.role) \(toolCallsInfo) toolCallId=\(toolCallId) content=\(contentPreview)...")
+        }
+        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
         logger.debug("callLLM: Calling EndpointManager.processChatCompletion() with retry policy")
 
         /// Wrap API call with retry policy for transient network errors Prevents conversation loss on timeout/network issues (exponential backoff: 2s/4s/6s).
@@ -4464,8 +4477,16 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Claude requires strict user/assistant alternation with no empty messages
         /// This MUST happen before YARN because YARN compresses individual messages
         /// If we merge AFTER YARN, we concatenate compressed content and blow up token count!
-        messages = ensureMessageAlternation(messages)
-        logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
+        /// CRITICAL FIX: Skip alternation for GitHub Copilot delta mode (tool results only)
+        /// In delta mode, we send ONLY tool execution context (assistant+toolcalls + tool results)
+        /// Alternation fix was merging these messages and losing tool results → caused loop bug
+        let isGitHubCopilotDeltaMode = statefulMarker != nil && hasToolResults && !modelLower.contains("claude")
+        if !isGitHubCopilotDeltaMode {
+            messages = ensureMessageAlternation(messages)
+            logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
+        } else {
+            logger.debug("callLLMStreaming: SKIPPED message alternation (GitHub Copilot delta mode) - preserving \(messages.count) tool messages")
+        }
 
         /// CRITICAL: Get model's actual context limit BEFORE YaRN processing
         /// This ensures YaRN compresses to the correct target for this specific model
@@ -4545,6 +4566,17 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.warning("API_REQUEST_SIZE: High risk of timeout. Consider additional YARN compression in future iterations.")
             /// We proceed anyway (retry will handle timeout), but log warning for improvement.
         }
+
+        /// DIAGNOSTIC: Log full message array to understand what LLM actually sees
+        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.debug("DIAGNOSTIC_MESSAGES_STREAMING: Full message array being sent to LLM (\(finalRequest.messages.count) messages)")
+        for (index, msg) in finalRequest.messages.enumerated() {
+            let contentPreview = msg.content?.prefix(150) ?? "nil"
+            let toolCallsInfo = msg.toolCalls.map { "toolCalls=\($0.count)" } ?? "no-tools"
+            let toolCallId = msg.toolCallId ?? "no-id"
+            logger.debug("  [\(index)] role=\(msg.role) \(toolCallsInfo) toolCallId=\(toolCallId) content=\(contentPreview)...")
+        }
+        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         logger.debug("callLLMStreaming: Calling EndpointManager.processStreamingChatCompletion() with retry policy")
 
