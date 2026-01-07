@@ -720,10 +720,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     "effectiveLevel": .stringConvertible(effectiveLevel)
                 ])
                 
-                /// FIX #8: Reset alternation flag after using it
-                /// Flag was checked above to determine if alternation reminder is needed
-                /// Now reset it so next iteration starts fresh
-                context.lastIterationHadToolResults = false
+                /// BUG FIX: Do NOT reset alternation flag here!
+                /// The flag needs to persist until the NEXT iteration reads it (line ~1583)
+                /// Resetting it here causes the flag to be false when continuation guidance is generated
+                /// Result: Wrong guidance is injected even when tools were called
+                /// The flag will be reset at the start of the next iteration after being used
+                /// context.lastIterationHadToolResults = false  // REMOVED - causes false "no tools" warnings
 
                 /// Create properly formatted message based on model type:
                 /// - Claude models: wrap in <system-reminder> tags, send as "user" role
@@ -1647,6 +1649,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             let guidanceMessage = createSystemReminder(content: continuationGuidance, model: model)
             context.ephemeralMessages.append(guidanceMessage)
             logger.debug("CONTINUATION_GUIDANCE: Injected context-aware guidance (hadTools=\(hadToolsLastIteration))")
+
+            /// BUG FIX: Reset alternation flag AFTER using it to generate guidance
+            /// This ensures the flag persists across iterations so continuation guidance can be accurate
+            /// Flag will be set back to true when tools are executed in this iteration (line ~2182)
+            context.lastIterationHadToolResults = false
 
             /// Add iteration status (always present)
             let iterationContent = "ITERATION STATUS: Currently on iteration \(context.iteration + 1). Maximum iterations: \(context.maxIterations)."
