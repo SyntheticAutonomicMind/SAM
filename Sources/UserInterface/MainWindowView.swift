@@ -100,6 +100,7 @@ public struct MainWindowView: View {
     @AppStorage("hasSeenWelcomeScreen") private var hasSeenWelcomeScreen: Bool = false
     @State private var showingWelcomeScreen: Bool = false
     @State private var showingWhatsNew: Bool = false
+    @State private var showingOnboardingWizard: Bool = false
     @State private var selectedConversations: Set<UUID> = []
     @State private var showingDeleteSelectedConfirmation = false
     @State private var showingFolderCreation = false
@@ -326,6 +327,11 @@ public struct MainWindowView: View {
         .sheet(isPresented: $showingWhatsNew) {
             WhatsNewView(isPresented: $showingWhatsNew)
         }
+        .sheet(isPresented: $showingOnboardingWizard) {
+            OnboardingWizardView(isPresented: $showingOnboardingWizard)
+                .environmentObject(endpointManager)
+                .environmentObject(conversationManager)
+        }
         .sheet(isPresented: $showingRenameDialog) {
             renameConversationDialog
         }
@@ -432,9 +438,22 @@ public struct MainWindowView: View {
             logger.debug("Main window view initialized")
             logger.debug("Main window structure loaded successfully")
 
-            /// Show welcome screen on first launch.
-            if !hasSeenWelcomeScreen {
-                /// Delay slightly to ensure window is fully loaded.
+            /// Check if onboarding is needed (no models AND no providers configured)
+            let modelManager = LocalModelManager()
+            let hasLocalModels = !modelManager.getModels().isEmpty
+            let savedProviderIds = UserDefaults.standard.stringArray(forKey: "saved_provider_ids") ?? []
+            let hasProviders = !savedProviderIds.isEmpty
+            let needsOnboarding = !hasLocalModels && !hasProviders
+            
+            logger.info("ONBOARDING_CHECK: hasModels=\(hasLocalModels), hasProviders=\(hasProviders), needsOnboarding=\(needsOnboarding)")
+            
+            if needsOnboarding {
+                /// Show onboarding wizard for first-time setup
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showingOnboardingWizard = true
+                }
+            } else if !hasSeenWelcomeScreen {
+                /// Show welcome screen on first launch if already configured
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     showingWelcomeScreen = true
                 }
