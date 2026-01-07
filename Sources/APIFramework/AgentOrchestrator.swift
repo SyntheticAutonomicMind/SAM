@@ -200,6 +200,18 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 continue
             }
 
+            /// CRITICAL: Preserve Claude batched tool results - these must NOT be merged
+            /// The __CLAUDE_BATCHED_TOOL_RESULTS__ marker MUST be at the start of content
+            /// for AnthropicMessageConverter to detect and convert to tool_result blocks
+            if message.role == "user",
+               let content = message.content,
+               content.hasPrefix("__CLAUDE_BATCHED_TOOL_RESULTS__") {
+                fixed.append(message)
+                lastRole = message.role
+                logger.debug("ALTERNATION_PRESERVE_BATCHED_TOOLS: Preserved Claude batched tool results (contentLen=\(content.count))")
+                continue
+            }
+
             /// Merge consecutive same-role messages
             if message.role == lastRole {
                 /// Can only merge user and assistant messages (not system or tool)
@@ -4310,6 +4322,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// 1. statefulMarker + hasToolResults = delta-only mode (workflow iteration) - skip conversation history
         /// 2. statefulMarker + NO tool results = subsequent user message - send FULL conversation history
         /// 3. NO statefulMarker = first message or fresh start - send FULL conversation history
+        var useDeltaMode = false  /// Track whether we should use delta-only mode
+        
         if let marker = statefulMarker, hasToolResults {
             /// Delta-only mode: This is a workflow iteration with tool results
             /// Server has full history up to marker, only need to send tool execution delta
@@ -4319,25 +4333,33 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// Example: If marker was captured at count=3, send messages from index 3 onwards
                 let sliceIndex = markerMessageCount
                 conversationMessages = Array(conversationMessages.suffix(from: min(sliceIndex, conversationMessages.count)))
+                useDeltaMode = true  /// Successfully sliced, use delta mode
                 logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(conversationMessages.count) messages after marker (delta-only mode with tool results)")
             }
             /// FALLBACK: Search for marker in messages (timing-dependent, may fail if message not persisted yet)
             else if let markerIndex = conversationMessages.lastIndex(where: { $0.githubCopilotResponseId == marker }) {
                 /// Slice to only include messages AFTER the marker (marker itself is already on server)
                 conversationMessages = Array(conversationMessages.suffix(from: markerIndex + 1))
+                useDeltaMode = true  /// Successfully found marker, use delta mode
                 logger.debug("STATEFUL_MARKER_SLICING: Found marker at index \(markerIndex), sending ONLY \(conversationMessages.count) messages after marker (delta-only mode, fallback method)")
             } else {
-                logger.warning("STATEFUL_MARKER_WARNING: Marker \(marker.prefix(20))... not found in conversation AND no message count available, sending full history (\(conversationMessages.count) messages)")
+                /// CRITICAL: Marker not found - cannot use delta mode safely!
+                /// Send FULL conversation history to prevent context loss
+                useDeltaMode = false  /// Force full history mode
+                logger.warning("STATEFUL_MARKER_WARNING: Marker \(marker.prefix(20))... not found in conversation AND no message count available, FORCING FULL HISTORY MODE (safety fallback)")
             }
         } else if statefulMarker != nil && !hasToolResults {
             /// Subsequent user message scenario: statefulMarker exists but no tool results yet
             /// Do NOT slice conversation history - user needs full context for their new message!
+            useDeltaMode = false  /// Full history needed for user message
             logger.debug("SUBSEQUENT_USER_MESSAGE: StatefulMarker exists but no tool results - sending FULL conversation history (\(conversationMessages.count) messages) for user context")
         } else {
+            useDeltaMode = false  /// No marker, send full history
             logger.debug("INFO: No statefulMarker, sending all \(conversationMessages.count) conversation messages")
         }
 
-        /// When statefulMarker exists, send ONLY internalMessages (delta-only mode)
+        /// When delta mode is enabled, send ONLY internalMessages (delta-only mode)
+        /// When delta mode is disabled, send conversationMessages + internalMessages (full history)
         /// This prevents duplicate assistant messages that cause Claude 400 errors
         /// ROOT CAUSE: Assistant responses are in BOTH conversation.messages AND internalMessages
         /// GitHub Copilot approach: With statefulMarker, only send NEW messages (delta)
@@ -4345,7 +4367,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Do NOT inject "Please continue" into messages array
         /// GitHub Copilot API: "Please continue" is query param only, NOT a synthetic message
         var currentMarker = statefulMarker  /// Make mutable copy
-        if let marker = currentMarker, hasToolResults {
+        if useDeltaMode && hasToolResults {
             /// Delta-only mode: Server has full history up to marker, only send new tool execution context
             /// The stateful marker tells the API to continue from the previous response
             /// We send ONLY the tool results (delta), not the full conversation history
@@ -4497,12 +4519,21 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         logger.debug("callLLMStreaming: Built complete message array with \(messages.count) messages (before alternation fix)")
 
-        /// CRITICAL: For Claude models, batch consecutive tool results into single user messages
+        /// CRITICAL: For Claude models via DIRECT Anthropic provider, batch consecutive tool results
         /// Claude Messages API requires ALL tool results from one iteration in ONE user message
         /// This fixes the tool result batching issue that caused workflow loops
-        if modelLower.contains("claude") {
+        /// 
+        /// IMPORTANT: Do NOT batch for GitHub Copilot + Claude!
+        /// GitHub Copilot's API handles Claude conversion internally and expects OpenAI format
+        /// Batching causes the marker to be buried in alternation merging
+        let isDirectAnthropicProvider = model.lowercased().hasPrefix("anthropic/")
+        let isClaudeModel = modelLower.contains("claude")
+        
+        if isClaudeModel && isDirectAnthropicProvider {
             messages = batchToolResultsForClaude(messages)
-            logger.debug("callLLMStreaming: Applied Claude tool result batching")
+            logger.debug("callLLMStreaming: Applied Claude tool result batching for direct Anthropic provider")
+        } else if isClaudeModel {
+            logger.debug("callLLMStreaming: Skipping Claude batching (not direct Anthropic provider - proxy will handle conversion)")
         }
 
         /// CRITICAL: Fix message alternation BEFORE YARN compression
