@@ -4507,8 +4507,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Claude requires strict user/assistant alternation with no empty messages
         /// This MUST happen before YARN because YARN compresses individual messages
         /// If we merge AFTER YARN, we concatenate compressed content and blow up token count!
-        /// TEMPORARY: Force alternation to run to diagnose bug
-        /// TODO: Remove this after fixing ensureMessageAlternation
         messages = ensureMessageAlternation(messages)
         logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
 

@@ -1480,15 +1480,11 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             return !isToolResultPreview
         }
         
-        /// MESSAGE_ALTERNATION FIX: Enforce strict user/assistant alternation
-        /// GitHub Copilot requires alternating roles (user → assistant → user → assistant)
-        /// Without this, consecutive same-role messages cause token counting errors
-        let alternationFixedMessages = enforceMessageAlternation(filteredMessages)
-        if alternationFixedMessages.count != filteredMessages.count {
-            logger.debug("MESSAGE_ALTERNATION: Applied fix - \(filteredMessages.count) → \(alternationFixedMessages.count) messages")
-        }
+        /// NOTE: Message alternation is handled in AgentOrchestrator.ensureMessageAlternation()
+        /// before reaching this provider. Doing it here would cause double-merging and lose context.
+        /// The orchestrator version preserves tool messages and has better logging.
 
-        let messages = alternationFixedMessages.map { message in
+        let messages = filteredMessages.map { message in
             var messageDict: [String: Any] = [
                 "role": message.role
             ]
