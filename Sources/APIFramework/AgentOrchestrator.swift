@@ -1656,16 +1656,18 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 
                 MANDATORY NEXT STEPS:
                 1. REVIEW what data the tools just gave you
-                2. If the tool results contain enough information → RESPOND to the user NOW
-                3. Only if the existing results are incomplete → Use a DIFFERENT tool to get different data
+                2. ANALYZE the data to address the user's specific request
+                3. If you have enough data to COMPLETE the user's request → Process it and respond
+                4. Only if the data is incomplete → Use DIFFERENT tools to get more information
                 
                 CRITICAL RULES:
                 - Do NOT repeat a tool call that already succeeded
                 - Do NOT call the same operation on the same URL/file again
                 - Calling a tool twice with identical parameters gives identical results
-                - If you have data, USE it - don't keep fetching the same data
+                - ALWAYS analyze and process the data you received before responding
+                - Don't just summarize - extract, organize, and present what the user asked for
                 
-                Process and analyze the data you already have before requesting more.
+                The user asked you to do something specific. Complete that task with the data you have.
                 """
             } else {
                 /// No todos, no tools - suspicious unless answering user
