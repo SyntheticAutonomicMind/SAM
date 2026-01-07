@@ -20,9 +20,13 @@ struct MermaidParser {
         } else if trimmed.starts(with: "classDiagram") {
             return parseClassDiagram(trimmed)
         } else if trimmed.starts(with: "stateDiagram") {
-            return parseStateDiagram(trimmed)
+            // Temporarily disabled - rendering issues
+            logger.warning("State diagrams temporarily disabled")
+            return .unsupported(code)
         } else if trimmed.starts(with: "erDiagram") {
-            return parseERDiagram(trimmed)
+            // Temporarily disabled - rendering issues
+            logger.warning("ER diagrams temporarily disabled")
+            return .unsupported(code)
         } else if trimmed.starts(with: "gantt") {
             return parseGantt(trimmed)
         } else if trimmed.starts(with: "pie") {
