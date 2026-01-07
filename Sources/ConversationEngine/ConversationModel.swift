@@ -5,6 +5,23 @@ import Foundation
 import ConfigurationSystem
 import Combine
 
+// MARK: - Default Model Selection
+
+/// Helper to determine the default model based on UserDefaults.
+/// Note: We can't check LocalModelManager here due to circular dependencies.
+/// The empty default ensures users select a model if none is configured.
+public func getDefaultModel() -> String {
+    /// Check UserDefaults first for explicit override
+    if let userDefault = UserDefaults.standard.string(forKey: "defaultModel"), !userDefault.isEmpty {
+        return userDefault
+    }
+    
+    /// Return empty string to force user selection
+    /// This prevents the error where gpt-4 is selected but no API key is configured
+    /// The onboarding wizard will guide users to configure a model/provider
+    return ""
+}
+
 // MARK: - Conversation Telemetry
 
 /// Tracks intelligence system usage statistics for Session Intelligence UI.
@@ -88,7 +105,7 @@ public struct ConversationSettings: Codable, Sendable {
     public var telemetry: ConversationTelemetry
 
     public init(
-        selectedModel: String = UserDefaults.standard.string(forKey: "defaultModel") ?? "gpt-4",
+        selectedModel: String = getDefaultModel(),
         temperature: Double = 0.7,
         topP: Double = 1.0,
         maxTokens: Int? = nil,

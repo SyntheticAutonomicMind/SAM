@@ -320,6 +320,8 @@ public struct MainWindowView: View {
         }
         .sheet(isPresented: $showingWelcomeScreen) {
             WelcomeView(isPresented: $showingWelcomeScreen)
+                .environmentObject(endpointManager)
+                .environmentObject(conversationManager)
         }
         .sheet(isPresented: $showingWhatsNew) {
             WhatsNewView(isPresented: $showingWhatsNew)
