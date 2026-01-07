@@ -180,6 +180,14 @@ public struct MainWindowView: View {
         )
         .padding(.horizontal, 40)
     }
+    
+    // MARK: - Onboarding Wizard Content
+    
+    private var onboardingWizardContent: some View {
+        OnboardingWizardView(isPresented: $showingOnboardingWizard)
+            .environmentObject(endpointManager)
+            .environmentObject(conversationManager)
+    }
 
     public var body: some View {
         HSplitView {
@@ -277,8 +285,12 @@ public struct MainWindowView: View {
 
                 Divider()
 
-                /// Main content: Welcome screen or ChatWidget.
-                if conversationManager.conversations.isEmpty {
+                /// Main content: Onboarding wizard, Welcome screen, or ChatWidget.
+                if showingOnboardingWizard {
+                    /// Onboarding wizard when no models or providers configured (not skippable)
+                    onboardingWizardContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if conversationManager.conversations.isEmpty {
                     /// Welcome screen when no conversations exist.
                     welcomeScreen
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -326,11 +338,6 @@ public struct MainWindowView: View {
         }
         .sheet(isPresented: $showingWhatsNew) {
             WhatsNewView(isPresented: $showingWhatsNew)
-        }
-        .sheet(isPresented: $showingOnboardingWizard) {
-            OnboardingWizardView(isPresented: $showingOnboardingWizard)
-                .environmentObject(endpointManager)
-                .environmentObject(conversationManager)
         }
         .sheet(isPresented: $showingRenameDialog) {
             renameConversationDialog
@@ -441,8 +448,12 @@ public struct MainWindowView: View {
             /// Check if onboarding is needed (no models AND no providers configured)
             let modelManager = LocalModelManager()
             let hasLocalModels = !modelManager.getModels().isEmpty
-            let savedProviderIds = UserDefaults.standard.stringArray(forKey: "saved_provider_ids") ?? []
-            let hasProviders = !savedProviderIds.isEmpty
+            
+            /// Check for ANY provider configuration in UserDefaults (not just saved_provider_ids)
+            let hasProviders = UserDefaults.standard.dictionaryRepresentation().keys.contains { key in
+                key.starts(with: "provider_config_")
+            }
+            
             let needsOnboarding = !hasLocalModels && !hasProviders
             
             logger.info("ONBOARDING_CHECK: hasModels=\(hasLocalModels), hasProviders=\(hasProviders), needsOnboarding=\(needsOnboarding)")
