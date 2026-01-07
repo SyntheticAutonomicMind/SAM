@@ -171,6 +171,17 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// Claude requires strict user/assistant alternation, no empty messages, and no consecutive same-role messages
     /// This function fixes message arrays to comply with Claude's requirements while preserving compatibility with other models
     private func ensureMessageAlternation(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
+        /// DIAGNOSTIC: Log input messages
+        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.debug("ALTERNATION_INPUT: Received \(messages.count) messages")
+        for (i, msg) in messages.enumerated() {
+            let contentLen = msg.content?.count ?? 0
+            let toolCallsCount = msg.toolCalls?.count ?? 0
+            let toolCallId = msg.toolCallId ?? "none"
+            let contentPreview = msg.content?.prefix(100) ?? "nil"
+            logger.debug("  IN[\(i)]: role=\(msg.role) contentLen=\(contentLen) toolCalls=\(toolCallsCount) toolCallId=\(toolCallId) preview=\"\(contentPreview)...\"")
+        }
+        
         var fixed: [OpenAIChatMessage] = []
         var lastRole: String?
 
@@ -178,13 +189,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// Skip empty messages (invalid for Claude)
             let trimmedContent = message.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !trimmedContent.isEmpty else {
-                logger.debug("MESSAGE_ALTERNATION: Skipping empty message (role=\(message.role))")
+                logger.debug("ALTERNATION_SKIP_EMPTY: role=\(message.role) (content empty)")
                 continue
             }
 
             /// Handle tool messages separately - they don't participate in alternation
             if message.role == "tool" {
                 fixed.append(message)
+                logger.debug("ALTERNATION_PRESERVE_TOOL: role=tool preserved (contentLen=\(message.content?.count ?? 0))")
                 continue
             }
 
@@ -247,6 +259,16 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         if originalCount != fixedCount {
             logger.info("MESSAGE_ALTERNATION: Fixed message array - \(originalCount) → \(fixedCount) messages (\(originalCount - fixedCount) removed/merged)")
         }
+
+        /// DIAGNOSTIC: Log output messages
+        logger.debug("ALTERNATION_OUTPUT: Returning \(validated.count) messages (removed/merged \(messages.count - validated.count))")
+        for (i, msg) in validated.enumerated() {
+            let contentLen = msg.content?.count ?? 0
+            let toolCallsCount = msg.toolCalls?.count ?? 0
+            let toolCallId = msg.toolCallId ?? "none"
+            logger.debug("  OUT[\(i)]: role=\(msg.role) contentLen=\(contentLen) toolCalls=\(toolCallsCount) toolCallId=\(toolCallId)")
+        }
+        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         return validated
     }
@@ -4328,12 +4350,20 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             messages.append(contentsOf: internalMessagesToSend)
             logger.debug("STATEFUL_MARKER_DELTA_MODE: Sending \(internalMessagesToSend.count) internal messages (delta-only mode, no synthetic user message)")
 
-            /// CRITICAL: Enforce 16KB payload limit (vscode-copilot-chat pattern)
-            /// Even with cached large tool results, accumulated deltas can exceed limit
-            /// If trimming occurs, clear marker (it may reference removed message)
-            if enforcePayloadSizeLimit(&messages, maxBytes: 16000) {
-                currentMarker = nil
-                logger.warning("PAYLOAD_SIZE: Cleared statefulMarker after trimming (marker may reference removed message)")
+            /// CRITICAL FIX: Only enforce payload limit for Claude (Claude-specific limitation)
+            /// GitHub Copilot and other models don't have this restriction
+            /// This was causing tool results to be trimmed away → infinite loop bug
+            let modelLower = model.lowercased()
+            if modelLower.contains("claude") {
+                /// CRITICAL: Enforce 32KB payload limit for Claude (increased from 16KB to accommodate large tool results)
+                /// Even with cached large tool results, accumulated deltas can exceed limit
+                /// If trimming occurs, clear marker (it may reference removed message)
+                if enforcePayloadSizeLimit(&messages, maxBytes: 32000) {
+                    currentMarker = nil
+                    logger.warning("PAYLOAD_SIZE: Cleared statefulMarker after trimming (marker may reference removed message)")
+                }
+            } else {
+                logger.debug("PAYLOAD_SIZE: Skipping payload limit for non-Claude model (\(model))")
             }
         } else if hasToolResults && checkpointSlicedAllMessages {
             /// BILLING FIX: Checkpoint found AND we have tool results Send ONLY tool results, don't duplicate conversation history.
@@ -4477,16 +4507,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Claude requires strict user/assistant alternation with no empty messages
         /// This MUST happen before YARN because YARN compresses individual messages
         /// If we merge AFTER YARN, we concatenate compressed content and blow up token count!
-        /// CRITICAL FIX: Skip alternation for GitHub Copilot delta mode (tool results only)
-        /// In delta mode, we send ONLY tool execution context (assistant+toolcalls + tool results)
-        /// Alternation fix was merging these messages and losing tool results → caused loop bug
-        let isGitHubCopilotDeltaMode = statefulMarker != nil && hasToolResults && !modelLower.contains("claude")
-        if !isGitHubCopilotDeltaMode {
-            messages = ensureMessageAlternation(messages)
-            logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
-        } else {
-            logger.debug("callLLMStreaming: SKIPPED message alternation (GitHub Copilot delta mode) - preserving \(messages.count) tool messages")
-        }
+        /// TEMPORARY: Force alternation to run to diagnose bug
+        /// TODO: Remove this after fixing ensureMessageAlternation
+        messages = ensureMessageAlternation(messages)
+        logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
 
         /// CRITICAL: Get model's actual context limit BEFORE YaRN processing
         /// This ensures YaRN compresses to the correct target for this specific model
@@ -6619,30 +6643,62 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             return false  /// No trimming needed
         }
 
-        self.logger.warning("PAYLOAD_SIZE: \(initialSize) bytes exceeds limit (\(maxBytes)), trimming oldest messages")
+        self.logger.warning("PAYLOAD_SIZE: \(initialSize) bytes exceeds limit (\(maxBytes)), trimming oldest message pairs")
 
         var currentSize = initialSize
         var removedCount = 0
 
-        /// Remove oldest messages until we're under the limit
-        /// Keep at least the last 2 messages (latest user + tool results)
+        /// CRITICAL FIX: Remove oldest message PAIRS to avoid orphaning tool results
+        /// Tool messages must stay paired with their corresponding assistant+toolcalls message
+        /// Otherwise the LLM sees tool results without context → loops
         while currentSize > maxBytes && messages.count > 2 {
-            let removed = messages.removeFirst()
-            removedCount += 1
+            /// Check if first message is assistant with tool calls
+            if messages[0].role == "assistant" && (messages[0].toolCalls?.isEmpty == false) {
+                /// Find the matching tool result(s) after this assistant message
+                var pairEnd = 1
+                while pairEnd < messages.count && messages[pairEnd].role == "tool" {
+                    pairEnd += 1
+                }
+                
+                /// Remove the entire pair (assistant+toolcalls + all tool results)
+                let pairSize = (0..<pairEnd).reduce(0) { size, idx in
+                    var msgSize = messages[idx].content?.utf8.count ?? 0
+                    if let toolCalls = messages[idx].toolCalls {
+                        for toolCall in toolCalls {
+                            msgSize += toolCall.function.arguments.utf8.count
+                            msgSize += toolCall.function.name.utf8.count
+                        }
+                    }
+                    return size + msgSize
+                }
+                
+                /// Remove all messages in the pair
+                for _ in 0..<pairEnd {
+                    let removed = messages.removeFirst()
+                    removedCount += 1
+                    logger.debug("PAYLOAD_SIZE: Removed message (role=\(removed.role), part of pair)")
+                }
+                
+                currentSize -= pairSize
+            } else {
+                /// Not a tool call pair, just remove the single message
+                let removed = messages.removeFirst()
+                removedCount += 1
 
-            if let content = removed.content {
-                currentSize -= content.utf8.count
-            }
-            if let toolCalls = removed.toolCalls {
-                for toolCall in toolCalls {
-                    let args = toolCall.function.arguments  // Not optional
-                    currentSize -= args.utf8.count
-                    currentSize -= toolCall.function.name.utf8.count
+                if let content = removed.content {
+                    currentSize -= content.utf8.count
+                }
+                if let toolCalls = removed.toolCalls {
+                    for toolCall in toolCalls {
+                        let args = toolCall.function.arguments
+                        currentSize -= args.utf8.count
+                        currentSize -= toolCall.function.name.utf8.count
+                    }
                 }
             }
         }
 
-        self.logger.info("PAYLOAD_SIZE: Removed \(removedCount) oldest messages, reduced from \(initialSize) to \(currentSize) bytes")
+        self.logger.info("PAYLOAD_SIZE: Removed \(removedCount) oldest messages (kept pairs together), reduced from \(initialSize) to \(currentSize) bytes")
         return true  /// Trimming occurred
     }
 }
