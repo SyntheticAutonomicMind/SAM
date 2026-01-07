@@ -7,6 +7,21 @@ import ConversationEngine
 import ConfigurationSystem
 import Logging
 
+/// Thread-safe counter for tracking concurrent search operations
+@globalActor actor SearchCounterActor {
+    static let shared = SearchCounterActor()
+    private var count = 0
+    
+    func increment() -> Int {
+        count += 1
+        return count
+    }
+    
+    func decrement() {
+        count -= 1
+    }
+}
+
 /// Consolidated Web Operations MCP Tool Combines web_research, web_search, and fetch_webpage into a single tool.
 public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     public let name = "web_operations"
@@ -470,6 +485,16 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func handleResearch(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        /// Track concurrent searches for parallel detection
+        let currentSearchCount = await SearchCounterActor.shared.increment()
+        
+        defer {
+            /// Decrement when search completes
+            Task {
+                await SearchCounterActor.shared.decrement()
+            }
+        }
+        
         /// Collect progress events for nested tool hierarchy.
         var progressEvents: [MCPProgressEvent] = []
 
@@ -496,7 +521,52 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         /// Delegate to WebResearchTool implementation.
         let result = await webResearchTool.execute(parameters: parameters, context: context)
 
-        /// Return full result inline (no persistence) Large results are handled by provider-level context limits.
+        /// PARALLEL SEARCH DETECTION: If multiple searches are running concurrently, persist to disk
+        /// This prevents token overflow when agent runs many searches at once
+        let shouldPersist = currentSearchCount > 1
+        
+        if shouldPersist {
+            logger.warning("PARALLEL_SEARCHES: Detected \(currentSearchCount) concurrent searches - forcing persistence to prevent token overflow")
+            
+            guard let conversationId = context.conversationId else {
+                logger.warning("PARALLEL_SEARCHES: No conversation ID, cannot persist - returning truncated result")
+                /// Without conversation ID, return truncated version to prevent 400 errors
+                let content = result.output.content
+                let truncated = TokenEstimator.truncate(content, toTokenLimit: ToolResultStorage.previewTokenLimit)
+                return MCPToolResult(
+                    toolName: result.toolName,
+                    executionId: result.executionId,
+                    success: result.success,
+                    output: MCPOutput(content: truncated, mimeType: result.output.mimeType),
+                    metadata: result.metadata,
+                    performance: result.performance,
+                    progressEvents: progressEvents + result.progressEvents
+                )
+            }
+            
+            /// Persist the large search result
+            let persistedOutput = storage.processToolResult(
+                toolCallId: context.toolCallId ?? UUID().uuidString,
+                content: result.output.content,
+                conversationId: conversationId
+            )
+            
+            let estimatedTokens = TokenEstimator.estimateTokens(result.output.content)
+            logger.info("PARALLEL_SEARCHES: Persisted search result (\(estimatedTokens) tokens) - agent should use read_tool_result to access")
+            
+            return MCPToolResult(
+                toolName: result.toolName,
+                executionId: result.executionId,
+                success: result.success,
+                output: MCPOutput(content: persistedOutput, mimeType: result.output.mimeType),
+                metadata: result.metadata,
+                performance: result.performance,
+                progressEvents: progressEvents + result.progressEvents
+            )
+        }
+
+        /// Return full result inline (no persistence) for single searches
+        /// Large results are handled by provider-level context limits.
         return MCPToolResult(
             toolName: result.toolName,
             executionId: result.executionId,
