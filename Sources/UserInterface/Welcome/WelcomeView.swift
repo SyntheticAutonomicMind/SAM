@@ -200,7 +200,8 @@ struct WelcomeView: View {
         /// Check if user has any local models installed
         /// Use LocalModelManager to check models directory
         let modelManager = LocalModelManager()
-        let hasLocalModels = !modelManager.getModels().isEmpty
+        let models = modelManager.getModels()
+        let hasLocalModels = !models.isEmpty
         
         /// Check if user has any configured providers
         /// Check if there are any saved provider IDs in UserDefaults
@@ -209,6 +210,8 @@ struct WelcomeView: View {
         
         /// Show onboarding wizard if no models AND no providers
         showOnboarding = !hasLocalModels && !hasProviders
+        
+        logger.info("ONBOARDING_CHECK: hasLocalModels=\(hasLocalModels) (count=\(models.count)), hasProviders=\(hasProviders) (ids=\(savedProviderIds)), showOnboarding=\(showOnboarding)")
         
         if showOnboarding {
             logger.info("No models or providers configured - showing onboarding wizard")
