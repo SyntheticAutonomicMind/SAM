@@ -3,16 +3,31 @@
 
 import SwiftUI
 import Logging
+import APIFramework
+import ConversationEngine
 
 private let logger = Logger(label: "SAM.UserInterface.WelcomeView")
 
 /// Welcome splash screen for SAM Shows on first launch with information about the application.
 struct WelcomeView: View {
     @Binding var isPresented: Bool
+    @EnvironmentObject private var endpointManager: EndpointManager
+    @EnvironmentObject private var conversationManager: ConversationManager
     @AppStorage("hasSeenWelcomeScreen") private var hasSeenWelcomeScreen: Bool = false
     @State private var dontShowAgain: Bool = false
+    @State private var showOnboarding: Bool = false
 
     var body: some View {
+        if showOnboarding {
+            OnboardingWizardView(isPresented: $isPresented)
+                .environmentObject(endpointManager)
+                .environmentObject(conversationManager)
+        } else {
+            standardWelcomeView
+        }
+    }
+    
+    private var standardWelcomeView: some View {
         ZStack {
             /// Background.
             Color(nsColor: .windowBackgroundColor)
@@ -176,6 +191,30 @@ struct WelcomeView: View {
             }
         }
         .frame(minWidth: 700, minHeight: 700)
+        .onAppear {
+            checkIfOnboardingNeeded()
+        }
+    }
+    
+    private func checkIfOnboardingNeeded() {
+        /// Check if user has any local models installed
+        /// Use LocalModelManager to check models directory
+        let modelManager = LocalModelManager()
+        let hasLocalModels = !modelManager.getModels().isEmpty
+        
+        /// Check if user has any configured providers
+        /// Check if there are any saved provider IDs in UserDefaults
+        let savedProviderIds = UserDefaults.standard.stringArray(forKey: "saved_provider_ids") ?? []
+        let hasProviders = !savedProviderIds.isEmpty
+        
+        /// Show onboarding wizard if no models AND no providers
+        showOnboarding = !hasLocalModels && !hasProviders
+        
+        if showOnboarding {
+            logger.info("No models or providers configured - showing onboarding wizard")
+        } else {
+            logger.info("Models or providers found - showing standard welcome screen")
+        }
     }
 }
 
@@ -206,5 +245,10 @@ struct WelcomeFeatureRow: View {
 }
 
 #Preview {
-    WelcomeView(isPresented: .constant(true))
+    let conversationManager = ConversationManager()
+    let endpointManager = EndpointManager(conversationManager: conversationManager)
+    
+    return WelcomeView(isPresented: .constant(true))
+        .environmentObject(endpointManager)
+        .environmentObject(conversationManager)
 }
