@@ -371,6 +371,48 @@ public class ImageGenerationTool: MCPTool, @unchecked Sendable {
         let requestedWidth = parameters["width"] as? Int
         let requestedHeight = parameters["height"] as? Int
 
+        /// Check NSFW content in prompts if safety is enabled
+        let disableSafety = UserDefaults.standard.bool(forKey: "imageGenerationDisableSafety")
+        if !disableSafety {
+            /// Check main prompt for NSFW content
+            if ContentFilter.checkNSFWContent(prompt) {
+                return MCPToolResult(
+                    success: false,
+                    output: MCPOutput(content: """
+                        ERROR: NSFW content detected in prompt and blocked
+                        
+                        This server has NSFW image generation disabled. The prompt contains content that violates the content policy.
+                        
+                        If you believe this is a false positive (e.g., medical or educational content), you can:
+                        1. Rephrase your prompt to avoid flagged terms
+                        2. Enable NSFW generation in Preferences > Advanced > "Disable NSFW Safety Check"
+                        
+                        The content filter blocks explicit, sexual, and inappropriate content to ensure safe image generation.
+                        """, mimeType: "text/plain"),
+                    toolName: name
+                )
+            }
+            
+            /// Check negative_prompt for NSFW content
+            if let negPrompt = negativePrompt, ContentFilter.checkNSFWContent(negPrompt) {
+                return MCPToolResult(
+                    success: false,
+                    output: MCPOutput(content: """
+                        ERROR: NSFW content detected in negative_prompt and blocked
+                        
+                        This server has NSFW image generation disabled. The negative_prompt contains content that violates the content policy.
+                        
+                        If you believe this is a false positive (e.g., medical or educational content), you can:
+                        1. Rephrase your negative prompt to avoid flagged terms
+                        2. Enable NSFW generation in Preferences > Advanced > "Disable NSFW Safety Check"
+                        
+                        The content filter blocks explicit, sexual, and inappropriate content to ensure safe image generation.
+                        """, mimeType: "text/plain"),
+                    toolName: name
+                )
+            }
+        }
+
         /// NOTE: steps and guidance_scale defaults depend on model type
         /// These will be set after model selection based on z-image detection
 
@@ -486,10 +528,6 @@ public class ImageGenerationTool: MCPTool, @unchecked Sendable {
         }
 
         let upscaleFactor = upscaleModel == .generalX2 ? 2 : 4
-
-        /// Get safety setting from user preferences (transparent to LLM)
-        let disableSafety = UserDefaults.standard.bool(forKey: "imageGenerationDisableSafety")
-        logger.info("NSFW safety: \(disableSafety ? "disabled" : "enabled") (from user preferences)")
 
         /// Validate model-independent parameters
         guard (1...4).contains(imageCount) else {
