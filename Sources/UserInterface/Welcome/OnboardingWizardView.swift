@@ -25,30 +25,22 @@ struct OnboardingWizardView: View {
     }
     
     var body: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-                .ignoresSafeArea()
+        VStack(spacing: 32) {
+            /// Header
+            headerSection
             
-            VStack(spacing: 32) {
-                /// Header
-                headerSection
-                
-                /// Main content
-                if selectedPath == nil {
-                    pathSelectionSection
-                } else if selectedPath == .cloudAI {
-                    cloudAISection
-                } else if selectedPath == .localModel {
-                    localModelSection
-                }
-                
-                Spacer()
-                
-                /// Footer
-                footerSection
+            /// Main content
+            if selectedPath == nil {
+                pathSelectionSection
+            } else if selectedPath == .cloudAI {
+                cloudAISection
+            } else if selectedPath == .localModel {
+                localModelSection
             }
-            .padding(40)
+            
+            Spacer()
         }
+        .padding(40)
         .frame(minWidth: 800, minHeight: 600)
         .sheet(isPresented: $showingPreferences) {
             PreferencesView()
@@ -321,26 +313,7 @@ struct OnboardingWizardView: View {
         }
     }
     
-    // MARK: - Footer Section
-    
-    private var footerSection: some View {
-        VStack(spacing: 12) {
-            if selectedPath != nil {
-                Text("You can always change your setup later in Preferences")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Button(action: {
-                hasSeenWelcomeScreen = true
-                isPresented = false
-            }) {
-                Text("Skip for Now")
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.plain)
-        }
-    }
+    // MARK: - Supporting Views
 }
 
 // MARK: - Supporting Views
