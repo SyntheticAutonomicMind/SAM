@@ -1582,12 +1582,17 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// UNIVERSAL CONTINUATION GUIDANCE: Help agent understand what to do next
             /// This addresses the alternation problem more intelligently than forcing tool calls
             /// Agent needs different guidance based on what happened in the previous iteration
-            let hadToolsLastIteration = context.lastIterationHadToolResults
-            
-            /// Check if there are incomplete todos that need workflow discipline
-            let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
-            
-            let continuationGuidance: String
+            ///
+            /// CRITICAL FIX: Skip continuation guidance on iteration 1
+            /// There IS NO previous iteration to give guidance about!
+            /// Injecting false "no tools" warning on iteration 1 confuses agent before it even starts
+            if context.iteration > 0 {
+                let hadToolsLastIteration = context.lastIterationHadToolResults
+                
+                /// Check if there are incomplete todos that need workflow discipline
+                let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
+                
+                let continuationGuidance: String
             
             if hasIncompleteTodos {
                 /// When todos exist, enforce strict todo workflow discipline
@@ -1654,6 +1659,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// This ensures the flag persists across iterations so continuation guidance can be accurate
             /// Flag will be set back to true when tools are executed in this iteration (line ~2182)
             context.lastIterationHadToolResults = false
+            } else {
+                /// ITERATION 1: No previous iteration, no continuation guidance needed
+                /// Agent is starting fresh - let the system prompt guide it
+                logger.debug("CONTINUATION_GUIDANCE: Skipped for iteration 1 (no previous iteration)")
+            }
 
             /// Add iteration status (always present)
             let iterationContent = "ITERATION STATUS: Currently on iteration \(context.iteration + 1). Maximum iterations: \(context.maxIterations)."
