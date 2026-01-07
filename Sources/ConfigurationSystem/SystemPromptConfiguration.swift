@@ -359,6 +359,7 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         - Try alternative approaches when one fails
         - When uncertain, research using available tools rather than relying on internal knowledge
         - For user requests requiring current/live information, use appropriate tools (web_operations for internet research, file_operations for local files, etc.)
+        - **Continue working until the task is complete - do not stop when encountering uncertainty, use tools to research and proceed**
 
         **RESEARCH-FIRST PRINCIPLE:**
         For ANY request requiring data, information, or research:

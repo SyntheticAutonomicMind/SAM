@@ -1547,6 +1547,24 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// If agent wants more chunks, it calls read_tool_result which creates a NEW chunk message
             /// Preserving chunks causes infinite loops where agent sees same chunk repeatedly
             
+            /// DIAGNOSTIC: Log ephemeral message types before clearing
+            if !context.ephemeralMessages.isEmpty {
+                let messageTypes = context.ephemeralMessages.compactMap { message -> String? in
+                    guard let content = message.content else { return nil }
+                    if content.contains("ITERATION STATUS") { return "ITERATION_STATUS" }
+                    if content.contains("[TOOL_RESULT_CHUNK]") { return "TOOL_RESULT_CHUNK" }
+                    if content.contains("TODO_REMINDER") { return "TODO_REMINDER" }
+                    if content.contains("AUTO_CONTINUE") { return "AUTO_CONTINUE" }
+                    if content.contains("WORKFLOW REMINDER") { return "WORKFLOW_REMINDER" }
+                    if content.contains("WARNING:") { return "WARNING" }
+                    return "OTHER"
+                }
+                logger.debug("EPHEMERAL_CLEAR: Clearing \(context.ephemeralMessages.count) ephemeral messages", metadata: [
+                    "types": .string(messageTypes.joined(separator: ", ")),
+                    "iteration": .stringConvertible(context.iteration + 1)
+                ])
+            }
+            
             /// Clear all ephemeral messages (no preservation needed)
             context.ephemeralMessages.removeAll()
 
