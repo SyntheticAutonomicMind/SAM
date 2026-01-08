@@ -401,8 +401,10 @@ struct PreferencesSectionRow: View {
 struct GeneralPreferencesView: View {
     @EnvironmentObject private var endpointManager: EndpointManager
     @AppStorage("defaultModel") private var defaultModel: String = ""
-    @State private var availableModels: [String] = []
-    @State private var loadingModels: Bool = false
+    
+    /// Model list management - using shared ModelListManager
+    @ObservedObject private var modelListManager = ModelListManager.shared
+    
     @AppStorage("userName") private var userName: String = ""
     @AppStorage("userLanguage") private var userLanguage: String = ""
     @AppStorage("launchAtLogin") private var launchAtLogin: Bool = false
@@ -445,7 +447,7 @@ struct GeneralPreferencesView: View {
                             Text("Model:")
                                 .frame(width: 120, alignment: .leading)
 
-                            if loadingModels {
+                            if modelListManager.isLoading {
                                 ProgressView()
                                     .scaleEffect(0.8)
                                 Text("Loading models...")
@@ -454,7 +456,7 @@ struct GeneralPreferencesView: View {
                             } else {
                                 ModelPickerView(
                                     selectedModel: $defaultModel,
-                                    models: availableModels,
+                                    modelListManager: modelListManager,
                                     endpointManager: endpointManager
                                 )
                                 .frame(maxWidth: 400)
@@ -750,10 +752,8 @@ struct GeneralPreferencesView: View {
             /// Sync location settings from LocationManager
             generalLocation = locationManager.generalLocation
             usePreciseLocation = locationManager.usePreciseLocation
-            /// Load available models for default model selector
-            Task {
-                await loadAvailableModels()
-            }
+            /// Initialize ModelListManager with dependencies
+            modelListManager.initialize(endpointManager: endpointManager)
         }
         .onChange(of: generalLocation) { _, newValue in
             locationManager.generalLocation = newValue
@@ -807,70 +807,6 @@ struct GeneralPreferencesView: View {
     }
 
     /// Load available models similar to ChatWidget so General preferences show the full model list
-    private func loadAvailableModels() async {
-        guard !loadingModels else { return }
-
-        loadingModels = true
-
-        do {
-            endpointManager.reloadProviderConfigurations()
-
-            do {
-                _ = try await endpointManager.getGitHubCopilotModelCapabilities()
-            } catch {
-                // ignore capability fetch failure
-            }
-
-            let modelsResponse = try await endpointManager.getAvailableModels()
-
-            var seenBaseIds = Set<String>()
-            var uniqueModelIds: [String] = []
-
-            for modelId in modelsResponse.data.map({ $0.id }) {
-                var baseId = modelId.split(separator: "/").last.map(String.init) ?? modelId
-
-                if let range = baseId.range(of: "-\\d{4}-\\d{2}-\\d{2}$", options: .regularExpression) {
-                    baseId = String(baseId[..<range.lowerBound])
-                }
-
-                if !seenBaseIds.contains(baseId) {
-                    seenBaseIds.insert(baseId)
-                    uniqueModelIds.append(modelId)
-                }
-            }
-
-            let sortedModels = uniqueModelIds.sorted { model1, model2 in
-                let base1 = model1.split(separator: "/").last.map(String.init) ?? model1
-                let base2 = model2.split(separator: "/").last.map(String.init) ?? model2
-
-                let billing1 = endpointManager.getGitHubCopilotModelBillingInfo(modelId: base1)
-                let billing2 = endpointManager.getGitHubCopilotModelBillingInfo(modelId: base2)
-
-                let isFree1 = !(billing1?.isPremium ?? false)
-                let isFree2 = !(billing2?.isPremium ?? false)
-
-                if isFree1 != isFree2 { return isFree1 }
-
-                return model1.lowercased() < model2.lowercased()
-            }
-
-            await MainActor.run {
-                availableModels = sortedModels
-                if !availableModels.contains(defaultModel) {
-                    defaultModel = availableModels.first ?? defaultModel
-                }
-                loadingModels = false
-            }
-        } catch {
-            await MainActor.run {
-                availableModels = ["sam-assistant", "sam-default", "gpt-4", "gpt-3.5-turbo"]
-                if !availableModels.contains(defaultModel) {
-                    defaultModel = availableModels.first ?? defaultModel
-                }
-                loadingModels = false
-            }
-        }
-    }
 }
 
 // MARK: - Appearance Preferences

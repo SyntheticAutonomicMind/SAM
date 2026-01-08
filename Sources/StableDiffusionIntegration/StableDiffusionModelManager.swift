@@ -699,3 +699,13 @@ public class StableDiffusionModelManager: ObservableObject {
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 }
+
+// MARK: - SDModelProvider Conformance
+import APIFramework
+
+extension StableDiffusionModelManager: SDModelProvider {
+    public func getSDModelList() -> [SDModelInfo] {
+        let models = listInstalledModels()
+        return models.map { SDModelInfo(id: $0.id) }
+    }
+}

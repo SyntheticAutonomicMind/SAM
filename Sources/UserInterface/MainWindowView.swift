@@ -206,10 +206,11 @@ public struct MainWindowView: View {
                             conversationManager.createNewConversation()
                         }) {
                             Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(showingOnboardingWizard ? .secondary : .accentColor)
                         }
                         .buttonStyle(.plain)
                         .help("New Conversation (N)")
+                        .disabled(showingOnboardingWizard)
                     }
                     .padding()
 
@@ -260,10 +261,11 @@ public struct MainWindowView: View {
                             conversationManager.createNewConversation()
                         }) {
                             Image(systemName: "plus.circle.fill")
-                                .foregroundColor(.accentColor)
+                                .foregroundColor(showingOnboardingWizard ? .secondary : .accentColor)
                         }
                         .buttonStyle(.plain)
                         .help("New Conversation (N)")
+                        .disabled(showingOnboardingWizard)
                     }
 
                     Spacer()
