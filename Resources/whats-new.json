@@ -50,6 +50,12 @@
           "description": "Renamed 'API Endpoints' to 'Remote Providers' throughout UI for consistency. Tab label and section headers now match."
         },
         {
+          "id": "github-billing-cache-fix",
+          "icon": "creditcard.fill",
+          "title": "GitHub Copilot Billing Display Fixed",
+          "description": "Fixed caching issues that prevented billing data from updating properly. GitHub Copilot usage and billing information now displays correctly."
+        }
+      ],
       "improvements": [
         {
           "id": "ram-based-recommendations",
@@ -86,12 +92,18 @@
           "icon": "arrow.triangle.branch",
           "title": "Seamless Wizard Integration",
           "description": "The onboarding wizard appears automatically when needed and integrates smoothly with SAM's main interface. Once you've configured a provider or downloaded a model, the wizard disappears and you see the normal welcome screen."
-        }
-      ] {
+        },
+        {
           "id": "onboarding-progress-indicators",
           "icon": "chart.line.uptrend.xyaxis",
           "title": "Download Progress in Onboarding",
           "description": "Onboarding wizard now shows percentage-based progress bars when downloading models. Visual feedback makes the setup process more transparent."
+        },
+        {
+          "id": "api-reference-update",
+          "icon": "book.fill",
+          "title": "Complete API Reference Documentation",
+          "description": "Help → API Reference now includes comprehensive documentation for all 20 endpoints, including new autonomous workflow, tool interaction, and model management APIs. All parameters verified against implementation with examples and detailed descriptions."
         }
       ]
     },
