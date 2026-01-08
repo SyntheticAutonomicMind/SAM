@@ -18,6 +18,7 @@ struct OnboardingWizardView: View {
     
     @State private var selectedPath: OnboardingPath? = nil
     @State private var showingPreferences: Bool = false
+    @State private var preferencesSection: PreferencesSection = .apiEndpoints
     @StateObject private var downloadManager: ModelDownloadManager
     @State private var isDownloading: Bool = false
     
@@ -55,7 +56,7 @@ struct OnboardingWizardView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .sheet(isPresented: $showingPreferences) {
-            PreferencesView()
+            PreferencesView(selectedSection: preferencesSection)
                 .environmentObject(endpointManager)
                 .environmentObject(conversationManager)
                 .frame(minWidth: 900, minHeight: 700)
@@ -186,6 +187,7 @@ struct OnboardingWizardView: View {
             .cornerRadius(12)
             
             Button(action: {
+                preferencesSection = .apiEndpoints
                 showingPreferences = true
             }) {
                 Text("Configure Provider")
@@ -241,18 +243,30 @@ struct OnboardingWizardView: View {
                 }
                 .padding()
             } else {
-                Button(action: {
-                    downloadRecommendedModel()
-                }) {
-                    Text("Download Model")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor)
-                        .cornerRadius(10)
+                VStack(spacing: 12) {
+                    Button(action: {
+                        downloadRecommendedModel()
+                    }) {
+                        Text("Download Model")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.accentColor)
+                            .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button(action: {
+                        preferencesSection = .localModels
+                        showingPreferences = true
+                    }) {
+                        Text("Choose a different model")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
         .frame(maxWidth: 600)
@@ -310,14 +324,17 @@ struct OnboardingWizardView: View {
     private func getRecommendedModelDownload(for ramGB: Int) -> (repo: String, file: String) {
         switch ramGB {
         case 0..<12:
-            /// Qwen3-4B MLX 8-bit
-            return ("mlx-community/Qwen3-4B-MLX-8bit", "model.safetensors")
+            /// Qwen3-4B MLX 8-bit (for 8GB RAM)
+            return ("Qwen3/Qwen3-4B-MLX-8bit", "model.safetensors")
         case 12..<28:
-            /// Qwen3-8B MLX 8-bit  
-            return ("mlx-community/Qwen3-8B-MLX-8bit", "model.safetensors")
+            /// Qwen3-8B MLX 8-bit (for 16GB RAM)
+            return ("Qwen3/Qwen3-8B-MLX-8bit", "model.safetensors")
+        case 28..<64:
+            /// Qwen3-14B MLX 8-bit (for 32GB RAM)
+            return ("Qwen3/Qwen3-14B-MLX-8bit", "model.safetensors")
         default:
-            /// Qwen3-8B MLX 8-bit (default)
-            return ("mlx-community/Qwen3-8B-MLX-8bit", "model.safetensors")
+            /// Qwen3-32B MLX 8-bit (for 64GB+ RAM)
+            return ("Qwen3/Qwen3-32B-MLX-8bit", "model.safetensors")
         }
     }
     
@@ -380,12 +397,19 @@ struct OnboardingWizardView: View {
                 "32k",
                 "Balanced model with excellent capabilities"
             )
+        case 28..<64:
+            return (
+                "Qwen3-14B MLX 8-bit",
+                "~10GB download",
+                "32k",
+                "Powerful model for 32GB systems with enhanced reasoning"
+            )
         default:
             return (
-                "Qwen3-8B MLX 8-bit",
-                "~6GB download",
+                "Qwen3-32B MLX 8-bit",
+                "~24GB download",
                 "32k",
-                "Balanced model with excellent capabilities (or try 14B for more power)"
+                "Most capable model for systems with 64GB+ RAM"
             )
         }
     }

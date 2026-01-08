@@ -13,9 +13,11 @@ private let logger = Logger(label: "com.sam.preferences")
 public struct PreferencesView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var endpointManager: EndpointManager
-    @State private var selectedSection: PreferencesSection = .general
+    @State private var selectedSection: PreferencesSection
 
-    public init() {}
+    public init(selectedSection: PreferencesSection = .general) {
+        _selectedSection = State(initialValue: selectedSection)
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -309,7 +311,7 @@ struct SharedDataPreferencesView: View {
 
 // MARK: - Preferences Sections
 
-enum PreferencesSection: String, CaseIterable {
+public enum PreferencesSection: String, CaseIterable {
     case general = "General"
     case appearance = "Appearance"
     case sound = "Sound"
