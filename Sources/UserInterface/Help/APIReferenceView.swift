@@ -56,6 +56,7 @@ struct APIReferenceView: View {
 enum APISection: String, CaseIterable, Identifiable {
     case overview
     case chatCompletions
+    case advancedEndpoints
     case models
     case conversations
     case mcpTools
@@ -71,6 +72,7 @@ enum APISection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "Overview"
         case .chatCompletions: return "Chat Completions"
+        case .advancedEndpoints: return "Advanced Endpoints"
         case .models: return "Models API"
         case .conversations: return "Conversations API"
         case .mcpTools: return "MCP Tools"
@@ -86,6 +88,7 @@ enum APISection: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "book.fill"
         case .chatCompletions: return "message.fill"
+        case .advancedEndpoints: return "gearshape.2.fill"
         case .models: return "cpu"
         case .conversations: return "bubble.left.and.bubble.right.fill"
         case .mcpTools: return "hammer.fill"
@@ -105,6 +108,9 @@ enum APISection: String, CaseIterable, Identifiable {
 
         case .chatCompletions:
             ChatCompletionsContent()
+
+        case .advancedEndpoints:
+            AdvancedEndpointsContent()
 
         case .models:
             ModelsAPIContent()
@@ -160,7 +166,7 @@ struct OverviewContent: View {
                 FeatureRow(icon: "checkmark.circle.fill", text: "OpenAI Chat Completions API compatible", color: .green)
                 FeatureRow(icon: "checkmark.circle.fill", text: "Streaming responses with Server-Sent Events", color: .green)
                 FeatureRow(icon: "checkmark.circle.fill", text: "MCP (Model Context Protocol) tool execution", color: .green)
-                FeatureRow(icon: "checkmark.circle.fill", text: "Multiple AI provider support (OpenAI, Anthropic, Copilot, local models)", color: .green)
+                FeatureRow(icon: "checkmark.circle.fill", text: "Multiple AI provider support (OpenAI, Anthropic, Google Gemini, GitHub Copilot, local models)", color: .green)
             }
 
             SectionHeader(title: "API Endpoints")
@@ -187,6 +193,24 @@ struct OverviewContent: View {
                 method: "GET",
                 path: "/health",
                 description: "Health check endpoint"
+            )
+
+            EndpointCard(
+                method: "POST",
+                path: "/api/chat/autonomous",
+                description: "Multi-step autonomous agent orchestration"
+            )
+
+            EndpointCard(
+                method: "POST",
+                path: "/api/chat/tool-response",
+                description: "Submit user response for interactive tool execution"
+            )
+
+            EndpointCard(
+                method: "GET",
+                path: "/api/tool_result",
+                description: "Retrieve large tool outputs by result ID"
             )
 
             SectionHeader(title: "Response Formats")
@@ -217,13 +241,39 @@ struct ChatCompletionsContent: View {
 
             SectionHeader(title: "Request Body")
 
+            Text("**Standard OpenAI Parameters:**")
+                .fontWeight(.semibold)
+
             ParameterRow(name: "model", type: "string", required: true, description: "AI model identifier (e.g., 'gpt-4', 'claude-3-5-sonnet', 'copilot')")
             ParameterRow(name: "messages", type: "array", required: true, description: "Array of message objects with 'role' and 'content' fields")
-            ParameterRow(name: "stream", type: "boolean", required: false, description: "Enable streaming responses (default: false)")
+            ParameterRow(name: "stream", type: "boolean", required: false, description: "Enable streaming responses (default: true)")
             ParameterRow(name: "temperature", type: "number", required: false, description: "Sampling temperature 0.0-2.0 (default: 1.0)")
             ParameterRow(name: "max_tokens", type: "number", required: false, description: "Maximum tokens in response")
-            ParameterRow(name: "conversationId", type: "string", required: false, description: "UUID of existing conversation for context")
+            ParameterRow(name: "top_p", type: "number", required: false, description: "Nucleus sampling parameter")
+            ParameterRow(name: "repetition_penalty", type: "number", required: false, description: "Repetition penalty for local models")
             ParameterRow(name: "tools", type: "array", required: false, description: "Array of tool definitions for function calling")
+
+            Text("**SAM-Specific Parameters:**")
+                .fontWeight(.semibold)
+                .padding(.top, 8)
+
+            ParameterRow(name: "conversation_id", type: "string", required: false, description: "UUID of existing conversation (maps to ConversationModel.id)")
+            ParameterRow(name: "session_id", type: "string", required: false, description: "Alternative session identifier")
+            ParameterRow(name: "context_id", type: "string", required: false, description: "Shared memory context identifier")
+            ParameterRow(name: "topic", type: "string", required: false, description: "Topic folder ID for conversation organization")
+            ParameterRow(name: "mini_prompts", type: "array", required: false, description: "Array of mini-prompt names to enable")
+            ParameterRow(name: "sam_config", type: "object", required: false, description: "Advanced SAM configuration (see SAM Config below)")
+
+            SectionHeader(title: "SAM Config Object")
+            Text("Optional configuration object for advanced features:")
+                .foregroundColor(.secondary)
+                .font(.caption)
+
+            ParameterRow(name: "systemPromptId", type: "string", required: false, description: "System prompt UUID or name ('sam_default', 'autonomous_editor')")
+            ParameterRow(name: "maxIterations", type: "number", required: false, description: "Maximum workflow iterations (default: 300)")
+            ParameterRow(name: "workingDirectory", type: "string", required: false, description: "Working directory for file operations")
+            ParameterRow(name: "enableReasoning", type: "boolean", required: false, description: "Enable extended reasoning for complex tasks")
+            ParameterRow(name: "enableWorkflowMode", type: "boolean", required: false, description: "Enable autonomous workflow orchestration")
 
             SectionHeader(title: "Request Example (Non-Streaming)")
             CodeBlock(code: """
@@ -348,6 +398,101 @@ struct ChatCompletionsContent: View {
     }
 }
 
+// MARK: - Advanced Endpoints Content
+struct AdvancedEndpointsContent: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Advanced Endpoints")
+                .font(.title2)
+                .fontWeight(.bold)
+
+            Text("Specialized endpoints for autonomous workflows, tool interaction, and agent introspection.")
+                .foregroundColor(.secondary)
+
+            SectionHeader(title: "Autonomous Workflow")
+            CodeBlock(code: "POST /api/chat/autonomous")
+
+            Text("Enables multi-step autonomous agent orchestration. The agent can execute multiple iterations with tool calls automatically until task completion.")
+                .foregroundColor(.secondary)
+
+            ParameterRow(name: "model", type: "string", required: true, description: "AI model identifier")
+            ParameterRow(name: "messages", type: "array", required: true, description: "Initial conversation messages")
+            ParameterRow(name: "max_iterations", type: "number", required: false, description: "Maximum workflow iterations (default: 300)")
+            ParameterRow(name: "conversationId", type: "string", required: false, description: "Existing conversation context")
+
+            CodeBlock(code: """
+            curl -X POST http://localhost:8080/api/chat/autonomous \\
+              -H "Content-Type: application/json" \\
+              -d '{
+                "model": "gpt-4",
+                "messages": [
+                  {"role": "user", "content": "Research Swift 6 concurrency and create a summary document"}
+                ],
+                "max_iterations": 50
+              }'
+            """)
+
+            Text("The agent will autonomously research, plan, and create the document with multiple tool calls.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            SectionHeader(title: "Tool Response Submission")
+            CodeBlock(code: "POST /api/chat/tool-response")
+
+            Text("Submit user response when a tool requires interactive input (e.g., user_collaboration tool).")
+                .foregroundColor(.secondary)
+
+            ParameterRow(name: "conversationId", type: "string", required: true, description: "Conversation UUID")
+            ParameterRow(name: "toolCallId", type: "string", required: true, description: "Tool call identifier waiting for response")
+            ParameterRow(name: "userInput", type: "string", required: true, description: "User's response text")
+
+            CodeBlock(code: """
+            curl -X POST http://localhost:8080/api/chat/tool-response \\
+              -H "Content-Type: application/json" \\
+              -d '{
+                "conversationId": "abc-123-def-456",
+                "toolCallId": "call_abc123",
+                "userInput": "Approve"
+              }'
+            """)
+
+            SectionHeader(title: "Tool Result Retrieval")
+            CodeBlock(code: "GET /api/tool_result")
+
+            Text("Retrieve large tool outputs that were persisted instead of included inline. Supports pagination for very large results.")
+                .foregroundColor(.secondary)
+
+            ParameterRow(name: "conversationId", type: "string", required: true, description: "Conversation UUID (query parameter)")
+            ParameterRow(name: "toolCallId", type: "string", required: true, description: "Tool call identifier (query parameter)")
+            ParameterRow(name: "offset", type: "number", required: false, description: "Character offset to start reading from (default: 0)")
+            ParameterRow(name: "length", type: "number", required: false, description: "Characters to read (default: 8192, max: 32768)")
+
+            CodeBlock(code: """
+            curl "http://localhost:8080/api/tool_result?conversationId=abc-123&toolCallId=call_xyz&offset=0&length=8192"
+            """)
+
+            SectionHeader(title: "Prompt Discovery")
+            Text("Endpoints for agent awareness and configuration discovery:")
+
+            EndpointCard(method: "GET", path: "/api/prompts/system", description: "List available system prompts")
+            EndpointCard(method: "GET", path: "/api/prompts/mini", description: "List mini-prompt configurations")
+            EndpointCard(method: "GET", path: "/api/topics", description: "List shared topics")
+
+            SectionHeader(title: "Debug Endpoints")
+            Text("Development and debugging tools:")
+
+            EndpointCard(method: "GET", path: "/debug/mcp/tools", description: "List all MCP tools with schemas")
+            EndpointCard(method: "POST", path: "/debug/mcp/execute", description: "Execute MCP tool directly")
+            EndpointCard(method: "GET", path: "/debug/tools/available", description: "Tool registry status")
+
+            Text("Debug endpoints are for development only and may change without notice.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .italic()
+        }
+    }
+}
+
 // MARK: - Models API Content
 struct ModelsAPIContent: View {
     var body: some View {
@@ -399,15 +544,43 @@ struct ModelsAPIContent: View {
             SectionHeader(title: "Download Local Models")
             CodeBlock(code: "POST /api/models/download")
 
+            Text("Download GGUF or MLX models from HuggingFace.")
+                .foregroundColor(.secondary)
+
             ParameterRow(name: "modelUrl", type: "string", required: true, description: "HuggingFace model URL or identifier")
+
+            CodeBlock(code: """
+            curl -X POST http://localhost:8080/api/models/download \\
+              -H "Content-Type: application/json" \\
+              -d '{
+                "modelUrl": "https://huggingface.co/mlx-community/Qwen2.5-3B-Instruct-4bit"
+              }'
+            """)
 
             SectionHeader(title: "Check Download Status")
             CodeBlock(code: "GET /api/models/download/{downloadId}/status")
 
+            Text("Monitor download progress and completion status.")
+                .foregroundColor(.secondary)
+
+            CodeBlock(code: """
+            curl http://localhost:8080/api/models/download/abc-123/status
+            """)
+
+            SectionHeader(title: "Cancel Download")
+            CodeBlock(code: "DELETE /api/models/download/{downloadId}")
+
+            Text("Cancel an in-progress model download.")
+                .foregroundColor(.secondary)
+
+            CodeBlock(code: """
+            curl -X DELETE http://localhost:8080/api/models/download/abc-123
+            """)
+
             SectionHeader(title: "List Installed Models")
             CodeBlock(code: "GET /api/models")
 
-            Text("Returns locally installed MLX models in ~/Library/Caches/sam/models/")
+            Text("Returns locally installed GGUF, MLX, and Stable Diffusion models in ~/Library/Caches/sam/models/")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
