@@ -400,7 +400,7 @@ struct PreferencesSectionRow: View {
 
 struct GeneralPreferencesView: View {
     @EnvironmentObject private var endpointManager: EndpointManager
-    @AppStorage("defaultModel") private var defaultModel: String = "gpt-4"
+    @AppStorage("defaultModel") private var defaultModel: String = ""
     @State private var availableModels: [String] = []
     @State private var loadingModels: Bool = false
     @AppStorage("userName") private var userName: String = ""

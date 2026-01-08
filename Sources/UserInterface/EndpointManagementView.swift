@@ -75,7 +75,7 @@ struct EndpointManagementView: View {
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("API Endpoints")
+            Text("Remote Providers")
                 .font(.title2)
                 .fontWeight(.semibold)
             Text("Configure AI provider endpoints for multi-model support")
