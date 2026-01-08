@@ -8,13 +8,14 @@ import StableDiffusionIntegration
 /// Enhanced model picker showing provider, location, and cost inline using native Picker
 struct ModelPickerView: View {
     @Binding var selectedModel: String
-    let models: [String]
+    @ObservedObject var modelListManager: ModelListManager
     let endpointManager: EndpointManager
     @StateObject private var sdModelManager = StableDiffusionModelManager()
     @State private var billingDataLoaded = false
 
     var body: some View {
         Menu {
+            let models = modelListManager.availableModels
             let (freeModels, premiumModels) = categorizeModelsByBilling(models)
 
             if !freeModels.isEmpty {
@@ -75,6 +76,12 @@ struct ModelPickerView: View {
                 RoundedRectangle(cornerRadius: 5)
                     .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
             )
+            .onTapGesture {
+                /// Refresh model list when picker is clicked
+                Task {
+                    await modelListManager.refresh()
+                }
+            }
         }
         .onAppear {
             /// Fetch GitHub Copilot billing data if not already cached
@@ -102,7 +109,7 @@ struct ModelPickerView: View {
 
     /// Calculate minimum width based on longest model name
     private func calculateMinWidth() -> CGFloat {
-        let longestName = models
+        let longestName = modelListManager.availableModels
             .map { beautifyModelName(extractBaseModelId(from: $0)) }
             .max(by: { $0.count < $1.count }) ?? ""
 

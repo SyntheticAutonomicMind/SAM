@@ -166,8 +166,10 @@ public struct ChatWidget: View {
     @State private var maxMaxTokens: Int = 16384
     @State private var contextWindowSize: Int = 4096
     @State private var maxContextWindowSize: Int = 32768
-    @State private var availableModels: [String] = []
-    @State private var loadingModels = false
+    
+    /// Model list management - using shared ModelListManager
+    @ObservedObject private var modelListManager = ModelListManager.shared
+    
     @State private var enableReasoning: Bool = false
 
     /// Current model cost display (updated when model changes)
@@ -2517,7 +2519,7 @@ public struct ChatWidget: View {
 
                     ModelPickerView(
                         selectedModel: $selectedModel,
-                        models: availableModels,
+                        modelListManager: modelListManager,
                         endpointManager: endpointManager
                     )
                     .frame(minWidth: 150, idealWidth: 200)
@@ -3098,7 +3100,12 @@ public struct ChatWidget: View {
 
     private func performMainChatViewAppear() {
         SAMLog.chatViewAppear()
-        loadAvailableModels()
+        
+        // Initialize ModelListManager with dependencies
+        modelListManager.initialize(endpointManager: endpointManager)
+        modelListManager.sdModelProvider = sdModelManager
+        
+        // ModelListManager handles model loading automatically
         loadSystemPrompts()
         loadRecentChatSession()
         syncWithActiveConversation()
@@ -3142,39 +3149,8 @@ public struct ChatWidget: View {
         /// Setup voice manager callbacks via bridge
         setupVoiceCallbacks()
 
-        /// Listen for model updates from file system changes.
-        NotificationCenter.default.addObserver(
-            forName: .endpointManagerDidUpdateModels,
-            object: nil,
-            queue: .main
-        ) { _ in
-            Task {
-                await loadAvailableModels()
-            }
-        }
-
-        /// Listen for Stable Diffusion model installations
-        NotificationCenter.default.addObserver(
-            forName: .stableDiffusionModelInstalled,
-            object: nil,
-            queue: .main
-        ) { _ in
-            Task {
-                await loadAvailableModels()
-            }
-        }
-
-        /// Listen for ALICE remote models becoming available
-        NotificationCenter.default.addObserver(
-            forName: .aliceModelsLoaded,
-            object: nil,
-            queue: .main
-        ) { _ in
-            logger.info("ALICE models loaded, refreshing available models list")
-            Task {
-                await loadAvailableModels()
-            }
-        }
+        /// Model updates are now handled by ModelListManager automatically
+        /// (listens to .endpointManagerDidUpdateModels, .stableDiffusionModelInstalled, .aliceModelsLoaded)
         
         /// Listen for rate limit notifications
         NotificationCenter.default.addObserver(
@@ -5411,173 +5387,6 @@ public struct ChatWidget: View {
     }
 
     /// Load available models from EndpointManager with provider configuration consistency CRITICAL PATTERN: This method ensures ChatWidget sees the same models as the API server.
-    private func loadAvailableModels() {
-        guard !loadingModels else {
-            SAMLog.modelLoadingSkipped()
-            return
-        }
-
-        SAMLog.modelLoadingStarted()
-        loadingModels = true
-
-        Task {
-            do {
-                /// DON'T reload provider configs here - creates infinite loop with hot reload notification
-                /// Provider reload happens on app startup and explicit user actions only
-
-                /// Fetch GitHub Copilot model capabilities (including billing) BEFORE loading models
-                /// This ensures billing cache is populated when formatModelDisplayName() is called
-                do {
-                    _ = try await endpointManager.getGitHubCopilotModelCapabilities()
-                    logger.debug("MODEL_LOAD: Fetched GitHub Copilot capabilities with billing info")
-                } catch {
-                    logger.warning("MODEL_LOAD: Failed to fetch GitHub capabilities: \(error)")
-                }
-
-                SAMLog.endpointManagerCall()
-                let modelsResponse = try await endpointManager.getAvailableModels()
-
-                /// Deduplicate models based on base model ID (strip version/date suffixes)
-                /// Models like "gpt-4o-2024-05-13" and "gpt-4o-2024-08-06" both → "gpt-4o"
-                /// Keep only the FIRST occurrence (usually the most recent)
-                var seenBaseIds = Set<String>()
-                var uniqueModelIds: [String] = []
-
-                func canonicalBaseId(from modelId: String) -> String {
-                    // Take the last path component (strip provider prefix if present)
-                    var baseId = modelId.split(separator: "/").last.map(String.init) ?? modelId
-
-                    // Remove date patterns like -2024-05-13
-                    if let range = baseId.range(of: "-\\d{4}-\\d{2}-\\d{2}$", options: .regularExpression) {
-                        baseId = String(baseId[..<range.lowerBound])
-                    }
-
-                    // Remove provider-style suffixes such as '-copilot' or ' copilot' (UI-only variants)
-                    if let range = baseId.range(of: "(-|\\s)?copilot.*$", options: .regularExpression) {
-                        baseId = String(baseId[..<range.lowerBound])
-                    }
-
-                    // Normalize common version format mistakes like 'gpt-41' -> 'gpt-4.1'
-                    if baseId.lowercased().hasPrefix("gpt-") && !baseId.contains(".") {
-                        let suffix = baseId.dropFirst(4) // skip "gpt-"
-                        if suffix.count >= 2 {
-                            let first = suffix.prefix(1)
-                            let second = suffix[suffix.index(suffix.startIndex, offsetBy: 1)]
-                            if first.rangeOfCharacter(from: .decimalDigits) != nil && String(second).rangeOfCharacter(from: .decimalDigits) != nil {
-                                // Insert dot between first and remaining digits: gpt-41 -> gpt-4.1, gpt-510 -> gpt-5.10
-                                let rest = suffix.dropFirst(1)
-                                baseId = "gpt-\(first).\(rest)"
-                            }
-                        }
-                    }
-
-                    return baseId.lowercased()
-                }
-
-                for modelId in modelsResponse.data.map({ $0.id }) {
-                    let key = canonicalBaseId(from: modelId)
-                    if !seenBaseIds.contains(key) {
-                        seenBaseIds.insert(key)
-                        uniqueModelIds.append(modelId)
-                    }
-                }
-                
-                /// Filter out non-chat models that don't belong in the chat picker
-                /// - Gemini image generation: imagen-*
-                /// - Gemini video generation: veo-*
-                /// - Gemini text-only (not chat): gemma-*
-                /// These will be integrated with Stable Diffusion UI in the future
-                let chatModelsOnly = uniqueModelIds.filter { modelId in
-                    let baseId = modelId.split(separator: "/").last.map(String.init) ?? modelId
-                    let isNonChatModel = baseId.hasPrefix("imagen-") || 
-                                       baseId.hasPrefix("veo-") ||
-                                       baseId.hasPrefix("gemma-")
-                    
-                    if isNonChatModel {
-                        logger.debug("Filtering non-chat model from picker: \(modelId)")
-                    }
-                    
-                    return !isNonChatModel
-                }
-
-                /// Sort models: Free (0x) first, then Premium, both alphabetical within tier
-                let sortedModels = chatModelsOnly.sorted { model1, model2 in
-                    /// Extract base model ID for billing lookup
-                    let base1 = model1.split(separator: "/").last.map(String.init) ?? model1
-                    let base2 = model2.split(separator: "/").last.map(String.init) ?? model2
-
-                    let billing1 = endpointManager.getGitHubCopilotModelBillingInfo(modelId: base1)
-                    let billing2 = endpointManager.getGitHubCopilotModelBillingInfo(modelId: base2)
-
-                    let isFree1 = !(billing1?.isPremium ?? false)
-                    let isFree2 = !(billing2?.isPremium ?? false)
-
-                    /// Free models come first
-                    if isFree1 != isFree2 {
-                        return isFree1
-                    }
-
-                    /// Within same tier, sort alphabetically
-                    return model1.lowercased() < model2.lowercased()
-                }
-
-                SAMLog.rawModelsReceived(sortedModels)
-
-                /// Add Stable Diffusion models to available models list (local + ALICE remote)
-                let localSDModels = sdModelManager.listInstalledModels()
-                var sdModelIds = localSDModels.map { "sd/\($0.id)" }
-
-                /// Also add ALICE remote models if connected
-                if let aliceProvider = ALICEProvider.shared, aliceProvider.isHealthy {
-                    /// Use consistent ID format: alice-sd-model-name (matching createRemoteModelInfo)
-                    let aliceSDModels = aliceProvider.availableModels.map { model -> String in
-                        let normalizedId = model.id.replacingOccurrences(of: "/", with: "-")
-                        return "alice-\(normalizedId)"
-                    }
-                    sdModelIds.append(contentsOf: aliceSDModels)
-                }
-
-                /// Filter out any stable-diffusion/* models from LLM list (they're handled by sdModelManager)
-                /// This prevents duplicates when SD models are registered in both places
-                let llmModelsOnly = sortedModels.filter { !$0.hasPrefix("stable-diffusion/") }
-
-                let allModels = llmModelsOnly + sdModelIds
-                logger.debug("Available models: \(allModels.count) total (\(llmModelsOnly.count) LLM, \(sdModelIds.count) SD)")
-
-                await MainActor.run {
-                    availableModels = allModels
-                    SAMLog.modelsStateUpdated(allModels)
-
-                    /// Set flag to prevent saving when changing model for availability Without this, onChange(of: selectedModel) would save wrong model to conversation.
-                    isLoadingConversationSettings = true
-                    defer { isLoadingConversationSettings = false }
-
-                    /// Set default model if current selection isn't available.
-                    /// CRITICAL: Use allModels (includes SD models) instead of sortedModels (LLM only)
-                    if !allModels.contains(selectedModel), let firstModel = allModels.first {
-                        SAMLog.modelSwitched(from: selectedModel, to: firstModel)
-                        selectedModel = firstModel
-                    }
-
-                    loadingModels = false
-                    SAMLog.modelsLoadedSuccessfully(count: allModels.count, models: allModels)
-                }
-            } catch {
-                await MainActor.run {
-                    /// Also protect fallback model setting from saving.
-                    isLoadingConversationSettings = true
-                    defer { isLoadingConversationSettings = false }
-
-                    /// Fallback to default models if loading fails.
-                    availableModels = ["sam-assistant", "sam-default", "gpt-4", "gpt-3.5-turbo"]
-                    loadingModels = false
-                    SAMLog.modelLoadingFailed(error)
-                    SAMLog.modelLoadingErrorDetails(error)
-                }
-            }
-        }
-    }
-
     /// Load shared topics list from SharedTopicManager
     private func loadSharedTopics() async {
         do {
@@ -6906,7 +6715,7 @@ public struct ChatWidget: View {
     /// Calculate dynamic width for model dropdown based on longest model name Ensures all model names are fully visible without truncation.
     private var modelDropdownWidth: CGFloat {
         /// Calculate width needed for longest model name Rough estimate: 8 points per character + 40 points for picker chrome.
-        let longestModelName = availableModels.max(by: { $0.count < $1.count }) ?? ""
+        let longestModelName = modelListManager.availableModels.max(by: { $0.count < $1.count }) ?? ""
         let estimatedWidth = CGFloat(longestModelName.count) * 8.0 + 40.0
 
         /// Clamp between reasonable min/max values.

@@ -78,6 +78,35 @@ struct OnboardingWizardView: View {
                 .environmentObject(conversationManager)
                 .frame(minWidth: 900, minHeight: 700)
         }
+        .onChange(of: showingPreferences) { oldValue, newValue in
+            /// When preferences sheet closes, check if configuration is now complete
+            if oldValue == true && newValue == false {
+                checkConfigurationAndClose()
+            }
+        }
+    }
+    
+    // MARK: - Helper Functions
+    
+    /// Check if configuration is complete and close wizard if so
+    private func checkConfigurationAndClose() {
+        /// Check for local models
+        let modelManager = LocalModelManager()
+        let hasLocalModels = !modelManager.getModels().isEmpty
+        
+        /// Check for configured providers
+        let hasProviders = UserDefaults.standard.dictionaryRepresentation().keys.contains { key in
+            key.starts(with: "provider_config_")
+        }
+        
+        logger.info("Configuration check: hasModels=\(hasLocalModels), hasProviders=\(hasProviders)")
+        
+        /// If either models or providers exist, configuration is complete
+        if hasLocalModels || hasProviders {
+            logger.info("Configuration complete, closing onboarding wizard")
+            hasSeenWelcomeScreen = true
+            isPresented = false
+        }
     }
     
     // MARK: - Header Section
