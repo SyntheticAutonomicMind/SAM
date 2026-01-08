@@ -153,7 +153,7 @@ public class ModelDownloadManager: ObservableObject {
         downloadLogger.error("DEBUG: Starting search for: '\(query)' with extension filter: \(fileExtension ?? "none")")
 
         do {
-            let models = try await apiClient.searchModels(query: query, limit: 30, fileExtension: fileExtension)
+            let models = try await apiClient.searchModels(query: query, limit: 100, fileExtension: fileExtension)
 
             downloadLogger.error("DEBUG: API returned \(models.count) total models")
 

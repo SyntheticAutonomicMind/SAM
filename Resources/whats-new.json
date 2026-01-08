@@ -1,6 +1,101 @@
 {
   "releases": [
     {
+      "version": "20260108.1",
+      "release_date": "January 8, 2026",
+      "introduction": "Major release featuring a brand new first-time setup wizard that guides you through configuring SAM, whether you prefer cloud AI or local models. Also includes a complete redesign of Local Models preferences and critical bug fixes for model downloads.",
+      "highlights": [
+        {
+          "id": "onboarding-wizard",
+          "icon": "sparkles",
+          "title": "Welcome Wizard for First-Time Setup",
+          "description": "New users are greeted with a guided onboarding experience that makes getting started effortless. The wizard detects if you have no models or providers configured, then helps you choose your path: Cloud AI (OpenAI, Anthropic, Google, etc.) or Local Models (GGUF/MLX running on your Mac). For local models, the wizard recommends models based on your RAM (8GB, 16GB, or 32GB+) and can download them directly without leaving the setup flow."
+        },
+        {
+          "id": "wizard-direct-downloads",
+          "icon": "arrow.down.app.fill",
+          "title": "Download Models During Setup",
+          "description": "The onboarding wizard can download local models directly from HuggingFace while you wait. Choose from RAM-optimized recommendations (Qwen3-4B for 8GB Macs, Qwen3-8B for 16GB+), see model details (size, context window), and start downloading immediately. Progress indicators show download status, making first-time setup smooth and guided."
+        },
+        {
+          "id": "local-models-redesign",
+          "icon": "square.split.3x1.fill",
+          "title": "Local Models Preferences Redesigned",
+          "description": "Complete redesign with 3 organized tabs: Installed Models (with filtering and sorting), Download (with improved search), and Settings (storage and optimization). The new layout makes it much easier to browse, download, and manage your GGUF, MLX, and Stable Diffusion models."
+        },
+        {
+          "id": "improved-model-search",
+          "icon": "magnifyingglass.circle.fill",
+          "title": "Better Model Search Results",
+          "description": "Search now returns up to 100 results (up from 30) and 'All Models' filter correctly shows GGUF, MLX, and Stable Diffusion models together. Find the models you need more easily."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "mlx-download-fix",
+          "icon": "arrow.down.circle.fill",
+          "title": "MLX Model Downloads Fixed",
+          "description": "Fixed 'No safetensors file found in model' error when downloading MLX models from onboarding wizard. System now properly fetches full model details before starting download."
+        },
+        {
+          "id": "default-model-fallback",
+          "icon": "gear",
+          "title": "Default Model Selection Improved",
+          "description": "Preferences no longer shows 'gpt-4' as default when no API provider is configured. Empty default now matches actual behavior, eliminating confusion for users without OpenAI keys."
+        },
+        {
+          "id": "remote-providers-naming",
+          "icon": "cloud.fill",
+          "title": "Consistent Remote Providers Naming",
+          "description": "Renamed 'API Endpoints' to 'Remote Providers' throughout UI for consistency. Tab label and section headers now match."
+        },
+        {
+      "improvements": [
+        {
+          "id": "ram-based-recommendations",
+          "icon": "memorychip.fill",
+          "title": "Smart RAM-Based Model Recommendations",
+          "description": "The onboarding wizard recommends models based on your Mac's available RAM. 8GB systems get Qwen3-4B (3GB, 16k context), 16GB systems get Qwen3-8B (6GB, 32k context), and 32GB+ systems get larger options. No guesswork about which model will run on your hardware."
+        },
+        {
+          "id": "cloud-provider-guidance",
+          "icon": "cloud.fill",
+          "title": "Cloud Provider Setup Guidance",
+          "description": "If you choose cloud AI, the wizard shows all available providers (OpenAI, Anthropic, Google, xAI, Mistral, etc.) with difficulty ratings and links to get API keys. Makes it clear which providers are easiest to set up and where to find your credentials."
+        },
+        {
+          "id": "installed-models-filtering",
+          "icon": "slider.horizontal.3",
+          "title": "Installed Models Filtering and Sorting",
+          "description": "New Installed Models tab includes filters (All/GGUF/MLX/Stable Diffusion) and sorting options (Name/Size/Date Added). Quickly find specific models in your collection."
+        },
+        {
+          "id": "download-tab-organization",
+          "icon": "arrow.down.app.fill",
+          "title": "Organized Download Tab",
+          "description": "New Download tab features clear search controls, filter dropdowns (All/GGUF/MLX/SD/Q4/Q5/Q8), and helpful context about 16k+ context window requirements. Better organized than the previous single-scroll interface."
+        },
+        {
+          "id": "settings-tab-storage",
+          "icon": "internaldrive.fill",
+          "title": "Settings Tab with Storage Info",
+          "description": "New Settings tab combines model optimization controls with storage information. View cache location, calculate total storage used, and access model directories easily."
+        },
+        {
+          "id": "wizard-integration",
+          "icon": "arrow.triangle.branch",
+          "title": "Seamless Wizard Integration",
+          "description": "The onboarding wizard appears automatically when needed and integrates smoothly with SAM's main interface. Once you've configured a provider or downloaded a model, the wizard disappears and you see the normal welcome screen."
+        }
+      ] {
+          "id": "onboarding-progress-indicators",
+          "icon": "chart.line.uptrend.xyaxis",
+          "title": "Download Progress in Onboarding",
+          "description": "Onboarding wizard now shows percentage-based progress bars when downloading models. Visual feedback makes the setup process more transparent."
+        }
+      ]
+    },
+    {
       "version": "20260107.1",
       "release_date": "January 7, 2026",
       "introduction": "Critical release fixing Claude model context loss and infinite loops. This release resolves three major bugs affecting agent workflow quality: tool result trimming causing infinite loops, delta mode sending incomplete context to Claude, and duplicate message alternation losing tool results. Additionally fixes false 'no tools' warnings and improves workflow guidance.",
