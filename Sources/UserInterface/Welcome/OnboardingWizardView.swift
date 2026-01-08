@@ -18,6 +18,13 @@ struct OnboardingWizardView: View {
     
     @State private var selectedPath: OnboardingPath? = nil
     @State private var showingPreferences: Bool = false
+    @StateObject private var downloadManager: ModelDownloadManager
+    @State private var isDownloading: Bool = false
+    
+    init(isPresented: Binding<Bool>) {
+        self._isPresented = isPresented
+        self._downloadManager = StateObject(wrappedValue: ModelDownloadManager())
+    }
     
     enum OnboardingPath {
         case cloudAI
@@ -228,20 +235,95 @@ struct OnboardingWizardView: View {
             
             recommendedModelCard
             
-            
-            Button(action: {
-                showingPreferences = true
-            }) {Text("Download Model")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.accentColor)
-                    .cornerRadius(10)
+            if isDownloading {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    
+                    Text("Preparing download...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+            } else {
+                Button(action: {
+                    downloadRecommendedModel()
+                }) {
+                    Text("Download Model")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .frame(maxWidth: 600)
+    }
+    
+    private func downloadRecommendedModel() {
+        isDownloading = true
+        
+        /// Get recommended model based on RAM
+        let ramGB = SystemCapabilities.current.physicalMemoryGB
+        let (modelRepo, modelFile) = getRecommendedModelDownload(for: ramGB)
+        
+        /// Search for model on HuggingFace
+        Task {
+            do {
+                logger.info("Searching for model: \(modelRepo)")
+                await downloadManager.searchModels(query: modelRepo)
+                
+                /// Wait for search results
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                
+                /// Find the model in results
+                if let model = downloadManager.availableModels.first(where: { $0.modelId == modelRepo }) {
+                    /// Find the recommended file
+                    if let file = model.siblings?.first(where: { $0.rfilename == modelFile }) {
+                        logger.info("Starting download: \(modelFile)")
+                        await downloadManager.downloadModelWithRelatedFiles(model: model, file: file)
+                        
+                        /// Mark setup complete
+                        await MainActor.run {
+                            hasSeenWelcomeScreen = true
+                            isPresented = false
+                        }
+                    } else {
+                        logger.error("Model file not found: \(modelFile)")
+                        await MainActor.run {
+                            isDownloading = false
+                        }
+                    }
+                } else {
+                    logger.error("Model not found: \(modelRepo)")
+                    await MainActor.run {
+                        isDownloading = false
+                    }
+                }
+            } catch {
+                logger.error("Download failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    isDownloading = false
+                }
+            }
+        }
+    }
+    
+    private func getRecommendedModelDownload(for ramGB: Int) -> (repo: String, file: String) {
+        switch ramGB {
+        case 0..<12:
+            /// Qwen3-4B MLX 8-bit
+            return ("mlx-community/Qwen3-4B-8bit", "model.safetensors")
+        case 12..<28:
+            /// Qwen3-8B MLX 8-bit  
+            return ("mlx-community/Qwen3-8B-8bit", "model.safetensors")
+        default:
+            /// Qwen3-8B MLX 8-bit (default)
+            return ("mlx-community/Qwen3-8B-8bit", "model.safetensors")
+        }
     }
     
     private var recommendedModelCard: some View {
