@@ -78,6 +78,37 @@ public class GitHubDeviceFlowService: ObservableObject {
         verificationUri = nil
     }
 
+    /// Exchange GitHub user token for Copilot-specific token
+    /// This token has access to billing metadata
+    public func exchangeForCopilotToken(githubToken: String) async throws -> CopilotTokenResponse {
+        let url = URL(string: "https://api.github.com/copilot_internal/v2/token")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("token \(githubToken)", forHTTPHeaderField: "Authorization")
+
+        /// Add editor version headers (required by GitHub)
+        let samVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
+        request.setValue("vscode/\(samVersion)", forHTTPHeaderField: "Editor-Version")
+        request.setValue("GitHubCopilotChat/\(samVersion)", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GitHubDeviceFlowError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            Self.logger.error("Copilot token exchange failed: HTTP \(httpResponse.statusCode) - \(errorMessage)")
+            throw GitHubDeviceFlowError.copilotTokenExchangeFailed(statusCode: httpResponse.statusCode, message: errorMessage)
+        }
+
+        let tokenResponse = try JSONDecoder().decode(CopilotTokenResponse.self, from: data)
+        Self.logger.info("Copilot token obtained successfully, expires in \(tokenResponse.refreshIn)s")
+
+        return tokenResponse
+    }
+
     /// Request device and user codes from GitHub.
     private func requestDeviceCodes() async throws -> DeviceCodeResponse {
         let url = URL(string: "https://github.com/login/device/code")!
@@ -226,6 +257,7 @@ public enum GitHubDeviceFlowError: LocalizedError {
     case authorizationDenied
     case timeout
     case unknownError(String)
+    case copilotTokenExchangeFailed(statusCode: Int, message: String)
 
     public var errorDescription: String? {
         switch self {
@@ -246,6 +278,30 @@ public enum GitHubDeviceFlowError: LocalizedError {
 
         case .unknownError(let error):
             return "Unknown error: \(error)"
+
+        case .copilotTokenExchangeFailed(let statusCode, let message):
+            return "Copilot token exchange failed (HTTP \(statusCode)): \(message)"
         }
+    }
+}
+
+/// Copilot token response (has billing access)
+public struct CopilotTokenResponse: Codable {
+    public let token: String
+    public let expiresAt: Int
+    public let refreshIn: Int
+    public let username: String?
+
+    enum CodingKeys: String, CodingKey {
+        case token
+        case expiresAt = "expires_at"
+        case refreshIn = "refresh_in"
+        case username
+    }
+
+    /// Check if token is expired or about to expire
+    public func isExpired(bufferSeconds: Int = 300) -> Bool {
+        let now = Int(Date().timeIntervalSince1970)
+        return (expiresAt - bufferSeconds) < now
     }
 }

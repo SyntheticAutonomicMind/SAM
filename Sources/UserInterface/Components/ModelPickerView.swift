@@ -12,13 +12,19 @@ struct ModelPickerView: View {
     let endpointManager: EndpointManager
     @StateObject private var sdModelManager = StableDiffusionModelManager()
     @State private var billingDataLoaded = false
+    
+    /// Computed properties for model lists
+    private var models: [String] {
+        modelListManager.availableModels
+    }
+    
+    private var categorizedModels: (free: [String], premium: [String]) {
+        categorizeModelsByBilling(models)
+    }
 
     var body: some View {
         Menu {
-            let models = modelListManager.availableModels
-            let (freeModels, premiumModels) = categorizeModelsByBilling(models)
-
-            if !freeModels.isEmpty {
+            if !categorizedModels.free.isEmpty {
                 Section {
                     /// Column header
                     Text(formatColumnHeader())
@@ -31,7 +37,7 @@ struct ModelPickerView: View {
                         .foregroundColor(.secondary)
                         .disabled(true)
 
-                    ForEach(freeModels, id: \.self) { model in
+                    ForEach(categorizedModels.free, id: \.self) { model in
                         Button(action: { selectedModel = model }) {
                             Text(formatModelDisplayName(model))
                                 .font(.system(.caption, design: .monospaced))
@@ -40,14 +46,14 @@ struct ModelPickerView: View {
                 }
             }
 
-            if !premiumModels.isEmpty {
+            if !categorizedModels.premium.isEmpty {
                 Section {
                     Text("PREMIUM MODELS")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .disabled(true)
 
-                    ForEach(premiumModels, id: \.self) { model in
+                    ForEach(categorizedModels.premium, id: \.self) { model in
                         Button(action: { selectedModel = model }) {
                             Text(formatModelDisplayName(model))
                                 .font(.system(.caption, design: .monospaced))
@@ -76,12 +82,6 @@ struct ModelPickerView: View {
                 RoundedRectangle(cornerRadius: 5)
                     .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
             )
-            .onTapGesture {
-                /// Refresh model list when picker is clicked
-                Task {
-                    await modelListManager.refresh()
-                }
-            }
         }
         .onAppear {
             /// Fetch GitHub Copilot billing data if not already cached

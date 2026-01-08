@@ -714,6 +714,27 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         loadQuotaCache()
     }
 
+    /// Get API key - tries Copilot token first, falls back to config API key
+    /// This allows both device flow (with billing data) and manual API key (without billing data)
+    private func getAPIKey() async throws -> String {
+        // Try Copilot token first (preferred - has billing data)
+        do {
+            let token = try await CopilotTokenStore.shared.getCopilotToken()
+            logger.debug("Using Copilot token from device flow (has billing data)")
+            return token
+        } catch {
+            logger.debug("Copilot token unavailable: \(error.localizedDescription)")
+        }
+        
+        // Fall back to manual API key (no billing data, but still works)
+        guard let apiKey = config.apiKey else {
+            throw ProviderError.authenticationFailed("GitHub Copilot API key not configured. Please sign in with GitHub or provide an API key.")
+        }
+        
+        logger.debug("Using manual API key (billing data not available)")
+        return apiKey
+    }
+
     /// Fetch model capabilities from GitHub Copilot /models API Returns dictionary of modelId -> max_input_tokens (context size) **Why needed**: GitHub Copilot doesn't include model capabilities in main API responses.
     public func fetchModelCapabilities() async throws -> [String: Int] {
         /// Check cache first.
@@ -726,9 +747,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
         logger.info("Fetching model capabilities from GitHub Copilot /models API")
 
-        guard let apiKey = config.apiKey else {
-            throw ProviderError.authenticationFailed("GitHub Copilot API key not configured")
-        }
+        let apiKey = try await getAPIKey()
 
         let baseURL = config.baseURL ?? "https://api.githubcopilot.com"
         let modelsURL = "\(baseURL)/models"
@@ -790,6 +809,11 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             let decoder = JSONDecoder()
             let modelsResponse = try decoder.decode(GitHubCopilotModelsResponse.self, from: data)
 
+            /// DEBUG: Log raw JSON for first model to see what API is returning
+            if let firstModelData = String(data: data, encoding: .utf8)?.prefix(2000) {
+                logger.debug("RAW API RESPONSE (first 2000 chars): \(firstModelData)")
+            }
+
             /// Build capabilities dictionary.
             var capabilities: [String: Int] = [:]
             var billingInfo: [String: (isPremium: Bool, multiplier: Double?)] = [:]
@@ -798,8 +822,13 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                 if let maxInputTokens = model.maxInputTokens {
                     capabilities[model.id] = maxInputTokens
 
-                    /// Store billing information
+                    /// Store billing information using computed properties
                     billingInfo[model.id] = (isPremium: model.isPremium, multiplier: model.premiumMultiplier)
+                    
+                    /// DEBUG: Log billing data for first few models
+                    if billingInfo.count <= 5 {
+                        logger.debug("BILLING: \(model.id) - isPremium=\(model.isPremium), multiplier=\(model.premiumMultiplier?.description ?? "nil"), raw_billing=\(model.billing != nil ? "present" : "nil")")
+                    }
                 }
             }
 
@@ -840,6 +869,13 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             logger.error("Failed to fetch model capabilities: \(error)")
             throw ProviderError.networkError("Failed to fetch model capabilities: \(error.localizedDescription)")
         }
+    }
+    
+    /// Clear the capabilities cache to force a fresh fetch next time
+    public func clearCapabilitiesCache() {
+        Self.modelCapabilitiesCache = nil
+        Self.modelCapabilitiesCacheTime = nil
+        logger.debug("Cleared capabilities cache - next fetch will be fresh from API")
     }
 
     /// Load billing cache from disk
@@ -998,9 +1034,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         }
         lastRequestTime = Date()
 
-        guard let apiKey = config.apiKey else {
-            throw ProviderError.authenticationFailed("GitHub Copilot API key not configured")
-        }
+        let apiKey = try await getAPIKey()
 
         let urlRequest = try await createGitHubCopilotRequest(request, apiKey: apiKey, streaming: true)
 
@@ -1189,9 +1223,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         let requestId = UUID().uuidString
         logger.debug("Processing GitHub Copilot API request [req:\(requestId.prefix(8))], streaming: \(streaming)")
 
-        guard let apiKey = config.apiKey else {
-            throw ProviderError.authenticationFailed("GitHub Copilot API key not configured")
-        }
+        let apiKey = try await getAPIKey()
 
         let urlRequest = try await createGitHubCopilotRequest(request, apiKey: apiKey, streaming: streaming)
 
@@ -1854,9 +1886,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         }
         lastRequestTime = Date()
 
-        guard let apiKey = config.apiKey else {
-            throw ProviderError.authenticationFailed("GitHub Copilot API key not configured")
-        }
+        let apiKey = try await getAPIKey()
 
         let urlRequest = try await createResponsesAPIRequest(request, apiKey: apiKey)
 
@@ -2338,11 +2368,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     }
 
     public func validateConfiguration() async throws -> Bool {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            throw ProviderError.authenticationFailed("GitHub Copilot API key is required")
-        }
-
-        /// FUTURE FEATURE: Real API validation Currently: Basic check (non-empty key) Future: Make test API call to validate key actually works Reason not implemented: Validation adds latency to preferences UI Alternative: Validation happens on first API call (error shows invalid key).
+        // Try to get API key (either Copilot token or manual key)
+        _ = try await getAPIKey()
         return true
     }
 

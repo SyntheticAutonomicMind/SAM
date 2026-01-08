@@ -5,6 +5,7 @@ import AppKit
 import Foundation
 import Sparkle
 import ConversationEngine
+import APIFramework
 
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     private(set) var updaterController: SPUStandardUpdaterController!
@@ -25,6 +26,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         /// Configure application to appear in dock.
         NSApp.setActivationPolicy(.regular)
+
+        /// Load saved Copilot tokens if available
+        Task { @MainActor in
+            try? CopilotTokenStore.shared.loadTokens()
+        }
 
         /// Initialize Sparkle updater with delegate for logging.
         /// Note: Even in DEBUG, we set startingUpdater=true so manual checks work.

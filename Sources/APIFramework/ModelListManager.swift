@@ -57,11 +57,13 @@ public class ModelListManager: ObservableObject {
     
     /// Initialize the manager with required dependencies
     public func initialize(endpointManager: EndpointManager) {
+        logger.info("Initializing ModelListManager with EndpointManager")
         self.endpointManager = endpointManager
         
-        // Initial load
+        // Trigger initial refresh with a small delay to allow providers to finish loading
         Task {
-            await refresh()
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            await refresh(force: true)
         }
     }
     
@@ -127,7 +129,11 @@ public class ModelListManager: ObservableObject {
         
         do {
             // Fetch GitHub Copilot model capabilities (including billing) BEFORE loading models
+            // FORCE fresh fetch to ensure billing data is populated (not from capabilities cache)
             do {
+                // Clear the static capabilities cache to force a fresh API call with billing data
+                // This is needed because the cache check happens before billing data is populated
+                _ = try await endpointManager.clearGitHubCopilotCapabilitiesCache()
                 _ = try await endpointManager.getGitHubCopilotModelCapabilities()
                 logger.debug("Fetched GitHub Copilot capabilities with billing info")
             } catch {
@@ -136,6 +142,7 @@ public class ModelListManager: ObservableObject {
             
             // Get models from endpoint manager
             let modelsResponse = try await endpointManager.getAvailableModels()
+            logger.debug("EndpointManager getAvailableModels returned \(modelsResponse.data.count) model(s)")
             
             // Deduplicate models based on base model ID
             var seenBaseIds = Set<String>()

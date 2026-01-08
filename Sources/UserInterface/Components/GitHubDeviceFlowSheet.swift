@@ -3,6 +3,7 @@
 
 import SwiftUI
 import ConfigurationSystem
+import APIFramework
 import Logging
 
 /// Sheet for GitHub Device Flow authentication.
@@ -194,8 +195,15 @@ struct GitHubDeviceFlowSheet: View {
 
     private func startDeviceFlow() async {
         do {
-            let token = try await deviceFlow.startDeviceFlow()
-            onTokenReceived(token)
+            let githubToken = try await deviceFlow.startDeviceFlow()
+            
+            /// Store GitHub token directly in CopilotTokenStore (no exchange needed)
+            /// GitHub user tokens from device flow already have billing access
+            let copilotTokenStore = CopilotTokenStore.shared
+            await copilotTokenStore.setGitHubTokenDirect(githubToken)
+            
+            /// Return token for API usage
+            onTokenReceived(githubToken)
 
             /// Auto-dismiss after brief delay.
             try await Task.sleep(for: .seconds(1.5))
