@@ -4,212 +4,54 @@
 import SwiftUI
 import Logging
 import ConfigurationSystem
+import APIFramework
 
-/// Preferences pane for configuring GitHub OAuth credentials.
+/// Preferences pane for configuring GitHub OAuth credentials using device code flow.
 struct GitHubOAuthPreferencesPane: View {
     private static let logger = Logger(label: "com.sam.preferences.github-oauth")
 
-    @StateObject private var oauthService = GitHubOAuthService()
+    @StateObject private var deviceFlowService = GitHubDeviceFlowService()
+    @ObservedObject private var tokenStore = CopilotTokenStore.shared
 
-    @State private var clientId: String = ""
-    @State private var clientSecret: String = ""
-    @State private var isSaved: Bool = false
-    @State private var showError: Bool = false
-    @State private var errorMessage: String = ""
-    @State private var isConnecting: Bool = false
-    @State private var connectionSuccess: Bool = false
-    @State private var obtainedToken: String?
+    @State private var signInState: SignInState = .idle
+    @State private var errorMessage: String? = nil
+    
+    enum SignInState {
+        case idle
+        case showingCode
+        case polling
+        case success
+        case error
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("GitHub Copilot OAuth Setup")
+            Text("GitHub Copilot Sign-In")
                 .font(.headline)
 
-            /// Instructions Section.
-            GroupBox("Step 1: Register OAuth App") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Create a GitHub OAuth App to allow SAM to access GitHub Copilot:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    Link("Register New OAuth App →",
-                         destination: URL(string: "https://github.com/settings/applications/new")!)
-                        .font(.caption)
-
-                    Divider()
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("OAuth App Settings:")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-
-                        HStack {
-                            Text("Application name:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("SAM")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .textSelection(.enabled)
-                        }
-
-                        HStack {
-                            Text("Homepage URL:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("https://github.com")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .textSelection(.enabled)
-                        }
-
-                        HStack {
-                            Text("Authorization callback URL:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("sam://oauth/callback")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .textSelection(.enabled)
-                        }
-                    }
-                }
-                .padding()
-            }
-
-            /// Credentials Section.
-            GroupBox("Step 2: Enter OAuth Credentials") {
+            GroupBox("Sign in to GitHub") {
                 VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Client ID")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        TextField("GitHub OAuth App Client ID", text: $clientId)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Client Secret")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        SecureField("GitHub OAuth App Client Secret", text: $clientSecret)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
-
-                    HStack {
-                        Button("Save Credentials") {
-                            saveCredentials()
+                    if tokenStore.isSignedIn {
+                        signedInView
+                    } else {
+                        switch signInState {
+                        case .idle:
+                            idleView
+                        case .showingCode:
+                            showCodeView
+                        case .polling:
+                            pollingView
+                        case .success:
+                            successView
+                        case .error:
+                            errorView
                         }
-                        .disabled(clientId.isEmpty || clientSecret.isEmpty)
-                        .buttonStyle(.borderedProminent)
-
-                        if isSaved {
-                            Label("Saved", systemImage: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                                .font(.caption)
-                        }
-
-                        Spacer()
-
-                        Button("Clear") {
-                            clearCredentials()
-                        }
-                        .buttonStyle(.bordered)
                     }
                 }
                 .padding()
             }
 
-            /// Connection Section.
-            GroupBox("Step 3: Connect to GitHub") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Click 'Connect with GitHub' to authorize SAM and obtain an access token.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Button(action: { connectWithGitHub() }) {
-                        HStack {
-                            if isConnecting {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Authorizing...")
-                            } else {
-                                Image(systemName: "arrow.triangle.branch")
-                                Text("Connect with GitHub")
-                            }
-                        }
-                    }
-                    .disabled(clientId.isEmpty || clientSecret.isEmpty || isConnecting)
-                    .buttonStyle(.borderedProminent)
-
-                    if connectionSuccess, let token = obtainedToken {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Connected successfully!", systemImage: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                                .font(.caption)
-
-                            Text("Access token obtained. Use this in Endpoint Management to configure GitHub Copilot provider.")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-
-                            HStack {
-                                Text("Token:")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-
-                                Text(String(token.prefix(16)) + "...")
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .textSelection(.enabled)
-
-                                Button(action: {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(token, forType: .string)
-                                }) {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.caption2)
-                                }
-                                .buttonStyle(.borderless)
-                                .help("Copy token to clipboard")
-                            }
-
-                            Button("Use Token in Endpoint Management") {
-                                /// This would navigate to endpoint management.
-                                /// For now, just copy to clipboard.
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(token, forType: .string)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                        .padding(.top, 8)
-                    }
-
-                    if oauthService.isAuthenticating {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text("Waiting for authorization in browser...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if let error = oauthService.authError {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                            .padding(.top, 4)
-                    }
-                }
-                .padding()
-            }
-
-            if showError {
+            if let errorMessage = errorMessage, signInState == .error {
                 Text(errorMessage)
                     .font(.caption)
                     .foregroundColor(.red)
@@ -219,60 +61,175 @@ struct GitHubOAuthPreferencesPane: View {
             Spacer()
         }
         .padding()
-        .onAppear {
-            loadCredentials()
-        }
     }
-
-    private func saveCredentials() {
-        oauthService.saveCredentials(clientId: clientId, clientSecret: clientSecret)
-        isSaved = true
-        showError = false
-
-        /// Hide success indicator after 2 seconds.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            isSaved = false
-        }
-    }
-
-    private func loadCredentials() {
-        if let (loadedId, loadedSecret) = oauthService.loadCredentials() {
-            clientId = loadedId
-            clientSecret = loadedSecret
-        }
-    }
-
-    private func clearCredentials() {
-        clientId = ""
-        clientSecret = ""
-        oauthService.clearCredentials()
-        isSaved = false
-        connectionSuccess = false
-        obtainedToken = nil
-    }
-
-    private func connectWithGitHub() {
-        isConnecting = true
-        connectionSuccess = false
-        obtainedToken = nil
-
-        Task {
-            do {
-                let token = try await oauthService.authorize()
-                await MainActor.run {
-                    obtainedToken = token
-                    connectionSuccess = true
-                    isConnecting = false
-                    Self.logger.info("Successfully obtained GitHub access token")
-                }
-            } catch {
-                await MainActor.run {
-                    isConnecting = false
-                    errorMessage = "Authorization failed: \(error.localizedDescription)"
-                    showError = true
-                    Self.logger.error("GitHub OAuth failed: \(error)")
+    
+    /// Signed in view
+    private var signedInView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                VStack(alignment: .leading) {
+                    Text("Signed in successfully")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    if let username = tokenStore.username {
+                        Text("GitHub user: \(username)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
+            
+            Button("Sign Out") {
+                tokenStore.clearTokens()
+                signInState = .idle
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+    
+    /// Idle state view
+    private var idleView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Sign in with GitHub to access Copilot models with full billing information.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Button(action: { Task { await startSignIn() } }) {
+                HStack {
+                    Image(systemName: "person.badge.key.fill")
+                    Text("Sign In with GitHub")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+    
+    /// Show code view
+    private var showCodeView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Enter this code on GitHub:")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            
+            if let userCode = deviceFlowService.userCode {
+                Text(userCode)
+                    .font(.system(size: 28, weight: .bold, design: .monospaced))
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            
+            if let verificationUri = deviceFlowService.verificationUri {
+                Button("Open GitHub") {
+                    if let url = URL(string: verificationUri) {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            
+            HStack {
+                ProgressView()
+                    .scaleEffect(0.8)
+                Text("Waiting for authorization...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Button("Cancel") {
+                deviceFlowService.cancelAuth()
+                signInState = .idle
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+    
+    /// Polling view
+    private var pollingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Completing sign in...")
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    /// Success view
+    private var successView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.green)
+                
+                VStack(alignment: .leading) {
+                    Text("Signed In Successfully!")
+                        .font(.headline)
+                        .bold()
+                    
+                    Text("Copilot token obtained with billing access")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
+    /// Error view
+    private var errorView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.red)
+                
+                VStack(alignment: .leading) {
+                    Text("Sign In Failed")
+                        .font(.headline)
+                        .bold()
+                    
+                    if let error = errorMessage {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Button("Try Again") {
+                signInState = .idle
+                errorMessage = ""
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private func startSignIn() async {
+        do {
+            signInState = .showingCode
+            
+            /// Use GitHubDeviceFlowService to get GitHub token
+            let githubToken = try await deviceFlowService.startDeviceFlow()
+            
+            /// Exchange for Copilot token
+            signInState = .polling
+            try await tokenStore.setGitHubToken(githubToken)
+            
+            signInState = .success
+            
+            Self.logger.info("GitHub OAuth device code flow completed successfully")
+            
+            /// Auto-dismiss success after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                signInState = .idle
+            }
+            
+        } catch {
+            signInState = .error
+            errorMessage = error.localizedDescription
+            Self.logger.error("GitHub OAuth device code flow failed: \(error)")
         }
     }
 }

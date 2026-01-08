@@ -102,6 +102,15 @@ public class EndpointManager: ObservableObject {
         return try await githubProvider.fetchModelCapabilities()
     }
     
+    /// Clear the GitHub Copilot capabilities cache to force a fresh fetch
+    public func clearGitHubCopilotCapabilitiesCache() async throws {
+        guard let githubProvider = providers.values.first(where: { $0.config.providerType == .githubCopilot }) as? GitHubCopilotProvider else {
+            return
+        }
+        
+        await githubProvider.clearCapabilitiesCache()
+    }
+    
     /// Get model capabilities (context sizes) from Gemini API Returns dictionary of modelId -> inputTokenLimit.
     public func getGeminiModelCapabilities() async throws -> [String: Int]? {
         guard let geminiProvider = providers.values.first(where: { $0.config.providerType == .gemini }) as? GeminiProvider else {
