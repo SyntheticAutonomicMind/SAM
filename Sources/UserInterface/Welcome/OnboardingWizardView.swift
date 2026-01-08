@@ -21,6 +21,23 @@ struct OnboardingWizardView: View {
     @State private var preferencesSection: PreferencesSection = .apiEndpoints
     @StateObject private var downloadManager: ModelDownloadManager
     @State private var isDownloading: Bool = false
+    @State private var downloadingModelId: String = ""
+    
+    /// Computed property to get overall download progress
+    private var downloadProgressValue: Double {
+        guard !downloadingModelId.isEmpty else { return 0.0 }
+        
+        /// Get all downloads matching the model ID
+        let matchingDownloads = downloadManager.downloadProgress.filter { key, _ in
+            key.hasPrefix(downloadingModelId)
+        }
+        
+        guard !matchingDownloads.isEmpty else { return 0.0 }
+        
+        /// Calculate average progress across all files
+        let totalProgress = matchingDownloads.values.reduce(0.0, +)
+        return totalProgress / Double(matchingDownloads.count)
+    }
     
     init(isPresented: Binding<Bool>) {
         self._isPresented = isPresented
@@ -231,15 +248,20 @@ struct OnboardingWizardView: View {
             }
             
             recommendedModelCard
-            
             if isDownloading {
                 VStack(spacing: 12) {
-                    ProgressView()
-                        .scaleEffect(0.8)
+                    ProgressView(value: downloadProgressValue, total: 1.0)
+                        .frame(maxWidth: 300)
                     
-                    Text("Preparing download...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    if downloadProgressValue > 0 && downloadProgressValue < 1.0 {
+                        Text("Downloading: \(Int(downloadProgressValue * 100))%")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Preparing download...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .padding()
             } else {
@@ -279,6 +301,9 @@ struct OnboardingWizardView: View {
         let ramGB = SystemCapabilities.current.physicalMemoryGB
         let (modelRepo, modelFile) = getRecommendedModelDownload(for: ramGB)
         
+        /// Set the downloading model ID for progress tracking
+        downloadingModelId = modelRepo
+        
         /// Search for model on HuggingFace using direct API call with mlx filter
         Task {
             do {
@@ -309,7 +334,11 @@ struct OnboardingWizardView: View {
                 logger.info("Found \(models.count) models")
                 
                 /// Find the exact model
-                if let model = models.first(where: { $0.modelId == modelRepo }) {
+                if let searchResult = models.first(where: { $0.modelId == modelRepo }) {
+                    /// Get full model details with siblings array populated
+                    logger.info("Fetching full model details for: \(modelRepo)")
+                    let model = try await client.getModelInfo(repoId: modelRepo)
+                    
                     /// For MLX models, find any safetensors file to trigger download
                     if let siblings = model.siblings,
                        let safetensorsFile = siblings.first(where: { $0.rfilename.hasSuffix(".safetensors") }) {
