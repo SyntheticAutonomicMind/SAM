@@ -279,21 +279,42 @@ struct OnboardingWizardView: View {
         let ramGB = SystemCapabilities.current.physicalMemoryGB
         let (modelRepo, modelFile) = getRecommendedModelDownload(for: ramGB)
         
-        /// Search for model on HuggingFace
+        /// Search for model on HuggingFace using direct API call with mlx filter
         Task {
             do {
-                logger.info("Searching for model: \(modelRepo)")
-                await downloadManager.searchModels(query: modelRepo)
+                logger.info("Searching for model: \(modelRepo) with mlx filter")
                 
-                /// Wait for search results
-                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                /// Use HuggingFaceGGUFClient directly with mlx filter
+                let client = HuggingFaceGGUFClient()
                 
-                /// Find the model in results
-                if let model = downloadManager.availableModels.first(where: { $0.modelId == modelRepo }) {
-                    /// Find the recommended file
-                    if let file = model.siblings?.first(where: { $0.rfilename == modelFile }) {
-                        logger.info("Starting download: \(modelFile)")
-                        await downloadManager.downloadModelWithRelatedFiles(model: model, file: file)
+                /// Manually construct URL with mlx filter
+                var components = URLComponents(string: "https://huggingface.co/api/models")!
+                components.queryItems = [
+                    URLQueryItem(name: "search", value: modelRepo),
+                    URLQueryItem(name: "filter", value: "mlx"),
+                    URLQueryItem(name: "limit", value: "30"),
+                    URLQueryItem(name: "sort", value: "downloads"),
+                    URLQueryItem(name: "direction", value: "-1")
+                ]
+                
+                guard let url = components.url else {
+                    throw NSError(domain: "OnboardingWizard", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
+                }
+                
+                logger.info("Search URL: \(url.absoluteString)")
+                
+                let (data, _) = try await URLSession.shared.data(from: url)
+                let models = try JSONDecoder().decode([HFModel].self, from: data)
+                
+                logger.info("Found \(models.count) models")
+                
+                /// Find the exact model
+                if let model = models.first(where: { $0.modelId == modelRepo }) {
+                    /// For MLX models, find any safetensors file to trigger download
+                    if let siblings = model.siblings,
+                       let safetensorsFile = siblings.first(where: { $0.rfilename.hasSuffix(".safetensors") }) {
+                        logger.info("Starting download: \(safetensorsFile.rfilename) (+ related files)")
+                        await downloadManager.downloadModelWithRelatedFiles(model: model, file: safetensorsFile)
                         
                         /// Mark setup complete
                         await MainActor.run {
@@ -301,7 +322,7 @@ struct OnboardingWizardView: View {
                             isPresented = false
                         }
                     } else {
-                        logger.error("Model file not found: \(modelFile)")
+                        logger.error("No safetensors file found in model")
                         await MainActor.run {
                             isDownloading = false
                         }
@@ -325,16 +346,16 @@ struct OnboardingWizardView: View {
         switch ramGB {
         case 0..<12:
             /// Qwen3-4B MLX 8-bit (for 8GB RAM)
-            return ("Qwen3/Qwen3-4B-MLX-8bit", "model.safetensors")
+            return ("Qwen/Qwen3-4B-MLX-8bit", "model.safetensors")
         case 12..<28:
             /// Qwen3-8B MLX 8-bit (for 16GB RAM)
-            return ("Qwen3/Qwen3-8B-MLX-8bit", "model.safetensors")
+            return ("Qwen/Qwen3-8B-MLX-8bit", "model.safetensors")
         case 28..<64:
             /// Qwen3-14B MLX 8-bit (for 32GB RAM)
-            return ("Qwen3/Qwen3-14B-MLX-8bit", "model.safetensors")
+            return ("Qwen/Qwen3-14B-MLX-8bit", "model.safetensors")
         default:
             /// Qwen3-32B MLX 8-bit (for 64GB+ RAM)
-            return ("Qwen3/Qwen3-32B-MLX-8bit", "model.safetensors")
+            return ("Qwen/Qwen3-32B-MLX-8bit", "model.safetensors")
         }
     }
     
