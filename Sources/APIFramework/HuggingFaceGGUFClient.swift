@@ -38,7 +38,7 @@ public class HuggingFaceGGUFClient {
         /// - .gguf → filter=gguf (GGUF models)
         /// - .safetensors → no filter, search by query (MLX models)
         /// - .coreml → filter=coreml (CoreML/SD models)
-        /// - nil → filter=gguf (default for backward compatibility)
+        /// - nil → NO FILTER (return all model types - for "All Models" filter)
         if let ext = fileExtension {
             if ext == ".gguf" {
                 queryItems.append(URLQueryItem(name: "filter", value: "gguf"))
@@ -54,8 +54,8 @@ public class HuggingFaceGGUFClient {
                 queryItems.append(URLQueryItem(name: "filter", value: filterValue))
             }
         } else {
-            /// Default to GGUF for backward compatibility (most SAM models are GGUF)
-            queryItems.append(URLQueryItem(name: "filter", value: "gguf"))
+            /// No filter - return all model types (GGUF, MLX, CoreML, etc.)
+            hfLogger.debug("No file extension filter - searching all model types")
         }
 
         queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
