@@ -32,22 +32,27 @@ struct OnboardingWizardView: View {
     }
     
     var body: some View {
-        VStack(spacing: 32) {
-            /// Header
-            headerSection
-            
-            /// Main content
-            if selectedPath == nil {
-                pathSelectionSection
-            } else if selectedPath == .cloudAI {
-                cloudAISection
-            } else if selectedPath == .localModel {
-                localModelSection
+        ScrollView {
+            VStack(spacing: 32) {
+                Spacer().frame(height: 40)
+                
+                /// Header
+                headerSection
+                
+                /// Main content
+                if selectedPath == nil {
+                    pathSelectionSection
+                } else if selectedPath == .cloudAI {
+                    cloudAISection
+                } else if selectedPath == .localModel {
+                    localModelSection
+                }
+                
+                Spacer()
             }
-            
-            Spacer()
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 40)
         }
-        .padding(40)
         .frame(minWidth: 800, minHeight: 600)
         .sheet(isPresented: $showingPreferences) {
             PreferencesView()
@@ -61,16 +66,6 @@ struct OnboardingWizardView: View {
     
     private var headerSection: some View {
         VStack(spacing: 12) {
-            /// SAM Icon
-            if let iconPath = Bundle.main.path(forResource: "sam-icon", ofType: "png"),
-               let samIcon = NSImage(contentsOfFile: iconPath) {
-                Image(nsImage: samIcon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 100, height: 100)
-                    .shadow(radius: 8)
-            }
-            
             Text("Welcome to SAM")
                 .font(.system(size: 42, weight: .bold))
             
@@ -316,13 +311,13 @@ struct OnboardingWizardView: View {
         switch ramGB {
         case 0..<12:
             /// Qwen3-4B MLX 8-bit
-            return ("mlx-community/Qwen3-4B-8bit", "model.safetensors")
+            return ("mlx-community/Qwen3-4B-MLX-8bit", "model.safetensors")
         case 12..<28:
             /// Qwen3-8B MLX 8-bit  
-            return ("mlx-community/Qwen3-8B-8bit", "model.safetensors")
+            return ("mlx-community/Qwen3-8B-MLX-8bit", "model.safetensors")
         default:
             /// Qwen3-8B MLX 8-bit (default)
-            return ("mlx-community/Qwen3-8B-8bit", "model.safetensors")
+            return ("mlx-community/Qwen3-8B-MLX-8bit", "model.safetensors")
         }
     }
     

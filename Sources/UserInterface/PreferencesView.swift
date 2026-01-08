@@ -317,7 +317,7 @@ enum PreferencesSection: String, CaseIterable {
     case sharedTopics = "Shared Topics"
     case systemPrompts = "System Prompts"
     case personalities = "Personalities"
-    case apiEndpoints = "Remote Models"
+    case apiEndpoints = "Remote Providers"
     case localModels = "Local Models"
     case imageGeneration = "Image Generation"
     case serpAPI = "SerpAPI"

@@ -84,7 +84,7 @@ public struct MainWindowView: View {
     @State private var showingPreferences = false
     @State private var showingHelp = false
     @State private var showingAPIReference = false
-    @AppStorage("showingSidebar") private var showingSidebar: Bool = true
+    @AppStorage("showingSidebar") private var showingSidebar: Bool = false
     @AppStorage("showingMiniPrompts") private var showingMiniPrompts: Bool = false
     @State private var showingRenameDialog = false
     @State private var conversationToRename: ConversationModel?
