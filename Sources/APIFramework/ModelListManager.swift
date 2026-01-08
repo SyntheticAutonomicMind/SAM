@@ -128,14 +128,18 @@ public class ModelListManager: ObservableObject {
         isLoading = true
         
         do {
-            // Fetch GitHub Copilot model capabilities (including billing) BEFORE loading models
-            // FORCE fresh fetch to ensure billing data is populated (not from capabilities cache)
+            // Fetch GitHub Copilot model capabilities (including billing) if provider is configured
+            // Only attempt if there's a token or API key available to avoid unnecessary failed API calls
             do {
-                // Clear the static capabilities cache to force a fresh API call with billing data
-                // This is needed because the cache check happens before billing data is populated
-                _ = try await endpointManager.clearGitHubCopilotCapabilitiesCache()
-                _ = try await endpointManager.getGitHubCopilotModelCapabilities()
-                logger.debug("Fetched GitHub Copilot capabilities with billing info")
+                // Check if GitHub Copilot provider has authentication available
+                if await endpointManager.hasGitHubCopilotAuthentication() {
+                    // Clear the static capabilities cache to force a fresh API call with billing data
+                    _ = try await endpointManager.clearGitHubCopilotCapabilitiesCache()
+                    _ = try await endpointManager.getGitHubCopilotModelCapabilities()
+                    logger.debug("Fetched GitHub Copilot capabilities with billing info")
+                } else {
+                    logger.debug("Skipping GitHub Copilot capabilities fetch - no authentication configured")
+                }
             } catch {
                 logger.warning("Failed to fetch GitHub capabilities: \(error)")
             }

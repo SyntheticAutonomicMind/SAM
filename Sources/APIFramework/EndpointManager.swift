@@ -102,6 +102,16 @@ public class EndpointManager: ObservableObject {
         return try await githubProvider.fetchModelCapabilities()
     }
     
+    /// Check if GitHub Copilot provider has authentication configured
+    /// Returns true if device flow token or manual API key is available
+    public func hasGitHubCopilotAuthentication() async -> Bool {
+        guard let githubProvider = providers.values.first(where: { $0.config.providerType == .githubCopilot }) as? GitHubCopilotProvider else {
+            return false
+        }
+        
+        return await githubProvider.hasAuthentication()
+    }
+    
     /// Clear the GitHub Copilot capabilities cache to force a fresh fetch
     public func clearGitHubCopilotCapabilitiesCache() async throws {
         guard let githubProvider = providers.values.first(where: { $0.config.providerType == .githubCopilot }) as? GitHubCopilotProvider else {

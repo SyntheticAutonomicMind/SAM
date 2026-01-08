@@ -715,24 +715,36 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     }
 
     /// Get API key - tries Copilot token first, falls back to config API key
-    /// This allows both device flow (with billing data) and manual API key (without billing data)
+    /// Both device flow tokens (via CopilotTokenStore) and manual API keys support billing data
     private func getAPIKey() async throws -> String {
-        // Try Copilot token first (preferred - has billing data)
+        // Try Copilot token first (from device flow - preferred)
         do {
             let token = try await CopilotTokenStore.shared.getCopilotToken()
-            logger.debug("Using Copilot token from device flow (has billing data)")
+            logger.debug("Using GitHub token from device flow")
             return token
         } catch {
-            logger.debug("Copilot token unavailable: \(error.localizedDescription)")
+            logger.debug("Device flow token unavailable: \(error.localizedDescription)")
         }
         
-        // Fall back to manual API key (no billing data, but still works)
+        // Fall back to manual API key
         guard let apiKey = config.apiKey else {
-            throw ProviderError.authenticationFailed("GitHub Copilot API key not configured. Please sign in with GitHub or provide an API key.")
+            throw ProviderError.authenticationFailed("GitHub Copilot API key not configured. Please sign in with GitHub or provide an API key in Preferences.")
         }
         
-        logger.debug("Using manual API key (billing data not available)")
+        logger.debug("Using manually configured API key")
         return apiKey
+    }
+    
+    /// Check if authentication is available (device flow token or manual API key)
+    /// Used to avoid unnecessary API calls when not authenticated
+    public func hasAuthentication() async -> Bool {
+        // Check device flow token
+        if let _ = try? await CopilotTokenStore.shared.getCopilotToken() {
+            return true
+        }
+        
+        // Check manual API key
+        return config.apiKey != nil
     }
 
     /// Fetch model capabilities from GitHub Copilot /models API Returns dictionary of modelId -> max_input_tokens (context size) **Why needed**: GitHub Copilot doesn't include model capabilities in main API responses.
@@ -758,6 +770,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "GET"
+        urlRequest.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData  // Disable caching
+        urlRequest.setValue("*/*", forHTTPHeaderField: "Accept")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
@@ -775,6 +789,13 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+            #if DEBUG
+            /// Save raw response to file for debugging (debug builds only)
+            let debugPath = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Caches/sam/debug_github_models_response.json")
+            try? data.write(to: debugPath)
+            #endif
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw ProviderError.networkError("Invalid response type")
