@@ -6,42 +6,59 @@
 # Enhanced version supporting large prompts, special characters, and model selection
 #
 # Usage:
-#   ./ask_sam.sh <conversation-id> [--model model-name] [query]
+#   ./ask_sam.sh <conversation-id> [--model model-name] [--token api-token] [query]
 #   ./ask_sam.sh <conversation-id> --model gpt-4 'query'
+#   ./ask_sam.sh <conversation-id> --token YOUR-TOKEN 'query'
 #   ./ask_sam.sh <conversation-id> --model gpt-4 < file.txt
 #   echo "query" | ./ask_sam.sh <conversation-id> --model gpt-4
+#
+# Environment Variables:
+#   SAM_API_TOKEN - API token for authentication (alternative to --token)
 
 CONVERSATION_ID="${1:-}"
 MODEL="gpt-5-mini"  # Default model
+API_TOKEN="${SAM_API_TOKEN:-}"  # Read from environment variable if set
 TEMP_FILE=$(mktemp)
 trap "rm -f $TEMP_FILE" EXIT
 
 # Check if conversation ID provided
 if [ -z "$CONVERSATION_ID" ] || [ "$CONVERSATION_ID" = "--help" ]; then
   cat << 'USAGE'
-Usage: ./ask_sam.sh <conversation-id> [--model model-name] [query]
+Usage: ./ask_sam.sh <conversation-id> [--model model-name] [--token api-token] [query]
 
 OPTIONS:
 --------
 --model MODEL    Specify model to use (default: gpt-4)
                  Examples: gpt-4, gpt-3.5-turbo, llama/model, mlx/model
+--token TOKEN    API authentication token (can also use SAM_API_TOKEN env var)
+                 Get token from: SAM Preferences → API Server → API Authentication
+
+AUTHENTICATION:
+---------------
+SAM now requires authentication for all API requests. You can provide the token via:
+
+1. Command line: --token YOUR-TOKEN
+2. Environment variable: export SAM_API_TOKEN="YOUR-TOKEN"
+3. Get your token from SAM Preferences → API Server → Copy button
+
+Example: ./ask_sam.sh CA706D86 --token abc123-def456 'Which tools did you use?'
 
 METHODS:
 --------
 1. Direct query:
-   ./ask_sam.sh CA706D86 'Which tools did you use?'
-   ./ask_sam.sh CA706D86 --model gpt-3.5-turbo 'Quick test'
+   ./ask_sam.sh CA706D86 --token abc123 'Which tools did you use?'
+   ./ask_sam.sh CA706D86 --model gpt-3.5-turbo --token abc123 'Quick test'
 
 2. From file:
-   ./ask_sam.sh CA706D86 < prompt.txt
-   ./ask_sam.sh CA706D86 --model gpt-4 < analysis.txt
+   SAM_API_TOKEN=abc123 ./ask_sam.sh CA706D86 < prompt.txt
+   ./ask_sam.sh CA706D86 --model gpt-4 --token abc123 < analysis.txt
 
 3. Pipe input:
-   echo "query" | ./ask_sam.sh CA706D86
-   cat file | ./ask_sam.sh CA706D86 --model gpt-4
+   echo "query" | SAM_API_TOKEN=abc123 ./ask_sam.sh CA706D86
+   cat file | ./ask_sam.sh CA706D86 --model gpt-4 --token abc123
 
 4. Here-doc:
-   ./ask_sam.sh CA706D86 --model gpt-4 <<'QUERY'
+   ./ask_sam.sh CA706D86 --model gpt-4 --token abc123 <<'QUERY'
    Multi-line query with special characters
    QUERY
 
@@ -58,15 +75,31 @@ fi
 
 shift  # Remove conversation ID from args
 
-# Parse --model if provided
-if [ "$1" = "--model" ]; then
-  if [ -z "$2" ]; then
-    echo "ERROR: --model requires a model name"
-    exit 1
-  fi
-  MODEL="$2"
-  shift 2  # Remove --model and model name
-fi
+# Parse --model and --token if provided
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model)
+      if [ -z "$2" ]; then
+        echo "ERROR: --model requires a model name"
+        exit 1
+      fi
+      MODEL="$2"
+      shift 2
+      ;;
+    --token)
+      if [ -z "$2" ]; then
+        echo "ERROR: --token requires a token value"
+        exit 1
+      fi
+      API_TOKEN="$2"
+      shift 2
+      ;;
+    *)
+      # First non-option argument is the query
+      break
+      ;;
+  esac
+done
 
 # Get query from remaining args, stdin, or file
 if [ -n "$1" ]; then
@@ -83,6 +116,21 @@ fi
 
 if [ -z "$QUERY" ]; then
   echo "ERROR: Query is empty"
+  exit 1
+fi
+
+# Check if API token is provided
+if [ -z "$API_TOKEN" ]; then
+  echo "ERROR: API token required for authentication"
+  echo ""
+  echo "SAM now requires authentication for all API requests."
+  echo "Get your token from: SAM Preferences → API Server → API Authentication"
+  echo ""
+  echo "Provide token via:"
+  echo "  --token YOUR-TOKEN                (command line option)"
+  echo "  export SAM_API_TOKEN=YOUR-TOKEN   (environment variable)"
+  echo ""
+  echo "Example: ./ask_sam.sh $CONVERSATION_ID --token abc123-def456 'query'"
   exit 1
 fi
 
@@ -113,21 +161,6 @@ echo "========================================="
 
 # Create JSON payload with proper escaping (jq handles all special characters)
 PAYLOAD=$(jq -n \
-  --arg model "$MODEL" \
-  --arg convId "$CONVERSATION_ID" \
-  --arg content "$QUERY" \
-  '{
-    model: $model,
-    conversationId: $convId,
-    messages: [{
-      role: "user",
-      content: $content
-    }]
-  }')
-
-# Save payload to temp file for curl (handles large payloads better)
-echo "$PAYLOAD" > "$TEMP_FILE"
-
 # SAM returns streaming responses, parse SSE format
 # Write to output file to detect if we got any content
 OUTPUT_FILE=$(mktemp)
@@ -135,6 +168,7 @@ trap "rm -f $TEMP_FILE $OUTPUT_FILE" EXIT
 
 curl -s -X POST http://127.0.0.1:8080/api/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_TOKEN" \
   -d @"$TEMP_FILE" | while IFS= read -r line; do
     # Parse SSE format: "data: {json}"
     if [[ "$line" == data:* ]]; then
@@ -154,6 +188,22 @@ curl -s -X POST http://127.0.0.1:8080/api/chat/completions \
 if [ ! -s "$OUTPUT_FILE" ]; then
   echo ""
   echo ""
+  echo "WARNING: No response received from SAM"
+  echo "This could mean:"
+  echo "  - Invalid API token (check token in SAM Preferences)"
+  echo "  - SAM server crashed or stopped responding"
+  echo "  - Conversation ID '$CONVERSATION_ID' not found"
+  echo "  - SAM encountered an error processing the query"
+  echo "  - Model '$MODEL' not available (check API keys in Preferences)"
+  echo ""
+  echo "Check sam_server.log for details:"
+  echo "  tail -50 sam_server.log | grep -i error"
+else
+  echo ""
+fi
+
+echo ""
+echo "========================================="
   echo "WARNING: No response received from SAM"
   echo "This could mean:"
   echo "  - SAM server crashed or stopped responding"

@@ -1127,13 +1127,19 @@ struct APIServerPreferencesView: View {
                 GroupBox("Server Configuration") {
                     VStack(alignment: .leading, spacing: 12) {
                         Toggle("Enable API Server", isOn: $enableAPIServer)
-                            .onChange(of: enableAPIServer) { newValue in
-                                Task {
+                            .onChange(of: enableAPIServer) { oldValue, newValue in
+                                Task { @MainActor in
                                     if newValue {
                                         do {
                                             try await apiServer.startServer()
                                         } catch {
-                                            /// Handle error - show alert.
+                                            // Revert toggle on error
+                                            enableAPIServer = false
+                                            let alert = NSAlert()
+                                            alert.messageText = "Failed to Start API Server"
+                                            alert.informativeText = error.localizedDescription
+                                            alert.alertStyle = .warning
+                                            alert.runModal()
                                         }
                                     } else {
                                         await apiServer.stopServer()
@@ -1147,10 +1153,10 @@ struct APIServerPreferencesView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 80)
                                 .disabled(!enableAPIServer)
-                                .onChange(of: apiServerPort) { newValue in
+                                .onChange(of: apiServerPort) { oldValue, newValue in
                                     /// Restart server with new port if it's currently running.
                                     if enableAPIServer && apiServer.isRunning {
-                                        Task {
+                                        Task { @MainActor in
                                             await apiServer.stopServer()
                                             try? await apiServer.startServer(port: newValue)
                                         }
@@ -1172,10 +1178,10 @@ struct APIServerPreferencesView: View {
 
                         Toggle("Allow Remote Access", isOn: $allowRemoteAccess)
                             .disabled(!enableAPIServer)
-                            .onChange(of: allowRemoteAccess) { _ in
+                            .onChange(of: allowRemoteAccess) { oldValue, newValue in
                                 /// Restart server with new binding if it's currently running.
                                 if enableAPIServer && apiServer.isRunning {
-                                    Task {
+                                    Task { @MainActor in
                                         await apiServer.stopServer()
                                         try? await apiServer.startServer()
                                     }
@@ -1291,36 +1297,72 @@ struct APIServerPreferencesView: View {
                     .padding()
                 }
 
-                GroupBox("Security") {
+                GroupBox("API Authentication") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Toggle("Require Authentication", isOn: $apiServerRequireAuth)
-
-                        if apiServerRequireAuth {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("API Key:")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-
-                                HStack {
-                                    SecureField("Enter API Key", text: $apiServerKey)
-                                        .textFieldStyle(.roundedBorder)
-
-                                    Button("Generate") {
-                                        generateAPIKey()
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
-                                }
-
-                                Text("Use this key in Authorization: Bearer <key> headers")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        Text("Configure authentication for external API access.")
+                        Text("API Token")
+                            .font(.headline)
+                        
+                        Text("All external API requests must include this token for authentication.")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                        
+                        HStack {
+                            if let token = try? KeychainManager.retrieve("samAPIToken") {
+                                SecureField("Token", text: .constant(token))
+                                    .textFieldStyle(.roundedBorder)
+                                    .disabled(true)
+                                    .textSelection(.enabled)
+                                
+                                Button(action: {
+                                    if let token = try? KeychainManager.retrieve("samAPIToken") {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(token, forType: .string)
+                                    }
+                                }) {
+                                    Image(systemName: "doc.on.doc")
+                                }
+                                .help("Copy token to clipboard")
+                                .buttonStyle(.borderless)
+                                
+                                Button(action: {
+                                    regenerateAPIToken()
+                                }) {
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                                .help("Generate new token")
+                                .buttonStyle(.borderless)
+                                .alert("Regenerate API Token?", isPresented: $showRegenerateConfirmation) {
+                                    Button("Cancel", role: .cancel) { }
+                                    Button("Regenerate", role: .destructive) {
+                                        performTokenRegeneration()
+                                    }
+                                } message: {
+                                    Text("This will invalidate the current token. All external API clients will need to update to the new token.")
+                                }
+                            } else {
+                                Text("Error: Token not found")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                        
+                        Text("Include in API requests: Authorization: Bearer YOUR-TOKEN")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 4)
+                        
+                        if allowRemoteAccess {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                Text("WARNING: Remote access is enabled. Anyone on your network with this token can access the API.")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.top, 8)
+                            .padding(8)
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(4)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
@@ -1377,6 +1419,36 @@ curl -X POST http:
                 }
             }
             .padding()
+        }
+    }
+
+    @State private var showRegenerateConfirmation = false
+    
+    private func regenerateAPIToken() {
+        showRegenerateConfirmation = true
+    }
+    
+    private func performTokenRegeneration() {
+        // Generate new secure token
+        let newToken = "\(UUID().uuidString)-\(UUID().uuidString)"
+        
+        // Store in Keychain
+        do {
+            try KeychainManager.store(newToken, for: "samAPIToken")
+            
+            // Show success notification
+            let notification = NSUserNotification()
+            notification.title = "API Token Regenerated"
+            notification.informativeText = "Your API token has been updated. External API clients will need the new token."
+            notification.soundName = NSUserNotificationDefaultSoundName
+            NSUserNotificationCenter.default.deliver(notification)
+        } catch {
+            // Show error
+            let alert = NSAlert()
+            alert.messageText = "Failed to Regenerate Token"
+            alert.informativeText = "Could not store new token in Keychain: \(error.localizedDescription)"
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
 
