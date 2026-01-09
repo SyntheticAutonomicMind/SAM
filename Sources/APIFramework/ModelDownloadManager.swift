@@ -395,17 +395,26 @@ public class ModelDownloadManager: ObservableObject {
             let hfProvider = extractHFProvider(from: model.id)
             let modelName = extractModelName(from: model.id, filename: file.rfilename)
 
-            /// Register with ModelRegistry.
-            let fileSize = try? localURL.resourceValues(forKeys: [URLResourceKey.fileSizeKey]).fileSize.map { Int64($0) }
-            localModelManager.registerModel(
-                provider: hfProvider,
-                modelName: modelName,
-                path: localURL.path,
-                sizeBytes: fileSize,
-                quantization: file.quantization
-            )
+            /// Only register PRIMARY model files in the registry (not tokenizers, configs, etc.)
+            /// This prevents the registry from being overwritten with non-model files
+            let isPrimaryModelFile = localURL.pathExtension.lowercased() == "gguf" ||
+                                    localURL.lastPathComponent == "model.safetensors"
+            
+            if isPrimaryModelFile {
+                /// Register with ModelRegistry.
+                let fileSize = try? localURL.resourceValues(forKeys: [URLResourceKey.fileSizeKey]).fileSize.map { Int64($0) }
+                localModelManager.registerModel(
+                    provider: hfProvider,
+                    modelName: modelName,
+                    path: localURL.path,
+                    sizeBytes: fileSize,
+                    quantization: file.quantization
+                )
 
-            downloadLogger.info("Model registered in registry: \(hfProvider)/\(modelName)")
+                downloadLogger.info("Model registered in registry: \(hfProvider)/\(modelName)")
+            } else {
+                downloadLogger.debug("Skipping registry for non-primary file: \(localURL.lastPathComponent)")
+            }
 
             /// Refresh installed models list (will now include the registered model).
             refreshInstalledModels()
