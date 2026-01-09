@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "20260110.1",
+      "release_date": "January 10, 2026",
+      "introduction": "Critical hotfix release addressing a regression where local MLX models disappeared from the model picker after updating to 20260108.1.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "local-mlx-picker-fix",
+          "icon": "cpu.fill",
+          "title": "Local MLX Models Now Appear in Picker",
+          "description": "Fixed critical regression where local MLX models (like Qwen3-4B) disappeared from model picker after updating to 20260108.1. Issue occurred because model registry was storing paths to tokenizer files instead of the actual model.safetensors file, causing the MLX provider filter to fail. System now correctly registers only primary model files and prioritizes model.safetensors during scans. Existing corrupted registries will auto-heal on next launch."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": []
+    },
+    {
       "version": "20260108.1",
       "release_date": "January 8, 2026",
       "introduction": "Major release featuring a brand new first-time setup wizard that guides you through configuring SAM, whether you prefer cloud AI or local models. Also includes a complete redesign of Local Models preferences and critical bug fixes for model downloads.",
