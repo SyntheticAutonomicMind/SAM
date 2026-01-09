@@ -211,11 +211,13 @@ public class LocalModelManager {
 
                             /// Look for model files in model subdirectory.
                             if let modelFiles = try? FileManager.default.contentsOfDirectory(at: modelURL, includingPropertiesForKeys: [.fileSizeKey]) {
-                                /// Find primary model file (model.gguf, *.gguf, model-*.safetensors, etc.).
-                                if let modelFile = modelFiles.first(where: { url in
-                                    let ext = url.pathExtension.lowercased()
-                                    return ext == "gguf" || ext == "safetensors"
-                                }) {
+                                /// Find primary model file - prefer model.safetensors over other .safetensors files
+                                /// This ensures we don't pick tokenizer or config files
+                                let primaryModelFile = modelFiles.first(where: { $0.lastPathComponent == "model.safetensors" })
+                                    ?? modelFiles.first(where: { $0.pathExtension.lowercased() == "gguf" })
+                                    ?? modelFiles.first(where: { $0.pathExtension.lowercased() == "safetensors" })
+                                
+                                if let modelFile = primaryModelFile {
                                     if let model = parseModelInfo(from: modelFile, provider: provider, modelName: modelName) {
                                         scannedModels.append(model)
                                     }
