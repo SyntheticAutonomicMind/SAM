@@ -46,6 +46,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             userDriverDelegate: nil
         )
         
+        /// Set feed URL based on development updates preference
+        updateFeedURL()
+        
+        /// Listen for development updates preference changes
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("developmentUpdatesPreferenceChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateFeedURL()
+        }
+        
         #if DEBUG
         NSLog("Sparkle updater initialized with startingUpdater=true (DEBUG build, manual checks enabled)")
         #else
@@ -213,5 +225,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// - Returns: A secure random token string
     private func generateSecureToken() -> String {
         return "\(UUID().uuidString)-\(UUID().uuidString)"
+    }
+    
+    /// Update Sparkle feed URL based on development updates preference
+    private func updateFeedURL() {
+        let developmentEnabled = UserDefaults.standard.bool(forKey: "developmentUpdatesEnabled")
+        let feedURL = developmentEnabled ? AppcastURLs.development : AppcastURLs.stable
+        
+        updaterController.updater.setFeedURL(feedURL)
+        
+        logger.info("Sparkle feed URL updated to: \(developmentEnabled ? "development" : "stable") (\(feedURL.absoluteString))")
+        
+        // Check for updates immediately after switching feeds
+        if developmentEnabled {
+            logger.info("Development updates enabled - checking for updates")
+            updaterController.updater.checkForUpdatesInBackground()
+        }
     }
 }

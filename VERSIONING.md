@@ -22,6 +22,40 @@ YYYYMMDD.RELEASE
 - `20251213.2` - Second release on December 13, 2025
 - `20251214.1` - First release on December 14, 2025
 
+## Development Releases
+
+Development builds use the same date-based scheme with a `-dev.BUILD` suffix:
+
+```
+YYYYMMDD.RELEASE-dev.BUILD
+```
+
+**Components:**
+- `YYYYMMDD.RELEASE`: Base stable version this development build is targeting
+- `BUILD`: Development build counter starting at 1
+
+**Examples:**
+- `20251213.1-dev.1` - First development build for eventual 20251213.1 release
+- `20251213.1-dev.2` - Second development build
+- `20251213.1` - Final stable release (supersedes all -dev builds)
+
+**Version Comparison:**
+
+Sparkle compares versions numerically and lexicographically:
+- `20251213.1-dev.1` < `20251213.1-dev.2` (later dev build)
+- `20251213.1-dev.2` < `20251213.1` (stable supersedes dev)
+- `20251213.1` < `20251214.1-dev.1` (next day's dev build)
+
+Users on the development channel receive all `-dev` builds plus stable releases.
+Users on the stable channel never see `-dev` builds.
+
+**Workflow:**
+1. Make changes to codebase
+2. Run `make build-dev` - automatically increments version to `-dev.N`
+3. Build, sign, and create GitHub pre-release with `-dev` tag
+4. Development channel users receive the update
+5. When ready for stable, remove `-dev` suffix and create normal release
+
 ## Usage
 
 Both `CFBundleVersion` and `CFBundleShortVersionString` use the same value:

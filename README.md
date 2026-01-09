@@ -80,6 +80,53 @@ Press `⌘N` to create a new conversation, type your message, and press Enter. S
 
 ---
 
+## Development Program
+
+SAM offers a development channel for users who want early access to new features and are willing to help test pre-release builds.
+
+### What are Development Builds?
+
+Development builds are released frequently (sometimes daily) and contain:
+- ✨ New features before they reach stable release
+- 🐛 Bug fixes and improvements being tested
+- ⚠️ Potentially incomplete features or breaking changes
+
+**Development builds are intended for testing and feedback only.** They may contain bugs or unstable behavior. Do not use development builds for critical production work.
+
+### How to Enable Development Updates
+
+1. Open SAM Preferences (`⌘,`)
+2. Go to the **General** tab
+3. Enable **"Receive development updates"**
+4. Confirm the warning about potential instability
+5. SAM will now check for both development and stable releases
+
+You can disable development updates at any time to return to stable releases only.
+
+### Development vs Stable Releases
+
+| Feature | Stable Releases | Development Releases |
+|---------|----------------|----------------------|
+| **Version Format** | `YYYYMMDD.RELEASE` (e.g., `20260110.1`) | `YYYYMMDD.RELEASE-dev.BUILD` (e.g., `20260110.1-dev.1`) |
+| **Release Frequency** | Weekly or bi-weekly | Daily or multiple per day |
+| **Testing** | Fully tested and documented | Pre-release testing |
+| **Stability** | Production-ready | May contain bugs |
+| **Who Gets Them** | All users by default | Only users who opt-in |
+
+### Providing Feedback
+
+If you're using development builds and encounter issues:
+1. Check [GitHub Issues](https://github.com/SyntheticAutonomicMind/SAM/issues) to see if it's already reported
+2. Create a new issue with:
+   - Your SAM version (shown in About SAM or Preferences)
+   - Steps to reproduce the problem
+   - Expected vs actual behavior
+   - Relevant logs (Help → Show Logs)
+
+Your feedback helps make SAM better for everyone!
+
+---
+
 ## Key Features
 
 ### 💬 Conversations

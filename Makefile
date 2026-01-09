@@ -19,6 +19,7 @@ APP_BUNDLE_RELEASE = .build/Build/Products/Release/SAM.app
 .PHONY: all build clean test test-unit test-e2e test-all test-quick run help metallib llamacpp build-debug build-release bundle-python
 .PHONY: sign sign-debug sign-release verify-signature notarize staple distribute production
 .PHONY: dist
+.PHONY: build-dev release-dev appcast-dev
 
 # Default target
 all: build
@@ -167,6 +168,38 @@ build-release: build-release-no-python bundle-python-release
 # Build release version with Python bundled (DEPRECATED - use build-release instead)
 build-release-python: build-release
 	@echo "Note: build-release-python is deprecated. Use 'make build-release' (Python now included by default)"
+
+# Development Channel Build Targets
+
+# Build development version (increments version with -dev tag)
+build-dev:
+	@echo "Building development version..."
+	@./scripts/increment-dev-version.sh
+	@$(MAKE) build-release
+	@echo "SUCCESS: Development build complete"
+	@echo "Version: $$(cat Info.plist | grep -A1 CFBundleShortVersionString | tail -1 | sed 's/.*<string>\(.*\)<\/string>/\1/')"
+
+# Create signed development release (for distribution)
+release-dev: build-dev
+	@echo "Creating signed development release..."
+	@if [ -z "$(DEVELOPER_ID)" ]; then \
+		echo "ERROR: DEVELOPER_ID not set"; \
+		echo "Set APPLE_DEVELOPER_ID in your environment"; \
+		exit 1; \
+	fi
+	@echo "Development release requires manual steps:"
+	@echo "1. Sign and notarize: ./scripts/sign-and-notarize.sh"
+	@echo "2. Create GitHub pre-release with -dev tag"
+	@echo "3. Update appcast-dev-items.xml manually"
+	@echo "4. Run: make appcast-dev"
+	@echo "5. Commit and push changes"
+
+# Generate development appcast (merges dev items + stable releases)
+appcast-dev:
+	@echo "Generating development appcast..."
+	@./scripts/generate-dev-appcast.sh
+	@echo "SUCCESS: appcast-dev.xml generated"
+	@echo "Remember to commit: git add appcast-dev.xml && git commit"
 
 # Ensure Metal library bundle is available
 # NOTE: The metallib is automatically built by mlx-swift package during xcodebuild.

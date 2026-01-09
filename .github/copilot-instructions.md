@@ -216,6 +216,24 @@ logger.debug("Detail: \(value)")
 - Validate inputs, don't assume
 
 #### Commits
+
+**CRITICAL: NEVER COMMIT HANDOFF DOCUMENTATION**
+
+❌ **NEVER commit these files:**
+- `ai-assisted/**/*` - ALL handoff documentation stays LOCAL ONLY
+- `CONTINUATION_PROMPT.md` - Session handoffs
+- `AGENT_PLAN.md` - Task breakdowns  
+- Any file in `ai-assisted/` directory
+
+**Why:** Handoff documentation contains internal context, work notes, and session details
+that should NEVER be in the public repository. This is a HARD REQUIREMENT.
+
+**Before EVERY commit:**
+1. Run `git status` and verify no `ai-assisted/` files are staged
+2. If any handoff files appear, use `git reset HEAD ai-assisted/` to unstage them
+3. ONLY commit actual code, documentation, and configuration changes
+
+**Standard Commit Format:**
 ```bash
 git add -A && git commit -m "type(scope): description
 
@@ -484,6 +502,13 @@ ls -lt ai-assisted/ | head -20
 ❌ Create handoffs in wrong location (must be in dated folder)  
 ❌ Create handoffs without complete context  
 ❌ Leave documentation out of sync with code
+
+### Git/Commit Violations ⚠️ CRITICAL
+❌ **Commit handoff documentation to repository** (ai-assisted/ files - SESSION FAILURE)
+❌ **Push CONTINUATION_PROMPT.md or AGENT_PLAN.md to GitHub** (violates security)
+❌ **Stage any file in ai-assisted/ directory** (contains internal context)
+❌ Skip checking `git status` before commit
+❌ Force push without verifying what's being pushed
 
 ---
 

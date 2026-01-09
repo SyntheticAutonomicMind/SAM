@@ -426,6 +426,10 @@ struct GeneralPreferencesView: View {
     @ObservedObject private var locationManager = LocationManager.shared
     @AppStorage("user.generalLocation") private var generalLocation: String = ""
     @AppStorage("user.usePreciseLocation") private var usePreciseLocation: Bool = false
+    
+    /// Development updates settings
+    @AppStorage("developmentUpdatesEnabled") private var developmentUpdatesEnabled: Bool = false
+    @State private var showDevelopmentConfirmation = false
 
     /// Language options.
     private let languageOptions = [
@@ -740,6 +744,45 @@ struct GeneralPreferencesView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 }
+                
+                GroupBox("Development Updates") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle("Receive development updates", isOn: $developmentUpdatesEnabled)
+                            .onChange(of: developmentUpdatesEnabled) { oldValue, newValue in
+                                if newValue && !oldValue {
+                                    // Enabling - show confirmation
+                                    showDevelopmentConfirmation = true
+                                } else if !newValue && oldValue {
+                                    // Disabling - save immediately
+                                    saveDevelopmentPreference(false)
+                                }
+                            }
+                        
+                        Text("Development builds are released frequently and may contain bugs, incomplete features, and breaking changes. They are intended for testing and feedback only.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                }
+                .alert("Enable Development Updates?", isPresented: $showDevelopmentConfirmation) {
+                    Button("Cancel", role: .cancel) {
+                        developmentUpdatesEnabled = false
+                    }
+                    Button("Enable Development Updates") {
+                        saveDevelopmentPreference(true)
+                    }
+                } message: {
+                    Text("""
+                    Development builds are released frequently and may contain:
+                    • Bugs and instability
+                    • Incomplete features
+                    • Breaking changes
+                    
+                    Development updates are intended for testing and feedback.
+                    Do not use development builds for critical production work.
+                    """)
+                }
             }
             .padding()
         }
@@ -804,6 +847,15 @@ struct GeneralPreferencesView: View {
         case "vi": return "Vietnamese"
         default: return "English"
         }
+    }
+    
+    private func saveDevelopmentPreference(_ enabled: Bool) {
+        developmentUpdatesEnabled = enabled
+        // Post notification to AppDelegate to switch feed URL
+        NotificationCenter.default.post(
+            name: NSNotification.Name("developmentUpdatesPreferenceChanged"),
+            object: nil
+        )
     }
 
     /// Load available models similar to ChatWidget so General preferences show the full model list
