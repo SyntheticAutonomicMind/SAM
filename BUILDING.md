@@ -217,6 +217,73 @@ swift package generate-xcodeproj # (if needed)
 open Package.swift
 ```
 
+## Building Development Releases
+
+SAM supports a development channel for testing pre-release features. Development builds use `-dev.N` version suffixes.
+
+### Creating Development Builds
+
+```bash
+# Build development version (auto-increments version)
+make build-dev
+
+# Example version progression:
+# 20260109.1 → 20260109.1-dev.1 (first dev build)
+# 20260109.1-dev.1 → 20260109.1-dev.2 (next dev build)
+```
+
+The `build-dev` target:
+1. Runs `scripts/increment-dev-version.sh` to bump version with `-dev.N` suffix
+2. Builds release configuration
+3. Ready for signing and distribution
+
+### Development Release Workflow
+
+```bash
+# 1. Build development version
+make build-dev
+
+# 2. Sign and notarize (requires APPLE_DEVELOPER_ID)
+./scripts/sign-and-notarize.sh
+
+# 3. Create GitHub pre-release with -dev tag
+# (manual step via GitHub UI or gh CLI)
+
+# 4. Update development appcast items
+# Edit appcast-dev-items.xml with release details
+
+# 5. Generate merged development appcast
+make appcast-dev
+
+# 6. Commit and push
+git add Info.plist appcast-dev.xml appcast-dev-items.xml
+git commit -m "release(dev): 20260109.1-dev.1"
+git push
+```
+
+### Development vs Stable Releases
+
+**Development releases:**
+- Version format: `YYYYMMDD.RELEASE-dev.BUILD`
+- Published as GitHub pre-releases
+- Listed in `appcast-dev.xml` (includes stable releases too)
+- Users must opt-in via Preferences → General → "Receive development updates"
+- May contain bugs, incomplete features, breaking changes
+
+**Stable releases:**
+- Version format: `YYYYMMDD.RELEASE`
+- Published as GitHub releases
+- Listed in `appcast.xml` only
+- All users receive these by default
+- Fully tested and documented
+
+**Version comparison:**
+- `20260109.1-dev.1` < `20260109.1-dev.2` < `20260109.1` (stable)
+- Development users get dev builds, then upgrade to stable when released
+- Stable users never see dev builds
+
+See `VERSIONING.md` for complete version scheme details.
+
 ## Signing / Notarization
 
 The Makefile contains targets to sign and notarize (`sign`, `notarize`, `distribute`). For signing you need a valid Developer ID and the `APPLE_DEVELOPER_ID` environment variable set. Example:
