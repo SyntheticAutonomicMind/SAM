@@ -6,11 +6,14 @@ import Foundation
 import Sparkle
 import ConversationEngine
 import APIFramework
+import ConfigurationSystem
+import Logging
 
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     private(set) var updaterController: SPUStandardUpdaterController!
     private var windowFrameObserver: NSObjectProtocol?
     private var configuredWindows: Set<ObjectIdentifier> = []
+    private let logger = Logger(label: "com.sam.appdelegate")
 
     /// Shared instance for accessing updater from Commands.
     nonisolated(unsafe) static weak var shared: AppDelegate?
@@ -31,6 +34,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         Task { @MainActor in
             try? CopilotTokenStore.shared.loadTokens()
         }
+        
+        /// Initialize API token for secure API access
+        initializeAPIToken()
 
         /// Initialize Sparkle updater with delegate for logging.
         /// Note: Even in DEBUG, we set startingUpdater=true so manual checks work.
@@ -170,5 +176,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         if let observer = windowFrameObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+    }
+    
+    // MARK: - API Token Management
+    
+    /// Initialize or retrieve API token for secure API access.
+    /// 
+    /// This method ensures that a secure random token exists in the Keychain for API authentication.
+    /// The token is generated on first launch and persists across app restarts.
+    private func initializeAPIToken() {
+        let tokenKey = "samAPIToken"
+        
+        // Check if token already exists
+        if KeychainManager.exists(tokenKey) {
+            logger.info("API token already exists in Keychain")
+            return
+        }
+        
+        // Generate new secure token
+        let token = generateSecureToken()
+        
+        // Store in Keychain
+        do {
+            try KeychainManager.store(token, for: tokenKey)
+            logger.info("Generated and stored new API token in Keychain")
+        } catch {
+            logger.error("Failed to store API token in Keychain: \(error)")
+        }
+    }
+    
+    /// Generate a secure random token for API authentication.
+    ///
+    /// The token format is two UUIDs concatenated with a hyphen, providing
+    /// sufficient entropy for secure API access control.
+    ///
+    /// - Returns: A secure random token string
+    private func generateSecureToken() -> String {
+        return "\(UUID().uuidString)-\(UUID().uuidString)"
     }
 }

@@ -820,51 +820,56 @@ AVAILABLE TOOLS:
     private func configureRoutes(_ app: Application) async throws {
         logger.debug("*** DEBUG_TOOLS: CONFIGURING ROUTES - THIS SHOULD BE VISIBLE ***")
         logger.debug("Configuring OpenAI-compatible routes")
+        
+        // Apply API token authentication middleware to all routes except /health
+        // Internal requests from SAM UI use X-SAM-Internal header to bypass auth
+        // External requests must provide valid Bearer token
+        let protected = app.grouped(APITokenMiddleware())
 
-        /// Health check endpoint (always public).
+        /// Health check endpoint (always public, no authentication required).
         app.get("health") { _ async throws -> HTTPStatus in
             self.logger.debug("Health check requested")
             return .ok
         }
 
-        /// OpenAI-compatible endpoints (public for now - no auth required).
-        app.post("v1", "chat", "completions") { req async throws -> Response in
+        /// OpenAI-compatible endpoints (protected by token authentication).
+        protected.post("v1", "chat", "completions") { req async throws -> Response in
             self.logger.debug("DEBUG: ROUTE HANDLER CALLED - /v1/chat/completions")
             return try await self.handleChatCompletion(req)
         }
 
         /// Alternative /api prefix for compatibility with existing tools/tests.
-        app.post("api", "chat", "completions") { req async throws -> Response in
+        protected.post("api", "chat", "completions") { req async throws -> Response in
             self.logger.debug("DEBUG: ROUTE HANDLER CALLED - /api/chat/completions")
             return try await self.handleChatCompletion(req)
         }
 
         /// User collaboration protocol - submit user response for blocked tool execution.
-        app.post("api", "chat", "tool-response") { req async throws -> Response in
+        protected.post("api", "chat", "tool-response") { req async throws -> Response in
             return try await self.handleToolResponse(req)
         }
 
         /// Autonomous workflow endpoint - multi-step agent orchestration.
-        app.post("api", "chat", "autonomous") { req async throws -> Response in
+        protected.post("api", "chat", "autonomous") { req async throws -> Response in
             self.logger.debug("DEBUG: ROUTE HANDLER CALLED - /api/chat/autonomous")
             return try await self.handleAutonomousWorkflow(req)
         }
 
-        app.get("v1", "models") { req async throws -> ServerOpenAIModelsResponse in
+        protected.get("v1", "models") { req async throws -> ServerOpenAIModelsResponse in
             return try await self.handleModels(req)
         }
 
         /// MCP test endpoints (temporary for development).
-        app.get("debug", "mcp", "tools") { req async throws -> MCPToolsResponse in
+        protected.get("debug", "mcp", "tools") { req async throws -> MCPToolsResponse in
             return try await self.handleMCPToolsList(req)
         }
 
-        app.post("debug", "mcp", "execute") { req async throws -> MCPExecutionResponse in
+        protected.post("debug", "mcp", "execute") { req async throws -> MCPExecutionResponse in
             return try await self.handleMCPToolExecution(req)
         }
 
         /// Debug endpoint to check tool registry.
-        app.get("debug", "tools", "available") { _ async throws -> Response in
+        protected.get("debug", "tools", "available") { _ async throws -> Response in
             return await MainActor.run {
                 let toolsDescription = self.toolRegistry.getToolsDescriptionMainActor()
                 let mcpTools = self.conversationManager.getAvailableMCPTools()
@@ -885,11 +890,11 @@ AVAILABLE TOOLS:
         }
 
         /// Conversation management endpoints.
-        app.get("v1", "conversations") { req async throws -> Response in
+        protected.get("v1", "conversations") { req async throws -> Response in
             return try await self.handleListConversations(req)
         }
 
-        app.get("v1", "conversations", ":conversationId") { req async throws -> Response in
+        protected.get("v1", "conversations", ":conversationId") { req async throws -> Response in
             return try await self.handleGetConversation(req)
         }
 
@@ -897,45 +902,45 @@ AVAILABLE TOOLS:
         // Full endpoints and auth/ACL enforcement will be added in a dedicated API integration step.
 
         /// Prompt discovery endpoints for agent awareness.
-        app.get("api", "prompts", "system") { req async throws -> Response in
+        protected.get("api", "prompts", "system") { req async throws -> Response in
             return try await self.handleListSystemPrompts(req)
         }
 
-        app.get("api", "prompts", "mini") { req async throws -> Response in
+        protected.get("api", "prompts", "mini") { req async throws -> Response in
             return try await self.handleListMiniPrompts(req)
         }
 
-        app.get("api", "topics") { req async throws -> Response in
+        protected.get("api", "topics") { req async throws -> Response in
             return try await self.handleListTopics(req)
         }
 
-        app.get("api", "mini-prompts") { req async throws -> Response in
+        protected.get("api", "mini-prompts") { req async throws -> Response in
             return try await self.handleListMiniPrompts(req)
         }
 
         /// Model management endpoints.
-        app.post("api", "models", "download") { req async throws -> Response in
+        protected.post("api", "models", "download") { req async throws -> Response in
             return try await self.handleModelDownload(req)
         }
 
-        app.get("api", "models", "download", ":downloadId", "status") { req async throws -> Response in
+        protected.get("api", "models", "download", ":downloadId", "status") { req async throws -> Response in
             return try await self.handleDownloadStatus(req)
         }
 
-        app.delete("api", "models", "download", ":downloadId") { req async throws -> Response in
+        protected.delete("api", "models", "download", ":downloadId") { req async throws -> Response in
             return try await self.handleCancelDownload(req)
         }
 
-        app.get("api", "models") { req async throws -> Response in
+        protected.get("api", "models") { req async throws -> Response in
             return try await self.handleListInstalledModels(req)
         }
 
         /// Tool result retrieval endpoint - for accessing persisted large tool outputs.
-        app.get("api", "tool_result") { req async throws -> Response in
+        protected.get("api", "tool_result") { req async throws -> Response in
             return try await self.handleGetToolResult(req)
         }
 
-        logger.debug("Routes configured successfully")
+        logger.debug("Routes configured successfully with API token authentication")
     }
 
     // MARK: - OpenAI-Compatible Endpoints
