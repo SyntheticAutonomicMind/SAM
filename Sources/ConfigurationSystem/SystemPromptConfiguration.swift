@@ -110,6 +110,12 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
                     return workflowModeEnabled
                 }
 
+                /// Completion Signal component (SAM Minimal): Include ONLY if workflow mode enabled.
+                /// This ensures SAM Minimal behaves consistently with SAM Default's workflow mode requirements.
+                if component.title == "Completion Signal" {
+                    return workflowModeEnabled
+                }
+
                 /// Dynamic Iterations component: Include ONLY if dynamic iterations enabled.
                 if component.title == "Dynamic Iterations" {
                     return dynamicIterationsEnabled
@@ -906,7 +912,7 @@ private static func buildSAMSpecificPatterns() -> String {
                 SystemPromptComponent(
                     title: "Completion Signal",
                     content: Self.buildMinimalCompletionSignal(),
-                    isEnabled: true,
+                    isEnabled: false,  // Conditional - only when workflow mode enabled
                     order: 3
                 )
             ]
