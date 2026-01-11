@@ -17,7 +17,7 @@
 
 # Default values
 CONVERSATION_ID=""  # Will auto-generate if not provided
-MODEL="gpt-4o-mini"  # Default model
+MODEL="gpt-5-mini"  # Default model
 API_TOKEN="${SAM_API_TOKEN:-}"  # Read from environment variable if set
 TEMP_FILE=$(mktemp)
 OUTPUT_FILE=$(mktemp)
