@@ -110,6 +110,36 @@ jobs:
           echo "Distribution files ready:"
           ls -lh dist/SAM-${DEV_VERSION}.*
       
+      - name: Update development appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          # Create temporary file for private key
+          TEMP_KEY_FILE=$(mktemp)
+          echo "$SPARKLE_PRIVATE_KEY" > "$TEMP_KEY_FILE"
+          chmod 600 "$TEMP_KEY_FILE"
+          
+          # Update appcast-dev-items.xml with new development release
+          ./scripts/update_dev_appcast.sh "${DEV_VERSION}" "dist/SAM-${DEV_VERSION}.zip" "$TEMP_KEY_FILE"
+          
+          # Generate appcast-dev.xml from items + stable releases
+          ./scripts/generate-dev-appcast.sh
+          
+          # Clean up temporary key file
+          rm -f "$TEMP_KEY_FILE"
+      
+      - name: Commit and push appcast changes
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add appcast-dev-items.xml appcast-dev.xml
+          if git diff --staged --quiet; then
+            echo "No changes to development appcast files"
+          else
+            git commit -m "chore(dev-release): update appcast-dev.xml for v${DEV_VERSION}"
+            git push origin HEAD:main
+          fi
+      
       - name: Create GitHub pre-release
         uses: softprops/action-gh-release@v1
         with:

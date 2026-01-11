@@ -35,11 +35,19 @@ cat > "$DEV_APPCAST" <<'EOF'
 EOF
 
 # Extract and add development items (skip XML comments and empty lines)
-# Look for actual <item> tags, not comments
-if grep -q '<item>' "$DEV_ITEMS" 2>/dev/null; then
+# Use awk to properly handle multi-line comments
+DEV_ITEMS_CONTENT=$(awk '
+BEGIN { in_comment = 0; in_item = 0 }
+/<!--/ { in_comment = 1; next }
+/-->/ { in_comment = 0; next }
+!in_comment && /<item>/ { in_item = 1 }
+!in_comment && in_item { print }
+!in_comment && /<\/item>/ { in_item = 0 }
+' "$DEV_ITEMS")
+
+if [ -n "$DEV_ITEMS_CONTENT" ]; then
     echo "Adding development items from $DEV_ITEMS"
-    # Extract everything between first <item> and last </item>
-    sed -n '/<item>/,/<\/item>/p' "$DEV_ITEMS" >> "$DEV_APPCAST"
+    echo "$DEV_ITEMS_CONTENT" >> "$DEV_APPCAST"
 else
     echo "No development items found in $DEV_ITEMS (this is OK for initial setup)"
 fi
