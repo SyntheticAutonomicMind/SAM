@@ -168,6 +168,9 @@ public class LocalModelManager {
             return
         }
 
+        /// Track previous model state to detect actual changes
+        let previousModelPaths = Set(cachedModels.map { $0.path })
+        
         var scannedModels: [LocalModel] = []
 
         do {
@@ -240,12 +243,21 @@ public class LocalModelManager {
             /// Sync with registry: register any new models found during scan.
             let registryChanges = syncWithRegistry()
 
-            /// Only post notifications if models actually changed (prevents notification loops)
-            /// This enables hot-reloading when new models are downloaded without spamming
-            if registryChanges {
+            /// Detect if model list actually changed (new models added or models removed)
+            let currentModelPaths = Set(cachedModels.map { $0.path })
+            let modelsChanged = previousModelPaths != currentModelPaths
+            
+            /// Post notifications if registry changed OR actual model list changed
+            /// This fixes the bug where downloaded models were pre-registered, so registryChanges=false
+            /// even though the actual model list changed (new model downloaded)
+            if registryChanges || modelsChanged {
                 NotificationCenter.default.post(name: .localModelsDidChange, object: self)
                 NotificationCenter.default.post(name: .endpointManagerDidUpdateModels, object: self)
-                modelLogger.info("Models changed - posted update notifications")
+                if modelsChanged && !registryChanges {
+                    modelLogger.info("Model list changed (downloaded model) - posted update notifications")
+                } else {
+                    modelLogger.info("Models changed - posted update notifications")
+                }
             }
         } catch {
             modelLogger.error("Failed to scan models directory: \(error.localizedDescription)")
