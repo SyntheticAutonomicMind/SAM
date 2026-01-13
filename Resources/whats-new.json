@@ -21,6 +21,12 @@
       "bugfixes": [],
       "improvements": [
         {
+          "id": "ui-button-spacing",
+          "icon": "ruler",
+          "title": "Refined UI Button Spacing and Consistency",
+          "description": "Standardized spacing, padding, and icon sizes across all UI controls. Model, Prompt, and Personality pickers now have identical padding (8px horizontal), button icons are consistently 20x20 points, and HStack spacing matches throughout the toolbar. This creates a more visually harmonious and polished interface."
+        },
+        {
           "id": "split-model-support",
           "icon": "doc.on.doc",
           "title": "Support for Split Model Files",
