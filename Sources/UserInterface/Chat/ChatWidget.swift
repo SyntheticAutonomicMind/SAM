@@ -2514,7 +2514,7 @@ public struct ChatWidget: View {
             /// FIRST ROW: Model, Prompt, Tools, Actions.
             HStack(spacing: 12) {
                 /// Model selection.
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Text("Model:")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -2526,7 +2526,6 @@ public struct ChatWidget: View {
                         modelListManager: modelListManager,
                         endpointManager: endpointManager
                     )
-                    .frame(minWidth: 150, idealWidth: 200)
 
                     /// Load/Eject buttons for local models only.
                     if endpointManager.isLocalModel(selectedModel) {
@@ -2536,12 +2535,12 @@ public struct ChatWidget: View {
                         switch currentStatus {
                         case .loading:
                             ProgressView()
-                                .scaleEffect(0.6)
-                                .frame(width: 16, height: 16)
+                                .scaleEffect(0.7)
+                                .frame(width: 20, height: 20)
                         case .loaded:
                             Button(action: { ejectLocalModel() }) {
                                 Image(systemName: "eject.fill")
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: 20, height: 20)
                             }
                             .buttonStyle(.bordered)
                             .frame(width: 36)
@@ -2550,7 +2549,7 @@ public struct ChatWidget: View {
                         case .notLoaded:
                             Button(action: { loadLocalModel() }) {
                                 Image(systemName: "play.fill")
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: 20, height: 20)
                             }
                             .buttonStyle(.bordered)
                             .frame(width: 36)
