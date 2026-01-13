@@ -1,8 +1,8 @@
 {
   "releases": [
     {
-      "version": "20260114.1",
-      "release_date": "January 14, 2026",
+      "version": "20260113.1",
+      "release_date": "January 13, 2026",
       "introduction": "This release introduces LoRA fine-tuning capabilities, allowing you to train custom adapters that specialize local models on your own knowledge domains without modifying the base model weights.",
       "highlights": [
         {
