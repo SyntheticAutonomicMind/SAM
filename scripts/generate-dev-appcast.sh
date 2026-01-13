@@ -38,11 +38,30 @@ EOF
 # Use awk to properly handle multi-line comments
 DEV_ITEMS_CONTENT=$(awk '
 BEGIN { in_comment = 0; in_item = 0 }
-/<!--/ { in_comment = 1; next }
-/-->/ { in_comment = 0; next }
-!in_comment && /<item>/ { in_item = 1 }
-!in_comment && in_item { print }
-!in_comment && /<\/item>/ { in_item = 0 }
+{
+  # Check for comment start
+  if (match($0, /<!--/)) {
+    in_comment = 1
+  }
+  
+  # If not in comment, check for item tags
+  if (!in_comment) {
+    if (match($0, /<item>/)) {
+      in_item = 1
+    }
+    if (in_item) {
+      print $0
+    }
+    if (match($0, /<\/item>/)) {
+      in_item = 0
+    }
+  }
+  
+  # Check for comment end
+  if (match($0, /-->/)) {
+    in_comment = 0
+  }
+}
 ' "$DEV_ITEMS")
 
 if [ -n "$DEV_ITEMS_CONTENT" ]; then
