@@ -111,6 +111,9 @@ public struct PreferencesView: View {
         case .localModels:
             LocalModelsPreferencePane(endpointManager: endpointManager)
 
+        case .modelTraining:
+            TrainingPreferencesPane()
+
         case .imageGeneration:
             StableDiffusionPreferencesPane()
 
@@ -321,6 +324,7 @@ public enum PreferencesSection: String, CaseIterable {
     case personalities = "Personalities"
     case apiEndpoints = "Remote Providers"
     case localModels = "Local Models"
+    case modelTraining = "Model Training"
     case imageGeneration = "Image Generation"
     case serpAPI = "SerpAPI"
     case apiServer = "API Server"
@@ -337,6 +341,7 @@ public enum PreferencesSection: String, CaseIterable {
         case .personalities: return "theatermasks"
         case .apiEndpoints: return "network"
         case .localModels: return "externaldrive.fill"
+        case .modelTraining: return "graduationcap.fill"
         case .imageGeneration: return "photo.stack.fill"
         case .serpAPI: return "magnifyingglass.circle"
         case .apiServer: return "server.rack"
@@ -355,6 +360,7 @@ public enum PreferencesSection: String, CaseIterable {
         case .personalities: return .pink
         case .apiEndpoints: return .green
         case .localModels: return .indigo
+        case .modelTraining: return .orange
         case .imageGeneration: return .blue
         case .serpAPI: return .teal
         case .apiServer: return .orange

@@ -118,6 +118,7 @@ let package = Package(
             dependencies: [
                 "ConfigurationSystem",
                 "MCPFramework",
+                "Training",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 .product(name: "Logging", package: "swift-log")
             ],
@@ -197,6 +198,23 @@ let package = Package(
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
             path: "Sources/APIFramework"
+        ),
+
+        // Training data export and LoRA training system
+        .target(
+            name: "Training",
+            dependencies: [
+                "ConfigurationSystem",
+                "MLXIntegration",
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXNN", package: "mlx-swift"),
+                .product(name: "MLXOptimizers", package: "mlx-swift"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "Tokenizers", package: "swift-transformers"),
+                .product(name: "Logging", package: "swift-log")
+            ],
+            path: "Sources/Training"
         ),
 
         // MCP Framework for agent-tool communication

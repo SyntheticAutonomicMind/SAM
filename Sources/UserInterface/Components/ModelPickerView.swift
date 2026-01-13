@@ -4,6 +4,7 @@
 import SwiftUI
 import APIFramework
 import StableDiffusionIntegration
+import Training
 
 /// Enhanced model picker showing provider, location, and cost inline using native Picker
 struct ModelPickerView: View {
@@ -12,6 +13,7 @@ struct ModelPickerView: View {
     let endpointManager: EndpointManager
     @StateObject private var sdModelManager = StableDiffusionModelManager()
     @State private var billingDataLoaded = false
+    @State private var adapterNames: [String: String] = [:] // Maps adapter ID to name
     
     /// Computed properties for model lists
     private var models: [String] {
@@ -86,6 +88,22 @@ struct ModelPickerView: View {
         .onAppear {
             /// Fetch GitHub Copilot billing data if not already cached
             fetchGitHubCopilotBillingIfNeeded()
+            /// Load adapter names for display
+            loadAdapterNames()
+        }
+    }
+
+    /// Load adapter names from AdapterManager
+    private func loadAdapterNames() {
+        Task {
+            do {
+                let adapters = try await AdapterManager.shared.listAdapters()
+                await MainActor.run {
+                    adapterNames = Dictionary(uniqueKeysWithValues: adapters.map { ($0.id, $0.metadata.adapterName) })
+                }
+            } catch {
+                // Silently fail - will fall back to showing UUID prefix
+            }
         }
     }
 
@@ -260,6 +278,21 @@ struct ModelPickerView: View {
 
     /// Beautify model name
     private func beautifyModelName(_ name: String) -> String {
+        /// Handle LoRA adapter IDs - model string format is full "lora/UUID"
+        if name.hasPrefix("lora/") {
+            /// Extract just the UUID part (everything after "lora/")
+            let adapterId = String(name.dropFirst(5)) // Remove "lora/" prefix
+            
+            /// Try to get friendly adapter name from cache
+            if let adapterName = adapterNames[adapterId] {
+                return "LoRA: \(adapterName)"
+            }
+            
+            /// Fallback to abbreviated UUID if name not yet loaded
+            let uuidPrefix = adapterId.prefix(13) // Show first 13 chars (e.g., "9CE3B76B-0E2C")
+            return "LoRA: \(uuidPrefix)..."
+        }
+        
         /// Handle SD model IDs from "sd/model-id" format
         if name.hasPrefix("sd/") || name.hasPrefix("coreml-stable") {
             let modelId = name.replacingOccurrences(of: "sd/", with: "")
