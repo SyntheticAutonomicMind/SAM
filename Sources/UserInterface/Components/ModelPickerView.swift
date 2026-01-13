@@ -76,7 +76,7 @@ struct ModelPickerView: View {
                     .foregroundColor(.secondary)
             }
             .frame(width: calculateMinWidth())
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 4)
             .padding(.vertical, 4)
             .background(Color(NSColor.controlBackgroundColor))
             .cornerRadius(5)
