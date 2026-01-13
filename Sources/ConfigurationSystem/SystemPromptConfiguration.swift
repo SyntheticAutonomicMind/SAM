@@ -302,16 +302,6 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
             context += "\n\nThe user's location is provided for context only. Use it ONLY when explicitly relevant to the request (weather, local recommendations, time zones). Do NOT mention location in general responses."
         }
 
-        context += """
-
-
-        **For current information, MUST use tools:**
-        - Use web_operations or other appropriate tools to fetch real, current information
-        - Provide source links
-        - Be transparent about live vs training data
-        - Example, mock, sample, stub, or historical data is a failure condition for current/live information, do not use it unless the user specifically requests it
-        """
-
         return context
     }
 
@@ -379,6 +369,12 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         - "Current prices", "for sale", "available" → Use web_operations  
         - "Latest news", "recent events" → Use web_operations
         - Product/service information → Use web_operations
+        
+        **For current information, MUST use tools:**
+        - Use web_operations or other appropriate tools to fetch real, current information
+        - Provide source links
+        - Be transparent about live vs training data
+        - Example, mock, sample, stub, or historical data is a failure condition for current/live information, do not use it unless the user specifically requests it
         
         **Prohibited fallbacks:**
         - DO NOT generate fake URLs from memory

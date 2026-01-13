@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "20260120.1",
+      "release_date": "January 20, 2026",
+      "introduction": "This release adds batch codebase import capabilities, making it easier to ingest entire repositories into SAM's memory system for enhanced code understanding and assistance.",
+      "highlights": [
+        {
+          "id": "codebase-ingest",
+          "icon": "folder.badge.gearshape",
+          "title": "Batch Codebase Import",
+          "description": "Import entire codebases into SAM's memory with a single operation. The new ingest_codebase feature recursively scans directories, filters by file patterns, and batch-imports code files into VectorRAG memory. Supports optional JSONL training export, excludes build artifacts and dependencies, and safely limits imports to 500 files by default. Perfect for giving SAM comprehensive understanding of your project structure."
+        }
+      ],
+      "bugfixes": [],
+      "improvements": [],
+      "developer_notes": []
+    },
+    {
       "version": "20260113.1",
       "release_date": "January 13, 2026",
       "introduction": "This release introduces LoRA fine-tuning capabilities, allowing you to train custom adapters that specialize local models on your own knowledge domains without modifying the base model weights.",
