@@ -829,6 +829,7 @@ public struct ChatWidget: View {
                 }) {
                     Image(systemName: "xmark")
                         .foregroundColor(.secondary)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
                 .help("Close Session Intelligence panel")
@@ -1121,6 +1122,7 @@ public struct ChatWidget: View {
                 }) {
                     Image(systemName: "xmark")
                         .foregroundColor(.secondary)
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
                 .help("Close working directory panel")
@@ -2512,7 +2514,7 @@ public struct ChatWidget: View {
             /// FIRST ROW: Model, Prompt, Tools, Actions.
             HStack(spacing: 12) {
                 /// Model selection.
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Text("Model:")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -2539,16 +2541,20 @@ public struct ChatWidget: View {
                         case .loaded:
                             Button(action: { ejectLocalModel() }) {
                                 Image(systemName: "eject.fill")
-                                    .font(.caption)
+                                    .frame(width: 16, height: 16)
                             }
                             .buttonStyle(.bordered)
+                            .frame(width: 36)
+                            .fixedSize()
                             .help("Eject model from memory")
                         case .notLoaded:
                             Button(action: { loadLocalModel() }) {
                                 Image(systemName: "play.fill")
-                                    .font(.caption)
+                                    .frame(width: 16, height: 16)
                             }
                             .buttonStyle(.bordered)
+                            .frame(width: 36)
+                            .fixedSize()
                             .help("Load model into memory")
                         }
                     }
@@ -2853,7 +2859,7 @@ public struct ChatWidget: View {
                                 .frame(width: 25)
                             Button(action: { repetitionPenalty = nil }) {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.caption2)
+                                    .frame(width: 16, height: 16)
                                     .foregroundColor(.secondary)
                             }
                             .buttonStyle(.plain)
@@ -2864,7 +2870,7 @@ public struct ChatWidget: View {
                         Button(action: { repetitionPenalty = 1.1 }) {
                             HStack(spacing: 2) {
                                 Image(systemName: "plus.circle")
-                                    .font(.caption2)
+                                    .frame(width: 16, height: 16)
                                 Text("Rep Penalty")
                                     .font(.caption2)
                             }
@@ -6990,7 +6996,7 @@ struct EnhancedMessageBubble: View {
                         Button(action: copyMessage) {
                             Image(systemName: showCopyConfirmation ? "checkmark" : "doc.on.doc")
                                 .foregroundColor(.secondary)
-                                .font(.caption)
+                                .frame(width: 16, height: 16)
                         }
                         .buttonStyle(.plain)
                     }
