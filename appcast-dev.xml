@@ -7,6 +7,60 @@
         <language>en</language>
 
 <!-- Development releases (from appcast-dev-items.xml) -->
+<item>
+    <title>SAM 20260112.1-dev.1</title>
+    <description><![CDATA[
+        <h2>SAM 20260112.1-dev.1 (Development Build)</h2>
+        <p><strong>⚠️ This is a DEVELOPMENT release for testing purposes.</strong></p>
+        <h3>What's New:</h3>
+        <ul>
+            <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260112.1-dev.1">GitHub Releases</a> for details</li>
+        </ul>
+        <h3>Known Issues:</h3>
+        <ul>
+            <li>Development builds may contain bugs and incomplete features</li>
+        </ul>
+    ]]></description>
+    <pubDate>Tue, 13 Jan 2026 04:10:06 +0000</pubDate>
+    <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260112.1-dev.1</sparkle:releaseNotesLink>
+    <sparkle:channel>development</sparkle:channel>
+    <enclosure 
+        url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260112.1-dev.1/SAM-20260112.1-dev.1.zip"
+        sparkle:version="20260112.1-dev.1"
+        sparkle:shortVersionString="20260112.1-dev.1"
+        sparkle:edSignature="aakIGuO+kNmBiiZOw9C40L75SifunucsDQsw88lFc3YtO9kdJQ5epUZOU78rf3kXebvSQ6UDvvtn55/wnBE2Bw=="
+        length="772381192"
+        type="application/octet-stream"
+    />
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+</item>
+<item>
+    <title>SAM 20260111.1-dev.1</title>
+    <description><![CDATA[
+        <h2>SAM 20260111.1-dev.1 (Development Build)</h2>
+        <p><strong>⚠️ This is a DEVELOPMENT release for testing purposes.</strong></p>
+        <h3>What's New:</h3>
+        <ul>
+            <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260111.1-dev.1">GitHub Releases</a> for details</li>
+        </ul>
+        <h3>Known Issues:</h3>
+        <ul>
+            <li>Development builds may contain bugs and incomplete features</li>
+        </ul>
+    ]]></description>
+    <pubDate>Mon, 12 Jan 2026 04:34:52 +0000</pubDate>
+    <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260111.1-dev.1</sparkle:releaseNotesLink>
+    <sparkle:channel>development</sparkle:channel>
+    <enclosure 
+        url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260111.1-dev.1/SAM-20260111.1-dev.1.zip"
+        sparkle:version="20260111.1-dev.1"
+        sparkle:shortVersionString="20260111.1-dev.1"
+        sparkle:edSignature="H6vssLL6EqvfGv+IRr8xF2b2fSHhyEZMaUV1q0Tau14NFXsXYA2dlBEn2fqfY6SNYB4rIfBuuU9GuoZExcBvAA=="
+        length="770511917"
+        type="application/octet-stream"
+    />
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+</item>
 
 <!-- Stable releases (fallback from appcast.xml) -->
         <item>
