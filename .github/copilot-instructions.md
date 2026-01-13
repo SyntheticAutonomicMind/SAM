@@ -19,7 +19,7 @@ You are working on SAM - a native macOS AI assistant built with Swift/SwiftUI.
 
 3. **Use collaboration tool IMMEDIATELY**:
    ```bash
-   scripts/user_collaboration.sh "Session started.
+   scripts/collaborate.sh "Session started.
 
    ✅ Read THE_UNBROKEN_METHOD.md: yes
    📋 Continuation context: [summary OR 'no active continuation']
@@ -86,15 +86,30 @@ These are the foundation of how you work. Violating any pillar is session failur
 
 ---
 
+## CRITICAL: EVERY RESPONSE MUST USE TOOLS
+
+**⚠️ SESSION FAILURE if you respond with text only!**
+
+**MANDATORY RULE:**
+- EVERY response MUST include at least ONE tool call
+- Text-only responses are a violation of the Unbroken Method
+- If summarizing or confirming, use `scripts/collaborate.sh` 
+- If no other tool applies, use `run_in_terminal` with a status command
+- NEVER end a response without calling a tool
+
+**Why:** Tool calls keep you in the conversation stream. Text-only responses end the session.
+
+---
+
 ## COLLABORATION CHECKPOINT DISCIPLINE
 
 **The collaboration tool is NOT optional. It's core to the methodology.**
 
-Use `scripts/user_collaboration.sh` at these critical points:
+Use `scripts/collaborate.sh` (replaces broken `scripts/user_collaboration.sh`) at these critical points:
 
 ### Session Start (MANDATORY)
 ```bash
-scripts/user_collaboration.sh "Session started.
+scripts/collaborate.sh "Session started.
 
 ✅ Read THE_UNBROKEN_METHOD.md: yes
 📋 Continuation context: [summary]
@@ -105,7 +120,7 @@ Ready to begin? Press Enter:"
 
 ### After Investigation (BEFORE Implementation)
 ```bash
-scripts/user_collaboration.sh "Investigation complete.
+scripts/collaborate.sh "Investigation complete.
 
 🔍 What I found:
 - [specific findings]
@@ -121,7 +136,7 @@ Approve this plan? Press Enter:"
 
 ### After Implementation (BEFORE Commit)
 ```bash
-scripts/user_collaboration.sh "Implementation complete.
+scripts/collaborate.sh "Implementation complete.
 
 **Testing Results:**
 - Build: [✅ PASS or ❌ FAIL with details]
@@ -134,7 +149,7 @@ Ready to commit? Press Enter:"
 
 ### Session End (ONLY When User Requests OR Work 100% Complete)
 ```bash
-scripts/user_collaboration.sh "Work complete.
+scripts/collaborate.sh "Work complete.
 
 **Summary:**
 - [what was accomplished]
@@ -341,17 +356,21 @@ User Input → ChatWidget → ConversationEngine → MessageBus → API Provider
    - Commit with full message (see Code Standards)
    - Include testing details in commit message
 
-7. **CONTINUE**
-   - Move to next task
-   - Repeat cycle
-   - Keep working until ALL issues resolved
+7. **CONTINUE** (MANDATORY - Do not stop here!)
+   - Immediately identify next task
+   - If continuation prompt exists, check for remaining work
+   - If no clear next task, use collaboration tool to ask
+   - **NEVER give a summary and stop** - keep working!
+   - Only stop if user explicitly says "stop", "end session", or "handoff"
 
 ### Ending Session (ONLY When Required)
 
 **Session ends ONLY when:**
-1. User explicitly requests handoff, OR
-2. All work is 100% complete AND user validates, OR
+1. User explicitly requests "handoff", "stop", "end session", OR
+2. All work is 100% complete AND user validates AND no more tasks remain, OR
 3. High token usage AND work is at a good stopping point
+
+**⚠️ CRITICAL: User saying "move on to next task" means CONTINUE WORKING, not stop!**
 
 **Before ending:**
 
@@ -372,9 +391,9 @@ User Input → ChatWidget → ConversationEngine → MessageBus → API Provider
    git add -A && git commit -m "type(scope): description"
    ```
 
-4. **Use collaboration tool for validation:**
+3. **Use collaboration tool for validation:**
    ```bash
-   scripts/user_collaboration.sh "Work complete.
+   scripts/collaborate.sh "Work complete.
    
    **Summary:** [what was accomplished]
    **Documentation:** [what was updated]
@@ -445,7 +464,7 @@ If no → add more context
 
 ```bash
 # Collaboration (use at checkpoints)
-scripts/user_collaboration.sh "message"
+scripts/collaborate.sh "message"
 
 # Build
 make build-debug
@@ -532,7 +551,7 @@ The methodology works. Follow it exactly.
 
 ```
 1. SESSION START CHECKPOINT
-   > scripts/user_collaboration.sh "Session started. User reports PDF table rendering bug. Ready to investigate."
+   > scripts/collaborate.sh "Session started. User reports PDF table rendering bug. Ready to investigate."
    [WAIT for user]
 
 2. INVESTIGATE
@@ -541,7 +560,7 @@ The methodology works. Follow it exactly.
    [Findings: NSTextTable doesn't render in PDF context]
 
 3. INVESTIGATION CHECKPOINT
-   > scripts/user_collaboration.sh "Investigation complete.
+   > scripts/collaborate.sh "Investigation complete.
      Found: convertTable() uses NSTextTable which doesn't work in PDF.
      Proposed: Replace with Unicode grid rendering using monospaced font.
      Testing: Build + export PDF with table, verify grid appears.
@@ -558,7 +577,7 @@ The methodology works. Follow it exactly.
    [Manually test: export PDF with table]
 
 6. IMPLEMENTATION CHECKPOINT
-   > scripts/user_collaboration.sh "Implementation complete.
+   > scripts/collaborate.sh "Implementation complete.
      Testing: ✅ Build PASS, ✅ PDF exports with grid table.
      Status: Working.
      Ready to commit?"

@@ -37,6 +37,7 @@ This directory contains comprehensive technical documentation for SAM developers
 | [CONFIGURATION_SYSTEM.md](CONFIGURATION_SYSTEM.md) | Settings, preferences, persistence | 637 |
 | [SHARED_DATA.md](SHARED_DATA.md) | Cross-conversation data sharing | 424 |
 | [PYTHON_VALIDATION.md](PYTHON_VALIDATION.md) | Python bundle validation system for CI/CD builds | 244 |
+| [DOCUMENT_TRAINING_EXPORT.md](DOCUMENT_TRAINING_EXPORT.md) | Document-to-training data pipeline with chunking strategies | 342 |
 
 ### Specifications
 
@@ -63,6 +64,7 @@ This directory contains comprehensive technical documentation for SAM developers
 | [flows/sd_generation_flow.md](flows/sd_generation_flow.md) | Image generation pipeline (CoreML & Python) | 525 |
 | [flows/model_loading_flow.md](flows/model_loading_flow.md) | Local model initialization (MLX & GGUF) | 386 |
 | [flows/conversation_persistence.md](flows/conversation_persistence.md) | Saving, loading, and managing conversations | 542 |
+| [flows/document_training_export_flow.md](flows/document_training_export_flow.md) | Document-to-training data pipeline with chunking and export | 620 |
 
 ### Internal/Development
 
@@ -83,6 +85,10 @@ All documentation files follow these standards:
 4. **No Sensitive Information:** All files audited for public release (see audit summary below)
 
 ## Recent Updates
+
+### January 11, 2026
+- **DOCUMENT_TRAINING_EXPORT.md (NEW):** Complete guide for document-to-training data export
+- **Training System:** Added document chunking and conversation memory export for LoRA fine-tuning
 
 ### December 11, 2025
 - **STABLE_DIFFUSION.md:** Updated with SDXL float32 conversion, MPS limitations, SDE scheduler removal

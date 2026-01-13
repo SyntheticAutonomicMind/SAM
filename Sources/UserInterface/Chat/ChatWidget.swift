@@ -436,7 +436,9 @@ public struct ChatWidget: View {
     private var mainChatView: some View {
         mainChatContent
             .sheet(isPresented: $showingExportOptions) {
-                exportChatDialog
+                if let conversation = activeConversation {
+                    ExportDialog(conversation: conversation, isPresented: $showingExportOptions)
+                }
             }
             .onAppear(perform: performMainChatViewAppear)
             .onChange(of: activeConversation?.id) { _, newID in
@@ -5750,124 +5752,6 @@ public struct ChatWidget: View {
         maxTokens = session.configuration.maxTokens ?? maxMaxTokens
     }
 
-    private var exportChatDialog: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Export Chat")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-
-                Text("Choose a format to export your chat history")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-
-            VStack(spacing: 12) {
-                /// JSON Export Option.
-                Button(action: {
-                    exportChatAsJSON()
-                    showingExportOptions = false
-                }) {
-                    HStack {
-                        Image(systemName: "doc.text")
-                            .foregroundColor(.blue)
-                            .font(.title3)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("JSON Format")
-                                .font(.headline)
-                            Text("Structured data with all metadata")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                    }
-                    .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-
-                /// Text Export Option.
-                Button(action: {
-                    exportChatAsText()
-                    showingExportOptions = false
-                }) {
-                    HStack {
-                        Image(systemName: "text.alignleft")
-                            .foregroundColor(.green)
-                            .font(.title3)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Plain Text")
-                                .font(.headline)
-                            Text("Simple readable format")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                    }
-                    .padding()
-                    .background(Color.green.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-
-                /// PDF Export Option.
-                Button(action: {
-                    exportChatAsPDF()
-                    showingExportOptions = false
-                }) {
-                    HStack {
-                        Image(systemName: "doc.richtext")
-                            .foregroundColor(.orange)
-                            .font(.title3)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("PDF Document")
-                                .font(.headline)
-                            Text("Professional format with formatting")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                    }
-                    .padding()
-                    .background(Color.orange.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-            }
-
-            HStack {
-                Spacer()
-
-                Button("Cancel") {
-                    showingExportOptions = false
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-            }
-        }
-        .padding(24)
-        .frame(width: 400)
-    }
-
     // MARK: - Memory Management Methods
 
     private func loadMemoryStatistics() {
@@ -6276,90 +6160,6 @@ public struct ChatWidget: View {
             conversationManager.startAccessingWorkingDirectory(for: conversation)
 
             return manager
-        }
-    }
-
-    private func exportChatAsJSON() {
-        let chatSession = ChatSession(
-            id: UUID(),
-            name: "Exported Chat",
-            messages: messages,
-            configuration: ChatConfiguration(
-                selectedModel: selectedModel,
-                systemPrompt: systemPromptManager.selectedConfigurationId?.uuidString,
-                temperature: temperature,
-                topP: topP,
-                maxTokens: maxTokens
-            )
-        )
-
-        do {
-            let jsonData = try chatSession.exportToJSON()
-            let savePanel = NSSavePanel()
-            savePanel.allowedContentTypes = [.json]
-            savePanel.nameFieldStringValue = "chat-\(Date().formatted(date: .numeric, time: .omitted)).json"
-
-            if savePanel.runModal() == .OK, let url = savePanel.url {
-                try jsonData.write(to: url)
-            }
-        } catch {
-            logger.error("Export failed: \(error)")
-        }
-    }
-
-    private func exportChatAsText() {
-        let textContent = messages.map { message in
-            "\(message.isFromUser ? "User" : "Assistant"): \(message.content)"
-        }.joined(separator: "\n\n")
-
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [.plainText]
-        savePanel.nameFieldStringValue = "chat-\(Date().formatted(date: .numeric, time: .omitted)).txt"
-
-        if savePanel.runModal() == .OK, let url = savePanel.url {
-            do {
-                try textContent.write(to: url, atomically: true, encoding: .utf8)
-            } catch {
-                logger.error("Export failed: \(error)")
-            }
-        }
-    }
-
-    @MainActor
-    private func exportChatAsPDF() {
-        guard let conversation = conversationManager.activeConversation else {
-            logger.error("No active conversation to export")
-            return
-        }
-
-        Task {
-            do {
-                let exporter = ConversationPDFExporter()
-                // Use conversation.messages directly instead of messageBus.messages
-                // to ensure we get all persisted messages, not just the currently rendered ones
-                let fileURL = try await exporter.generatePDF(conversation: conversation, messages: nil)
-
-                await MainActor.run {
-                    /// Show save panel.
-                    let savePanel = NSSavePanel()
-                    savePanel.allowedContentTypes = [.pdf]
-                    savePanel.nameFieldStringValue = "\(conversation.title).pdf"
-                    savePanel.message = "Export conversation to PDF"
-
-                    let result = savePanel.runModal()
-                    if result == .OK, let url = savePanel.url {
-                        do {
-                            try FileManager.default.copyItem(at: fileURL, to: url)
-                            try? FileManager.default.removeItem(at: fileURL)
-                            NSWorkspace.shared.open(url)
-                        } catch {
-                            logger.error("Failed to save PDF: \(error)")
-                        }
-                    }
-                }
-            } catch {
-                logger.error("PDF export failed: \(error)")
-            }
         }
     }
 
