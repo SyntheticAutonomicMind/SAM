@@ -1,6 +1,40 @@
 {
   "releases": [
     {
+      "version": "20260114.1",
+      "release_date": "January 14, 2026",
+      "introduction": "This release introduces LoRA fine-tuning capabilities, allowing you to train custom adapters that specialize local models on your own knowledge domains without modifying the base model weights.",
+      "highlights": [
+        {
+          "id": "lora-training",
+          "icon": "brain.head.profile",
+          "title": "LoRA Fine-Tuning for Local Models",
+          "description": "SAM now supports training custom LoRA adapters to specialize local MLX models on specific knowledge domains. Export conversations or documents as training data, configure parameters like rank, alpha, learning rate, and epochs, then train adapters that enhance your models with domain-specific knowledge. Trained adapters appear as selectable models in the picker and can be used immediately for inference. Training is performed on-device using Apple's MLX framework for optimal performance on Apple Silicon."
+        },
+        {
+          "id": "training-data-export",
+          "icon": "square.and.arrow.up",
+          "title": "Conversation & Document Export for Training",
+          "description": "Export your conversations and documents as structured training data in JSONL format with automatic chat template formatting. Choose from multiple document chunking strategies (paragraph, sentence, token-based) and control PII detection. Training data exports include conversation memories and can be used directly with the LoRA training system."
+        }
+      ],
+      "bugfixes": [],
+      "improvements": [
+        {
+          "id": "split-model-support",
+          "icon": "doc.on.doc",
+          "title": "Support for Split Model Files",
+          "description": "LoRA training now properly validates base models stored in split file format (model-00001-of-00002.safetensors), ensuring compatibility with larger models that exceed file size limits."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "silicon-studio-credit",
+          "content": "LoRA training implementation inspired by [Silicon Studio](https://github.com/rileycleavenger/Silicon-Studio) - a native macOS app for LLM fine-tuning with MLX."
+        }
+      ]
+    },
+    {
       "version": "20260110.1",
       "release_date": "January 10, 2026",
       "introduction": "This release introduces support for automated development channel updates, implements API token authentication for external integrations, and fixes critical issues with local MLX models and minimal prompt responses.",
