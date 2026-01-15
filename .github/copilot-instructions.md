@@ -248,23 +248,59 @@ that should NEVER be in the public repository. This is a HARD REQUIREMENT.
 2. If any handoff files appear, use `git reset HEAD ai-assisted/` to unstage them
 3. ONLY commit actual code, documentation, and configuration changes
 
-**Standard Commit Format:**
+**Commit Workflow (MANDATORY):**
+
+**CRITICAL: NEVER use `git commit -m` - terminals can corrupt multi-line messages!**
+
+**✅ CORRECT APPROACH - Write to file first:**
+
 ```bash
-git add -A && git commit -m "type(scope): description
+# 1. Write commit message to scratch/ directory
+cat > scratch/commit-msg.txt << 'EOF'
+type(scope): brief description
 
-**Problem:**
-[what was broken or missing]
+Problem: What was broken or missing. Be specific about the issue,
+symptoms, and impact on users or functionality.
 
-**Solution:**
-[how you fixed or built it]
+Root Cause: Why the problem existed. What architectural or implementation
+detail caused this issue.
 
-**Testing:**
+Solution: How you fixed it. What changes were made and why this approach
+was chosen over alternatives.
+
+Changes:
+- File1.swift: Specific change and why
+- File2.swift: Specific change and why
+
+Testing:
 ✅ Build: PASS
-✅ Manual: [what you tested]
-✅ Edge cases: [what you verified]"
+✅ Manual: What you tested and results
+✅ Edge cases: What scenarios you verified
+
+Impact: How this improves the codebase, what users can now do, or what
+problems are prevented.
+EOF
+
+# 2. Validate the message (read it back)
+cat scratch/commit-msg.txt
+
+# 3. Stage changes
+git add -A
+
+# 4. Commit using the file
+git commit -F scratch/commit-msg.txt
+
+# 5. Clean up
+rm scratch/commit-msg.txt
 ```
 
 **Commit types:** feat, fix, refactor, docs, test, chore
+
+**Why this approach:**
+- Avoids terminal corruption of multi-line messages with `-m`
+- Allows validation before commit
+- Prevents truncation or special character issues
+- Ensures commit message is exactly what you wrote
 
 ### Architecture Overview
 
@@ -352,9 +388,12 @@ User Input → ChatWidget → ConversationEngine → MessageBus → API Provider
    - WAIT for approval
 
 6. **COMMIT**
-   - Add changes: `git add -A`
-   - Commit with full message (see Code Standards)
-   - Include testing details in commit message
+   - Write commit message to `scratch/commit-msg.txt`
+   - Validate message: `cat scratch/commit-msg.txt`
+   - Stage changes: `git add -A`
+   - Commit: `git commit -F scratch/commit-msg.txt`
+   - Clean up: `rm scratch/commit-msg.txt`
+   - (See "Commit Workflow" in Code Standards section for full details)
 
 7. **CONTINUE** (MANDATORY - Do not stop here!)
    - Immediately identify next task
