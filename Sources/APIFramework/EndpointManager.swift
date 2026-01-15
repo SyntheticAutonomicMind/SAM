@@ -6,7 +6,6 @@ import ConversationEngine
 import ConfigurationSystem
 import MCPFramework
 import Logging
-import Training
 extension Notification.Name {
     /// Posted when providers/endpoints are reloaded and available models may have changed.
     public static let endpointManagerDidReloadProviders = Notification.Name("com.sam.endpointmanager.providersReloaded")
@@ -87,46 +86,6 @@ public class EndpointManager: ObservableObject {
             Task { @MainActor in
                 guard let self = self else { return }
                 self.logger.info("Hot reload: Local models changed, reloading provider configurations")
-                self.reloadProviderConfigurations()
-            }
-        }
-        
-        /// Listen for LoRA adapter changes
-        NotificationCenter.default.addObserver(
-            forName: .loraAdaptersDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            // Extract values outside Task to avoid concurrency issues
-            var adapterId: String?
-            var adapterName: String?
-            var baseModelId: String?
-            
-            if let adapter = notification.object as? LoRAAdapter {
-                adapterId = adapter.id
-                adapterName = adapter.metadata.adapterName
-                baseModelId = adapter.baseModelId
-            }
-            
-            Task { @MainActor in
-                guard let self = self, let localModelManager = self.localModelManager else { return }
-                
-                /// Register adapter with LocalModelManager
-                /// CRITICAL: Use adapter ID as modelName to match ModelListManager format (lora/{uuid})
-                if let aid = adapterId, let aname = adapterName {
-                    let adapterDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-                        .appendingPathComponent("SAM/adapters/\(aid)")
-                    localModelManager.registerModel(
-                        provider: "lora",
-                        modelName: aid,  // Use UUID, not adapter name
-                        path: adapterDir.path,
-                        sizeBytes: nil,
-                        quantization: "lora"
-                    )
-                    self.logger.info("Registered LoRA adapter: \(aname) (ID: \(aid))")
-                }
-                
-                /// Trigger provider reload to create/remove providers
                 self.reloadProviderConfigurations()
             }
         }
@@ -343,11 +302,6 @@ public class EndpointManager: ObservableObject {
 
     /// Check if a model is a local model (MLX or GGUF) Returns true for local models, false for API-based models.
     public func isLocalModel(_ modelId: String) -> Bool {
-        /// LoRA adapters are always local
-        if modelId.hasPrefix("lora/") {
-            return true
-        }
-        
         guard let providerType = getProviderTypeForModel(modelId) else {
             return false
         }
@@ -1204,151 +1158,6 @@ public class EndpointManager: ObservableObject {
                             )
                             providers[providerIdentifier] = provider
                             logger.debug("Hot reload: Created MLX model provider: \(providerIdentifier)")
-                        }
-                        
-                        /// Also handle LoRA adapters (quantization == "lora")
-                        let loraAdapters = registryModels.filter { $0.quantization == "lora" }
-                        logger.debug("Hot reload: Found \(loraAdapters.count) LoRA adapters in registry")
-                        
-                        /// Also scan adapters directory for any unregistered adapters
-                        let adaptersDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-                            .appendingPathComponent("SAM/adapters")
-                        if FileManager.default.fileExists(atPath: adaptersDir.path) {
-                            let adapterDirs = (try? FileManager.default.contentsOfDirectory(at: adaptersDir, includingPropertiesForKeys: nil)) ?? []
-                            for adapterDir in adapterDirs where adapterDir.hasDirectoryPath {
-                                let adapterId = adapterDir.lastPathComponent
-                                /// Check if already registered
-                                if loraAdapters.contains(where: { $0.path == adapterDir.path }) {
-                                    continue  // Already in registry
-                                }
-                                
-                                /// Load metadata to get adapter name and base model
-                                let metadataPath = adapterDir.appendingPathComponent("metadata.json")
-                                guard let metadataData = try? Data(contentsOf: metadataPath),
-                                      let metadataDict = try? JSONSerialization.jsonObject(with: metadataData) as? [String: Any],
-                                      let adapterName = metadataDict["adapterName"] as? String,
-                                      let baseModelId = metadataDict["baseModelId"] as? String else {
-                                    logger.warning("Hot reload: Failed to load metadata for unregistered adapter: \(adapterId)")
-                                    continue
-                                }
-                                
-                                /// Register with LocalModelManager
-                                /// CRITICAL: Use adapter ID (UUID) as modelName to match ModelListManager format
-                                modelManager.registerModel(
-                                    provider: "lora",
-                                    modelName: adapterId,  // Use UUID, not adapter name
-                                    path: adapterDir.path,
-                                    sizeBytes: nil,
-                                    quantization: "lora"
-                                )
-                                logger.info("Hot reload: Registered previously unregistered LoRA adapter: \(adapterName) (ID: \(adapterId))")
-                            }
-                        }
-                        
-                        /// Re-query adapters after potential registration
-                        let allLoraAdapters = modelManager.getAllRegistryModels().filter { $0.quantization == "lora" }
-                        logger.debug("Hot reload: Total LoRA adapters after scan: \(allLoraAdapters.count)")
-                        
-                        for adapter in allLoraAdapters {
-                            let providerIdentifier = adapter.identifier
-                            
-                            /// Skip if provider already exists (prevents duplicates during hot reload)
-                            if providers[providerIdentifier] != nil {
-                                logger.debug("Hot reload: Skipping LoRA adapter \(providerIdentifier) (provider already exists)")
-                                continue
-                            }
-                            
-                            /// Load adapter metadata to get base model ID
-                            let adapterPath = URL(fileURLWithPath: adapter.path)
-                            let metadataPath = adapterPath.appendingPathComponent("metadata.json")
-                            guard let metadataData = try? Data(contentsOf: metadataPath),
-                                  let metadataDict = try? JSONSerialization.jsonObject(with: metadataData) as? [String: Any],
-                                  let baseModelId = metadataDict["baseModelId"] as? String else {
-                                logger.warning("Failed to load metadata for LoRA adapter: \(adapter.modelName)")
-                                continue
-                            }
-                            
-                            /// Get base model path - look for it in the providers we just created
-                            /// LoRA adapters are created AFTER MLX models, so base model provider should already exist
-                            var baseModelPath: String?
-                            
-                            /// Check all registry entries for matching model
-                            for entry in modelManager.getAllRegistryModels() {
-                                /// Match by identifier or by model name
-                                if entry.identifier == baseModelId || entry.modelName == baseModelId {
-                                    baseModelPath = entry.path
-                                    break
-                                }
-                            }
-                            
-                            guard let baseModel = baseModelPath else {
-                                logger.warning("Base model not found for LoRA adapter: \(adapter.modelName) (base: \(baseModelId))")
-                                logger.debug("Available models in registry: \(modelManager.getAllRegistryModels().map { $0.identifier }.joined(separator: ", "))")
-                                continue
-                            }
-                            
-                            /// For MLX models, ensure path points to directory, not to model.safetensors file
-                            /// The registry might store "/path/to/model/model.safetensors", but MLXProvider needs "/path/to/model"
-                            let modelDirectory: String
-                            if baseModel.hasSuffix("/model.safetensors") || baseModel.hasSuffix(".safetensors") {
-                                /// Path points to file - get parent directory
-                                modelDirectory = URL(fileURLWithPath: baseModel).deletingLastPathComponent().path
-                            } else {
-                                /// Path already points to directory
-                                modelDirectory = baseModel
-                            }
-                            
-                            /// Validate that the model directory contains required files
-                            /// This prevents using empty/incomplete model directories as base models
-                            /// Support both single-file and split models
-                            let modelDirURL = URL(fileURLWithPath: modelDirectory)
-                            let singleFile = modelDirURL.appendingPathComponent("model.safetensors").path
-                            let indexFile = modelDirURL.appendingPathComponent("model.safetensors.index.json").path
-                            let splitFile = modelDirURL.appendingPathComponent("model-00001-of-00002.safetensors").path
-                            
-                            let isValidModel = FileManager.default.fileExists(atPath: singleFile) ||
-                                             FileManager.default.fileExists(atPath: indexFile) ||
-                                             FileManager.default.fileExists(atPath: splitFile)
-                            
-                            guard isValidModel else {
-                                logger.warning("Base model directory is invalid/empty for LoRA adapter: \(adapter.modelName)")
-                                logger.warning("  Base model: \(baseModelId)")
-                                logger.warning("  Path: \(modelDirectory)")
-                                logger.warning("  Skipping adapter (base model incomplete or not downloaded)")
-                                continue
-                            }
-                            
-                            /// Get adapter ID from path (last component)
-                            let adapterId = adapterPath.lastPathComponent
-                            
-                            /// Create provider-specific config
-                            let providerSpecificConfig = ProviderConfiguration(
-                                providerId: providerIdentifier,
-                                providerType: .localMLX,
-                                isEnabled: config.isEnabled,
-                                baseURL: nil,
-                                models: [providerIdentifier],
-                                maxTokens: config.maxTokens,
-                                temperature: config.temperature,
-                                customHeaders: config.customHeaders,
-                                timeoutSeconds: config.timeoutSeconds,
-                                retryCount: config.retryCount
-                            )
-                            
-                            /// Create MLX provider with LoRA adapter
-                            let provider = MLXProvider(
-                                config: providerSpecificConfig,
-                                modelPath: modelDirectory,
-                                loraAdapterId: adapterId,
-                                onModelLoadingStarted: { @MainActor [weak self] providerId, modelName in
-                                    self?.notifyModelLoadingStarted(providerId: providerId, modelName: modelName)
-                                },
-                                onModelLoadingCompleted: { @MainActor [weak self] providerId in
-                                    self?.notifyModelLoadingCompleted(providerId: providerId)
-                                }
-                            )
-                            providers[providerIdentifier] = provider
-                            logger.debug("Hot reload: Created LoRA adapter provider: \(providerIdentifier) (base: \(baseModelId), path: \(modelDirectory))")
                         }
                     }
                 } else {

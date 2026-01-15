@@ -4,7 +4,6 @@
 import Foundation
 import SwiftUI
 import Logging
-import Training
 
 private let logger = Logger(label: "com.sam.modellist")
 
@@ -96,17 +95,6 @@ public class ModelListManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             logger.info("ALICE models loaded, refreshing available models list")
-            Task { @MainActor in
-                await self?.refresh(force: true)
-            }
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: .loraAdaptersDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            logger.info("LoRA adapters changed, refreshing available models list")
             Task { @MainActor in
                 await self?.refresh(force: true)
             }
@@ -225,10 +213,6 @@ public class ModelListManager: ObservableObject {
             
             // Filter out any stable-diffusion/* models from LLM list
             let llmModelsOnly = sortedModels.filter { !$0.hasPrefix("stable-diffusion/") }
-            
-            // NOTE: LoRA adapters are already included via EndpointManager.getAvailableModels()
-            // They come from LoRA providers created during hot reload
-            // DO NOT add them separately here to avoid duplicates
             
             // Combine all models
             let allModels = llmModelsOnly + sdModelIds

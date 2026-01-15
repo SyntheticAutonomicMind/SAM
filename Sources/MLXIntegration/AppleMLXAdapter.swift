@@ -93,19 +93,6 @@ public class AppleMLXAdapter {
         do {
             model = try typeRegistry.createModel(configuration: configPath, modelType: baseConfig.modelType)
             logger.debug("Created \(baseConfig.modelType) model using Apple's registry")
-            
-            // 🔍 INVESTIGATION: Log model type
-            logger.debug("🔍 MODEL TYPE: \(type(of: model))")
-            
-            // Read config again to log dimensions
-            if let configDict = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] {
-                logger.debug("🔍 CONFIG FROM FILE", metadata: [
-                    "hidden_size": "\(configDict["hidden_size"] as? Int ?? -1)",
-                    "num_attention_heads": "\(configDict["num_attention_heads"] as? Int ?? -1)",
-                    "num_key_value_heads": "\(configDict["num_key_value_heads"] as? Int ?? -1)",
-                    "file": "\(configPath.path)"
-                ])
-            }
         } catch {
             logger.error("Failed to create model with type '\(baseConfig.modelType)': \(error)")
             throw AdapterError.modelCreationFailed(baseConfig.modelType, error.localizedDescription)

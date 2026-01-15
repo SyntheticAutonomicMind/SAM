@@ -4,7 +4,7 @@
 import Foundation
 
 /// Folder for organizing conversations
-public struct Folder: Codable, Identifiable, Equatable {
+public struct Folder: Codable, Identifiable, Equatable, Sendable {
     public let id: String
     public var name: String
     public var color: String?  // Hex color

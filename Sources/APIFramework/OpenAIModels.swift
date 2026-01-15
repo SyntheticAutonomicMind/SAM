@@ -138,7 +138,10 @@ public struct OpenAIChatRequest: Content {
     /// Mini-prompt names to enable for this conversation
     public let miniPrompts: [String]?
 
-    public init(model: String, messages: [OpenAIChatMessage], temperature: Double? = nil, topP: Double? = nil, repetitionPenalty: Double? = nil, maxTokens: Int? = nil, stream: Bool? = nil, tools: [OpenAITool]? = nil, samConfig: SAMConfig? = nil, contextId: String? = nil, enableMemory: Bool? = nil, sessionId: String? = nil, conversationId: String? = nil, statefulMarker: String? = nil, iterationNumber: Int? = nil, topic: String? = nil, miniPrompts: [String]? = nil) {
+    /// Personality ID to apply (adds trait-based prompt additions after system prompt)
+    public let personalityId: String?
+
+    public init(model: String, messages: [OpenAIChatMessage], temperature: Double? = nil, topP: Double? = nil, repetitionPenalty: Double? = nil, maxTokens: Int? = nil, stream: Bool? = nil, tools: [OpenAITool]? = nil, samConfig: SAMConfig? = nil, contextId: String? = nil, enableMemory: Bool? = nil, sessionId: String? = nil, conversationId: String? = nil, statefulMarker: String? = nil, iterationNumber: Int? = nil, topic: String? = nil, miniPrompts: [String]? = nil, personalityId: String? = nil) {
         self.model = model
         self.messages = messages
         self.temperature = temperature
@@ -156,6 +159,7 @@ public struct OpenAIChatRequest: Content {
         self.iterationNumber = iterationNumber
         self.topic = topic
         self.miniPrompts = miniPrompts
+        self.personalityId = personalityId
     }
 
     enum CodingKeys: String, CodingKey {
@@ -172,6 +176,7 @@ public struct OpenAIChatRequest: Content {
         case iterationNumber = "iteration_number"
         case topic
         case miniPrompts = "mini_prompts"
+        case personalityId = "personality_id"
     }
 }
 
