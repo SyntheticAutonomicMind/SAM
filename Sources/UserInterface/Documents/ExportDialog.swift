@@ -4,7 +4,6 @@
 import SwiftUI
 import ConversationEngine
 import ConfigurationSystem
-import Training
 import Logging
 
 /// Unified export dialog for conversations and messages Used by: ChatWidget toolbar, MainWindowView menu, MessageView context menu.
@@ -16,7 +15,6 @@ struct ExportDialog: View {
 
     @State private var isExporting: Bool = false
     @State private var exportError: String?
-    @State private var showingTrainingOptions: Bool = false
 
     private let logger = Logger(label: "com.syntheticautonomicmind.sam.ExportDialog")
 
@@ -90,22 +88,6 @@ struct ExportDialog: View {
                 .buttonStyle(.plain)
                 .disabled(isExporting)
 
-                /// Training Data Export (conversations only)
-                if singleMessage == nil {
-                    Button(action: {
-                        exportAsTrainingData()
-                    }) {
-                        exportOption(
-                            icon: "brain",
-                            color: .pink,
-                            title: "Training Data (JSONL)",
-                            description: "LLM training format with PII protection"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isExporting)
-                }
-
                 /// SAM Export Package (conversations only) - includes memory data
                 if singleMessage == nil {
                     Divider()
@@ -151,12 +133,6 @@ struct ExportDialog: View {
         }
         .padding(24)
         .frame(width: 400)
-        .sheet(isPresented: $showingTrainingOptions) {
-            TrainingExportOptionsView(
-                isPresented: $showingTrainingOptions,
-                onExport: performTrainingDataExport
-            )
-        }
     }
 
     // MARK: - UI Setup
@@ -264,11 +240,6 @@ struct ExportDialog: View {
         } else {
             exportConversationAsMarkdown()
         }
-    }
-
-    private func exportAsTrainingData() {
-        // Only for conversations, not single messages
-        exportConversationAsTrainingData()
     }
 
     // MARK: - Message Export
@@ -418,66 +389,6 @@ struct ExportDialog: View {
                     try markdownData.write(to: url, atomically: true, encoding: .utf8)
                 } catch {
                     logger.error("Markdown export failed: \(error)")
-                }
-            }
-        }
-    }
-
-    private func exportConversationAsTrainingData() {
-        // Show options dialog first
-        showingTrainingOptions = true
-    }
-    
-    private func performTrainingDataExport(with options: TrainingDataModels.ExportOptions) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        let importExportService = ConversationImportExportService.shared
-        
-        // Inject memory manager to enable memory export
-        importExportService.setConversationManager(conversationManager)
-        
-        let suggestedFilename = importExportService.generateTrainingExportFilename(
-            for: conversation,
-            template: options.template,
-            modelId: options.modelId
-        )
-        panel.nameFieldStringValue = suggestedFilename
-        panel.message = "Export conversation as Training Data (JSONL)"
-
-        panel.begin { result in
-            if result == .OK, let url = panel.url {
-                Task {
-                    do {
-                        isExporting = true
-                        
-                        let result = try await importExportService.exportAsTrainingData(
-                            conversation: conversation,
-                            outputURL: url,
-                            options: options
-                        )
-                        
-                        await MainActor.run {
-                            isExporting = false
-                            logger.info("Training data export complete", metadata: [
-                                "examples": "\(result.statistics.totalExamples)",
-                                "tokens": "\(result.statistics.totalTokensEstimate)",
-                                "template": "\(options.template.rawValue)",
-                                "file": "\(url.path)"
-                            ])
-                            
-                            // Open file location
-                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                            
-                            // Close the export dialog
-                            isPresented = false
-                        }
-                    } catch {
-                        await MainActor.run {
-                            isExporting = false
-                            logger.error("Training data export failed: \(error)")
-                            exportError = "Training export failed: \(error.localizedDescription)"
-                        }
-                    }
                 }
             }
         }

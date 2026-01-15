@@ -18,6 +18,7 @@ public class SAMAPIServer: ObservableObject {
     private let modelDownloadManager: ModelDownloadManager
     private let toolResultStorage: ToolResultStorage
     private let sharedTopicManager: SharedTopicManager
+    private let folderManager: FolderManager
 
     @Published public var isRunning: Bool = false
     @Published public var serverPort: Int = UserDefaults.standard.object(forKey: "apiServerPort") as? Int ?? 8080
@@ -42,11 +43,12 @@ public class SAMAPIServer: ObservableObject {
         self.modelDownloadManager = ModelDownloadManager(endpointManager: endpointManager)
         self.toolResultStorage = ToolResultStorage()
         self.sharedTopicManager = SharedTopicManager()
+        self.folderManager = FolderManager()
     logger.debug("Creating UniversalToolRegistry for API (external execution) with ConversationManager")
     /// For API server, tools should run in non-blocking external mode.
     self.toolRegistry = UniversalToolRegistry(conversationManager: conversationManager, isExternalExecution: true)
         logger.debug("UniversalToolRegistry created successfully")
-        logger.debug("SAM_API_SERVER: Initialized with shared ConversationManager, EndpointManager, SharedConversationService, and ModelDownloadManager")
+        logger.debug("SAM_API_SERVER: Initialized with shared ConversationManager, EndpointManager, SharedConversationService, FolderManager, and ModelDownloadManager")
     }
 
     // MARK: - Lifecycle
@@ -74,6 +76,13 @@ public class SAMAPIServer: ObservableObject {
         app.http.server.configuration.hostname = hostname
 
         logger.info("SAM API Server binding to \(hostname):\(actualPort) (remote access: \(allowRemoteAccess ? "ENABLED" : "DISABLED"))")
+
+        /// Configure CORS middleware to allow web interface access
+        /// This enables SAM-Web and other browser-based clients to connect
+        /// Using custom middleware because Vapor's CORSMiddleware wasn't working
+        let customCORS = CustomCORSMiddleware()
+        app.middleware.use(customCORS, at: .beginning)
+        logger.info("Custom CORS middleware enabled for web interface support")
 
         /// Register routes.
         try await configureRoutes(app)
@@ -898,8 +907,38 @@ AVAILABLE TOOLS:
             return try await self.handleGetConversation(req)
         }
 
-        // Shared topics API: planned (stubs were temporarily added here during development)
-        // Full endpoints and auth/ACL enforcement will be added in a dedicated API integration step.
+        protected.delete("v1", "conversations", ":conversationId") { req async throws -> Response in
+            return try await self.handleDeleteConversation(req)
+        }
+
+        protected.patch("v1", "conversations", ":conversationId") { req async throws -> Response in
+            return try await self.handleRenameConversation(req)
+        }
+
+        /// Shared topics API endpoints.
+        protected.get("api", "shared-topics") { req async throws -> Response in
+            return try await self.handleListSharedTopics(req)
+        }
+
+        protected.post("api", "shared-topics") { req async throws -> Response in
+            return try await self.handleCreateSharedTopic(req)
+        }
+
+        protected.patch("api", "shared-topics", ":topicId") { req async throws -> Response in
+            return try await self.handleUpdateSharedTopic(req)
+        }
+
+        protected.delete("api", "shared-topics", ":topicId") { req async throws -> Response in
+            return try await self.handleDeleteSharedTopic(req)
+        }
+
+        protected.post("v1", "conversations", ":conversationId", "attach-topic") { req async throws -> Response in
+            return try await self.handleAttachSharedTopic(req)
+        }
+
+        protected.post("v1", "conversations", ":conversationId", "detach-topic") { req async throws -> Response in
+            return try await self.handleDetachSharedTopic(req)
+        }
 
         /// Prompt discovery endpoints for agent awareness.
         protected.get("api", "prompts", "system") { req async throws -> Response in
@@ -916,6 +955,50 @@ AVAILABLE TOOLS:
 
         protected.get("api", "mini-prompts") { req async throws -> Response in
             return try await self.handleListMiniPrompts(req)
+        }
+
+        protected.post("api", "mini-prompts") { req async throws -> Response in
+            return try await self.handleCreateMiniPrompt(req)
+        }
+
+        protected.patch("api", "mini-prompts", ":promptId") { req async throws -> Response in
+            return try await self.handleUpdateMiniPrompt(req)
+        }
+
+        protected.delete("api", "mini-prompts", ":promptId") { req async throws -> Response in
+            return try await self.handleDeleteMiniPrompt(req)
+        }
+
+        /// Personality discovery endpoint.
+        protected.get("api", "personalities") { req async throws -> Response in
+            return try await self.handleListPersonalities(req)
+        }
+
+        /// User preferences/defaults endpoint.
+        protected.get("api", "preferences") { req async throws -> Response in
+            return try await self.handleGetPreferences(req)
+        }
+
+        /// GitHub Copilot quota information endpoint.
+        protected.get("api", "github-copilot", "quota") { req async throws -> Response in
+            return try await self.handleGetGitHubCopilotQuota(req)
+        }
+
+        /// Folder management endpoints.
+        protected.get("api", "folders") { req async throws -> Response in
+            return try await self.handleListFolders(req)
+        }
+
+        protected.post("api", "folders") { req async throws -> Response in
+            return try await self.handleCreateFolder(req)
+        }
+
+        protected.patch("api", "folders", ":folderId") { req async throws -> Response in
+            return try await self.handleUpdateFolder(req)
+        }
+
+        protected.delete("api", "folders", ":folderId") { req async throws -> Response in
+            return try await self.handleDeleteFolder(req)
         }
 
         /// Model management endpoints.
@@ -1072,6 +1155,15 @@ AVAILABLE TOOLS:
                 if let miniPromptNames = chatRequest.miniPrompts, !miniPromptNames.isEmpty {
                     self.enableMiniPromptsForConversation(conversation, miniPromptNames: miniPromptNames)
                     logger.debug("DEBUG_MINI_PROMPTS: Enabled mini-prompts for conversation \(conversation.id): \(miniPromptNames.joined(separator: ", "))")
+                }
+
+                /// Apply personality if provided
+                if let personalityIdString = chatRequest.personalityId,
+                   let personalityUUID = UUID(uuidString: personalityIdString) {
+                    conversation.settings.selectedPersonalityId = personalityUUID
+                    logger.debug("DEBUG_PERSONALITY: Applied personality UUID \(personalityUUID) to conversation \(conversation.id)")
+                } else if chatRequest.personalityId != nil {
+                    logger.warning("DEBUG_PERSONALITY: Invalid personalityId '\(chatRequest.personalityId!)', ignoring")
                 }
             }
         }
@@ -2772,13 +2864,20 @@ AVAILABLE TOOLS:
 
         /// Get all conversations from manager.
         let conversationList: [[String: Any]] = conversationManager.conversations.map { conversation in
-                return [
+                var convData: [String: Any] = [
                     "id": conversation.id.uuidString,
                     "title": conversation.title,
                     "created": ISO8601DateFormatter().string(from: conversation.created),
                     "updated": ISO8601DateFormatter().string(from: conversation.updated),
                     "messageCount": conversation.messageBus?.messages.count ?? 0
-                ] as [String: Any]
+                ]
+                
+                // Add folderId if conversation is in a folder
+                if let folderId = conversation.folderId {
+                    convData["folderId"] = folderId
+                }
+                
+                return convData
             }
 
         let response: [String: Any] = [
@@ -2820,6 +2919,96 @@ AVAILABLE TOOLS:
         encoder.outputFormatting = .prettyPrinted
         let jsonData = try encoder.encode(data)
 
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    private func handleDeleteConversation(_ req: Request) async throws -> Response {
+        guard let conversationIdStr = req.parameters.get("conversationId"),
+              let conversationId = UUID(uuidString: conversationIdStr) else {
+            let errorResponse: [String: Any] = ["error": "Valid conversation ID parameter is required"]
+            let jsonData = try JSONSerialization.data(withJSONObject: errorResponse)
+            return Response(status: .badRequest, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+        }
+
+        logger.debug("Deleting conversation: \(conversationId)")
+
+        /// Delete conversation on MainActor.
+        let deleted = await MainActor.run { () -> Bool in
+            guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                return false
+            }
+            conversationManager.deleteConversation(conversation)
+            return true
+        }
+
+        guard deleted else {
+            let errorResponse: [String: Any] = ["error": "Conversation not found"]
+            let jsonData = try JSONSerialization.data(withJSONObject: errorResponse)
+            return Response(status: .notFound, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+        }
+
+        let response: [String: Any] = ["success": true, "conversationId": conversationIdStr]
+        let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    private func handleRenameConversation(_ req: Request) async throws -> Response {
+        guard let conversationIdStr = req.parameters.get("conversationId"),
+              let conversationId = UUID(uuidString: conversationIdStr) else {
+            let errorResponse: [String: Any] = ["error": "Valid conversation ID parameter is required"]
+            let jsonData = try JSONSerialization.data(withJSONObject: errorResponse)
+            return Response(status: .badRequest, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+        }
+
+        /// Decode request body.
+        struct UpdateConversationRequest: Decodable {
+            let title: String?
+            let folderId: String?
+        }
+        let updateRequest: UpdateConversationRequest
+        do {
+            updateRequest = try req.content.decode(UpdateConversationRequest.self)
+        } catch {
+            let errorResponse: [String: Any] = ["error": "Invalid request format: expected {\"title\": \"new title\"} and/or {\"folderId\": \"folder-id\"}"]
+            let jsonData = try JSONSerialization.data(withJSONObject: errorResponse)
+            return Response(status: .badRequest, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+        }
+
+        logger.debug("Updating conversation \(conversationId)")
+
+        /// Update conversation on MainActor.
+        let result = await MainActor.run { () -> (Bool, String?, String?) in
+            guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+                return (false, nil, nil)
+            }
+            
+            if let title = updateRequest.title {
+                conversation.title = title
+            }
+            
+            if let folderId = updateRequest.folderId {
+                conversation.folderId = folderId.isEmpty ? nil : folderId
+            }
+            
+            conversationManager.saveConversations()
+            return (true, conversation.title, conversation.folderId)
+        }
+
+        guard result.0 else {
+            let errorResponse: [String: Any] = ["error": "Conversation not found"]
+            let jsonData = try JSONSerialization.data(withJSONObject: errorResponse)
+            return Response(status: .notFound, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+        }
+
+        var response: [String: Any] = ["success": true, "conversationId": conversationIdStr]
+        if let title = result.1 {
+            response["title"] = title
+        }
+        if let folderId = result.2 {
+            response["folderId"] = folderId
+        }
+        
+        let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
         return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
     }
 
@@ -3023,6 +3212,206 @@ AVAILABLE TOOLS:
         return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
     }
 
+    /// Handle GET /api/personalities - list all available personalities
+    /// Returns array of personalities with id, name, description, category, and isDefault
+    /// Used by web interface and external agents to discover personality options
+    private func handleListPersonalities(_ req: Request) async throws -> Response {
+        logger.debug("Listing personalities")
+
+        /// Get all personalities from manager (defaults + user-created).
+        let personalityManager = PersonalityManager.shared
+        let allPersonalities = await MainActor.run {
+            personalityManager.getAllPersonalities()
+        }
+
+        /// Map to simple response format.
+        let personalityList = allPersonalities.map { personality in
+            [
+                "id": personality.id.uuidString,
+                "name": personality.name,
+                "description": personality.description,
+                "category": personality.category.rawValue,
+                "isDefault": personality.isDefault
+            ] as [String: Any]
+        }
+
+        let response = ["personalities": personalityList]
+        let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    /// Handle GET /api/preferences - return user's default preferences
+    /// Returns default model, system prompt, and personality selections
+    private func handleGetPreferences(_ req: Request) async throws -> Response {
+        logger.debug("Getting user preferences")
+
+        let defaultModel = UserDefaults.standard.string(forKey: "defaultModel") ?? ""
+        let defaultSystemPromptId = UserDefaults.standard.string(forKey: "defaultSystemPromptId") ?? "00000000-0000-0000-0000-000000000001"
+        let defaultPersonalityId = UserDefaults.standard.string(forKey: "defaultPersonalityId") ?? "00000000-0000-0000-0000-000000000001"
+
+        let response: [String: Any] = [
+            "defaultModel": defaultModel,
+            "defaultSystemPromptId": defaultSystemPromptId,
+            "defaultPersonalityId": defaultPersonalityId
+        ]
+
+        let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    /// Handle GET /api/github-copilot/quota - return GitHub Copilot quota information
+    /// Returns current usage and entitlement for GitHub Copilot models
+    private func handleGetGitHubCopilotQuota(_ req: Request) async throws -> Response {
+        logger.debug("Getting GitHub Copilot quota information")
+
+        guard let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() else {
+            let response: [String: Any] = ["available": false]
+            let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
+            return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+        }
+
+        let percentUsed = 100.0 - quotaInfo.percentRemaining
+
+        let response: [String: Any] = [
+            "available": true,
+            "entitlement": quotaInfo.entitlement,
+            "used": quotaInfo.used,
+            "percentUsed": percentUsed,
+            "percentRemaining": quotaInfo.percentRemaining,
+            "resetDate": quotaInfo.resetDate
+        ]
+
+        let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    // MARK: - Folder Management Endpoints
+
+    /// Folder response structure for API
+    private struct FolderResponse: Codable, Sendable {
+        let id: String
+        let name: String
+        let color: String
+        let icon: String
+        let isCollapsed: Bool
+    }
+
+    /// Handle GET /api/folders - list all folders
+    private func handleListFolders(_ req: Request) async throws -> Response {
+        logger.debug("Listing folders")
+
+        let folders = await MainActor.run {
+            folderManager.folders.map { folder in
+                FolderResponse(
+                    id: folder.id,
+                    name: folder.name,
+                    color: folder.color ?? "",
+                    icon: folder.icon ?? "",
+                    isCollapsed: folder.isCollapsed
+                )
+            }
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let jsonData = try encoder.encode(["folders": folders])
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    /// Handle POST /api/folders - create a new folder
+    private func handleCreateFolder(_ req: Request) async throws -> Response {
+        logger.debug("Creating folder")
+
+        struct CreateFolderRequest: Codable {
+            var name: String
+            var color: String?
+            var icon: String?
+        }
+
+        let createRequest = try req.content.decode(CreateFolderRequest.self)
+
+        let folder = await MainActor.run {
+            folderManager.createFolder(name: createRequest.name, color: createRequest.color, icon: createRequest.icon)
+        }
+
+        let response = FolderResponse(
+            id: folder.id,
+            name: folder.name,
+            color: folder.color ?? "",
+            icon: folder.icon ?? "",
+            isCollapsed: folder.isCollapsed
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let jsonData = try encoder.encode(response)
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    /// Handle PATCH /api/folders/:folderId - update folder
+    private func handleUpdateFolder(_ req: Request) async throws -> Response {
+        guard let folderId = req.parameters.get("folderId") else {
+            throw Abort(.badRequest, reason: "Missing folder ID")
+        }
+
+        logger.debug("Updating folder: \(folderId)")
+
+        struct UpdateFolderRequest: Codable {
+            var name: String?
+            var color: String?
+            var icon: String?
+            var isCollapsed: Bool?
+        }
+
+        let updateRequest = try req.content.decode(UpdateFolderRequest.self)
+
+        let updated = await MainActor.run { () -> Bool in
+            guard var folder = folderManager.getFolder(by: folderId) else {
+                return false
+            }
+
+            if let name = updateRequest.name {
+                folder.name = name
+            }
+            if let color = updateRequest.color {
+                folder.color = color
+            }
+            if let icon = updateRequest.icon {
+                folder.icon = icon
+            }
+            if let isCollapsed = updateRequest.isCollapsed {
+                folder.isCollapsed = isCollapsed
+            }
+
+            folderManager.updateFolder(folder)
+            return true
+        }
+
+        guard updated else {
+            throw Abort(.notFound, reason: "Folder not found")
+        }
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
+    }
+
+    /// Handle DELETE /api/folders/:folderId - delete folder
+    private func handleDeleteFolder(_ req: Request) async throws -> Response {
+        guard let folderId = req.parameters.get("folderId") else {
+            throw Abort(.badRequest, reason: "Missing folder ID")
+        }
+
+        logger.debug("Deleting folder: \(folderId)")
+
+        await MainActor.run {
+            folderManager.deleteFolder(folderId)
+        }
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
+    }
+
+    // MARK: - Model Management
+
     private func handleListInstalledModels(_ req: Request) async throws -> Response {
         logger.debug("Listing installed models")
 
@@ -3180,5 +3569,278 @@ AVAILABLE TOOLS:
                 logger.warning("Mini-prompt '\(name)' not found, skipping")
             }
         }
+    }
+
+    // MARK: - Shared Topics API Handlers
+
+    /// Response model for shared topic
+    private struct SharedTopicResponse: Codable {
+        let id: String
+        let name: String
+        let description: String?
+    }
+
+    /// Handle GET /api/shared-topics - list all shared topics
+    private func handleListSharedTopics(_ req: Request) async throws -> Response {
+        logger.debug("Listing shared topics")
+
+        let topics = try sharedTopicManager.listTopics()
+
+        let responses = topics.map { topic in
+            SharedTopicResponse(
+                id: topic.id,
+                name: topic.name,
+                description: topic.description
+            )
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let jsonData = try encoder.encode(["topics": responses])
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    /// Handle POST /api/shared-topics - create a new shared topic
+    private func handleCreateSharedTopic(_ req: Request) async throws -> Response {
+        logger.debug("Creating shared topic")
+
+        struct CreateTopicRequest: Codable {
+            var name: String
+            var description: String?
+        }
+
+        let createRequest = try req.content.decode(CreateTopicRequest.self)
+
+        let topic = try sharedTopicManager.createTopic(
+            name: createRequest.name,
+            description: createRequest.description
+        )
+
+        let response = SharedTopicResponse(
+            id: topic.id,
+            name: topic.name,
+            description: topic.description
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let jsonData = try encoder.encode(response)
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    /// Handle PATCH /api/shared-topics/:topicId - update shared topic
+    private func handleUpdateSharedTopic(_ req: Request) async throws -> Response {
+        guard let topicIdString = req.parameters.get("topicId"),
+              let topicId = UUID(uuidString: topicIdString) else {
+            throw Abort(.badRequest, reason: "Invalid topic ID")
+        }
+
+        logger.debug("Updating shared topic: \(topicIdString)")
+
+        struct UpdateTopicRequest: Codable {
+            var name: String?
+            var description: String?
+        }
+
+        let updateRequest = try req.content.decode(UpdateTopicRequest.self)
+
+        // Get current topic to preserve fields not being updated
+        let topics = try sharedTopicManager.listTopics()
+        guard let currentTopic = topics.first(where: { $0.id == topicIdString }) else {
+            throw Abort(.notFound, reason: "Topic not found")
+        }
+
+        let newName = updateRequest.name ?? currentTopic.name
+        let newDescription = updateRequest.description ?? currentTopic.description
+
+        try sharedTopicManager.updateTopic(
+            id: topicId,
+            name: newName,
+            description: newDescription
+        )
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
+    }
+
+    /// Handle DELETE /api/shared-topics/:topicId - delete shared topic
+    private func handleDeleteSharedTopic(_ req: Request) async throws -> Response {
+        guard let topicIdString = req.parameters.get("topicId"),
+              let topicId = UUID(uuidString: topicIdString) else {
+            throw Abort(.badRequest, reason: "Invalid topic ID")
+        }
+
+        logger.debug("Deleting shared topic: \(topicIdString)")
+
+        try sharedTopicManager.deleteTopic(id: topicId)
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
+    }
+
+    /// Handle POST /v1/conversations/:conversationId/attach-topic - attach conversation to shared topic
+    private func handleAttachSharedTopic(_ req: Request) async throws -> Response {
+        guard let conversationId = req.parameters.get("conversationId") else {
+            throw Abort(.badRequest, reason: "Missing conversation ID")
+        }
+
+        logger.debug("Attaching shared topic to conversation: \(conversationId)")
+
+        struct AttachTopicRequest: Codable {
+            var topicId: String
+        }
+
+        let attachRequest = try req.content.decode(AttachTopicRequest.self)
+        guard let topicUUID = UUID(uuidString: attachRequest.topicId) else {
+            throw Abort(.badRequest, reason: "Invalid topic ID format")
+        }
+
+        // Verify topic exists
+        let topics = try sharedTopicManager.listTopics()
+        guard let topic = topics.first(where: { $0.id == attachRequest.topicId }) else {
+            throw Abort(.notFound, reason: "Topic not found")
+        }
+
+        // Attach topic to conversation via ConversationManager
+        await MainActor.run {
+            if let conversation = conversationManager.conversations.first(where: { $0.id.uuidString == conversationId }) {
+                conversationManager.attachSharedTopic(topicId: topicUUID, topicName: topic.name)
+                logger.debug("Attached topic \(topic.name) to conversation \(conversationId)")
+            } else {
+                logger.warning("Conversation \(conversationId) not found")
+            }
+        }
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
+    }
+
+    /// Handle POST /v1/conversations/:conversationId/detach-topic - detach conversation from shared topic
+    private func handleDetachSharedTopic(_ req: Request) async throws -> Response {
+        guard let conversationId = req.parameters.get("conversationId") else {
+            throw Abort(.badRequest, reason: "Missing conversation ID")
+        }
+
+        logger.debug("Detaching shared topic from conversation: \(conversationId)")
+
+        // Detach topic via ConversationManager
+        await MainActor.run {
+            if conversationManager.conversations.contains(where: { $0.id.uuidString == conversationId }) {
+                conversationManager.attachSharedTopic(topicId: nil, topicName: nil)
+                logger.debug("Detached topic from conversation \(conversationId)")
+            } else {
+                logger.warning("Conversation \(conversationId) not found")
+            }
+        }
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
+    }
+
+    // MARK: - Mini-Prompt Management API Handlers
+
+    /// Response model for mini-prompt
+    private struct MiniPromptResponse: Codable {
+        let id: String
+        let name: String
+        let content: String
+        let createdAt: String
+        let modifiedAt: String
+        let displayOrder: Int
+    }
+
+    /// Handle POST /api/mini-prompts - create a new mini-prompt
+    private func handleCreateMiniPrompt(_ req: Request) async throws -> Response {
+        logger.debug("Creating mini-prompt")
+
+        struct CreateMiniPromptRequest: Codable {
+            var name: String
+            var content: String
+            var displayOrder: Int?
+        }
+
+        let createRequest = try req.content.decode(CreateMiniPromptRequest.self)
+
+        let miniPrompt = MiniPrompt(
+            name: createRequest.name,
+            content: createRequest.content,
+            displayOrder: createRequest.displayOrder ?? 0
+        )
+
+        await MainActor.run {
+            MiniPromptManager.shared.addPrompt(miniPrompt)
+        }
+
+        let formatter = ISO8601DateFormatter()
+        let response = MiniPromptResponse(
+            id: miniPrompt.id.uuidString,
+            name: miniPrompt.name,
+            content: miniPrompt.content,
+            createdAt: formatter.string(from: miniPrompt.createdAt),
+            modifiedAt: formatter.string(from: miniPrompt.modifiedAt),
+            displayOrder: miniPrompt.displayOrder
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let jsonData = try encoder.encode(response)
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+    }
+
+    /// Handle PATCH /api/mini-prompts/:promptId - update mini-prompt
+    private func handleUpdateMiniPrompt(_ req: Request) async throws -> Response {
+        guard let promptIdString = req.parameters.get("promptId"),
+              let promptId = UUID(uuidString: promptIdString) else {
+            throw Abort(.badRequest, reason: "Invalid prompt ID")
+        }
+
+        logger.debug("Updating mini-prompt: \(promptIdString)")
+
+        struct UpdateMiniPromptRequest: Codable {
+            var name: String?
+            var content: String?
+            var displayOrder: Int?
+        }
+
+        let updateRequest = try req.content.decode(UpdateMiniPromptRequest.self)
+
+        let updated = await MainActor.run { () -> Bool in
+            guard let prompt = MiniPromptManager.shared.miniPrompts.first(where: { $0.id == promptId }) else {
+                return false
+            }
+
+            var updatedPrompt = prompt
+            if let name = updateRequest.name {
+                updatedPrompt.name = name
+            }
+            if let content = updateRequest.content {
+                updatedPrompt.content = content
+            }
+            if let displayOrder = updateRequest.displayOrder {
+                updatedPrompt.displayOrder = displayOrder
+            }
+            updatedPrompt.modifiedAt = Date()
+
+            MiniPromptManager.shared.updatePrompt(updatedPrompt)
+            return true
+        }
+
+        guard updated else {
+            throw Abort(.notFound, reason: "Mini-prompt not found")
+        }
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
+    }
+
+    /// Handle DELETE /api/mini-prompts/:promptId - delete mini-prompt
+    private func handleDeleteMiniPrompt(_ req: Request) async throws -> Response {
+        guard let promptIdString = req.parameters.get("promptId"),
+              let promptId = UUID(uuidString: promptIdString) else {
+            throw Abort(.badRequest, reason: "Invalid prompt ID")
+        }
+
+        logger.debug("Deleting mini-prompt: \(promptIdString)")
+
+        await MainActor.run {
+            MiniPromptManager.shared.deletePrompt(id: promptId)
+        }
+
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
     }
 }

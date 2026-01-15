@@ -14,9 +14,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     private var windowFrameObserver: NSObjectProtocol?
     private var configuredWindows: Set<ObjectIdentifier> = []
     private let logger = Logger(label: "com.sam.appdelegate")
-    
-    /// Cached allowed channels for Sparkle updates
-    private var cachedAllowedChannels: Set<String> = []
 
     /// Shared instance for accessing updater from Commands.
     nonisolated(unsafe) static weak var shared: AppDelegate?
@@ -92,11 +89,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
         NSLog("SPARKLE: Finished loading appcast with \(appcast.items.count) items")
-    }
-    
-    /// Sparkle delegate method to specify allowed channels
-    func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        return cachedAllowedChannels
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -242,18 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         
         updaterController.updater.setFeedURL(feedURL)
         
-        // Configure allowed channels based on development preference
-        if developmentEnabled {
-            // Allow development channel items (tagged with <sparkle:channel>development</sparkle:channel>)
-            cachedAllowedChannels = ["development"]
-            logger.info("Sparkle feed URL updated to: development (\(feedURL.absoluteString))")
-            logger.info("Allowed channels: [development]")
-        } else {
-            // Only show stable releases (items without channel tag)
-            cachedAllowedChannels = []
-            logger.info("Sparkle feed URL updated to: stable (\(feedURL.absoluteString))")
-            logger.info("Allowed channels: [] (stable only)")
-        }
+        logger.info("Sparkle feed URL updated to: \(developmentEnabled ? "development" : "stable") (\(feedURL.absoluteString))")
         
         // Check for updates immediately after switching feeds
         if developmentEnabled {
