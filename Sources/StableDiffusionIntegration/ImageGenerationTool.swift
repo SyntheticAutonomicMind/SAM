@@ -126,10 +126,15 @@ public class ImageGenerationTool: MCPTool, @unchecked Sendable {
         - generate (default): Create images from prompts
         - list_loras: Get full list of installed LoRAs with compatibility info
         \(modelsList)\(lorasList)
-        MODEL REQUIREMENTS (CRITICAL):
-        - SD1.5: 512x512, steps 20-50, guidance 5-15
-        - SDXL: 1024x1024, steps 25-60, guidance 5-12
-        - Z-Image: 1024x1024, steps 4-8 ONLY, guidance MUST BE 0, use SHORT prompts
+        AVAILABLE MODELS (above):
+        CRITICAL: ONLY use models listed above in MODELS section!
+        Model types are classified as SD1.5, SDXL, or Z-Image based on their architecture.
+        If no models are installed, you cannot generate images - ask user to download models first.
+        
+        REQUIREMENTS BY MODEL TYPE (reference only - check actual installed models above):
+        - SD1.5 models: 512x512 default, steps 20-50, guidance 5-15
+        - SDXL models: 1024x1024 default, steps 25-60, guidance 5-12
+        - Z-Image models: 1024x1024 default, steps 4-8 ONLY, guidance MUST BE 0, use SHORT prompts
         \(engineInfo)
         RESOLUTION OPTIONS (choose ONE method):
         1. PRESETS (easiest): preset='sd15_square', 'sd15_portrait', 'sd15_landscape', 'sdxl_square', 'sdxl_portrait', 'sdxl_landscape', 'sdxl_ultrawide', '720p', '1080p', '1024x768', '1296x800'
