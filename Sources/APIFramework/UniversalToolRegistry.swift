@@ -240,8 +240,19 @@ public class UniversalToolRegistry: ObservableObject, ToolRegistryProtocol {
     // MARK: - Tool Discovery (System Prompt Integration)
 
     /// Get all tool definitions for injection into system prompts LLM discovers tools through system context.
+    /// IMPORTANT: Rebuilds definitions dynamically to pick up updated tool descriptions (e.g., new models).
     public func getToolDefinitionsForSystemPrompt() -> [OpenAITool] {
-        return toolDefinitions
+        /// Rebuild tool definitions from current registered tools to ensure dynamic content (like ImageGenerationTool's model list) is fresh
+        return registeredTools.values.map { tool in
+            OpenAITool(
+                type: "function",
+                function: OpenAIFunction(
+                    name: tool.name,
+                    description: tool.description,  // Re-read description (may be computed property)
+                    parameters: tool.parameters
+                )
+            )
+        }
     }
 
     /// Get tool definitions formatted for system prompt text.
