@@ -148,7 +148,22 @@ public struct ConversationSettings: Codable, Sendable {
         self.maxTokens = maxTokens
         self.contextWindowSize = contextWindowSize
         self.workspacePromptIds = workspacePromptIds
-        self.selectedPersonalityId = selectedPersonalityId
+        
+        /// Default to user's selected default personality if none specified
+        /// This ensures new conversations inherit the personality preference
+        if let providedPersonalityId = selectedPersonalityId {
+            self.selectedPersonalityId = providedPersonalityId
+        } else {
+            // Get default personality from PersonalityManager
+            // This is synchronous and safe as PersonalityManager is @MainActor
+            if let defaultId = UUID(uuidString: UserDefaults.standard.string(forKey: "defaultPersonalityId") ?? "") {
+                self.selectedPersonalityId = defaultId
+            } else {
+                // Fallback to Assistant (first default personality)
+                self.selectedPersonalityId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+            }
+        }
+        
         self.enableReasoning = enableReasoning
         self.enableTools = enableTools
         self.autoApprove = autoApprove
