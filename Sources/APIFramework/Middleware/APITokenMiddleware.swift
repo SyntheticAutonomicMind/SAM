@@ -25,6 +25,21 @@ import Logging
 public struct APITokenMiddleware: AsyncMiddleware {
     private let logger = Logger(label: "com.sam.middleware.auth")
     
+    /// Thread-safe token cache actor
+    private actor TokenCache {
+        private var token: String?
+        
+        func get() -> String? {
+            return token
+        }
+        
+        func set(_ value: String?) {
+            token = value
+        }
+    }
+    
+    private static let tokenCache = TokenCache()
+    
     public init() {}
     
     public func respond(to request: Request, chainingTo next: any AsyncResponder) async throws -> Response {
@@ -51,12 +66,16 @@ public struct APITokenMiddleware: AsyncMiddleware {
         
         let providedToken = String(components[1])
         
-        // Retrieve stored token from Keychain
-        let storedToken: String
-        do {
-            storedToken = try KeychainManager.retrieve("samAPIToken")
-        } catch {
-            logger.error("Failed to retrieve API token from Keychain: \(error)")
+        // Retrieve stored token from UserDefaults (cached to avoid repeated access)
+        var cachedToken = await Self.tokenCache.get()
+        if cachedToken == nil {
+            cachedToken = UserDefaults.standard.string(forKey: "samAPIToken")
+            await Self.tokenCache.set(cachedToken)
+            logger.debug("Loaded API token from UserDefaults")
+        }
+        
+        guard let storedToken = cachedToken, !storedToken.isEmpty else {
+            logger.error("No API token found in UserDefaults")
             throw Abort(.internalServerError, reason: "Server authentication configuration error. Please contact the administrator.")
         }
         

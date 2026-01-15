@@ -194,27 +194,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     
     /// Initialize or retrieve API token for secure API access.
     /// 
-    /// This method ensures that a secure random token exists in the Keychain for API authentication.
+    /// This method ensures that a secure random token exists in UserDefaults for API authentication.
     /// The token is generated on first launch and persists across app restarts.
     private func initializeAPIToken() {
         let tokenKey = "samAPIToken"
         
         // Check if token already exists
-        if KeychainManager.exists(tokenKey) {
-            logger.info("API token already exists in Keychain")
+        if let existingToken = UserDefaults.standard.string(forKey: tokenKey), !existingToken.isEmpty {
+            logger.info("API token already exists in UserDefaults")
             return
         }
         
         // Generate new secure token
         let token = generateSecureToken()
         
-        // Store in Keychain
-        do {
-            try KeychainManager.store(token, for: tokenKey)
-            logger.info("Generated and stored new API token in Keychain")
-        } catch {
-            logger.error("Failed to store API token in Keychain: \(error)")
-        }
+        // Store in UserDefaults
+        UserDefaults.standard.set(token, forKey: tokenKey)
+        UserDefaults.standard.synchronize()
+        logger.info("Generated and stored new API token in UserDefaults")
     }
     
     /// Generate a secure random token for API authentication.

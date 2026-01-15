@@ -1366,7 +1366,7 @@ struct APIServerPreferencesView: View {
                                     .textSelection(.enabled)
                                 
                                 Button(action: {
-                                    if let token = try? KeychainManager.retrieve("samAPIToken") {
+                                    if let token = UserDefaults.standard.string(forKey: "samAPIToken"), !token.isEmpty {
                                         NSPasteboard.general.clearContents()
                                         NSPasteboard.general.setString(token, forType: .string)
                                     }
@@ -1484,24 +1484,16 @@ curl -X POST http:
         // Generate new secure token
         let newToken = "\(UUID().uuidString)-\(UUID().uuidString)"
         
-        // Store in Keychain
-        do {
-            try KeychainManager.store(newToken, for: "samAPIToken")
-            
-            // Show success notification
-            let notification = NSUserNotification()
-            notification.title = "API Token Regenerated"
-            notification.informativeText = "Your API token has been updated. External API clients will need the new token."
-            notification.soundName = NSUserNotificationDefaultSoundName
-            NSUserNotificationCenter.default.deliver(notification)
-        } catch {
-            // Show error
-            let alert = NSAlert()
-            alert.messageText = "Failed to Regenerate Token"
-            alert.informativeText = "Could not store new token in Keychain: \(error.localizedDescription)"
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
+        // Store in UserDefaults
+        UserDefaults.standard.set(newToken, forKey: "samAPIToken")
+        UserDefaults.standard.synchronize()
+        
+        // Show success notification
+        let notification = NSUserNotification()
+        notification.title = "API Token Regenerated"
+        notification.informativeText = "Your API token has been updated. External API clients will need the new token."
+        notification.soundName = NSUserNotificationDefaultSoundName
+        NSUserNotificationCenter.default.deliver(notification)
     }
 
     private func generateAPIKey() {
