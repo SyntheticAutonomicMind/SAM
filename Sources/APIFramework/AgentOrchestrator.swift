@@ -2667,16 +2667,40 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 logger.debug("TASK_ENTRY: runStreamingAutonomousWorkflow (unified wrapper)")
 
                 /// Set up observer for user responses - emit as streaming user messages
-                let responseObserver = ToolNotificationCenter.shared.observeUserResponseReceived { toolCallId, userInput, _ in
+                let responseObserver = ToolNotificationCenter.shared.observeUserResponseReceived { toolCallId, userInput, conversationId in
                     self.logger.info("COLLAB_DEBUG: Observer callback triggered for user response", metadata: [
                         "toolCallId": .string(toolCallId),
                         "userInputLength": .stringConvertible(userInput.count)
                     ])
                     
-                    self.logger.info("USER_COLLAB: User response received, emitting as streaming user message", metadata: [
+                    self.logger.info("USER_COLLAB: User response received, persisting and emitting as streaming user message", metadata: [
                         "toolCallId": .string(toolCallId),
                         "userInput": .string(userInput)
                     ])
+
+                    /// PERSIST MESSAGE: Add user's response to conversation (PINNED for context preservation)
+                    if let convId = conversationId {
+                        Task { @MainActor in
+                            if let conversation = self.conversationManager.conversations.first(where: { $0.id == convId }) {
+                                let isDuplicate = conversation.messages.contains(where: {
+                                    $0.isFromUser && $0.content == userInput
+                                })
+
+                                if !isDuplicate {
+                                    let messageId = conversation.messageBus?.addUserMessage(
+                                        content: userInput,
+                                        timestamp: Date(),
+                                        isPinned: true
+                                    )
+                                    self.logger.debug("Persisted user collaboration response to conversation (PINNED)", metadata: [
+                                        "toolCallId": .string(toolCallId),
+                                        "messageId": .string(messageId?.uuidString ?? "unknown"),
+                                        "conversationId": .string(convId.uuidString)
+                                    ])
+                                }
+                            }
+                        }
+                    }
 
                     /// Emit user's response as a user message chunk
                     let userMessageChunk = ServerOpenAIChatStreamChunk(
@@ -2700,7 +2724,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     continuation.yield(userMessageChunk)
                     self.logger.debug("COLLAB_DEBUG: User message chunk yielded successfully")
 
-                    self.logger.info("USER_COLLAB: User message emitted via streaming")
+                    self.logger.info("USER_COLLAB: User message persisted (PINNED) and emitted via streaming")
                 }
 
                 /// Set up observer for user collaboration notifications.
