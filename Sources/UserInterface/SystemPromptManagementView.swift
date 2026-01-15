@@ -91,12 +91,30 @@ struct SystemPromptConfigurationEditor: View {
     let promptManager: SystemPromptManager
     @Binding var isPresented: Bool
 
-    @State private var name: String = ""
-    @State private var description: String = ""
-    @State private var components: [SystemPromptComponent] = []
+    @State private var name: String
+    @State private var description: String
+    @State private var components: [SystemPromptComponent]
     @State private var showingNewComponent = false
     @State private var showingComponentLibrary = false
     @State private var editingComponent: SystemPromptComponent?
+
+    /// Initialize with data immediately - no .onAppear race condition
+    init(configuration: SystemPromptConfiguration?, promptManager: SystemPromptManager, isPresented: Binding<Bool>) {
+        self.configuration = configuration
+        self.promptManager = promptManager
+        self._isPresented = isPresented
+        
+        // Initialize State values directly from configuration (if editing) or defaults (if new)
+        if let configuration = configuration {
+            self._name = State(initialValue: configuration.name)
+            self._description = State(initialValue: configuration.description)
+            self._components = State(initialValue: configuration.components)
+        } else {
+            self._name = State(initialValue: "")
+            self._description = State(initialValue: "")
+            self._components = State(initialValue: [])
+        }
+    }
 
     private var isEditing: Bool { configuration != nil }
     private var title: String { isEditing ? "Edit Template" : "New Template" }
@@ -230,9 +248,6 @@ struct SystemPromptConfigurationEditor: View {
         }
         .frame(minWidth: 600, idealWidth: 800, maxWidth: 1000,
                minHeight: 500, idealHeight: 700, maxHeight: .infinity)
-        .onAppear {
-            setupInitialValues()
-        }
         .sheet(isPresented: $showingNewComponent) {
             SystemPromptComponentEditor(
                 component: nil,
@@ -267,14 +282,6 @@ struct SystemPromptConfigurationEditor: View {
                     editingComponent = nil
                 }
             )
-        }
-    }
-
-    private func setupInitialValues() {
-        if let configuration = configuration {
-            name = configuration.name
-            description = configuration.description
-            components = configuration.components
         }
     }
 

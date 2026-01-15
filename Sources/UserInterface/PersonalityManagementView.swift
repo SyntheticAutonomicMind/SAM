@@ -122,10 +122,30 @@ struct PersonalityEditor: View {
     let personalityManager: PersonalityManager
     @Binding var isPresented: Bool
 
-    @State private var name: String = ""
-    @State private var description: String = ""
-    @State private var selectedTraits: [PersonalityTraitCategory: PersonalityTrait] = [:]
-    @State private var customInstructions: String = ""
+    @State private var name: String
+    @State private var description: String
+    @State private var selectedTraits: [PersonalityTraitCategory: PersonalityTrait]
+    @State private var customInstructions: String
+
+    /// Initialize with data immediately - no .onAppear race condition
+    init(personality: Personality?, personalityManager: PersonalityManager, isPresented: Binding<Bool>) {
+        self.personality = personality
+        self.personalityManager = personalityManager
+        self._isPresented = isPresented
+        
+        // Initialize State values directly from personality (if editing) or defaults (if new)
+        if let personality = personality {
+            self._name = State(initialValue: personality.name)
+            self._description = State(initialValue: personality.description)
+            self._selectedTraits = State(initialValue: personality.selectedTraits)
+            self._customInstructions = State(initialValue: personality.customInstructions)
+        } else {
+            self._name = State(initialValue: "")
+            self._description = State(initialValue: "")
+            self._selectedTraits = State(initialValue: [:])
+            self._customInstructions = State(initialValue: "")
+        }
+    }
 
     private var isEditing: Bool { personality != nil }
     private var title: String { isEditing ? "Edit Personality" : "New Personality" }
@@ -297,18 +317,6 @@ struct PersonalityEditor: View {
         }
         .frame(minWidth: 600, idealWidth: 800, maxWidth: 1000,
                minHeight: 500, idealHeight: 700, maxHeight: .infinity)
-        .onAppear {
-            setupInitialValues()
-        }
-    }
-
-    private func setupInitialValues() {
-        if let personality = personality {
-            name = personality.name
-            description = personality.description
-            selectedTraits = personality.selectedTraits
-            customInstructions = personality.customInstructions
-        }
     }
 
     private func savePersonality() {
