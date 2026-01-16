@@ -205,13 +205,15 @@ public class MessageExportService {
         case .codeBlock(let language, let code):
             // Special handling for Mermaid diagrams - render as images
             if let lang = language, lang.lowercased() == "mermaid" {
-                if let diagramImage = MermaidImageRenderer.renderDiagram(code: code, width: 550) {
+                // INCREASED: Use 800px width for PDF export (was 550px)
+                // Complex diagrams need more width for proper layout
+                if let diagramImage = MermaidImageRenderer.renderDiagram(code: code, width: 800) {
                     // Create attachment for image
                     let imageAttachment = NSTextAttachment()
                     imageAttachment.image = diagramImage
 
                     // Scale image to fit page width if needed
-                    let maxWidth: CGFloat = 550
+                    let maxWidth: CGFloat = 800
                     let imageSize = diagramImage.size
                     if imageSize.width > maxWidth {
                         let scale = maxWidth / imageSize.width
