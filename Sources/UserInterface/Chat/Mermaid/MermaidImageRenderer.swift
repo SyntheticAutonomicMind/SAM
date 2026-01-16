@@ -33,13 +33,27 @@ struct MermaidImageRenderer {
 
         // Create NSHostingView to convert SwiftUI to NSView
         let hostingView = NSHostingView(rootView: containerView)
-        hostingView.frame = CGRect(x: 0, y: 0, width: width + 40, height: 800)
+        hostingView.frame = CGRect(x: 0, y: 0, width: width + 40, height: 1500)  // Generous initial height
 
-        // Force layout multiple times to ensure SwiftUI renders
-        for _ in 0..<3 {
+        // Force layout with longer delays for complex diagrams
+        // Complex flowcharts need time for edge routing and obstacle avoidance calculations
+        for cycle in 0..<5 {
             hostingView.layout()
             hostingView.layoutSubtreeIfNeeded()
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+            
+            // Longer delay for complex layouts (0.15s vs 0.1s)
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
+            
+            // Check if rendering is stabilizing (fittingSize not changing much)
+            let currentSize = hostingView.fittingSize
+            if cycle > 2 && currentSize.height > 100 {
+                // If we have a reasonable height after 3 cycles, we're probably done
+                // One more cycle to be sure
+                hostingView.layout()
+                hostingView.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
+                break
+            }
         }
 
         // Calculate actual needed height after layout
