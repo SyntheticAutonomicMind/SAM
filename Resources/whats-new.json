@@ -3,65 +3,71 @@
     {
       "version": "20260116.1",
       "release_date": "January 16, 2026",
-      "introduction": "This release brings comprehensive Mermaid diagram rendering improvements, batch codebase import capabilities, web UI integration support, and critical bug fixes for editor stability and authentication.",
+      "introduction": "This release improves diagram rendering, adds powerful codebase learning capabilities, expands web integration features, and fixes critical stability issues.",
       "highlights": [
         {
           "id": "mermaid-improvements",
           "icon": "chart.bar.doc.horizontal",
-          "title": "Comprehensive Mermaid Diagram Improvements",
-          "description": "Complete overhaul of Mermaid diagram rendering with intelligent edge routing, obstacle avoidance, and adaptive node spacing for flowcharts. Sequence diagrams now parse all arrow types correctly. Bar and XY charts support the 'series' keyword with space-separated data. Mind maps display full hierarchies with proper indentation normalization. All diagram types from Mermaid syntax now render reliably with professional layout and routing."
+          "title": "Beautiful Diagrams That Just Work",
+          "description": "Diagrams in your conversations now render beautifully and correctly. Flowcharts automatically route around obstacles with smart spacing. Sequence diagrams understand all arrow styles. Bar and XY charts display your data elegantly. Mind maps show complete hierarchies at a glance. Create professional visualizations right in your chats."
         },
         {
           "id": "codebase-ingest",
           "icon": "folder.badge.gearshape",
-          "title": "Batch Codebase Import",
-          "description": "Import entire codebases into SAM's memory with a single operation. The new ingest_codebase feature recursively scans directories, filters by file patterns, and batch-imports code files into VectorRAG memory. Supports optional JSONL training export, excludes build artifacts and dependencies, and safely limits imports to 500 files by default. Perfect for giving SAM comprehensive understanding of your project structure."
+          "title": "Teach SAM Your Entire Codebase",
+          "description": "Import whole projects into SAM's memory with one command. SAM learns your code structure, file organization, and patterns - then uses that knowledge to give you better answers about your project. Works with any programming language, automatically skips build files and dependencies, and smartly limits imports to keep things fast."
         },
         {
           "id": "web-ui-endpoints",
           "icon": "globe",
-          "title": "Web UI Integration Support",
-          "description": "New REST API endpoints enable external web UI access to SAM's features. Share conversation topics and mini-prompts with web interfaces for seamless integration with browser-based tools and custom dashboards."
+          "title": "Share Conversations with Web Tools",
+          "description": "New features let web-based tools access your SAM conversations and prompts. Build custom dashboards, integrate with browser extensions, or connect SAM to your favorite web apps seamlessly."
+        },
+        {
+          "id": "rag-searchable-metadata",
+          "icon": "magnifyingglass.circle",
+          "title": "Smarter Memory Search",
+          "description": "SAM can now find content by filename and location. Ask \"What's in ChatWidget.swift?\" or \"Show me PDFs about sales\" and SAM knows exactly where to look in its memory. Works for code files, documents, web pages, and conversation history."
         }
       ],
       "bugfixes": [
         {
           "id": "editor-race-condition",
           "icon": "exclamationmark.triangle.fill",
-          "title": "Fixed Editor Race Condition on Personality Changes",
-          "description": "Resolved critical race condition where changing the default personality could cause editor initialization failures. System now properly inherits personality settings without timing conflicts."
+          "title": "Fixed Chat Window Freezes",
+          "description": "Resolved an issue where changing personality settings could cause the chat window to freeze or fail to load. The editor now starts smoothly every time."
         },
         {
           "id": "auth-storage-fix",
           "icon": "key.fill",
-          "title": "Replaced Keychain with UserDefaults for API Tokens",
-          "description": "Moved API token storage from macOS Keychain to UserDefaults to resolve permission and access issues. Tokens are now reliably persisted and accessible across app launches."
+          "title": "API Tokens Now Save Reliably",
+          "description": "Fixed problems with API token storage that could prevent SAM from remembering your credentials between sessions. Tokens are now saved securely and load correctly every time you launch SAM."
         },
         {
           "id": "sd-model-dynamic",
           "icon": "arrow.triangle.2.circlepath",
-          "title": "Stable Diffusion Model List Updates Dynamically",
-          "description": "Fixed issue where Stable Diffusion model list wouldn't update after downloading new models. List now refreshes automatically when models are added or removed."
+          "title": "Image Model List Auto-Refreshes",
+          "description": "The Stable Diffusion model picker now updates automatically when you download new models. No more restarting SAM to see your new image generation models."
         },
         {
           "id": "collab-persistence",
           "icon": "pin.fill",
-          "title": "User Collaboration Tool Response Persistence",
-          "description": "User responses in collaboration checkpoints are now properly persisted and pinned to prevent loss during long-running sessions."
+          "title": "Collaboration Responses Saved",
+          "description": "During long conversations with complex tasks, SAM will now remember your approval responses at checkpoints, preventing work from being lost if the session gets interrupted."
         }
       ],
       "improvements": [
         {
           "id": "prompt-refactor",
           "icon": "text.alignleft",
-          "title": "Cleaner Prompt Generation Architecture",
-          "description": "Refactored tool guidance generation into dedicated buildToolUsage() method for better maintainability and separation of concerns in system prompt construction."
+          "title": "Cleaner Internal Architecture",
+          "description": "Reorganized how SAM builds its internal prompts for better performance and easier future improvements."
         }
       ],
       "developer_notes": [
         {
           "id": "commit-workflow",
-          "content": "Updated commit message workflow to write messages to files before committing, preventing UTF-8 encoding corruption in multi-line messages."
+          "content": "Improved commit message workflow to prevent text encoding issues in multi-line commit messages."
         }
       ]
     },
