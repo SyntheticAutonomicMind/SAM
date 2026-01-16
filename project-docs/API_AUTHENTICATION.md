@@ -13,7 +13,7 @@ SAM's API server now requires authentication for all external requests to protec
 ### External Requests (API Clients)
 - **Bearer Token Authentication Required**
 - All HTTP requests to the API must include a valid Bearer token
-- Tokens are securely stored in the macOS Keychain
+- Tokens are stored in UserDefaults for convenient access
 - Only the `/health` endpoint remains public
 
 ## Getting Your API Token
@@ -81,16 +81,16 @@ When "Allow Remote Access" is enabled in Preferences:
 ## Implementation Details
 
 ### Architecture
-- **KeychainManager**: Secure token storage using macOS Keychain Services
-- **APITokenMiddleware**: Vapor middleware for token validation
+- **UserDefaults Storage**: API tokens are stored in UserDefaults for quick access without keychain prompts
+- **APITokenMiddleware**: Vapor middleware for token validation with caching
 - **Token Format**: Two concatenated UUIDs (e.g., `550e8400-e29b-41d4-a716-446655440000-7c9e6679-7425-40de-944b-e07fc1f90ae7`)
 
 ### Security Features
-- Tokens are never stored in UserDefaults or plaintext files
 - Token generation uses secure random number generation (UUID)
-- Keychain access is restricted to the SAM application
 - Tokens are validated on every request
+- Token cached in memory to minimize UserDefaults access
 - Internal SAM UI communication bypasses authentication entirely (more secure)
+- UserDefaults provides sufficient security for localhost-only API access
 
 ### Why Direct Function Calls Are Better
 

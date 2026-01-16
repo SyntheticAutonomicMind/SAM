@@ -17,7 +17,7 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 🔐 **Privacy First**
 - All data stays on your Mac - nothing sent to the cloud unless you choose
 - Run completely offline with local AI models
-- API keys stored securely in macOS Keychain
+- API credentials stored locally in UserDefaults
 - Zero telemetry, zero tracking
 
 🧠 **Intelligent Memory**
@@ -242,7 +242,7 @@ Complete documentation is available:
 
 - **Conversations**: Stored locally in `~/Library/Application Support/SAM/`
 - **Memory**: Per-conversation databases, never shared between conversations
-- **API Keys**: Encrypted in macOS Keychain
+- **API Keys**: Stored in UserDefaults for provider credentials
 - **No Telemetry**: Zero usage tracking, zero data collection
 
 When you use cloud AI providers (OpenAI, Claude, etc.), only the messages you send go to those providers. SAM never sends telemetry or analytics anywhere.

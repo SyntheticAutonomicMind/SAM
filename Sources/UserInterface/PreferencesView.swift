@@ -1359,7 +1359,7 @@ struct APIServerPreferencesView: View {
                             .foregroundColor(.secondary)
                         
                         HStack {
-                            if let token = try? KeychainManager.retrieve("samAPIToken") {
+                            if let token = UserDefaults.standard.string(forKey: "samAPIToken"), !token.isEmpty {
                                 SecureField("Token", text: .constant(token))
                                     .textFieldStyle(.roundedBorder)
                                     .disabled(true)
