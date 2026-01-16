@@ -1,20 +1,69 @@
 {
   "releases": [
     {
-      "version": "20260120.1",
-      "release_date": "January 20, 2026",
-      "introduction": "This release adds batch codebase import capabilities, making it easier to ingest entire repositories into SAM's memory system for enhanced code understanding and assistance.",
+      "version": "20260116.1",
+      "release_date": "January 16, 2026",
+      "introduction": "This release brings comprehensive Mermaid diagram rendering improvements, batch codebase import capabilities, web UI integration support, and critical bug fixes for editor stability and authentication.",
       "highlights": [
+        {
+          "id": "mermaid-improvements",
+          "icon": "chart.bar.doc.horizontal",
+          "title": "Comprehensive Mermaid Diagram Improvements",
+          "description": "Complete overhaul of Mermaid diagram rendering with intelligent edge routing, obstacle avoidance, and adaptive node spacing for flowcharts. Sequence diagrams now parse all arrow types correctly. Bar and XY charts support the 'series' keyword with space-separated data. Mind maps display full hierarchies with proper indentation normalization. All diagram types from Mermaid syntax now render reliably with professional layout and routing."
+        },
         {
           "id": "codebase-ingest",
           "icon": "folder.badge.gearshape",
           "title": "Batch Codebase Import",
           "description": "Import entire codebases into SAM's memory with a single operation. The new ingest_codebase feature recursively scans directories, filters by file patterns, and batch-imports code files into VectorRAG memory. Supports optional JSONL training export, excludes build artifacts and dependencies, and safely limits imports to 500 files by default. Perfect for giving SAM comprehensive understanding of your project structure."
+        },
+        {
+          "id": "web-ui-endpoints",
+          "icon": "globe",
+          "title": "Web UI Integration Support",
+          "description": "New REST API endpoints enable external web UI access to SAM's features. Share conversation topics and mini-prompts with web interfaces for seamless integration with browser-based tools and custom dashboards."
         }
       ],
-      "bugfixes": [],
-      "improvements": [],
-      "developer_notes": []
+      "bugfixes": [
+        {
+          "id": "editor-race-condition",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Editor Race Condition on Personality Changes",
+          "description": "Resolved critical race condition where changing the default personality could cause editor initialization failures. System now properly inherits personality settings without timing conflicts."
+        },
+        {
+          "id": "auth-storage-fix",
+          "icon": "key.fill",
+          "title": "Replaced Keychain with UserDefaults for API Tokens",
+          "description": "Moved API token storage from macOS Keychain to UserDefaults to resolve permission and access issues. Tokens are now reliably persisted and accessible across app launches."
+        },
+        {
+          "id": "sd-model-dynamic",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Stable Diffusion Model List Updates Dynamically",
+          "description": "Fixed issue where Stable Diffusion model list wouldn't update after downloading new models. List now refreshes automatically when models are added or removed."
+        },
+        {
+          "id": "collab-persistence",
+          "icon": "pin.fill",
+          "title": "User Collaboration Tool Response Persistence",
+          "description": "User responses in collaboration checkpoints are now properly persisted and pinned to prevent loss during long-running sessions."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "prompt-refactor",
+          "icon": "text.alignleft",
+          "title": "Cleaner Prompt Generation Architecture",
+          "description": "Refactored tool guidance generation into dedicated buildToolUsage() method for better maintainability and separation of concerns in system prompt construction."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "commit-workflow",
+          "content": "Updated commit message workflow to write messages to files before committing, preventing UTF-8 encoding corruption in multi-line messages."
+        }
+      ]
     },
     {
       "version": "20260113.1",

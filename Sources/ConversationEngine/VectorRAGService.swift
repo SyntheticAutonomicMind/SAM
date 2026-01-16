@@ -810,9 +810,21 @@ public class DocumentChunker: @unchecked Sendable {
                 /// Create chunk from accumulated sentences.
                 let chunkContent = currentChunk.trimmingCharacters(in: .whitespacesAndNewlines)
                 if chunkContent.count >= minChunkSize {
+                    // Build enhanced searchable context based on document type
+                    var context: String
+                    if document.type == .web {
+                        let sourceURL = (document.metadata["sourceURL"] as? String) ?? ""
+                        let domain = URL(string: sourceURL)?.host ?? "unknown"
+                        context = "Web: \(document.title) | Source: \(domain)"
+                    } else {
+                        let filename = (document.metadata["filename"] as? String) ?? document.title
+                        let format = (document.metadata["format"] as? String) ?? document.type.rawValue
+                        context = "Document: \(filename) | Type: \(format)"
+                    }
+                    
                     let chunk = DocumentChunk(
                         content: chunkContent,
-                        context: "Text from \(document.title)",
+                        context: context,
                         importance: calculateChunkImportance(chunkContent),
                         metadata: ["source": document.title, "type": "text", "chunk_size": chunkContent.count]
                     )
@@ -835,9 +847,21 @@ public class DocumentChunker: @unchecked Sendable {
         if !currentChunk.isEmpty {
             let chunkContent = currentChunk.trimmingCharacters(in: .whitespacesAndNewlines)
             if chunkContent.count >= minChunkSize {
+                // Build enhanced searchable context based on document type
+                var context: String
+                if document.type == .web {
+                    let sourceURL = (document.metadata["sourceURL"] as? String) ?? ""
+                    let domain = URL(string: sourceURL)?.host ?? "unknown"
+                    context = "Web: \(document.title) | Source: \(domain)"
+                } else {
+                    let filename = (document.metadata["filename"] as? String) ?? document.title
+                    let format = (document.metadata["format"] as? String) ?? document.type.rawValue
+                    context = "Document: \(filename) | Type: \(format)"
+                }
+                
                 let chunk = DocumentChunk(
                     content: chunkContent,
-                    context: "Text from \(document.title)",
+                    context: context,
                     importance: calculateChunkImportance(chunkContent),
                     metadata: ["source": document.title, "type": "text", "chunk_size": chunkContent.count]
                 )
@@ -933,9 +957,15 @@ public class DocumentChunker: @unchecked Sendable {
 
                 /// Simple end detection.
                 if trimmedLine == "}" || (trimmedLine.isEmpty && currentFunction.count > 500) {
+                    // Extract filename and path from metadata
+                    let filename = (document.metadata["filename"] as? String) ?? document.title
+                    let filePath = (document.metadata["filePath"] as? String) ?? ""
+                    let pathComponents = filePath.components(separatedBy: "/")
+                    let relativePath = pathComponents.count > 2 ? pathComponents.suffix(3).joined(separator: "/") : filePath
+                    
                     let chunk = DocumentChunk(
                         content: currentFunction,
-                        context: "Code function from \(document.title)",
+                        context: "File: \(filename) | Path: \(relativePath) | Type: code",
                         importance: 0.8,
                         metadata: ["source": document.title, "type": "code", "language": detectLanguage(document.content)]
                     )
@@ -948,9 +978,15 @@ public class DocumentChunker: @unchecked Sendable {
 
         /// Handle remaining content.
         if !currentFunction.isEmpty {
+            // Extract filename and path from metadata
+            let filename = (document.metadata["filename"] as? String) ?? document.title
+            let filePath = (document.metadata["filePath"] as? String) ?? ""
+            let pathComponents = filePath.components(separatedBy: "/")
+            let relativePath = pathComponents.count > 2 ? pathComponents.suffix(3).joined(separator: "/") : filePath
+            
             let chunk = DocumentChunk(
                 content: currentFunction,
-                context: "Code from \(document.title)",
+                context: "File: \(filename) | Path: \(relativePath) | Type: code",
                 importance: 0.7,
                 metadata: ["source": document.title, "type": "code"]
             )
@@ -969,7 +1005,7 @@ public class DocumentChunker: @unchecked Sendable {
 
             return DocumentChunk(
                 content: trimmed,
-                context: "Conversation turn \(index + 1) from \(document.title)",
+                context: "Conversation: \(document.title) | Turn: \(index + 1)",
                 importance: 0.6,
                 metadata: ["source": document.title, "type": "conversation", "turn": index]
             )
