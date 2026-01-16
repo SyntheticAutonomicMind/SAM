@@ -212,33 +212,63 @@ class MarkdownASTToNSAttributedString {
             return createFallbackCodeBlock(code: code)
         }
 
+        // Render at higher resolution (700px) for better quality
+        // Then scale down to PDF page width (550px) for proper fitting
+        let renderWidth: CGFloat = 700
+        let targetWidth: CGFloat = 550  // PDF page usable width
+        
         // Create SwiftUI diagram view WITH pre-parsed diagram
         let diagramView = MermaidDiagramView(code: code, diagram: parsedDiagram, showBackground: false)
-            .frame(width: 700, alignment: .leading)
+            .frame(width: renderWidth, alignment: .leading)
 
         // Use bitmapImageRepForCachingDisplay - most reliable for offscreen rendering
         var capturedImage: NSImage?
 
-        let renderWithBitmap: () -> NSImage? = {
+        let renderWithBitmap: () -> NSImage? = { [self] in
             let hostingView = NSHostingView(rootView: diagramView)
-            hostingView.frame = NSRect(x: 0, y: 0, width: 700, height: 1000)
+            // INCREASED: Use 3000px initial height (was 1000px) for complex diagrams
+            hostingView.frame = NSRect(x: 0, y: 0, width: renderWidth, height: 3000)
 
             // Force layout multiple times for SwiftUI to properly render
-            for _ in 0..<3 {
+            // INCREASED: 5 cycles with longer delays (was 3 cycles × 0.05s)
+            var lastHeight: CGFloat = 0
+            for cycle in 0..<5 {
                 hostingView.layout()
                 hostingView.layoutSubtreeIfNeeded()
-                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+                
+                // Check for stabilization
+                let currentSize = hostingView.fittingSize
+                self.logger.debug("PDF render cycle \(cycle): fittingSize=\(currentSize.width)×\(currentSize.height)")
+                
+                if cycle > 2 && currentSize.height > 100 {
+                    let heightChange = abs(currentSize.height - lastHeight)
+                    let changePercent = heightChange / max(currentSize.height, 1) * 100
+                    if changePercent < 5 {
+                        self.logger.info("PDF render stabilized at cycle \(cycle): height=\(currentSize.height)")
+                        break
+                    }
+                }
+                lastHeight = currentSize.height
             }
 
             // Get actual size after layout
             let actualSize = hostingView.fittingSize
-            let finalHeight = max(min(actualSize.height, 2000), 100)
-            hostingView.frame = NSRect(x: 0, y: 0, width: 700, height: finalHeight)
+            self.logger.info("PDF render fittingSize: \(actualSize.width)×\(actualSize.height)")
+            
+            // INCREASED: Allow up to 4000px height (was 2000px) for very complex diagrams
+            let finalHeight = max(min(actualSize.height, 4000), 100)
+            let finalWidth = max(actualSize.width, renderWidth)
+            
+            hostingView.frame = NSRect(x: 0, y: 0, width: finalWidth, height: finalHeight)
+            self.logger.info("PDF render final frame: \(finalWidth)×\(finalHeight)")
+            
             hostingView.layout()
             hostingView.layoutSubtreeIfNeeded()
 
             // Render using bitmapImageRepForCachingDisplay (reliable for offscreen)
             guard let bitmapRep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
+                self.logger.error("Failed to create bitmap representation for PDF")
                 return nil
             }
             hostingView.cacheDisplay(in: hostingView.bounds, to: bitmapRep)
@@ -269,19 +299,15 @@ class MarkdownASTToNSAttributedString {
             let attachment = NSTextAttachment()
             attachment.image = nsImage
 
-            // Scale image to fit page width (max 550 to account for margins)
-            let maxWidth: CGFloat = 550
-            if nsImage.size.width > maxWidth {
-                let scale = maxWidth / nsImage.size.width
-                attachment.bounds = CGRect(
-                    x: 0,
-                    y: 0,
-                    width: nsImage.size.width * scale,
-                    height: nsImage.size.height * scale
-                )
-            } else {
-                attachment.bounds = CGRect(origin: .zero, size: nsImage.size)
-            }
+            // Scale image to fit PDF page width
+            // Render at 700px for quality, scale to 550px for page fit
+            let scale = targetWidth / nsImage.size.width
+            attachment.bounds = CGRect(
+                x: 0,
+                y: 0,
+                width: nsImage.size.width * scale,
+                height: nsImage.size.height * scale
+            )
             
             logger.debug("Mermaid NSTextAttachment created - hasImage: \(attachment.image != nil), bounds: \(attachment.bounds)")
 
