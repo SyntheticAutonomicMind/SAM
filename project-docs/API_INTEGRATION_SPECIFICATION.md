@@ -900,18 +900,18 @@ class ConnectionPool {
 ### Secure Credential Storage
 ```swift
 class SecureCredentialsManager {
-    private let keychain = Keychain(service: "com.sam.api-credentials")
+    private let defaults = UserDefaults.standard
     
-    func storeAPIKey(_ key: String, for provider: String) throws {
-        try keychain.set(key, key: provider)
+    func storeAPIKey(_ key: String, for provider: String) {
+        defaults.set(key, forKey: "apiKey_\(provider)")
     }
     
-    func retrieveAPIKey(for provider: String) throws -> String? {
-        return try keychain.get(provider)
+    func retrieveAPIKey(for provider: String) -> String? {
+        return defaults.string(forKey: "apiKey_\(provider)")
     }
     
-    func deleteAPIKey(for provider: String) throws {
-        try keychain.remove(provider)
+    func deleteAPIKey(for provider: String) {
+        defaults.removeObject(forKey: "apiKey_\(provider)")
     }
 }
 ```
