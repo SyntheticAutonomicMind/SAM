@@ -159,38 +159,67 @@ struct SpacingConfiguration {
         // Width needed = (nodeWidth × maxNodesPerLayer) + (spacing × (maxNodesPerLayer - 1))
         // Solve for nodeWidth: nodeWidth = (targetWidth - spacing × (n-1)) / n
         
+        // Detect if this is a narrow context (PDF export at 550px) vs wide (chat display at 1000+)
+        let isNarrowContext = targetWidth < 700
+        
         let maxNodes = CGFloat(max(1, metrics.maxNodesPerLayer))
         
         // Calculate spacing and node width to fill targetWidth
         var horizontalSpacing: CGFloat
         var nodeWidth: CGFloat
         
-        if maxNodes <= 2 {
-            // Wide nodes for small layers - use 12% spacing
-            horizontalSpacing = targetWidth * 0.12
-            nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
-        } else if maxNodes <= 4 {
-            // Medium nodes - use 10% spacing
-            horizontalSpacing = targetWidth * 0.10
-            nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
-        } else if maxNodes <= 7 {
-            // Narrower nodes for wider layers - use 8% spacing
-            horizontalSpacing = targetWidth * 0.08
-            nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+        if isNarrowContext {
+            // COMPACT MODE for PDF/print - prioritize fitting over beauty
+            // Use much smaller spacing and nodes to fit within narrow width
+            if maxNodes <= 2 {
+                horizontalSpacing = targetWidth * 0.08  // 8% spacing (vs 12% for wide)
+                nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            } else if maxNodes <= 4 {
+                horizontalSpacing = targetWidth * 0.06  // 6% spacing (vs 10% for wide)
+                nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            } else if maxNodes <= 7 {
+                horizontalSpacing = targetWidth * 0.05  // 5% spacing (vs 8% for wide)
+                nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            } else {
+                horizontalSpacing = targetWidth * 0.04  // 4% spacing (vs 6% for wide)
+                nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            }
+            // Minimum width for narrow context - smaller to fit more
+            nodeWidth = max(nodeWidth, 80)
         } else {
-            // Very narrow for extremely wide layers - use 6% spacing
-            horizontalSpacing = targetWidth * 0.06
-            nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            // WIDE MODE for chat display - prioritize beauty and readability
+            if maxNodes <= 2 {
+                // Wide nodes for small layers - use 12% spacing
+                horizontalSpacing = targetWidth * 0.12
+                nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            } else if maxNodes <= 4 {
+                // Medium nodes - use 10% spacing
+                horizontalSpacing = targetWidth * 0.10
+                nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            } else if maxNodes <= 7 {
+                // Narrower nodes for wider layers - use 8% spacing
+                horizontalSpacing = targetWidth * 0.08
+                nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            } else {
+                // Very narrow for extremely wide layers - use 6% spacing
+                horizontalSpacing = targetWidth * 0.06
+                nodeWidth = (targetWidth - horizontalSpacing * (maxNodes - 1)) / maxNodes
+            }
+            
+            // Ensure minimum readable width (but don't cap maximum)
+            nodeWidth = max(nodeWidth, 120)
         }
         
-        // Ensure minimum readable width (but don't cap maximum)
-        nodeWidth = max(nodeWidth, 120)
+        // Height based on context and complexity
+        let nodeHeight: CGFloat = isNarrowContext ? 50 : 70  // Shorter for PDF
         
-        // Height based on complexity - taller for readability
-        let nodeHeight: CGFloat = 70
-        
-        // Vertical spacing based on layer count
-        let verticalSpacing: CGFloat = metrics.layerCount > 5 ? 60 : 70
+        // Vertical spacing based on layer count and context
+        let verticalSpacing: CGFloat
+        if isNarrowContext {
+            verticalSpacing = metrics.layerCount > 5 ? 40 : 50  // More compact for PDF
+        } else {
+            verticalSpacing = metrics.layerCount > 5 ? 60 : 70  // Spacious for chat
+        }
         
         return SpacingConfiguration(
             nodeWidth: nodeWidth,
