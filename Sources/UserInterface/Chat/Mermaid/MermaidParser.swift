@@ -489,21 +489,22 @@ struct MermaidParser {
         let type: SequenceMessage.MessageType
         let separator: String
 
-        if line.contains("->>") {
-            type = .solid
-            separator = "->>"
-        } else if line.contains("-->>") {
+        // Check longer patterns first to avoid false matches
+        if line.contains("-->>") {
             type = .dotted
             separator = "-->>"
+        } else if line.contains("->>") {
+            type = .solid
+            separator = "->>"
         } else if line.contains("--)") {
             type = .async
             separator = "--)"
-        } else if line.contains("->") {
-            type = .solidArrow
-            separator = "->"
         } else if line.contains("-->") {
             type = .dottedArrow
             separator = "-->"
+        } else if line.contains("->") {
+            type = .solidArrow
+            separator = "->"
         } else {
             return nil
         }
@@ -1000,6 +1001,11 @@ struct MermaidParser {
             return .unsupported(code)
         }
 
+        // Find minimum leading whitespace to normalize indentation
+        let minLeadingSpaces = lines.map { line in
+            line.prefix(while: { $0 == " " }).count
+        }.min() ?? 0
+
         // Parse root node (remove shape indicators)
         // Mindmap format: "root((text))" or "id(text)" or just "text"
         var rootLabel = rootLine.trimmingCharacters(in: .whitespaces)
@@ -1021,8 +1027,10 @@ struct MermaidParser {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
 
+            // Normalize indentation by subtracting minimum leading spaces
             let leadingSpaces = line.prefix(while: { $0 == " " }).count
-            let level = leadingSpaces / 2 + 1  // Each 2 spaces = 1 level
+            let normalizedSpaces = leadingSpaces - minLeadingSpaces
+            let level = normalizedSpaces / 2  // Each 2 spaces = 1 level (root is 0, first indent is 1)
 
             nodeData.append((trimmed, level))
         }
@@ -1226,7 +1234,8 @@ struct MermaidParser {
         var xAxisLabel: String?
         var yAxisLabel: String?
         var categories: [String] = []
-        var values: [Double] = []
+        var dataSeries: [XYDataSeries] = []
+        var legacyValues: [Double] = []  // For old format compatibility
 
         for line in lines {
             // Skip the barChart declaration line
@@ -1238,17 +1247,41 @@ struct MermaidParser {
                 title = line.replacingOccurrences(of: "title ", with: "")
                     .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             }
-            // Parse x-axis
+            // Parse x-axis with categories
             else if line.hasPrefix("x-axis ") {
-                xAxisLabel = line.replacingOccurrences(of: "x-axis ", with: "")
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                let rest = line.replacingOccurrences(of: "x-axis ", with: "")
+                // Check if it's space-separated categories (e.g., "x-axis Q1 Q2 Q3 Q4")
+                let parts = rest.components(separatedBy: " ").filter { !$0.isEmpty }
+                if parts.count > 1 {
+                    categories = parts.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
+                } else {
+                    // Just a label
+                    xAxisLabel = rest.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                }
             }
             // Parse y-axis
             else if line.hasPrefix("y-axis ") {
                 yAxisLabel = line.replacingOccurrences(of: "y-axis ", with: "")
                     .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             }
-            // Parse data with label:value format (e.g., "Apples: 35" or "\"January\": 35")
+            // Parse series data (e.g., "series 2025: 30 40 50 60")
+            else if line.hasPrefix("series ") {
+                let rest = line.replacingOccurrences(of: "series ", with: "")
+                if let colonIndex = rest.firstIndex(of: ":") {
+                    let seriesLabel = String(rest[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+                    let dataStr = String(rest[rest.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+                    
+                    // Parse space-separated numeric values
+                    let values = dataStr.components(separatedBy: " ")
+                        .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                    
+                    if !values.isEmpty {
+                        let series = XYDataSeries(type: .bar, values: values, label: seriesLabel)
+                        dataSeries.append(series)
+                    }
+                }
+            }
+            // Fallback: Parse data with label:value format (e.g., "Apples: 35")
             // Note: barChart syntax does NOT require "bar" prefix
             else if line.contains(":") && !line.hasPrefix("title") && !line.hasPrefix("x-axis") && !line.hasPrefix("y-axis") {
                 if let colonIndex = line.lastIndex(of: ":") {
@@ -1259,22 +1292,25 @@ struct MermaidParser {
                         .trimmingCharacters(in: .whitespaces)
 
                     if let value = Double(valueStr), !label.isEmpty {
+                        // Legacy single-value format
                         categories.append(label)
-                        values.append(value)
+                        legacyValues.append(value)
                     }
                 }
             }
         }
 
-        // Convert to XYChart format for rendering
-        let dataSeries = XYDataSeries(type: .bar, values: values, label: nil)
+        // If using legacy format, create a single series from accumulated values
+        if !legacyValues.isEmpty && dataSeries.isEmpty {
+            dataSeries = [XYDataSeries(type: .bar, values: legacyValues, label: nil)]
+        }
 
         let chart = XYChart(
             title: title,
             xAxisLabel: xAxisLabel,
             yAxisLabel: yAxisLabel,
             xAxisCategories: categories,
-            dataSeries: [dataSeries],
+            dataSeries: dataSeries,
             orientation: .horizontal
         )
         return .xychart(chart)
@@ -1324,8 +1360,15 @@ struct MermaidParser {
                     xAxisCategories = categoriesStr.components(separatedBy: ",")
                         .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
                 } else {
-                    // Just a label
-                    xAxisLabel = rest.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                    // Check if it's space-separated categories (e.g., "x-axis Q1 Q2 Q3 Q4")
+                    let parts = rest.components(separatedBy: " ").filter { !$0.isEmpty }
+                    // If all parts could be categories (not all are quotes), treat as categories
+                    if parts.count > 1 {
+                        xAxisCategories = parts.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
+                    } else {
+                        // Just a label
+                        xAxisLabel = rest.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                    }
                 }
             }
             // Parse y-axis
@@ -1355,6 +1398,39 @@ struct MermaidParser {
                 let rest = line.replacingOccurrences(of: "line ", with: "")
                 if let series = parseDataSeries(rest, type: .line) {
                     dataSeries.append(series)
+                }
+            }
+            // Parse series data (e.g., "series 2025: 30 40 50 60" or "series John: 170,70 180,75")
+            else if line.hasPrefix("series ") {
+                let rest = line.replacingOccurrences(of: "series ", with: "")
+                if let colonIndex = rest.firstIndex(of: ":") {
+                    let seriesLabel = String(rest[..<colonIndex]).trimmingCharacters(in: .whitespaces)
+                    let dataStr = String(rest[rest.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+                    
+                    // Check if data contains comma-separated coordinate pairs (e.g., "170,70 180,75")
+                    if dataStr.contains(",") {
+                        // Parse coordinate pairs: x,y x,y x,y
+                        let pairs = dataStr.components(separatedBy: " ").filter { !$0.isEmpty }
+                        var values: [Double] = []
+                        for pair in pairs {
+                            let coords = pair.components(separatedBy: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                            values.append(contentsOf: coords)
+                        }
+                        if !values.isEmpty {
+                            let series = XYDataSeries(type: .line, values: values, label: seriesLabel)
+                            dataSeries.append(series)
+                        }
+                    } else {
+                        // Parse space-separated numeric values (e.g., "30 40 50 60")
+                        let values = dataStr.components(separatedBy: " ")
+                            .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                        
+                        if !values.isEmpty {
+                            // Default to bar type for barChart, could be line for xychart-beta
+                            let series = XYDataSeries(type: .bar, values: values, label: seriesLabel)
+                            dataSeries.append(series)
+                        }
+                    }
                 }
             }
             // Parse series data with label (e.g., "Series1: [1, 20], [2, 22], [3, 21]")
