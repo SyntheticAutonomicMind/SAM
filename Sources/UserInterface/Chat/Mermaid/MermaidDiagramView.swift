@@ -34,8 +34,8 @@ struct MermaidDiagramView: View {
             if let diagram = diagram {
                 switch diagram {
                 case .flowchart(let flowchart):
+                    // Flowcharts calculate their own internal spacing, no padding needed
                     FlowchartRenderer(flowchart: flowchart)
-                        .padding()
                         .conditionalBackground(showBackground)
 
                 case .sequence(let sequence):
