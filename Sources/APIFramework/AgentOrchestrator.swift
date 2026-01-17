@@ -3657,6 +3657,69 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
             logger.debug("YARN: Processed messages ready for LLM (\(messages.count) messages after YARN)")
             logger.debug("YARN: Compression \(yarnCompressed ? "ACTIVE" : "NOT NEEDED") - fingerprints \(yarnCompressed ? "differ" : "match")")
+            
+            /// CRITICAL SAFETY CHECK: Validate token count after YARN processing
+            /// Even with YARN compression, we must NEVER exceed the API limit
+            /// This is a hard requirement - violating it causes session failure
+            let postYarnTokens = await tokenCounter.countTokens(messages: messages, model: nil, isLocal: false)
+            if postYarnTokens > modelContextLimit {
+                logger.error("YARN_EMERGENCY: Post-compression tokens (\(postYarnTokens)) STILL exceed limit (\(modelContextLimit))!")
+                logger.error("YARN_EMERGENCY: Applying emergency truncation to prevent API rejection")
+                
+                /// Emergency truncation: Keep only most recent messages that fit
+                /// This is a last resort - should never happen if YARN is working correctly
+                var truncatedMessages: [OpenAIChatMessage] = []
+                var tokenCount = 0
+                let safeLimit = Int(Double(modelContextLimit) * 0.85) // 85% safety margin
+                
+                /// Always keep system message if present
+                if let systemMsg = messages.first(where: { $0.role == "system" }) {
+                    let systemTokens = await tokenCounter.estimateTokensRemote(text: systemMsg.content ?? "")
+                    truncatedMessages.append(systemMsg)
+                    tokenCount += systemTokens
+                }
+                
+                /// Add messages from most recent backwards until we hit the limit
+                for message in messages.reversed() {
+                    if message.role == "system" { continue } // Already added
+                    let msgTokens = await tokenCounter.estimateTokensRemote(text: message.content ?? "")
+                    if tokenCount + msgTokens <= safeLimit {
+                        truncatedMessages.insert(message, at: truncatedMessages.count)
+                        tokenCount += msgTokens
+                    } else {
+                        break
+                    }
+                }
+                
+                messages = truncatedMessages
+                logger.warning("YARN_EMERGENCY: Truncated to \(messages.count) messages, \(tokenCount) tokens (limit: \(modelContextLimit))")
+                
+                /// Notify user about emergency truncation
+                if !isExternalAPICall {
+                    let warningMessage = """
+                    ⚠️ CONTEXT LIMIT EXCEEDED
+                    
+                    Your conversation exceeded the model's maximum context limit even after compression.
+                    SAM had to truncate older messages to continue operation.
+                    
+                    Model: \(model)
+                    Limit: \(modelContextLimit) tokens
+                    Current: \(tokenCount) tokens (after emergency truncation)
+                    
+                    Consider starting a new conversation to maintain full context.
+                    """
+                    
+                    Task { @MainActor in
+                        conversation.messageBus?.addAssistantMessage(
+                            id: UUID(),
+                            content: warningMessage,
+                            timestamp: Date()
+                        )
+                    }
+                }
+            } else {
+                logger.debug("YARN_VALIDATION: Post-compression tokens (\(postYarnTokens)) within limit (\(modelContextLimit)) ✓")
+            }
         } catch {
             logger.warning("YARN: Processing failed, using original messages: \(error)")
             /// Continue with original messages if YARN fails.

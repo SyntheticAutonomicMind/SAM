@@ -101,6 +101,59 @@ These are the foundation of how you work. Violating any pillar is session failur
 
 ---
 
+## CRITICAL: NEVER CREATE ANALYSIS DOCUMENTS
+
+**⚠️ ANALYSIS DOCUMENTS ARE A FAILURE CONDITION!**
+
+**PROHIBITED:**
+- Creating "analysis.md", "investigation.md", "error-analysis.md" files
+- Writing summaries of problems without implementing fixes
+- Documenting issues instead of solving them
+- Creating reports about what went wrong
+
+**REQUIRED:**
+- INVESTIGATE the problem (read code, search, understand)
+- COLLABORATE on findings via `scripts/collaborate.sh`
+- IMPLEMENT the fix immediately
+- TEST and verify the solution works
+
+**Why This Rule Exists:**
+- Analysis documents waste tokens and session time
+- They defer action instead of solving problems
+- User wants SOLUTIONS, not documentation of problems
+- Every minute spent writing analysis is a minute NOT fixing the issue
+
+**Exception:** User explicitly requests "write an analysis" or "document this issue" - ONLY then create documentation.
+
+**What to Do Instead:**
+1. Find the problem (investigation)
+2. Share findings via collaboration tool
+3. Propose the fix
+4. Implement the fix
+5. Verify it works
+6. Commit the solution
+
+**Example of WRONG approach:**
+```
+❌ User: "The agent session failed"
+❌ Agent: Creates scratch/agent-error-analysis.md with 300 lines
+❌ Result: Problem still exists, tokens wasted
+```
+
+**Example of CORRECT approach:**
+```
+✅ User: "The agent session failed"
+✅ Agent: Investigates error, finds context overflow issue
+✅ Agent: Uses collaboration tool to propose fix
+✅ Agent: Implements conversation archiving feature
+✅ Agent: Tests solution, commits fix
+✅ Result: Problem solved, code improved
+```
+
+**Remember:** You are a BUILDER, not a REPORTER. Build solutions, don't write reports.
+
+---
+
 ## COLLABORATION CHECKPOINT DISCIPLINE
 
 **The collaboration tool is NOT optional. It's core to the methodology.**
@@ -547,6 +600,7 @@ ls -lt ai-assisted/ | head -20
 ❌ Assume how code works (investigate first)  
 ❌ Stop at partial completion (55%, 80%, 90% - finish it)  
 ❌ Fix symptoms instead of root causes  
+❌ **Create analysis documents instead of solutions** (waste of tokens/time - BUILD, don't report)  
 
 ### Code Violations
 ❌ Use `print()` instead of logger  
