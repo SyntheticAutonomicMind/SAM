@@ -514,6 +514,28 @@ else
     echo "WARNING: $UPSCALE_SCRIPT_SRC not found, skipping"
 fi
 
+# Copy train_lora.py (MLX training)
+TRAIN_MLX_SCRIPT_SRC="$SCRIPT_DIR/train_lora.py"
+TRAIN_MLX_SCRIPT_DST="$SCRIPTS_DIR/train_lora.py"
+if [ -f "$TRAIN_MLX_SCRIPT_SRC" ]; then
+    cp "$TRAIN_MLX_SCRIPT_SRC" "$TRAIN_MLX_SCRIPT_DST"
+    chmod +x "$TRAIN_MLX_SCRIPT_DST"
+    echo "SUCCESS: MLX training script copied: train_lora.py"
+else
+    echo "WARNING: $TRAIN_MLX_SCRIPT_SRC not found, skipping"
+fi
+
+# Copy train_lora_gguf.py (GGUF training)
+TRAIN_GGUF_SCRIPT_SRC="$SCRIPT_DIR/train_lora_gguf.py"
+TRAIN_GGUF_SCRIPT_DST="$SCRIPTS_DIR/train_lora_gguf.py"
+if [ -f "$TRAIN_GGUF_SCRIPT_SRC" ]; then
+    cp "$TRAIN_GGUF_SCRIPT_SRC" "$TRAIN_GGUF_SCRIPT_DST"
+    chmod +x "$TRAIN_GGUF_SCRIPT_DST"
+    echo "SUCCESS: GGUF training script copied: train_lora_gguf.py"
+else
+    echo "WARNING: $TRAIN_GGUF_SCRIPT_SRC not found, skipping"
+fi
+
 echo "SUCCESS: All scripts bundled"
 echo ""
 

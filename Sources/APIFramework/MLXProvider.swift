@@ -9,6 +9,7 @@ import ConfigurationSystem
 import Logging
 import MLX
 import Tokenizers
+import Training
 
 /// Import MLX components.
 import MLXLLM
@@ -27,6 +28,12 @@ public class MLXProvider: AIProvider {
     private let appleMLXAdapter = AppleMLXAdapter()
     private let modelCache = MLXModelCache()
     private let toolCallExtractor = ToolCallExtractor()
+    
+    /// Optional LoRA adapter ID for fine-tuned models
+    private let loraAdapterId: String?
+    
+    /// Cached LoRA adapter (loaded on demand)
+    private var cachedAdapter: LoRAAdapter?
 
     /// Track conversation ID to detect conversation switches.
     private var currentConversationId: String?
@@ -47,13 +54,14 @@ public class MLXProvider: AIProvider {
     private var onModelLoadingStarted: ((String, String) -> Void)?
     private var onModelLoadingCompleted: ((String) -> Void)?
 
-    public init(config: ProviderConfiguration, modelPath: String, onModelLoadingStarted: ((String, String) -> Void)? = nil, onModelLoadingCompleted: ((String) -> Void)? = nil) {
+    public init(config: ProviderConfiguration, modelPath: String, loraAdapterId: String? = nil, onModelLoadingStarted: ((String, String) -> Void)? = nil, onModelLoadingCompleted: ((String) -> Void)? = nil) {
         self.identifier = config.providerId
         self.config = config
         self.modelPath = modelPath
+        self.loraAdapterId = loraAdapterId
         self.onModelLoadingStarted = onModelLoadingStarted
         self.onModelLoadingCompleted = onModelLoadingCompleted
-        providerLogger.info("MLXProvider initialized for model: \(modelPath)")
+        providerLogger.info("MLXProvider initialized for model: \(modelPath)", metadata: loraAdapterId != nil ? ["loraAdapter": "\(loraAdapterId!)"] : [:])
 
         self.appleMLXAdapter.enablePerformanceMonitoring = false
 
@@ -1005,9 +1013,35 @@ public class MLXProvider: AIProvider {
     private func loadModelIfNeeded() async throws -> (model: any LanguageModel, tokenizer: Tokenizer) {
         /// Return cached model if available.
         if let cached = cachedModel, cachedModelPath == modelPath {
-            providerLogger.info("Using cached MLX model")
+            let modelTypeName = String(describing: type(of: cached.model))
+            providerLogger.info("🔍 CACHE HIT: Using cached MLX model", metadata: [
+                "modelType": "\(modelTypeName)",
+                "hasLoRA": "\(loraAdapterId != nil)",
+                "adapterId": "\(loraAdapterId ?? "none")"
+            ])
+            
+            // DIAGNOSTIC: Check if model has LoRA layers
+            if let loraModel = cached.model as? LoRAModel {
+                let layerSample = loraModel.loraLayers.prefix(1)
+                for layer in layerSample {
+                    for (key, module) in layer.namedModules() {
+                        let moduleType = String(describing: type(of: module))
+                        providerLogger.debug("🔍 CACHE: Sample layer module", metadata: [
+                            "key": "\(key)",
+                            "type": "\(moduleType)"
+                        ])
+                    }
+                }
+            }
+            
             return cached
         }
+        
+        providerLogger.info("🔍 CACHE MISS: Need to load model", metadata: [
+            "cachedModelPath": "\(cachedModelPath ?? "none")",
+            "requestedPath": "\(modelPath)",
+            "pathsMatch": "\(cachedModelPath == modelPath)"
+        ])
 
         /// Notify model loading started.
         let modelName = URL(fileURLWithPath: modelPath).lastPathComponent
@@ -1017,17 +1051,60 @@ public class MLXProvider: AIProvider {
         providerLogger.info("Loading MLX model from: \(modelPath)")
         let modelURL = URL(fileURLWithPath: modelPath)
 
-        let (model, tokenizer) = try await appleMLXAdapter.loadModel(from: modelURL)
+        // INVESTIGATION: Read and log the actual model config
+        let configPath = modelURL.appendingPathComponent("config.json")
+        if let configData = try? Data(contentsOf: configPath),
+           let config = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] {
+            providerLogger.debug("🔍 Model config at path \(modelPath)", metadata: [
+                "hidden_size": "\(config["hidden_size"] as? Int ?? -1)",
+                "num_attention_heads": "\(config["num_attention_heads"] as? Int ?? -1)",
+                "num_key_value_heads": "\(config["num_key_value_heads"] as? Int ?? -1)",
+                "intermediate_size": "\(config["intermediate_size"] as? Int ?? -1)",
+                "model_type": "\(config["model_type"] as? String ?? "unknown")"
+            ])
+        } else {
+            providerLogger.warning("⚠️ Could not read config.json at \(configPath.path)")
+        }
 
-        /// Cache for next request.
-        cachedModel = (model, tokenizer)
+        let (baseModel, tokenizer) = try await appleMLXAdapter.loadModel(from: modelURL)
+        
+        // INVESTIGATION: Log the loaded model type
+        let modelTypeName = String(describing: type(of: baseModel))
+        providerLogger.debug("🔍 Loaded base model type: \(modelTypeName)")
+        
+        /// Apply LoRA adapter if specified
+        var finalModel: any LanguageModel = baseModel
+        
+        if let adapterId = loraAdapterId {
+            // Load adapter if not already cached
+            if cachedAdapter == nil {
+                providerLogger.info("Loading LoRA adapter: \(adapterId)")
+                cachedAdapter = try await AdapterManager.shared.loadAdapter(id: adapterId)
+                providerLogger.info("LoRA adapter loaded successfully", metadata: [
+                    "layers": "\(cachedAdapter?.layers.count ?? 0)",
+                    "parameters": "\(cachedAdapter?.parameterCount() ?? 0)"
+                ])
+            }
+            
+            // CRITICAL: Always apply LoRA weights, even if adapter was cached
+            // The base model is reloaded fresh each time, so LoRA must be reapplied
+            do {
+                finalModel = try applyLoRAWeights(to: baseModel)
+            } catch {
+                providerLogger.error("Failed to apply LoRA adapter: \(error)")
+                throw error
+            }
+        }
+
+        /// Cache final model (with LoRA applied if applicable) for next request.
+        cachedModel = (finalModel, tokenizer)
         cachedModelPath = modelPath
 
         /// Notify model loading completed.
         onModelLoadingCompleted?(identifier)
         providerLogger.info("MODEL_LOADING: Completed loading \(modelName)")
         providerLogger.debug("MLX model loaded and cached successfully")
-        return (model, tokenizer)
+        return (finalModel, tokenizer)
     }
 
     private func estimateTokenCount(_ messages: [OpenAIChatMessage]) -> Int {
@@ -1106,6 +1183,109 @@ public class MLXProvider: AIProvider {
             // Append as new message
             array.append(message)
             lastRole = message.role
+        }
+    }
+    
+    // MARK: - LoRA Weight Application
+    
+    /// Apply LoRA adapter weights to the base model
+    private func applyLoRAWeights(to model: any LanguageModel) throws -> any LanguageModel {
+        guard let adapter = cachedAdapter else {
+            return model
+        }
+        
+        providerLogger.info("Applying LoRA weights using MLX LoRAContainer", metadata: [
+            "adapterId": "\(adapter.id)",
+            "layers": "\(adapter.layers.count)",
+            "rank": "\(adapter.rank)"
+        ])
+        
+        // Get adapter directory path
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!
+        let adapterDir = appSupport
+            .appendingPathComponent("SAM")
+            .appendingPathComponent("adapters")
+            .appendingPathComponent(adapter.id)
+        
+        do {
+            // Load LoRA container from adapter directory
+            let container = try LoRAContainer.from(directory: adapterDir)
+            
+            providerLogger.debug("LoRA config loaded", metadata: [
+                "numLayers": "\(container.configuration.numLayers)",
+                "rank": "\(container.configuration.loraParameters.rank)",
+                "scale": "\(container.configuration.loraParameters.scale)",
+                "keys": "\(container.configuration.loraParameters.keys?.joined(separator: ", ") ?? "nil")"
+            ])
+            
+            // INVESTIGATION: Log base model details before applying LoRA
+            let baseModelType = String(describing: type(of: model))
+            providerLogger.debug("🔍 About to apply LoRA to model type: \(baseModelType)")
+            
+            // DIAGNOSTIC: Check model layers BEFORE LoRA
+            if let loraModel = model as? LoRAModel {
+                let layerSample = loraModel.loraLayers.prefix(1)
+                for layer in layerSample {
+                    for (key, module) in layer.namedModules() {
+                        let moduleType = String(describing: type(of: module))
+                        providerLogger.debug("🔍 BEFORE LoRA: Layer module", metadata: [
+                            "key": "\(key)",
+                            "type": "\(moduleType)"
+                        ])
+                    }
+                }
+            }
+            
+            // Apply adapter to model
+            // This modifies the model in-place by replacing Linear layers with LoRALinear layers
+            try container.load(into: model)
+            
+            // INVESTIGATION: Log model details after applying LoRA
+            providerLogger.debug("🔍 LoRA applied, model type after: \(String(describing: type(of: model)))")
+            
+            // DIAGNOSTIC: Check model layers AFTER LoRA - should see LoRALinear now
+            if let loraModel = model as? LoRAModel {
+                let layerSample = loraModel.loraLayers.prefix(1)
+                var loraLayerCount = 0
+                var linearLayerCount = 0
+                
+                for layer in layerSample {
+                    for (key, module) in layer.namedModules() {
+                        let moduleType = String(describing: type(of: module))
+                        providerLogger.debug("🔍 AFTER LoRA: Layer module", metadata: [
+                            "key": "\(key)",
+                            "type": "\(moduleType)"
+                        ])
+                        
+                        if moduleType.contains("LoRA") {
+                            loraLayerCount += 1
+                        } else if moduleType.contains("Linear") {
+                            linearLayerCount += 1
+                        }
+                    }
+                }
+                
+                providerLogger.info("🔍 Layer inspection complete", metadata: [
+                    "loraLayers": "\(loraLayerCount)",
+                    "linearLayers": "\(linearLayerCount)",
+                    "expected": "LoRALinear if working correctly"
+                ])
+            }
+            
+            providerLogger.info("LoRA weights applied successfully", metadata: [
+                "adapterId": "\(adapter.id)"
+            ])
+            
+            return model
+        } catch {
+            providerLogger.error("Failed to apply LoRA weights", metadata: [
+                "adapterId": "\(adapter.id)",
+                "error": "\(error.localizedDescription)"
+            ])
+            throw error
         }
     }
 }
