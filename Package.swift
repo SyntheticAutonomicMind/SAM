@@ -46,6 +46,10 @@ let package = Package(
             targets: ["StableDiffusionIntegration"]
         ),
         .library(
+            name: "Training",
+            targets: ["Training"]
+        ),
+        .library(
             name: "VoiceFramework",
             targets: ["VoiceFramework"]
         )
@@ -106,6 +110,7 @@ let package = Package(
                 "APIFramework",
                 "MCPFramework",
                 "StableDiffusionIntegration",
+                "Training",
                 "VoiceFramework",
                 .product(name: "Sparkle", package: "Sparkle")
             ],
@@ -156,6 +161,7 @@ let package = Package(
                 "MCPFramework",
                 "VoiceFramework",
                 "StableDiffusionIntegration",
+                "Training",
                 .product(name: "Markdown", package: "swift-markdown"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
@@ -193,6 +199,7 @@ let package = Package(
                 "ConfigurationSystem",
                 "MLXIntegration",
                 "SharedData",
+                "Training",
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
@@ -220,6 +227,22 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log")
             ],
             path: "Sources/StableDiffusionIntegration"
+        ),
+
+        // Training system for LoRA fine-tuning
+        .target(
+            name: "Training",
+            dependencies: [
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "Transformers", package: "swift-transformers"),
+                "MLXIntegration",
+                "ConfigurationSystem",
+                "SharedData",
+                .product(name: "Logging", package: "swift-log")
+            ],
+            path: "Sources/Training"
         ),
 
         // Voice Framework for speech input/output

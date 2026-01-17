@@ -250,8 +250,8 @@ public class ConversationImportExportService {
     /// Reference to conversation manager for import operations
     private weak var conversationManager: ConversationManager?
 
-    /// Reference to memory manager for memory export/import
-    private weak var memoryManager: MemoryManager?
+    /// Reference to memory manager for memory export/import (public for Training module)
+    public weak var memoryManager: MemoryManager?
 
     /// Reference to folder manager for folder export/import
     private weak var folderManager: FolderManager?
@@ -740,11 +740,4 @@ public class ConversationImportExportService {
 
         return "SAM_Export_\(count)_conversations_\(dateString).json"
     }
-}
-
-// MARK: - Shared Instance
-
-extension ConversationImportExportService {
-    /// Shared instance for convenient access
-    public static let shared = ConversationImportExportService()
 }
