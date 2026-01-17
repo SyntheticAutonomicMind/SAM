@@ -295,19 +295,33 @@ public class YaRNContextProcessor: ObservableObject {
             }
         }
 
-        /// Add recent messages (always preserved).
+        /// Add recent messages (always preserved, but enforce token limit).
+        /// CRITICAL FIX: Recent messages must fit within token budget
+        /// Previous bug: Added all recent messages without checking limit → exceeded API capacity
         for analyzed in recentMessages {
             /// Skip if already included in system messages to avoid duplicates.
             if !systemMessages.contains(where: { $0.original.id == analyzed.original.id }) {
+                let messageTokens = await tokenEstimator(analyzed.original.content)
+                
+                /// HARD LIMIT: Never exceed target token count
+                /// If adding this message would exceed limit, stop here
+                if currentTokenCount + messageTokens > targetTokenCount {
+                    logger.warning("YARN_LIMIT: Stopping at \(compressedMessages.count) messages - would exceed \(targetTokenCount) token limit")
+                    logger.warning("YARN_LIMIT: Current tokens: \(currentTokenCount), next message: \(messageTokens) tokens")
+                    break
+                }
+                
                 compressedMessages.append(analyzed.original)
-                currentTokenCount += await tokenEstimator(analyzed.original.content)
+                currentTokenCount += messageTokens
             }
         }
 
         /// Sort by timestamp to maintain conversation order.
         compressedMessages.sort { $0.timestamp < $1.timestamp }
 
+        let finalTokenCount = await estimateContextTokenCount(compressedMessages)
         logger.debug("SUCCESS: Compressed from \(analyzedMessages.count) to \(compressedMessages.count) messages")
+        logger.debug("SUCCESS: YARN PROCESSED - \(compressedMessages.count) messages, \(finalTokenCount) tokens")
 
         return compressedMessages
     }

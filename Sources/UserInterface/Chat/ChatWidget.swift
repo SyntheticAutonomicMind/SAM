@@ -4141,6 +4141,7 @@ public struct ChatWidget: View {
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("SAM-Internal-Communication", forHTTPHeaderField: "X-SAM-Internal")
 
                 let requestBody: [String: String] = [
                     "conversationId": conversationId.uuidString,
@@ -4845,20 +4846,14 @@ public struct ChatWidget: View {
                 }
 
                 /// COLLABORATION USER MESSAGE: Handle user role chunks from collaboration responses
+                /// NOTE: AgentOrchestrator already persisted the message to MessageBus when it received
+                /// the tool-response API call. We just need to display the streaming chunk, not re-add it.
                 if chunk.choices.first?.delta.role == "user",
                    let content = chunk.choices.first?.delta.content, !content.isEmpty {
-                    logger.info("USER_COLLAB: Received user message chunk, adding to conversation", metadata: [
+                    logger.info("USER_COLLAB: Received user message chunk (already persisted by AgentOrchestrator)", metadata: [
                         "content": .string(content)
                     ])
-
-                    await MainActor.run {
-                        /// FEATURE: Pin user collaboration responses for context persistence
-                        /// Agents should remember what users answered to their questions
-                        /// CRITICAL: Explicitly pin collaboration responses (override auto-pin logic)
-                        /// Collaboration responses are ALWAYS critical context regardless of message count
-                        activeConversation?.messageBus?.addUserMessage(content: content, isPinned: true)
-                        logger.info("USER_COLLAB: User message added to chat (EXPLICITLY PINNED for context persistence)")
-                    }
+                    /// Continue processing - chunk will be appended to accumulated response for display
                     continue
                 }
 
