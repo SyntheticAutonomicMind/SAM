@@ -1,8 +1,8 @@
 {
   "releases": [
     {
-      "version": "20260116.1",
-      "release_date": "January 16, 2026",
+      "version": "20260117.1",
+      "release_date": "January 17, 2026",
       "introduction": "This release improves diagram rendering, adds powerful codebase learning capabilities, expands web integration features, and fixes critical stability issues.",
       "highlights": [
         {
