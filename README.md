@@ -45,6 +45,18 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 - LoRA support for style customization
 - Optimized for Apple Silicon
 
+🎓 **Train Your Own Models**
+- Fine-tune local AI models with LoRA (Low-Rank Adaptation)
+- Train on your conversations or documents
+- Custom adapters for specialized knowledge domains
+- Real-time training progress with loss visualization
+
+🌐 **Access Anywhere**
+- Use SAM from your iPad, iPhone, or any device with a browser
+- Web interface (SAM-Web) provides chat and basic features remotely
+- Connect over your local network (requires SAM running on Mac)
+- Secure API authentication
+
 🌐 **Flexible AI Provider Support**
 - **Cloud AI**: OpenAI, Anthropic (Claude), GitHub Copilot, DeepSeek
 - **Local Models**: Run AI completely on your Mac with MLX or llama.cpp
@@ -77,6 +89,18 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 ### Start Your First Conversation
 
 Press `⌘N` to create a new conversation, type your message, and press Enter. SAM will respond and can help you with questions, writing, coding, research, file management, and much more.
+
+### Access SAM from Other Devices
+
+Want to use SAM from your iPad or phone? Check out **[SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web)** - a web interface that provides chat functionality and basic features when you're away from your Mac.
+
+**What you need:**
+1. SAM running on your Mac with API Server enabled (Preferences → API Server)
+2. Get your API token from the same preferences pane
+3. Visit the [SAM-Web repository](https://github.com/SyntheticAutonomicMind/SAM-web) for setup instructions
+4. Connect from your browser at `http://your-mac-ip:8080`
+
+**Note:** SAM-Web provides chat, mini-prompts, and conversation basics. Advanced features require the native macOS app.
 
 ---
 
@@ -140,6 +164,7 @@ Your feedback helps make SAM better for everyone!
 
 - Search across all your conversations semantically
 - Import documents (PDF, Word, Excel, text files) and ask questions about them
+- Search by filename and content with enhanced metadata
 - Share context between conversations when needed
 - Keep conversations private from each other by default
 
@@ -188,6 +213,35 @@ Your feedback helps make SAM better for everyone!
 - Browse and download models from HuggingFace and CivitAI
 - LoRA support for custom styles
 - Optimized for Apple Silicon Macs
+
+### 🎓 LoRA Training
+
+Train custom AI models on your own data:
+
+- **Fine-Tune Local Models**: Specialize MLX models on specific knowledge domains
+- **Training Data Export**: Export conversations or documents as training data
+- **Flexible Configuration**: Customize rank, learning rate, epochs, and more
+- **Real-Time Progress**: Watch training progress with loss visualization
+- **Automatic Integration**: Trained adapters appear immediately in model picker
+- **Document Chunking**: Multiple strategies for processing long documents
+- **PII Protection**: Optional detection and redaction of sensitive information
+### 🌐 SAM-Web: Remote Access
+
+Access SAM chat from other devices on your network:
+
+- **Web Interface**: Chat with SAM from your browser (requires SAM running on Mac)
+- **Multi-Device Support**: Use from iPad, iPhone, tablets, or other computers
+- **Core Features**: Conversations, mini-prompts, model selection, and chat
+- **Responsive Design**: Optimized for desktop, tablet, and mobile screens
+- **Secure Access**: Token-based authentication
+- **Easy Setup**: No installation on remote device, just open browser
+
+Visit the [SAM-Web repository](https://github.com/SyntheticAutonomicMind/SAM-web) for setup instructions.
+
+**Note:** SAM-Web is a companion interface, not a replacement. Full SAM features require the native macOS app.
+- **All Features Available**: Chat, tools, settings, prompts, and more
+
+Visit the [SAM-Web repository](https://github.com/SyntheticAutonomicMind/SAM-web) for setup instructions.
 
 ### 🎭 Personalities
 
