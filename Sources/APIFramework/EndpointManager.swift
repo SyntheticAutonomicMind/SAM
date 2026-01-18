@@ -171,6 +171,114 @@ public class EndpointManager: ObservableObject {
         return try await geminiProvider.fetchModelCapabilities()
     }
 
+    /// Get comprehensive model capabilities for API exposure
+    /// Returns contextWindow, maxCompletionTokens, maxRequestTokens, and billing info for a given model
+    /// This enables clients like CLIO to right-size their API requests and track premium usage
+    public func getModelCapabilityData(for modelId: String) async -> (contextWindow: Int?, maxCompletionTokens: Int?, maxRequestTokens: Int?, isPremium: Bool?, premiumMultiplier: Double?) {
+        // Normalize model ID (remove provider prefix if present)
+        let normalizedId = modelId.contains("/") ? String(modelId.split(separator: "/").last ?? "") : modelId
+        
+        // Try to get capabilities from various sources
+        var contextWindow: Int? = nil
+        var maxCompletionTokens: Int? = nil
+        var isPremium: Bool? = nil
+        var premiumMultiplier: Double? = nil
+        
+        // 1. Check GitHub Copilot models
+        if modelId.hasPrefix("github_copilot/") {
+            if let capabilities = try? await getGitHubCopilotModelCapabilities() {
+                contextWindow = capabilities[normalizedId] ?? capabilities[modelId]
+            }
+            // Get billing info for GitHub Copilot models
+            if let billing = getGitHubCopilotModelBillingInfo(modelId: normalizedId) ?? getGitHubCopilotModelBillingInfo(modelId: modelId) {
+                isPremium = billing.isPremium
+                premiumMultiplier = billing.multiplier
+            }
+        }
+        
+        // 2. Check Gemini models
+        if modelId.hasPrefix("gemini/") {
+            if let capabilities = try? await getGeminiModelCapabilities() {
+                contextWindow = capabilities[normalizedId] ?? capabilities[modelId]
+            }
+        }
+        
+        // 3. Check local models (MLX/GGUF)
+        if isLocalModel(modelId) {
+            contextWindow = await getLocalModelContextSize(modelName: modelId)
+        }
+        
+        // 4. Apply known defaults for popular models
+        if contextWindow == nil {
+            contextWindow = getDefaultContextWindow(for: modelId)
+        }
+        
+        // Calculate maxCompletionTokens (typically reserve for output)
+        if let context = contextWindow {
+            // Reserve 25% for output, 75% for input (reasonable default)
+            maxCompletionTokens = context / 4
+        }
+        
+        // Calculate maxRequestTokens (input limit)
+        let maxRequestTokens: Int? = if let context = contextWindow, let completion = maxCompletionTokens {
+            context - completion
+        } else {
+            nil
+        }
+        
+        return (contextWindow, maxCompletionTokens, maxRequestTokens, isPremium, premiumMultiplier)
+    }
+    
+    /// Get default context window for known model patterns
+    private func getDefaultContextWindow(for modelId: String) -> Int? {
+        let normalized = modelId.lowercased()
+        
+        // GitHub Copilot models
+        if normalized.contains("gpt-4.1") || normalized.contains("gpt-4-turbo") {
+            return 128_000  // 128k
+        }
+        if normalized.contains("gpt-4o") {
+            return 128_000  // 128k
+        }
+        if normalized.contains("gpt-4") {
+            return 8_192    // 8k for base GPT-4
+        }
+        if normalized.contains("gpt-3.5-turbo") {
+            return 16_385   // 16k
+        }
+        if normalized.contains("o1") || normalized.contains("o3") {
+            return 200_000  // 200k for reasoning models
+        }
+        
+        // Anthropic models
+        if normalized.contains("claude-3.5") || normalized.contains("claude-3-5") {
+            return 200_000  // 200k
+        }
+        if normalized.contains("claude-3") {
+            return 200_000  // 200k for Claude 3 family
+        }
+        
+        // Gemini models
+        if normalized.contains("gemini-2") || normalized.contains("gemini-1.5") {
+            return 2_000_000  // 2M tokens
+        }
+        if normalized.contains("gemini") {
+            return 1_000_000  // 1M default for Gemini
+        }
+        
+        // DeepSeek models
+        if normalized.contains("deepseek") {
+            return 64_000  // 64k
+        }
+        
+        // OpenAI models
+        if normalized.contains("openai/gpt") {
+            return 128_000  // Default to newer models
+        }
+        
+        return nil  // Unknown model
+    }
+
     /// Get billing information for a specific GitHub Copilot model
     /// Returns (isPremium, multiplier) tuple or nil if not available
     /// Cached for 10 minutes to reduce log spam and provider calls

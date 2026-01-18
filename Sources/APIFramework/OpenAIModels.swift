@@ -41,6 +41,34 @@ public struct OpenAIFunction: Content {
         self.description = description
         self.parametersJson = parametersJson
     }
+    
+    /// Custom decoder to support both String and Object formats for parameters field
+    /// GitHub Copilot/OpenAI send parameters as JSON object, SAM stores as String
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.description = try container.decode(String.self, forKey: .description)
+        
+        // Try to decode parameters as String first (SAM format)
+        if let parametersString = try? container.decode(String.self, forKey: .parametersJson) {
+            self.parametersJson = parametersString
+        } 
+        // Otherwise decode as JSON object and convert to String (OpenAI/GitHub Copilot format)
+        else if let parametersDict = try? container.decode([String: AnyCodable].self, forKey: .parametersJson) {
+            // Convert dictionary to JSON string
+            let dict = parametersDict.mapValues { $0.value }
+            if let data = try? JSONSerialization.data(withJSONObject: dict),
+               let json = String(data: data, encoding: .utf8) {
+                self.parametersJson = json
+            } else {
+                self.parametersJson = "{}"
+            }
+        } 
+        else {
+            // Fallback to empty object
+            self.parametersJson = "{}"
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
         case name, description
@@ -194,8 +222,12 @@ public struct SAMConfig: Content {
     public let enableTerminalAccess: Bool?
     public let enableWorkflowMode: Bool?
     public let enableDynamicIterations: Bool?
+    /// Per-request proxy mode bypass (1:1 LLM passthrough without SAM processing)
+    /// When true, behaves like serverProxyMode toggle but only for this request
+    /// Enables external tools like CLIO to bypass SAM's tools/prompts/sessions
+    public let bypassProcessing: Bool?
 
-    public init(sharedMemoryEnabled: Bool? = nil, mcpToolsEnabled: Bool? = nil, memoryCollectionId: String? = nil, conversationTitle: String? = nil, maxIterations: Int? = nil, enableReasoning: Bool? = nil, workingDirectory: String? = nil, systemPromptId: String? = nil, isExternalAPICall: Bool? = nil, enableTerminalAccess: Bool? = nil, enableWorkflowMode: Bool? = nil, enableDynamicIterations: Bool? = nil) {
+    public init(sharedMemoryEnabled: Bool? = nil, mcpToolsEnabled: Bool? = nil, memoryCollectionId: String? = nil, conversationTitle: String? = nil, maxIterations: Int? = nil, enableReasoning: Bool? = nil, workingDirectory: String? = nil, systemPromptId: String? = nil, isExternalAPICall: Bool? = nil, enableTerminalAccess: Bool? = nil, enableWorkflowMode: Bool? = nil, enableDynamicIterations: Bool? = nil, bypassProcessing: Bool? = nil) {
         self.sharedMemoryEnabled = sharedMemoryEnabled
         self.mcpToolsEnabled = mcpToolsEnabled
         self.memoryCollectionId = memoryCollectionId
@@ -208,6 +240,7 @@ public struct SAMConfig: Content {
         self.enableTerminalAccess = enableTerminalAccess
         self.enableWorkflowMode = enableWorkflowMode
         self.enableDynamicIterations = enableDynamicIterations
+        self.bypassProcessing = bypassProcessing
     }
 
     enum CodingKeys: String, CodingKey {
@@ -223,6 +256,7 @@ public struct SAMConfig: Content {
         case enableTerminalAccess = "enable_terminal_access"
         case enableWorkflowMode = "enable_workflow_mode"
         case enableDynamicIterations = "enable_dynamic_iterations"
+        case bypassProcessing = "bypass_processing"
     }
 }
 
@@ -658,17 +692,38 @@ public struct ServerOpenAIModel: Content {
     public let object: String
     public let created: Int
     public let ownedBy: String
+    
+    /// Model capability fields (OpenAI-compatible extensions)
+    /// These fields enable clients like CLIO to right-size API requests
+    public let contextWindow: Int?         // Maximum context length in tokens
+    public let maxCompletionTokens: Int?   // Maximum tokens for completion
+    public let maxRequestTokens: Int?      // Maximum tokens for input (context - completion reserve)
+    
+    /// Billing information (GitHub Copilot premium tier tracking)
+    /// Enables clients to track premium model usage for billing purposes
+    public let isPremium: Bool?            // Whether this is a premium model
+    public let premiumMultiplier: Double?  // Billing multiplier (e.g., 1.5x for premium)
 
     enum CodingKeys: String, CodingKey {
         case id, object, created
         case ownedBy = "owned_by"
+        case contextWindow = "context_window"
+        case maxCompletionTokens = "max_completion_tokens"
+        case maxRequestTokens = "max_request_tokens"
+        case isPremium = "is_premium"
+        case premiumMultiplier = "premium_multiplier"
     }
 
-    public init(id: String, object: String, created: Int, ownedBy: String) {
+    public init(id: String, object: String, created: Int, ownedBy: String, contextWindow: Int? = nil, maxCompletionTokens: Int? = nil, maxRequestTokens: Int? = nil, isPremium: Bool? = nil, premiumMultiplier: Double? = nil) {
         self.id = id
         self.object = object
         self.created = created
         self.ownedBy = ownedBy
+        self.contextWindow = contextWindow
+        self.maxCompletionTokens = maxCompletionTokens
+        self.maxRequestTokens = maxRequestTokens
+        self.isPremium = isPremium
+        self.premiumMultiplier = premiumMultiplier
     }
 }
 
