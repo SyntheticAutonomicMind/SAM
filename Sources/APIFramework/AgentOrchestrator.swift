@@ -1500,14 +1500,21 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         var initialStatefulMarker: String?
 
         if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-            if let lastAssistantMessage = conversation.messages.last(where: { !$0.isFromUser }) {
-                if let responseId = lastAssistantMessage.githubCopilotResponseId {
-                    initialStatefulMarker = responseId
-                    logger.debug("SUCCESS: Retrieved previous GitHub Copilot response ID: \(responseId.prefix(20))... for session continuity")
-                } else {
-                    logger.debug("CHECKPOINT_DEBUG: No previous GitHub Copilot response ID found in last assistant message")
-                }
+            /// Check conversation-level lastGitHubCopilotResponseId first.
+            /// This is the authoritative source after workflow completion persistence.
+            if let responseId = conversation.lastGitHubCopilotResponseId {
+                initialStatefulMarker = responseId
+                logger.debug("SUCCESS: Retrieved GitHub Copilot response ID from conversation: \(responseId.prefix(20))...")
+            } else if let lastAssistantMessage = conversation.messages.last(where: { !$0.isFromUser }),
+                      let responseId = lastAssistantMessage.githubCopilotResponseId {
+                /// Fallback: Check last assistant message (legacy path)
+                initialStatefulMarker = responseId
+                logger.debug("SUCCESS: Retrieved GitHub Copilot response ID from last message: \(responseId.prefix(20))...")
+            } else {
+                logger.debug("CHECKPOINT_DEBUG: No previous GitHub Copilot response ID found")
+            }
 
+            if let lastAssistantMessage = conversation.messages.last(where: { !$0.isFromUser }) {
                 /// Detect if last workflow is complete Workflow continuation - check if previous workflow completed.
                 let lastContent = lastAssistantMessage.content.lowercased()
                 if lastContent.contains("[workflow_complete]") || lastContent.contains("workflow_complete") {
@@ -2619,10 +2626,18 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.debug("DEBUG_MISSING_RESPONSE: Final response handled", metadata: [
                 "messageCount": .stringConvertible(conversation.messages.count)
             ])
+            
+            /// Persist statefulMarker to Conversation for session continuity.
+            /// This enables GitHub Copilot to use previous_response_id in next request.
+            /// Without this, each request restarts billing session and loses continuation.
             if let marker = context.currentStatefulMarker {
-                logger.debug("SUCCESS: Added final response to conversation with GitHub Copilot response ID: \(marker.prefix(20))...")
+                await MainActor.run {
+                    conversation.lastGitHubCopilotResponseId = marker
+                    conversationManager.saveConversations()
+                }
+                logger.debug("SUCCESS: Persisted statefulMarker to conversation: \(marker.prefix(20))...")
             } else {
-                logger.debug("SUCCESS: Added final response to conversation")
+                logger.debug("SUCCESS: Added final response to conversation (no statefulMarker)")
             }
         } else if context.finalResponseAddedToConversation {
             logger.debug("DEBUG_MISSING_RESPONSE: SKIPPED - Final response already added flag is true")

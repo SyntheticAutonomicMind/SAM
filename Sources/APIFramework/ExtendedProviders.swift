@@ -1178,31 +1178,3 @@ extension ProviderConfiguration {
         return providerType.requiresApiKey || (customHeaders?["authorization"] != nil)
     }
 }
-
-// MARK: - Helper Methods
-
-/// Utility class for HTTP requests to provider APIs.
-internal class ProviderHTTPClient {
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.ProviderHTTPClient")
-
-    /// Future feature: HTTP client implementation using URLSession or async-http-client Should handle: - Authentication (Bearer tokens, API keys, custom headers) - Request/response serialization - Error handling and retry logic - Timeout and connection management - Rate limiting.
-
-    func post<T: Codable, R: Codable>(
-        url: String,
-        headers: [String: String],
-        body: T,
-        responseType: R.Type
-    ) async throws -> R {
-        /// Placeholder implementation.
-        throw ProviderError.networkError("HTTP client not yet implemented")
-    }
-
-    func get<R: Codable>(
-        url: String,
-        headers: [String: String],
-        responseType: R.Type
-    ) async throws -> R {
-        /// Placeholder implementation.
-        throw ProviderError.networkError("HTTP client not yet implemented")
-    }
-}

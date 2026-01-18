@@ -45,6 +45,18 @@ extension AgentOrchestrator: WorkflowSpawner {
 
         let startTime = Date()
 
+        /// CRITICAL: Get parent's sessionId for GitHub Copilot billing continuity
+        /// Per VS Code reference: subagent should use parent's copilot_thread_id
+        /// This prevents creating separate billing sessions (double premium charges)
+        let parentSessionId = await MainActor.run {
+            conversationManager.conversations.first(where: { $0.id == parentConversationId })?.sessionId
+        }
+
+        logger.debug("SUBAGENT_SESSION", metadata: [
+            "parentSessionId": Logger.Metadata.Value.string(parentSessionId ?? "none"),
+            "willInheritSession": Logger.Metadata.Value.stringConvertible(parentSessionId != nil)
+        ])
+
         /// Create isolated subagent conversation WITHOUT switching to it
         /// Don't use createNewConversation() as it auto-switches activeConversation
         /// Instead, manually create conversation with unique title and add it to the list
@@ -83,7 +95,21 @@ extension AgentOrchestrator: WorkflowSpawner {
             subagentConversation.isSubagent = true
             subagentConversation.parentConversationId = parentConversationId
             subagentConversation.isWorking = true
-            subagentConversation.isProcessing = true  // CRITICAL FIX: Show as busy in UI
+            subagentConversation.isProcessing = true  /// Show as busy in UI
+
+            /// Inherit parent's sessionId for billing continuity.
+            /// This ensures subagent uses same copilot_thread_id as parent.
+            /// Result: Parent + subagent = ONE GitHub Copilot session (not two).
+            if let parentSessionId = parentSessionId {
+                subagentConversation.sessionId = parentSessionId
+                logger.debug("SUBAGENT_SESSION_INHERITED: Using parent sessionId: \(parentSessionId)")
+            } else {
+                /// Fallback: Generate new sessionId if parent doesn't have one
+                /// This should rarely happen (parent creates sessionId on first LLM call)
+                let newSessionId = UUID().uuidString
+                subagentConversation.sessionId = newSessionId
+                logger.warning("SUBAGENT_SESSION_NEW: Parent has no sessionId, generated: \(newSessionId)")
+            }
 
             /// Apply configuration parameters from parent agent
             if let temp = temperature {

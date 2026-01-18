@@ -18,7 +18,9 @@ public class OpenAIProvider: AIProvider {
     }
 
     public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
-        /// For now, delegate to regular completion and simulate streaming Note: Real OpenAI streaming requires SSE implementation (placeholder for now).
+        /// Fallback streaming implementation for providers without native SSE support.
+        /// Simulates streaming by chunking the non-streaming response.
+        /// Real SSE streaming is implemented in providers that support it (MLX, GitHub Copilot, etc.).
         return AsyncThrowingStream { continuation in
             Task {
                 do {
