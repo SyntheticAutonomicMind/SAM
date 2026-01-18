@@ -74,8 +74,14 @@ public class SAMAPIServer: ObservableObject {
         /// Configure server.
         app.http.server.configuration.port = actualPort
         app.http.server.configuration.hostname = hostname
+        
+        /// Configure request body size limit for large context requests
+        /// Default is 16MB, increase to 128MB to support very large prompts/contexts
+        /// This is especially important for tools with extensive schemas
+        app.routes.defaultMaxBodySize = "128mb"
 
         logger.info("SAM API Server binding to \(hostname):\(actualPort) (remote access: \(allowRemoteAccess ? "ENABLED" : "DISABLED"))")
+        logger.info("Request body size limit: 128MB (supports large context windows)")
 
         /// Configure CORS middleware to allow web interface access
         /// This enables SAM-Web and other browser-based clients to connect
@@ -867,6 +873,11 @@ AVAILABLE TOOLS:
         protected.get("v1", "models") { req async throws -> ServerOpenAIModelsResponse in
             return try await self.handleModels(req)
         }
+        
+        /// Get specific model details with capabilities
+        protected.get("v1", "models", ":model_id") { req async throws -> Response in
+            return try await self.handleModelDetail(req)
+        }
 
         /// MCP test endpoints (temporary for development).
         protected.get("debug", "mcp", "tools") { req async throws -> MCPToolsResponse in
@@ -1048,9 +1059,18 @@ AVAILABLE TOOLS:
             throw Abort(.badRequest, reason: "Malformed request: \(decodingError.localizedDescription)")
         }
 
-        /// Check for Proxy Mode - passthrough mode for external tools like Aider When proxy mode is enabled, forward request directly to LLM endpoint without any SAM processing.
-        let isProxyMode = UserDefaults.standard.bool(forKey: "serverProxyMode")
+        /// Check for Proxy Mode - passthrough mode for external tools like CLIO and Aider
+        /// Two ways to enable proxy mode:
+        /// 1. Global: UserDefaults serverProxyMode toggle (UI setting)
+        /// 2. Per-request: sam_config.bypass_processing field
+        /// When proxy mode is enabled, forward request directly to LLM endpoint without any SAM processing.
+        let isGlobalProxyMode = UserDefaults.standard.bool(forKey: "serverProxyMode")
+        let isRequestProxyMode = chatRequest.samConfig?.bypassProcessing ?? false
+        let isProxyMode = isGlobalProxyMode || isRequestProxyMode
+        
         if isProxyMode {
+            let proxySource = isRequestProxyMode ? "request-level sam_config.bypass_processing" : "global serverProxyMode"
+            logger.debug("PROXY MODE: Enabled via \(proxySource)")
             logger.debug("PROXY MODE: Forwarding request directly to LLM endpoint (1:1 passthrough)")
             logger.debug("PROXY MODE: No SAM prompts, no MCP tools, no additional processing")
             return try await handleProxyModeRequest(chatRequest, req: req, requestId: requestId)
@@ -2328,7 +2348,34 @@ AVAILABLE TOOLS:
         do {
             let modelsResponse = try await endpointManager.getAvailableModels()
             logger.debug("Returning \(modelsResponse.data.count) available models from EndpointManager")
-            return modelsResponse
+            
+            // Enrich models with capability data and billing information
+            let enrichedModels = await withTaskGroup(of: ServerOpenAIModel.self) { group in
+                for model in modelsResponse.data {
+                    group.addTask {
+                        let (contextWindow, maxCompletion, maxRequest, isPremium, premiumMultiplier) = await self.endpointManager.getModelCapabilityData(for: model.id)
+                        return ServerOpenAIModel(
+                            id: model.id,
+                            object: model.object,
+                            created: model.created,
+                            ownedBy: model.ownedBy,
+                            contextWindow: contextWindow,
+                            maxCompletionTokens: maxCompletion,
+                            maxRequestTokens: maxRequest,
+                            isPremium: isPremium,
+                            premiumMultiplier: premiumMultiplier
+                        )
+                    }
+                }
+                
+                var results: [ServerOpenAIModel] = []
+                for await model in group {
+                    results.append(model)
+                }
+                return results
+            }
+            
+            return ServerOpenAIModelsResponse(object: "list", data: enrichedModels)
         } catch {
             logger.error("Failed to get models from EndpointManager: \(error)")
 
@@ -2347,6 +2394,32 @@ AVAILABLE TOOLS:
                 data: fallbackModels
             )
         }
+    }
+    
+    /// Handle GET /v1/models/{model_id} - Get specific model details
+    private func handleModelDetail(_ req: Request) async throws -> Response {
+        guard let modelId = req.parameters.get("model_id") else {
+            throw Abort(.badRequest, reason: "Missing model_id parameter")
+        }
+        
+        logger.debug("Model detail requested for: \(modelId)")
+        
+        // Get all models and find the requested one
+        let modelsResponse = try await handleModels(req)
+        guard let model = modelsResponse.data.first(where: { $0.id == modelId }) else {
+            throw Abort(.notFound, reason: "Model '\(modelId)' not found")
+        }
+        
+        // Return the model as JSON
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        let jsonData = try encoder.encode(model)
+        
+        return Response(
+            status: .ok,
+            headers: HTTPHeaders([("Content-Type", "application/json")]),
+            body: .init(data: jsonData)
+        )
     }
 
     /// Create conversation from API request and response for UI integration.
@@ -3510,20 +3583,26 @@ AVAILABLE TOOLS:
 
     // MARK: - Model Name Normalization
 
-    /// Normalize model name to match provider format Converts underscore to slash for consistency with MLXProvider and UI model picker Example: "lmstudio-community_Qwen2.5-Coder-7B-Instruct-MLX-4bit" → "lmstudio-community/Qwen2.5-Coder-7B-Instruct-MLX-4bit".
+    /// Normalize model name to match provider format
+    /// Handles two cases:
+    /// 1. Model names with provider prefix already (e.g., "github_copilot/gpt-4.1") - return as-is
+    /// 2. Model names without prefix (e.g., "gpt-4") - try to match with known providers
+    /// 
+    /// IMPORTANT: Do NOT transform underscores within model names that already have provider prefixes.
+    /// Example: "github_copilot/gpt-4.1" should stay "github_copilot/gpt-4.1", NOT become "github/copilot/gpt-4.1"
     private func normalizeModelName(_ modelName: String) -> String {
-        /// First, normalize underscores to slashes (github_copilot_gpt-4 → github_copilot/gpt-4).
-        let slashNormalized = modelName.replacingOccurrences(of: "_", with: "/")
-
-        /// If already has provider prefix, return as-is.
-        if slashNormalized.contains("/") {
-            return slashNormalized
+        /// If model already has a slash (provider/model format), return as-is
+        /// This preserves model names like "github_copilot/gpt-4.1" exactly
+        if modelName.contains("/") {
+            return modelName
         }
 
-        /// Model lacks provider prefix - try to match with known providers This handles API requests like "gpt-4" that need to become "github_copilot/gpt-4" for UI.
-        let modelWithoutPrefix = slashNormalized
+        /// Model lacks provider prefix - try to match with known providers
+        /// This handles API requests like "gpt-4" that need to become "github_copilot/gpt-4" for UI.
+        let modelWithoutPrefix = modelName
 
-        /// Check each provider type to see if this model belongs to it Priority order: github_copilot, openai, anthropic, deepseek, custom.
+        /// Check each provider type to see if this model belongs to it
+        /// Priority order: github_copilot, openai, anthropic, deepseek, custom.
         let providerPrefixes = [
             "github_copilot",
             "openai",
@@ -3534,7 +3613,8 @@ AVAILABLE TOOLS:
 
         for prefix in providerPrefixes {
             let prefixedModel = "\(prefix)/\(modelWithoutPrefix)"
-            /// Check if this prefixed model matches any known models This is a simple heuristic - could be enhanced with actual model registry lookup.
+            /// Check if this prefixed model matches any known models
+            /// This is a simple heuristic - could be enhanced with actual model registry lookup.
             if prefix == "github_copilot" && (modelWithoutPrefix.hasPrefix("gpt-") || modelWithoutPrefix.hasPrefix("o1")) {
                 logger.debug("Normalized model '\(modelName)' → '\(prefixedModel)' (matched GitHub Copilot pattern)")
                 return prefixedModel
@@ -3550,9 +3630,9 @@ AVAILABLE TOOLS:
             }
         }
 
-        /// If no provider matched, return as-is (might be a local model like "llama/...").
+        /// If no provider matched, return original model name as-is (might be a local model)
         logger.debug("Model '\(modelName)' doesn't match known provider patterns, using as-is")
-        return slashNormalized
+        return modelName
     }
 
     /// Enable mini-prompts for a conversation by name

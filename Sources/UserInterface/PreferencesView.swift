@@ -1207,7 +1207,11 @@ struct APIServerPreferencesView: View {
 
                         HStack {
                             Text("Port:")
-                            TextField("Port", value: $apiServerPort, formatter: NumberFormatter())
+                            TextField("Port", value: $apiServerPort, formatter: {
+                                let formatter = NumberFormatter()
+                                formatter.usesGroupingSeparator = false
+                                return formatter
+                            }())
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 80)
                                 .disabled(!enableAPIServer)
