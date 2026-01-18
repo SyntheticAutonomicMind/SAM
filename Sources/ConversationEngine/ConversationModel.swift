@@ -420,6 +420,11 @@ public class ConversationModel: ObservableObject, Identifiable {
         self.created = Date()
         self.title = title
 
+        /// Initialize sessionId for GitHub Copilot billing continuity.
+        /// Per VS Code Copilot protocol: sessionId should be set at conversation creation.
+        /// This enables proper copilot_thread_id propagation and prevents duplicate billing.
+        self.sessionId = self.id.uuidString
+
         /// Use conversation title for directory name (sanitized)
         let safeName = title.replacingOccurrences(of: "/", with: "-")
         let conversationDirectory = NSString(string: "~/SAM/\(safeName)/").expandingTildeInPath
