@@ -1994,23 +1994,23 @@ AVAILABLE TOOLS:
     /// Handle proxy mode request - pure 1:1 passthrough to LLM endpoint NO SAM processing: no system prompts, no MCP tools, no memory, no additional context Used for external tools like Aider that expect pure LLM API responses.
     private func handleProxyModeRequest(_ chatRequest: OpenAIChatRequest, req: Request, requestId: String) async throws -> Response {
         logger.debug("PROXY MODE: Forwarding request to LLM endpoint [req:\(requestId.prefix(8))]")
-        logger.debug("PROXY MODE: Model=\(chatRequest.model), Messages=\(chatRequest.messages.count), Stream=\(chatRequest.stream ?? true)")
+        logger.debug("PROXY MODE: Model=\(chatRequest.model), Messages=\(chatRequest.messages.count), Stream=\(String(describing: chatRequest.stream))")
 
         /// Normalize model name (handle MLX model format).
         let normalizedModel = normalizeModelName(chatRequest.model)
         logger.debug("PROXY MODE: Using model: \(normalizedModel)")
 
-        /// Extract parameters from request.
-        let temperature = chatRequest.temperature ?? 0.7
-        let isStreaming = chatRequest.stream ?? true
+        /// Extract parameters from request WITHOUT injecting defaults (pure passthrough).
+        let temperature = chatRequest.temperature
+        let isStreaming = chatRequest.stream ?? true  // Still need default for flow control below
 
-        /// Create pure passthrough request (no tools, no additional processing).
+        /// Create pure passthrough request (no tools, no additional processing, no default injection).
         let passthroughRequest = OpenAIChatRequest(
             model: normalizedModel,
             messages: chatRequest.messages,
-            temperature: temperature,
+            temperature: temperature,  // Pass through as-is (may be nil)
             maxTokens: chatRequest.maxTokens,
-            stream: isStreaming,
+            stream: chatRequest.stream,  // Pass through as-is (may be nil)
             tools: nil,
             samConfig: nil,
             contextId: nil,
