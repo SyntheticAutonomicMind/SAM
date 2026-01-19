@@ -91,7 +91,7 @@ public class AppleMLXAdapter {
         /// Step 2: Create model using Apple's type registry.
         let model: any LanguageModel
         do {
-            model = try typeRegistry.createModel(configuration: configPath, modelType: baseConfig.modelType)
+            model = try await typeRegistry.createModel(configuration: configPath, modelType: baseConfig.modelType)
             logger.debug("Created \(baseConfig.modelType) model using Apple's registry")
         } catch {
             logger.error("Failed to create model with type '\(baseConfig.modelType)': \(error)")

@@ -80,8 +80,8 @@ let package = Package(
         // Vapor for HTTP server functionality
         .package(url: "https://github.com/vapor/vapor", from: "4.99.1"),
 
-        // SQLite for memory database storage
-        .package(url: "https://github.com/stephencelis/SQLite.swift", branch: "master"),
+        // SQLite for memory database storage (pinned to avoid trait incompatibility)
+        .package(url: "https://github.com/stephencelis/SQLite.swift", revision: "eb9b2ee9d9b7f941ac883b0843557469ed567af2"),
 
         // Apple's swift-markdown for AST-based markdown parsing (PDF generation)
         .package(url: "https://github.com/apple/swift-markdown", from: "0.4.0"),
