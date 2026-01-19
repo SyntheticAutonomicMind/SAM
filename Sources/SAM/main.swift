@@ -65,6 +65,7 @@ struct SAMRewrittenApp: App {
         /// This is done in next run loop to ensure AppDelegate is fully initialized.
         DispatchQueue.main.async { [weak appDelegate] in
             appDelegate?.conversationManager = sharedConversationManager
+            appDelegate?.endpointManager = endpointMgr
         }
 
         /// Debug logging only in debug builds.

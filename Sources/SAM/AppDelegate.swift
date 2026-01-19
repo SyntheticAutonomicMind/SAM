@@ -20,6 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     // MARK: - Bug #3: Reference to ConversationManager for cleanup
     weak var conversationManager: ConversationManager?
+    weak var endpointManager: EndpointManager?
 
     override init() {
         super.init()
@@ -105,6 +106,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         /// Ensure all pending conversation saves complete before app exits.
         conversationManager?.cleanup()
+
+        /// Unload all local models to prevent Metal resource cleanup crashes.
+        /// Use a semaphore to block until cleanup completes.
+        if let manager = endpointManager {
+            let semaphore = DispatchSemaphore(value: 0)
+            Task {
+                await manager.cleanup()
+                semaphore.signal()
+            }
+            /// Wait up to 5 seconds for cleanup to complete.
+            _ = semaphore.wait(timeout: .now() + 5.0)
+        }
     }
 
     // MARK: - Window Frame Persistence

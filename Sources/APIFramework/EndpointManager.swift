@@ -1578,6 +1578,27 @@ extension EndpointManager: ConversationEngine.AIProviderProtocol {
         }
         return nil
     }
+
+    // MARK: - App Termination Cleanup
+
+    /// Unload all local models before app termination to prevent crashes.
+    /// This ensures llama.cpp and MLX models release their Metal resources gracefully.
+    public func cleanup() async {
+        logger.info("CLEANUP: Starting provider cleanup for app termination")
+
+        /// Unload all local providers that have model loading/unloading capability.
+        for (identifier, provider) in providers {
+            if let llamaProvider = provider as? LlamaProvider {
+                logger.info("CLEANUP: Unloading llama model from provider: \(identifier)")
+                await llamaProvider.unload()
+            } else if let mlxProvider = provider as? MLXProvider {
+                logger.info("CLEANUP: Unloading MLX model from provider: \(identifier)")
+                await mlxProvider.unload()
+            }
+        }
+
+        logger.info("CLEANUP: Provider cleanup complete")
+    }
 }
 
 // MARK: - Protocol Conformance
