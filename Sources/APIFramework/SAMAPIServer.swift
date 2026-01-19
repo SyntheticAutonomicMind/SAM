@@ -2004,14 +2004,16 @@ AVAILABLE TOOLS:
         let temperature = chatRequest.temperature
         let isStreaming = chatRequest.stream ?? true  // Still need default for flow control below
 
-        /// Create pure passthrough request (no tools, no additional processing, no default injection).
+        /// Create pure passthrough request - PRESERVE tools from client (CLIO fix)
+        /// BUG FIX: Was setting tools: nil, stripping tool definitions from CLIO
+        /// Now preserves chatRequest.tools so external clients can use function calling
         let passthroughRequest = OpenAIChatRequest(
             model: normalizedModel,
             messages: chatRequest.messages,
             temperature: temperature,  // Pass through as-is (may be nil)
             maxTokens: chatRequest.maxTokens,
             stream: chatRequest.stream,  // Pass through as-is (may be nil)
-            tools: nil,
+            tools: chatRequest.tools,  // FIX: Preserve tools instead of nil
             samConfig: nil,
             contextId: nil,
             enableMemory: nil,
