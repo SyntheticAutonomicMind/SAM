@@ -2004,14 +2004,15 @@ AVAILABLE TOOLS:
         let temperature = chatRequest.temperature
         let isStreaming = chatRequest.stream ?? true  // Still need default for flow control below
 
-        /// Create pure passthrough request (no tools, no additional processing, no default injection).
+        /// Create pure passthrough request (preserve ALL fields from client including tools).
+        /// CRITICAL: Tools must be passed through for external clients like CLIO to use function calling.
         let passthroughRequest = OpenAIChatRequest(
             model: normalizedModel,
             messages: chatRequest.messages,
             temperature: temperature,  // Pass through as-is (may be nil)
             maxTokens: chatRequest.maxTokens,
             stream: chatRequest.stream,  // Pass through as-is (may be nil)
-            tools: nil,
+            tools: chatRequest.tools,  // CRITICAL: Preserve tools for 1:1 proxy behavior
             samConfig: nil,
             contextId: nil,
             enableMemory: nil,
@@ -2063,6 +2064,10 @@ AVAILABLE TOOLS:
             var fullContent = ""
             var lastModel = normalizedModel
             var lastId = "chatcmpl-\(requestId)"
+            var finishReason = "stop"
+            
+            /// Accumulate tool calls from streaming deltas (preserves complete tool_call structure)
+            var toolCallsAccumulator: [String: (id: String, type: String, name: String, arguments: String)] = [:]
 
             for try await chunk in stream {
                 if let content = chunk.choices.first?.delta.content {
@@ -2070,9 +2075,72 @@ AVAILABLE TOOLS:
                 }
                 lastModel = chunk.model
                 lastId = chunk.id
+                
+                /// Extract finish_reason if present
+                if let reason = chunk.choices.first?.finishReason {
+                    finishReason = reason
+                }
+                
+                /// Accumulate tool calls from delta (GitHub Copilot sends them incrementally)
+                if let toolCalls = chunk.choices.first?.delta.toolCalls {
+                    for toolCall in toolCalls {
+                        let index = toolCall.index ?? 0
+                        let key = String(index)
+                        
+                        if var existing = toolCallsAccumulator[key] {
+                            /// Append to existing tool call
+                            if !toolCall.id.isEmpty {
+                                existing.id = toolCall.id
+                            }
+                            if !toolCall.type.isEmpty {
+                                existing.type = toolCall.type
+                            }
+                            if !toolCall.function.name.isEmpty {
+                                existing.name = toolCall.function.name
+                            }
+                            existing.arguments += toolCall.function.arguments
+                            toolCallsAccumulator[key] = existing
+                        } else {
+                            /// Create new tool call entry
+                            toolCallsAccumulator[key] = (
+                                id: toolCall.id,
+                                type: toolCall.type,
+                                name: toolCall.function.name,
+                                arguments: toolCall.function.arguments
+                            )
+                        }
+                    }
+                }
             }
 
-            /// Return standard OpenAI format.
+            /// Build message object with both content and tool_calls
+            var messageDict: [String: Any] = [
+                "role": "assistant"
+            ]
+            
+            /// Include content if present (can be null when tool_calls exist)
+            if !fullContent.isEmpty {
+                messageDict["content"] = fullContent
+            }
+            
+            /// Include tool_calls if any were accumulated
+            if !toolCallsAccumulator.isEmpty {
+                let sortedToolCalls = toolCallsAccumulator.keys.sorted().compactMap { key -> [String: Any]? in
+                    guard let toolCall = toolCallsAccumulator[key] else { return nil }
+                    return [
+                        "id": toolCall.id,
+                        "type": toolCall.type,
+                        "function": [
+                            "name": toolCall.name,
+                            "arguments": toolCall.arguments
+                        ]
+                    ]
+                }
+                messageDict["tool_calls"] = sortedToolCalls
+                logger.debug("PROXY MODE: Accumulated \(sortedToolCalls.count) tool calls in non-streaming response")
+            }
+
+            /// Return standard OpenAI format with complete message structure.
             let responseData: [String: Any] = [
                 "id": lastId,
                 "object": "chat.completion",
@@ -2081,11 +2149,8 @@ AVAILABLE TOOLS:
                 "choices": [
                     [
                         "index": 0,
-                        "message": [
-                            "role": "assistant",
-                            "content": fullContent
-                        ],
-                        "finish_reason": "stop"
+                        "message": messageDict,
+                        "finish_reason": finishReason
                     ]
                 ],
                 "usage": [
@@ -2095,7 +2160,7 @@ AVAILABLE TOOLS:
                 ]
             ]
 
-            logger.debug("PROXY MODE: Non-streaming complete - \(fullContent.count) chars")
+            logger.debug("PROXY MODE: Non-streaming complete - content: \(fullContent.count) chars, tool_calls: \(toolCallsAccumulator.count), finish_reason: \(finishReason)")
             return Response(status: .ok, version: req.version, headers: HTTPHeaders(), body: .init(data: try JSONSerialization.data(withJSONObject: responseData)))
         }
     }
