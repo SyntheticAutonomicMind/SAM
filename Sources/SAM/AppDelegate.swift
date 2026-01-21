@@ -118,6 +118,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             /// Wait up to 5 seconds for cleanup to complete.
             _ = semaphore.wait(timeout: .now() + 5.0)
         }
+        
+        /// CRITICAL: Free llama.cpp backend resources after all models are unloaded
+        /// This must be called exactly ONCE at app termination, after all LlamaContext
+        /// instances are deallocated. Calling it in LlamaContext.deinit causes crashes
+        /// when multiple contexts exist or when Metal resources aren't ready to be freed.
+        llamaBackendCleanup()
     }
 
     // MARK: - Window Frame Persistence

@@ -22,6 +22,15 @@ enum LlamaError: Error {
     case contextLimitReached
 }
 
+// MARK: - Global Cleanup
+
+/// Call llama backend free at app termination
+/// CRITICAL: Must be called exactly once, AFTER all LlamaContext instances are deallocated
+public func llamaBackendCleanup() {
+    llamaLogger.info("APP_SHUTDOWN: Freeing llama.cpp backend resources")
+    llama_backend_free()
+}
+
 // MARK: - Helper Methods
 
 func llama_batch_clear(_ batch: inout llama_batch) {
@@ -118,12 +127,18 @@ actor LlamaContext {
     }
 
     deinit {
+        llamaLogger.info("LlamaContext deinit: Cleaning up resources")
+        
+        /// Free resources in the correct order (inverse of allocation)
+        /// Do NOT call llama_backend_free() here - it should only be called once at app shutdown
+        /// See AppDelegate.applicationWillTerminate() for global cleanup
+        
         llama_sampler_free(sampling)
         llama_batch_free(batch)
-        llama_model_free(model)
         llama_free(context)
-        llama_backend_free()
-        llamaLogger.info("LlamaContext cleaned up")
+        llama_model_free(model)
+        
+        llamaLogger.info("LlamaContext cleaned up successfully")
     }
 
     // MARK: - Factory Method
@@ -375,6 +390,13 @@ actor LlamaContext {
         ctx_params.n_batch = UInt32(n_batch)
         ctx_params.n_threads = promptThreads           // Used for prompt evaluation
         ctx_params.n_threads_batch = generationThreads  // Used for token generation
+
+        /// CRITICAL FIX: Explicitly initialize samplers to NULL to prevent segfault
+        /// Recent llama.cpp versions validate sampler chains during context init.
+        /// If samplers field contains garbage/uninitialized values, llama_sampler_chain_get
+        /// will dereference invalid pointers. We don't use backend samplers, so set to NULL.
+        ctx_params.samplers = nil
+        ctx_params.n_samplers = 0
 
         /// PERFORMANCE: Offload KV cache to GPU (LMStudio "Offload KV Cache to GPU") This stores the key/value cache on GPU instead of CPU RAM Dramatically improves performance for long contexts.
         ctx_params.offload_kqv = true
