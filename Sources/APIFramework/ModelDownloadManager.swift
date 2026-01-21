@@ -307,6 +307,52 @@ public class ModelDownloadManager: ObservableObject {
 
     /// Download a model file and register provider.
     @MainActor
+    /// Download with automatic retry on failure using exponential backoff
+    /// Retries up to 3 times with increasing delays: 2s, 4s, 8s
+    private func downloadModelWithRetry(
+        repoId: String,
+        filename: String,
+        destination: URL,
+        onProgress: @Sendable @escaping (Double) -> Void,
+        maxRetries: Int = 3
+    ) async throws -> URL {
+        var lastError: Error?
+        var retryCount = 0
+        let maxRetryDelay: UInt64 = 8_000_000_000  // 8 seconds in nanoseconds
+        
+        while retryCount <= maxRetries {
+            do {
+                downloadLogger.info("Download attempt \(retryCount + 1) of \(maxRetries + 1): \(filename)")
+                
+                let (downloadTask, _) = apiClient.downloadModelCancellable(
+                    repoId: repoId,
+                    filename: filename,
+                    destination: destination,
+                    progress: onProgress
+                )
+                
+                return try await downloadTask.value
+            } catch is CancellationError {
+                // Don't retry on user cancellation
+                throw CancellationError()
+            } catch {
+                lastError = error
+                retryCount += 1
+                
+                if retryCount <= maxRetries {
+                    let delayNanos: UInt64 = UInt64(1_000_000_000) * UInt64(1 << retryCount)  // 2s, 4s, 8s
+                    downloadLogger.warning("Download failed (attempt \(retryCount)): \(error.localizedDescription). Retrying in \(delayNanos / 1_000_000_000)s...")
+                    
+                    try? await Task.sleep(nanoseconds: min(delayNanos, maxRetryDelay))
+                } else {
+                    downloadLogger.error("Download failed after \(maxRetries) retries: \(error.localizedDescription)")
+                }
+            }
+        }
+        
+        throw lastError ?? DownloadError.httpError
+    }
+
     public func downloadModel(model: HFModel, file: HFModelFile) async {
         let modelId = "\(model.id)_\(file.rfilename)"
 
@@ -352,12 +398,13 @@ public class ModelDownloadManager: ObservableObject {
                     try? FileManager.default.removeItem(at: tmpDestination)
                 }
 
-                /// Download with progress tracking to .tmp file (atomic operation) Use cancellable version.
-                let (downloadTask, cancelHandler) = apiClient.downloadModelCancellable(
+                /// Download with progress tracking and automatic retry.
+                /// Retries up to 3 times on failure with exponential backoff (2s, 4s, 8s).
+                let downloadedURL = try await downloadModelWithRetry(
                     repoId: model.id,
                     filename: file.rfilename,
                     destination: tmpDestination,
-                    progress: { [weak self] progress in
+                    onProgress: { [weak self] progress in
                         Task { @MainActor in
                             self?.downloadProgress[modelId] = progress
                             /// Log progress updates every 10%.
@@ -368,13 +415,6 @@ public class ModelDownloadManager: ObservableObject {
                         }
                     }
                 )
-
-                /// Store cancel handler for this download.
-                await MainActor.run {
-                    self.downloadCancelHandlers[modelId] = cancelHandler
-                }
-
-                let downloadedURL = try await downloadTask.value
 
                 /// Atomic rename: .tmp -> final destination.
                 try FileManager.default.moveItem(at: downloadedURL, to: destination)

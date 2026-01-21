@@ -212,18 +212,11 @@ public class LocalModelManager {
                         for modelURL in modelDirs where modelURL.hasDirectoryPath {
                             let modelName = modelURL.lastPathComponent
 
-                            /// Look for model files in model subdirectory.
-                            if let modelFiles = try? FileManager.default.contentsOfDirectory(at: modelURL, includingPropertiesForKeys: [.fileSizeKey]) {
-                                /// Find primary model file - prefer model.safetensors over other .safetensors files
-                                /// This ensures we don't pick tokenizer or config files
-                                let primaryModelFile = modelFiles.first(where: { $0.lastPathComponent == "model.safetensors" })
-                                    ?? modelFiles.first(where: { $0.pathExtension.lowercased() == "gguf" })
-                                    ?? modelFiles.first(where: { $0.pathExtension.lowercased() == "safetensors" })
-                                
-                                if let modelFile = primaryModelFile {
-                                    if let model = parseModelInfo(from: modelFile, provider: provider, modelName: modelName) {
-                                        scannedModels.append(model)
-                                    }
+                            /// Look for model files in model subdirectory
+                            /// Also validates multi-part models to ensure all parts are present
+                            if let primaryModelFile = findPrimaryModelFile(in: modelURL) {
+                                if let model = parseModelInfo(from: primaryModelFile, provider: provider, modelName: modelName) {
+                                    scannedModels.append(model)
                                 }
                             }
                         }
@@ -569,6 +562,77 @@ public class LocalModelManager {
     }
 
     /// Parse model metadata from filename and file info.
+    /// Detect and validate multi-part models (e.g., model-00001-of-00006.safetensors)
+    /// Returns true only if ALL parts are present
+    private func isMultiPartModelComplete(modelDirectory: URL) -> Bool {
+        do {
+            let files = try FileManager.default.contentsOfDirectory(at: modelDirectory, includingPropertiesForKeys: nil)
+            
+            /// Look for multi-part pattern: model-XXXXX-of-NNNNN.safetensors or model-XXXXX-of-NNNNN.bin
+            let multiPartPattern = try NSRegularExpression(pattern: "model-(\\d+)-of-(\\d+)\\.(safetensors|bin)$", options: [])
+            
+            var multiPartFiles: [(partNum: Int, totalParts: Int, url: URL)] = []
+            
+            for file in files {
+                let filename = file.lastPathComponent
+                let matches = multiPartPattern.matches(in: filename, range: NSRange(filename.startIndex..., in: filename))
+                
+                if let match = matches.first,
+                   let partRange = Range(match.range(at: 1), in: filename),
+                   let totalRange = Range(match.range(at: 2), in: filename),
+                   let partNum = Int(String(filename[partRange])),
+                   let totalParts = Int(String(filename[totalRange])) {
+                    multiPartFiles.append((partNum: partNum, totalParts: totalParts, url: file))
+                }
+            }
+            
+            /// If this is a multi-part model, check if all parts are present
+            if !multiPartFiles.isEmpty {
+                guard let firstFile = multiPartFiles.first else { return false }
+                let expectedTotal = firstFile.totalParts
+                let foundParts = Set(multiPartFiles.map { $0.partNum })
+                let expectedParts = Set(1...expectedTotal)
+                
+                let isComplete = foundParts == expectedParts
+                if !isComplete {
+                    modelLogger.warning("Multi-part model incomplete: has \(foundParts.count) of \(expectedTotal) parts")
+                }
+                return isComplete
+            }
+            
+            /// Not a multi-part model, consider it complete
+            return true
+        } catch {
+            modelLogger.warning("Failed to check multi-part model: \(error.localizedDescription)")
+            return true  // Assume complete if we can't read directory
+        }
+    }
+
+    /// Find the best model file in directory, respecting multi-part validation
+    private func findPrimaryModelFile(in modelDirectory: URL) -> URL? {
+        /// First, validate if this is a multi-part model
+        let isMultiPartComplete = isMultiPartModelComplete(modelDirectory: modelDirectory)
+        guard isMultiPartComplete else {
+            modelLogger.warning("Skipping incomplete multi-part model: \(modelDirectory.path)")
+            return nil
+        }
+        
+        /// Find primary model file - prefer model.safetensors over other .safetensors files
+        /// This ensures we don't pick tokenizer or config files
+        guard let files = try? FileManager.default.contentsOfDirectory(at: modelDirectory, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return nil
+        }
+        
+        let primaryModelFile = files.first(where: { $0.lastPathComponent == "model.safetensors" })
+            ?? files.first(where: { $0.lastPathComponent == "pytorch_model.bin" })
+            ?? files.first(where: { $0.pathExtension.lowercased() == "gguf" })
+            ?? files.first(where: { $0.pathExtension.lowercased() == "bin" && !$0.lastPathComponent.hasSuffix(".safetensors") })
+            ?? files.first(where: { $0.pathExtension.lowercased() == "safetensors" && $0.lastPathComponent.hasPrefix("model-") })
+            ?? files.first(where: { $0.pathExtension.lowercased() == "safetensors" })
+        
+        return primaryModelFile
+    }
+
     private func parseModelInfo(from url: URL, provider: String, modelName: String?) -> LocalModel? {
         let filename = url.deletingPathExtension().lastPathComponent
         let name = modelName ?? filename
