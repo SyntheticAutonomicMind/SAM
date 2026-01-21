@@ -1,6 +1,45 @@
 {
   "releases": [
     {
+      "version": "20260121.1",
+      "release_date": "January 21, 2026",
+      "introduction": "This release resolves critical stability issues affecting model loading, downloads, and app termination. Multi-part model handling is now robust with automatic retry capabilities.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "model-load-crash",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Model Loading Crash (SIGSEGV)",
+          "description": "Resolved a critical crash that occurred when loading models. The issue was caused by uninitialized sampler parameters in llama.cpp context initialization. Models now load reliably without segmentation faults."
+        },
+        {
+          "id": "multipart-model-validation",
+          "icon": "checkmark.circle.fill",
+          "title": "Intelligent Multi-Part Model Handling",
+          "description": "SAM now correctly validates multi-part models (like Qwen2.5-Coder 14B with 6 safetensors files). Incomplete downloads are skipped and won't appear in your models list. The model picker only shows complete, ready-to-use models."
+        },
+        {
+          "id": "download-retry-logic",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Automatic Download Retries",
+          "description": "Downloads now automatically retry up to 3 times with smart exponential backoff (2s, 4s, 8s delays) when transient network issues occur. Temporary connection glitches no longer cause failed downloads."
+        },
+        {
+          "id": "app-termination-crash",
+          "icon": "power",
+          "title": "Fixed App Termination Metal Crash",
+          "description": "Resolved Metal device resource assertion failures that could occur when quitting SAM after using local models. GPU resources are now properly cleaned up during app exit in the correct order."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": [
+        {
+          "id": "backend-cleanup-ordering",
+          "content": "Moved llama_backend_free() from per-context cleanup to single app-termination cleanup to prevent multiple deallocation attempts and Metal resource conflicts."
+        }
+      ]
+    },
+    {
       "version": "20260120.1",
       "release_date": "January 20, 2026",
       "introduction": "This release adds powerful API server capabilities for terminal-based AI assistants and fixes critical stability issues with model lifecycle management.",
