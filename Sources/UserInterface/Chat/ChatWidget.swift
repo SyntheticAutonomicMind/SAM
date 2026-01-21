@@ -2537,16 +2537,20 @@ public struct ChatWidget: View {
                         case .loaded:
                             Button(action: { ejectLocalModel() }) {
                                 Image(systemName: "eject.fill")
-                                    .font(.caption)
+                                    .frame(width: 20, height: 20)
                             }
                             .buttonStyle(.bordered)
+                            .frame(width: 36)
+                            .fixedSize()
                             .help("Eject model from memory")
                         case .notLoaded:
                             Button(action: { loadLocalModel() }) {
                                 Image(systemName: "play.fill")
-                                    .font(.caption)
+                                    .frame(width: 20, height: 20)
                             }
                             .buttonStyle(.bordered)
+                            .frame(width: 36)
+                            .fixedSize()
                             .help("Load model into memory")
                         }
                     }
