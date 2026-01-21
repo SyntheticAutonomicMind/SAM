@@ -1,6 +1,47 @@
 {
   "releases": [
     {
+      "version": "20260120.1",
+      "release_date": "January 20, 2026",
+      "introduction": "This release adds powerful API server capabilities for terminal-based AI assistants and fixes critical stability issues with model lifecycle management.",
+      "highlights": [
+        {
+          "id": "clio-integration",
+          "icon": "terminal.fill",
+          "title": "CLIO Integration - SAM as Your API Backend",
+          "description": "SAM now works as a fully-featured OpenAI-compatible API server for external tools like CLIO (Command Line Intelligence Orchestrator). Terminal-based AI assistants can use SAM as their LLM backend with per-request proxy mode, model capability discovery (token limits, billing metadata), and support for large tool schemas. Perfect for pair programming in the terminal while leveraging SAM's multi-provider AI support."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "metal-cleanup-crash",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed App Termination Crashes",
+          "description": "Resolved Metal resource cleanup crashes that could occur when quitting SAM. The app now properly unloads models during shutdown, preventing GPU-related crashes on termination."
+        },
+        {
+          "id": "dependency-actor-isolation",
+          "icon": "arrow.triangle.branch",
+          "title": "Fixed Dependency Compatibility Issues",
+          "description": "Pinned SQLite.swift dependency to resolve trait incompatibility errors and fixed actor isolation warnings in MLX model creation. This ensures stable builds and proper concurrency handling for local models."
+        },
+        {
+          "id": "proxy-tool-preservation",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Fixed Proxy Mode Tool Handling",
+          "description": "Corrected tool schema preservation in API proxy mode, ensuring external AI tools like CLIO receive complete tool definitions without corruption. Tools now pass through correctly with their full parameters."
+        },
+        {
+          "id": "copilot-session-continuity",
+          "icon": "arrow.triangle.2.circlepath.circle.fill",
+          "title": "Fixed GitHub Copilot Session Continuity",
+          "description": "Resolved session handling issues that could interrupt GitHub Copilot conversations when using subagents. Copilot now maintains proper context across complex multi-turn interactions."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": []
+    },
+    {
       "version": "20260117.1",
       "release_date": "January 17, 2026",
       "introduction": "This release improves diagram rendering, adds powerful codebase learning capabilities, expands web integration features, and fixes critical stability issues.",
