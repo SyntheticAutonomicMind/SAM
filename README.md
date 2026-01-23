@@ -16,12 +16,12 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 
 ## 🔗 Quick Links
 
-- ** Website:** [www.syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)
-- **⬇️ Download SAM:** [Latest Release](https://github.com/SyntheticAutonomicMind/SAM/releases)
-- **📄 Documentation:** [User Guides & Tutorials](https://www.syntheticautonomicmind.org)
-- ** Source Code:** [GitHub Repository](https://github.com/SyntheticAutonomicMind/SAM)
-- **🐛 Report Issues:** [Issue Tracker](https://github.com/SyntheticAutonomicMind/SAM/issues)
-- ** Support SAM:** [Patreon](https://www.patreon.com/fewtarius)
+- **Website:** [www.syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)
+- **Download SAM:** [Latest Release](https://github.com/SyntheticAutonomicMind/SAM/releases)
+- **Documentation:** [User Guides & Tutorials](https://www.syntheticautonomicmind.org)
+- **Source Code:** [GitHub Repository](https://github.com/SyntheticAutonomicMind/SAM)
+- **Report Issues:** [Issue Tracker](https://github.com/SyntheticAutonomicMind/SAM/issues)
+- **Support SAM:** [Patreon](https://www.patreon.com/fewtarius)
 
 ---
 
@@ -77,38 +77,38 @@ SAM's clean interface and natural interactions make powerful AI accessible to ev
 
 ## What You Can Do with SAM
 
-###  **For Documents & Research**
+### **For Documents & Research**
 - Upload and analyze PDFs, articles, and books
 - Ask questions about your documents
 - Summarize long texts in seconds
 - Research online with reliable sources and citations
 
-###  **For Creativity & Design**
+### **For Creativity & Design**
 - Generate custom images from text descriptions
 - Browse and apply different art styles
 - Edit and refine images with simple prompts
 - Get inspiration for projects or presentations
 
-### 📝 **For Writing & Communication**
+### **For Writing & Communication**
 - Draft emails, essays, or reports
 - Improve your writing with gentle suggestions
 - Brainstorm ideas and organize your thoughts
 - Translate text between languages
 
-### ️ **For Organization & Productivity**
+### ️**For Organization & Productivity**
 - Manage files and folders with voice commands
 - Create project plans and task lists
 - Organize your work in project folders
 - Automate repetitive computer tasks
 - Access SAM remotely from your iPad or phone
 
-###  **For Custom AI Models**
+### **For Custom AI Models**
 - Train models on your own documents and conversations
 - Create specialized assistants for your work domain
 - Fine-tune AI to understand your industry jargon
 - Build knowledge bases from your expertise
 
-### 💡 **For Learning & Curiosity**
+### **For Learning & Curiosity**
 - Ask questions about any topic
 - Get step‑by‑step explanations
 - Explore new skills and hobbies
@@ -201,7 +201,7 @@ Get a glimpse of SAM's native macOS interface in action:
 - API credentials stored locally in UserDefaults
 - Zero telemetry, zero tracking
 
-🧠 **Intelligent Memory**
+ **Intelligent Memory**
 - Remember and search across all your conversations
 - Import documents (PDF, Word, Excel, text) and ask questions about them
 - Share context between conversations when you need it
@@ -262,8 +262,8 @@ Get a glimpse of SAM's native macOS interface in action:
 3. Go to **AI Providers** tab
 4. Click **Add Provider**
 5. Choose your provider:
-   - **Cloud AI**: OpenAI, Claude, GitHub Copilot, or DeepSeek
-   - **Local Model**: Choose a model to download and run on your Mac
+  - **Cloud AI**: OpenAI, Claude, GitHub Copilot, or DeepSeek
+  - **Local Model**: Choose a model to download and run on your Mac
 6. For cloud providers: Enter your API key
 7. Save and start chatting!
 
@@ -287,10 +287,10 @@ Want to use SAM from your iPad or phone? Check out **[SAM-Web](https://github.co
 
 ## Get Started in Minutes
 
-[⬇️ Download SAM](https://github.com/SyntheticAutonomicMind/SAM/releases/latest) for macOS 14.0+  
-[📄 Read the guides](https://www.syntheticautonomicmind.org)  
-[ View the code](https://github.com/SyntheticAutonomicMind/SAM)  
-[🐛 Share feedback](https://github.com/SyntheticAutonomicMind/SAM/issues)
+[Download SAM](https://github.com/SyntheticAutonomicMind/SAM/releases/latest) for macOS 14.0+  
+[Read the guides](https://www.syntheticautonomicmind.org)  
+[View the code](https://github.com/SyntheticAutonomicMind/SAM)  
+[Share feedback](https://github.com/SyntheticAutonomicMind/SAM/issues)
 
 ---
 
@@ -301,9 +301,9 @@ SAM offers a development channel for users who want early access to new features
 ### What are Development Builds?
 
 Development builds are released frequently (sometimes daily) and contain:
--  New features before they reach stable release
-- 🐛 Bug fixes and improvements being tested
-- [WARN]️ Potentially incomplete features or breaking changes
+- New features before they reach stable release
+- Bug fixes and improvements being tested
+- Potentially incomplete features or breaking changes
 
 **Development builds are intended for testing and feedback only.** They may contain bugs or unstable behavior. Do not use development builds for critical production work.
 
@@ -332,10 +332,10 @@ You can disable development updates at any time to return to stable releases onl
 If you're using development builds and encounter issues:
 1. Check [GitHub Issues](https://github.com/SyntheticAutonomicMind/SAM/issues) to see if it's already reported
 2. Create a new issue with:
-   - Your SAM version (shown in About SAM or Preferences)
-   - Steps to reproduce the problem
-   - Expected vs actual behavior
-   - Relevant logs (Help -> Show Logs)
+  - Your SAM version (shown in About SAM or Preferences)
+  - Steps to reproduce the problem
+  - Expected vs actual behavior
+  - Relevant logs (Help -> Show Logs)
 
 Your feedback helps make SAM better for everyone!
 
@@ -343,14 +343,14 @@ Your feedback helps make SAM better for everyone!
 
 ## Key Features
 
-###  Conversations
+### Conversations
 
 - Unlimited conversations with automatic saving
 - Export to JSON or Markdown
 - Rename, duplicate, and organize conversations
 - Switch AI models mid-conversation
 
-### 🧠 Memory & Documents
+### Memory & Documents
 
 - Search across all your conversations semantically
 - Import documents (PDF, Word, Excel, text files) and ask questions about them
@@ -358,7 +358,7 @@ Your feedback helps make SAM better for everyone!
 - Share context between conversations when needed
 - Keep conversations private from each other by default
 
-###  AI Provider Support
+### AI Provider Support
 
 | Provider | What You Get |
 |----------|--------------|
@@ -370,7 +370,7 @@ Your feedback helps make SAM better for everyone!
 | **Local llama.cpp** | Run models on any Mac (Intel or Apple Silicon) |
 | **Custom** | Use any OpenAI-compatible API |
 
-### ️ What SAM Can Do
+### ️What SAM Can Do
 
 **Work with Files**
 - Read, write, search, and edit files
@@ -397,14 +397,14 @@ Your feedback helps make SAM better for everyone!
 - Create formatted documents (PDF, Word, PowerPoint)
 - Generate images with Stable Diffusion
 
-###  Image Generation
+### Image Generation
 
 - Multiple Stable Diffusion models (SD 1.5, SDXL, and more)
 - Browse and download models from HuggingFace and CivitAI
 - LoRA support for custom styles
 - Optimized for Apple Silicon Macs
 
-###  LoRA Training
+### LoRA Training
 
 Train custom AI models on your own data:
 
@@ -416,7 +416,7 @@ Train custom AI models on your own data:
 - **Document Chunking**: Multiple strategies for processing long documents
 - **PII Protection**: Optional detection and redaction of sensitive information
 
-###  SAM-Web: Remote Access
+### SAM-Web: Remote Access
 
 Access SAM chat from other devices on your network:
 
@@ -430,7 +430,7 @@ Access SAM chat from other devices on your network:
 
 Visit the [SAM-Web repository](https://github.com/SyntheticAutonomicMind/SAM-web) for setup instructions.
 
-###  Personalities
+### Personalities
 
 Choose from built-in personalities to customize how SAM communicates:
 
@@ -607,8 +607,5 @@ Complete documentation is available:
 - [Stable Diffusion](https://github.com/apple/ml-stable-diffusion) - Image generation
 - [Sparkle](https://sparkle-project.org) - App updates
 
-Special thanks to all contributors and the Swift/AI communities.
+Special thanks to contributors and the Swift/AI communities.
 
----
-
-**Ready to get started?** [Download SAM](https://github.com/SyntheticAutonomicMind/SAM/releases) and experience AI that respects your privacy while getting real work done.
