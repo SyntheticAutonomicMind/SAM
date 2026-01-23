@@ -14,13 +14,13 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 
 ---
 
-## [LINK] Quick Links
+## 🔗 Quick Links
 
 - ** Website:** [www.syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)
 - **⬇️ Download SAM:** [Latest Release](https://github.com/SyntheticAutonomicMind/SAM/releases)
-- **[DOC] Documentation:** [User Guides & Tutorials](https://www.syntheticautonomicmind.org)
+- **📄 Documentation:** [User Guides & Tutorials](https://www.syntheticautonomicmind.org)
 - ** Source Code:** [GitHub Repository](https://github.com/SyntheticAutonomicMind/SAM)
-- **[BUG] Report Issues:** [Issue Tracker](https://github.com/SyntheticAutonomicMind/SAM/issues)
+- **🐛 Report Issues:** [Issue Tracker](https://github.com/SyntheticAutonomicMind/SAM/issues)
 - ** Support SAM:** [Patreon](https://www.patreon.com/fewtarius)
 
 ---
@@ -45,7 +45,7 @@ You're always in control.
 SAM helps you finish things.  
 Whether it's organizing files, helping you draft documents, creating images, or researching a topic - SAM acts on your ideas.
 
-### [BRAIN] **Smart Memory**
+### 🧠 **Smart Memory**
 SAM remembers what matters across conversations.  
 Create "Shared Topics" to connect chats around the same project, and find anything you've shared with semantic search.
 
@@ -89,7 +89,7 @@ SAM's clean interface and natural interactions make powerful AI accessible to ev
 - Edit and refine images with simple prompts
 - Get inspiration for projects or presentations
 
-### [NOTE] **For Writing & Communication**
+### 📝 **For Writing & Communication**
 - Draft emails, essays, or reports
 - Improve your writing with gentle suggestions
 - Brainstorm ideas and organize your thoughts
@@ -108,7 +108,7 @@ SAM's clean interface and natural interactions make powerful AI accessible to ev
 - Fine-tune AI to understand your industry jargon
 - Build knowledge bases from your expertise
 
-### [IDEA] **For Learning & Curiosity**
+### 💡 **For Learning & Curiosity**
 - Ask questions about any topic
 - Get step‑by‑step explanations
 - Explore new skills and hobbies
@@ -201,7 +201,7 @@ Get a glimpse of SAM's native macOS interface in action:
 - API credentials stored locally in UserDefaults
 - Zero telemetry, zero tracking
 
-[BRAIN] **Intelligent Memory**
+🧠 **Intelligent Memory**
 - Remember and search across all your conversations
 - Import documents (PDF, Word, Excel, text) and ask questions about them
 - Share context between conversations when you need it
@@ -288,9 +288,9 @@ Want to use SAM from your iPad or phone? Check out **[SAM-Web](https://github.co
 ## Get Started in Minutes
 
 [⬇️ Download SAM](https://github.com/SyntheticAutonomicMind/SAM/releases/latest) for macOS 14.0+  
-[[DOC] Read the guides](https://www.syntheticautonomicmind.org)  
+[📄 Read the guides](https://www.syntheticautonomicmind.org)  
 [ View the code](https://github.com/SyntheticAutonomicMind/SAM)  
-[[BUG] Share feedback](https://github.com/SyntheticAutonomicMind/SAM/issues)
+[🐛 Share feedback](https://github.com/SyntheticAutonomicMind/SAM/issues)
 
 ---
 
@@ -302,7 +302,7 @@ SAM offers a development channel for users who want early access to new features
 
 Development builds are released frequently (sometimes daily) and contain:
 -  New features before they reach stable release
-- [BUG] Bug fixes and improvements being tested
+- 🐛 Bug fixes and improvements being tested
 - [WARN]️ Potentially incomplete features or breaking changes
 
 **Development builds are intended for testing and feedback only.** They may contain bugs or unstable behavior. Do not use development builds for critical production work.
@@ -350,7 +350,7 @@ Your feedback helps make SAM better for everyone!
 - Rename, duplicate, and organize conversations
 - Switch AI models mid-conversation
 
-### [BRAIN] Memory & Documents
+### 🧠 Memory & Documents
 
 - Search across all your conversations semantically
 - Import documents (PDF, Word, Excel, text files) and ask questions about them
