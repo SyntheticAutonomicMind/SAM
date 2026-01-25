@@ -393,14 +393,20 @@ class MarkdownASTParser {
                 break
             }
 
-            // Stop at next list marker at same or higher level
-            if trimmed.hasPrefix("-") || trimmed.hasPrefix("*") || trimmed.hasPrefix("+") ||
-               trimmed.range(of: #"^\d+\. "#, options: .regularExpression) != nil {
+            // Calculate indentation of next line
+            let nextLineIndent = nextLine.prefix(while: { $0.isWhitespace }).count
+
+            // Stop at next list marker ONLY if at same or higher level (less indentation)
+            let hasListMarker = trimmed.hasPrefix("-") || trimmed.hasPrefix("*") || trimmed.hasPrefix("+") ||
+                               trimmed.range(of: #"^\d+\. "#, options: .regularExpression) != nil
+            
+            if hasListMarker && nextLineIndent <= indent {
+                // List marker at same or higher level - end this item
                 break
             }
 
             // CRITICAL: Include block elements as part of list item content
-            // They will be parsed recursively as nested markdown
+            // They will be parsed recursively as nested markdown (including nested lists!)
             // Only stop at headers (they should start new sections)
             if trimmed.hasPrefix("#") {
                 break

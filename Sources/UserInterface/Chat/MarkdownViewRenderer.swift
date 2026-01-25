@@ -229,10 +229,13 @@ class MarkdownViewRenderer {
             switch type {
             case .ordered:
                 let number = item.number ?? (index + 1)
-                Text("\(number).")
+                // Calculate dynamic width based on number of digits for proper alignment
+                let numberString = "\(number)."
+                let estimatedWidth = CGFloat(numberString.count) * 9.0 + 4.0
+                Text(numberString)
                     .font(.body)
                     .foregroundColor(.secondary)
-                    .frame(width: 30, alignment: .trailing)
+                    .frame(width: max(estimatedWidth, 16), alignment: .leading)
 
             case .unordered:
                 bulletImage(for: item.indentLevel)
@@ -277,7 +280,7 @@ class MarkdownViewRenderer {
 
             Spacer()
         }
-        .padding(.leading, CGFloat(item.indentLevel * 20))
+        .padding(.leading, CGFloat(item.indentLevel * 24))
     }
 
     /// Returns appropriate bullet style based on nesting level

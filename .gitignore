@@ -74,3 +74,5 @@ reference/
 # CLIO
 .clio/logs/
 .clio/sessions/
+.clio/memory/
+.clio/*.json

@@ -1,6 +1,43 @@
 {
   "releases": [
     {
+      "version": "20260125.1",
+      "release_date": "January 25, 2026",
+      "introduction": "This release significantly improves markdown rendering, especially for complex nested lists and numbered items.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "nested-list-rendering",
+          "icon": "list.bullet.indent",
+          "title": "Fixed Nested List Parsing",
+          "description": "Nested lists now render correctly with proper hierarchy detection. SAM understands indentation levels and only breaks list items when encountering markers at the same or higher level. This fixes issues where nested content was incorrectly split into separate list items."
+        },
+        {
+          "id": "numbered-list-alignment",
+          "icon": "list.number",
+          "title": "Improved Numbered List Alignment",
+          "description": "Ordered lists now have dynamic width calculation based on the number of digits, ensuring proper alignment for lists with 10+ items. No more misaligned text when you have double-digit or triple-digit list numbers."
+        },
+        {
+          "id": "list-indent-spacing",
+          "icon": "increase.indent",
+          "title": "Better List Indentation",
+          "description": "Nested list items now use improved spacing (24pt instead of 20pt) for better visual hierarchy and readability. Complex multi-level lists are now easier to scan and understand at a glance."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": [
+        {
+          "id": "markdown-parser-improvements",
+          "content": "MarkdownASTParser now uses indentation-aware list item detection. List markers only terminate items when at same or higher level (less indentation), allowing proper nesting of block elements within list items."
+        },
+        {
+          "id": "dynamic-list-layout",
+          "content": "MarkdownViewRenderer now calculates dynamic frame widths for ordered list markers based on digit count (9.0pt per character + 4pt padding) to handle lists of any size."
+        }
+      ]
+    },
+    {
       "version": "20260121.1",
       "release_date": "January 21, 2026",
       "introduction": "This release resolves critical stability issues affecting model loading, downloads, and app termination. Multi-part model handling is now robust with automatic retry capabilities.",
