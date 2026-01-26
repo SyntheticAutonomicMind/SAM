@@ -6,7 +6,7 @@ import Logging
 import APIFramework
 import ConversationEngine
 
-private let logger = Logger(label: "SAM.UserInterface.WelcomeView")
+private let logger = Logger(label: "com.sam.ui.welcome")
 
 /// Welcome splash screen for SAM Shows on first launch with information about the application.
 struct WelcomeView: View {

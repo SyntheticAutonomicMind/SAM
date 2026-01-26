@@ -41,7 +41,7 @@ public struct SerpAPISearchResult {
 
 /// SerpAPI service for web search integration Supports: Google Search, AI Overview, Bing, Amazon, Ebay, Walmart, TripAdvisor, Yelp.
 public class SerpAPIService {
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.SerpAPI")
+    private let logger = Logger(label: "com.sam.web.serpapi")
     private let baseURL = "https://serpapi.com"
 
     /// Use ephemeral URLSession with timeout to prevent infinite hangs

@@ -11,7 +11,7 @@ import ConfigurationSystem
 /// Universal Tool Registry for Cross-Model MCP Tool Integration Follows Model Context Protocol (MCP) architecture to provide universal tool access across all language models (GPT-4, Claude, etc.) with proper tool registration, discovery, and execution.
 @MainActor
 public class UniversalToolRegistry: ObservableObject, ToolRegistryProtocol {
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.UniversalToolRegistry")
+    private let logger = Logger(label: "com.sam.api.toolregistry")
 
     /// Core registry storage.
     private var registeredTools: [String: UniversalTool] = [:]
@@ -470,7 +470,7 @@ public class MCPToolExecutor: ToolExecutor {
     private let toolName: String
     private let conversationManager: ConversationManager
         private let isExternalExecution: Bool
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.MCPToolExecutor")
+    private let logger = Logger(label: "com.sam.api.toolexecutor")
     public init(toolName: String, conversationManager: ConversationManager, isExternalExecution: Bool = false) {
         self.toolName = toolName
         self.conversationManager = conversationManager

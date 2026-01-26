@@ -38,7 +38,7 @@ public class SimpleSystemPromptManager: ObservableObject {
     /// Optional reference to tool registry for tool discovery injection DESIGN NOTE: Enables system prompts to include available tool information.
     public var toolRegistry: ToolRegistryProtocol?
 
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.SimpleSystemPromptManager")
+    private let logger = Logger(label: "com.sam.config.systempromptmanager")
 
     public init() {
         loadSystemPrompts()

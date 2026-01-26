@@ -4,7 +4,7 @@
 import SwiftUI
 import Logging
 
-private let logger = Logger(label: "SAM.UserInterface.JSONHelpView")
+private let logger = Logger(label: "com.sam.help.jsonview")
 
 // MARK: - JSON-Based Help View
 

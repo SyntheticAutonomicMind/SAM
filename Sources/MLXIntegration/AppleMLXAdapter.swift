@@ -26,7 +26,7 @@ public struct MLXTextChunk: Sendable {
 /// Adapter that bridges SAM's local model management with Apple's MLXLLM library.
 @MainActor
 public class AppleMLXAdapter {
-    private let logger = Logger(label: "AppleMLXAdapter")
+    private let logger = Logger(label: "com.sam.mlx.adapter")
     private let typeRegistry = LLMTypeRegistry.shared
 
     /// Cache loaded models to avoid reloading.
