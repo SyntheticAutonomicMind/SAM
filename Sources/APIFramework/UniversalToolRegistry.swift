@@ -4,13 +4,9 @@
 import Foundation
 import ConversationEngine
 import Logging
+import ConfigurationSystem
 
 // MARK: - Protocol Conformance
-
-public protocol ToolRegistryProtocol: Sendable {
-    nonisolated func getToolsDescription() -> String
-    @MainActor func getToolsDescriptionMainActor() -> String
-}
 
 /// Universal Tool Registry for Cross-Model MCP Tool Integration Follows Model Context Protocol (MCP) architecture to provide universal tool access across all language models (GPT-4, Claude, etc.) with proper tool registration, discovery, and execution.
 @MainActor

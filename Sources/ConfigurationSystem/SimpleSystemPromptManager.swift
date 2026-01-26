@@ -7,13 +7,6 @@ import Foundation
 import Logging
 import SwiftUI
 
-// MARK: - Protocol Conformance
-
-public protocol ToolRegistryProtocol: Sendable {
-    nonisolated func getToolsDescription() -> String
-    @MainActor func getToolsDescriptionMainActor() -> String
-}
-
 // MARK: - Simple Data Models
 
 public struct SystemPrompt: Codable, Identifiable, Hashable {
