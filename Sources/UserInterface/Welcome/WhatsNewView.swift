@@ -39,7 +39,7 @@ struct ReleaseNotes: Codable, Identifiable {
         case version
         case releaseDate = "release_date"
         case highlights, improvements
-        case bugFixes = "bug_fixes"
+        case bugFixes = "bugfixes"
     }
 }
 
