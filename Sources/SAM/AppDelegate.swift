@@ -60,9 +60,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
         
         #if DEBUG
-        NSLog("Sparkle updater initialized with startingUpdater=true (DEBUG build, manual checks enabled)")
+        logger.info("Sparkle updater initialized with startingUpdater=true (DEBUG build, manual checks enabled)")
         #else
-        NSLog("Sparkle updater initialized with startingUpdater=true (RELEASE build)")
+        logger.info("Sparkle updater initialized with startingUpdater=true (RELEASE build)")
         #endif
 
         /// Set up window frame persistence.
@@ -77,19 +77,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     // MARK: - SPUUpdaterDelegate
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
-        NSLog("SPARKLE: Found valid update: \(item.displayVersionString) (build \(item.versionString))")
+        logger.info("SPARKLE: Found valid update: \(item.displayVersionString) (build \(item.versionString))")
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
-        NSLog("SPARKLE: Did not find update. Error: \(error.localizedDescription)")
+        logger.warning("SPARKLE: Did not find update. Error: \(error.localizedDescription)")
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
-        NSLog("SPARKLE: Did not find update (no error)")
+        logger.info("SPARKLE: Did not find update (no error)")
     }
 
     func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
-        NSLog("SPARKLE: Finished loading appcast with \(appcast.items.count) items")
+        logger.info("SPARKLE: Finished loading appcast with \(appcast.items.count) items")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
