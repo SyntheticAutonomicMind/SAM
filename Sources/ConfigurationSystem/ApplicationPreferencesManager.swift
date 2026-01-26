@@ -7,7 +7,7 @@ import Logging
 /// File-based application preferences replacing UserDefaults.
 @MainActor
 public class ApplicationPreferencesManager: ObservableObject {
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.ApplicationPreferencesManager")
+    private let logger = Logger(label: "com.sam.config.apppreferences")
     private let configManager = ConfigurationManager.shared
 
     // MARK: - File Configuration

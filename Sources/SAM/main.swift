@@ -13,7 +13,7 @@ import AppKit
 
 struct SAMRewrittenApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.App")
+    private let logger = Logger(label: "com.sam.app")
 
     /// StateObjects for dependency management.
     @StateObject private var conversationManager = ConversationManager()
@@ -89,7 +89,7 @@ struct SAMRewrittenApp: App {
         /// Create async factory closure that generates advanced MCP tools.
         let advancedToolsFactory: () async -> [any MCPTool] = { [unowned conversationManager] in
             #if DEBUG
-            let logger = Logger(label: "com.syntheticautonomicmind.sam.Factory")
+            let logger = Logger(label: "com.sam.app.factory")
             logger.debug("FACTORY: Advanced tools factory called")
             #endif
 

@@ -4,7 +4,7 @@
 import Foundation
 import Logging
 
-private let logger = Logger(label: "SAM.ConfigurationSystem.BuildConfiguration")
+private let logger = Logger(label: "com.sam.config.buildconfig")
 
 /// Build configuration for SAM Provides compile-time configuration flags for DEBUG and RELEASE builds.
 public struct BuildConfiguration {

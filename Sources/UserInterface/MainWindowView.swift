@@ -128,7 +128,7 @@ public struct MainWindowView: View {
     // Uncategorized section collapsed state
     @AppStorage("uncategorizedCollapsed") private var uncategorizedCollapsed: Bool = false
 
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.MainWindow")
+    private let logger = Logger(label: "com.sam.ui.mainwindow")
 
     public init() {}
 

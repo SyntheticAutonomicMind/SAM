@@ -57,7 +57,7 @@ public class ConversationManager: ObservableObject {
     private var terminalManagers: [UUID: AnyObject] = [:]
     @Published public var isReady = true
 
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.ConversationManager")
+    private let logger = Logger(label: "com.sam.conversation.manager")
     private let conversationConfig = ConversationConfigurationManager()
 
     /// Runtime state management for all conversations

@@ -7,7 +7,7 @@ import Logging
 /// File-based conversation persistence replacing UserDefaults.
 @MainActor
 public class ConversationConfigurationManager: ObservableObject {
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.ConversationConfigurationManager")
+    private let logger = Logger(label: "com.sam.conversation.configmanager")
 
     // MARK: - File Configuration
 

@@ -6,7 +6,7 @@ import Logging
 
 /// CivitAI API service for browsing and downloading Stable Diffusion models
 public class CivitAIService {
-    private let logger = Logger(label: "CivitAIService")
+    private let logger = Logger(label: "com.sam.sd.civitai")
     private let baseURL = "https://civitai.com/api/v1"
     private var apiKey: String?
 
