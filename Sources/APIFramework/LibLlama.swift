@@ -22,15 +22,6 @@ enum LlamaError: Error {
     case contextLimitReached
 }
 
-// MARK: - Global Cleanup
-
-/// Call llama backend free at app termination
-/// CRITICAL: Must be called exactly once, AFTER all LlamaContext instances are deallocated
-public func llamaBackendCleanup() {
-    llamaLogger.info("APP_SHUTDOWN: Freeing llama.cpp backend resources")
-    llama_backend_free()
-}
-
 // MARK: - Helper Methods
 
 func llama_batch_clear(_ batch: inout llama_batch) {
