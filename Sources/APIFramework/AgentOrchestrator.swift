@@ -4212,7 +4212,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         var finalContent = content
         var finalToolCalls = toolCalls
 
-        if finalToolCalls == nil || finalToolCalls!.isEmpty {
+        if finalToolCalls?.isEmpty != false {
             /// No native tool calls found - check for MLX-style formats.
             let (mlxToolCalls, cleanedContent) = extractMLXToolCalls(from: content)
 
@@ -4229,8 +4229,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             } else {
                 logger.debug("callLLM: No MLX tool calls found in response")
             }
-        } else {
-            logger.debug("callLLM: Using native tool calls from provider (\(finalToolCalls!.count) calls)")
+        } else if let calls = finalToolCalls {
+            logger.debug("callLLM: Using native tool calls from provider (\(calls.count) calls)")
         }
 
         /// CRITICAL: Strip system-reminder tags before returning/saving
@@ -5139,7 +5139,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.debug("TOOL_MESSAGE_COMPLETE: executionId=\(executionId.prefix(8)) messageId=\(toolMessageId.uuidString.prefix(8))")
         }
 
-        if finalToolCalls == nil || finalToolCalls!.isEmpty {
+        if finalToolCalls?.isEmpty != false {
             /// No native tool calls found - check for MLX-style JSON blocks.
             let (mlxToolCalls, cleanedContent) = extractMLXToolCalls(from: finalContent)
 
@@ -5156,8 +5156,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             } else {
                 logger.debug("callLLMStreaming: No MLX tool calls found in JSON blocks")
             }
-        } else {
-            logger.debug("callLLMStreaming: Using native tool calls from provider (\(finalToolCalls!.count) calls)")
+        } else if let calls = finalToolCalls {
+            logger.debug("callLLMStreaming: Using native tool calls from provider (\(calls.count) calls)")
         }
 
         /// CRITICAL: Strip system-reminder tags before returning/saving

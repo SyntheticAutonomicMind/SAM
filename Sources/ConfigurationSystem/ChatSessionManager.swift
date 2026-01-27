@@ -326,7 +326,7 @@ public struct EnhancedMessage: Identifiable, Codable, Hashable, Sendable {
             /// Explicit thinking type (from agent or chat widget).
             self.type = .thinking
             self.isToolMessage = true
-        } else if reasoningContent != nil && !reasoningContent!.isEmpty {
+        } else if let content = reasoningContent, !content.isEmpty {
             /// Has reasoning content.
             self.type = .thinking
             self.isToolMessage = false
@@ -347,7 +347,10 @@ public struct EnhancedMessage: Identifiable, Codable, Hashable, Sendable {
 
     /// Check if this message has reasoning content to display.
     public var hasReasoning: Bool {
-        return reasoningContent != nil && !reasoningContent!.isEmpty
+        if let content = reasoningContent, !content.isEmpty {
+            return true
+        }
+        return false
     }
 
     // MARK: - Properties
