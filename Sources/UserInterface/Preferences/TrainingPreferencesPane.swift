@@ -583,9 +583,9 @@ struct TrainingTabView: View {
                 "ggufPath": "\(ggufPath)"
             ])
             
-            // Show success message with path to new model
+            // Training complete - error message cleared
+            // Note: Success notification would be shown here in future UI enhancement
             errorMessage = nil
-            // TODO: Add success notification showing new model path
         }
     }
     
@@ -804,9 +804,11 @@ struct AdapterRow: View {
         return formatter.string(from: date)
     }
     
+    /// Load adapter in chat conversation
+    /// Future enhancement: Integrate with chat UI to automatically load adapter
     private func loadInChat(_ adapterId: String) {
-        // TODO: Implement chat integration
         logger.info("Load adapter in chat", metadata: ["id": "\(adapterId)"])
+        // Implementation pending: Wire up to ChatWidget to set active adapter
     }
 }
 

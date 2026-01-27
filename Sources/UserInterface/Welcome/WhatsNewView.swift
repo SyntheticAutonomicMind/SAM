@@ -4,7 +4,7 @@
 import SwiftUI
 import Logging
 
-private let logger = Logger(label: "SAM.UserInterface.WhatsNewView")
+private let logger = Logger(label: "com.sam.ui.whatsnew")
 
 /// Model for a single release note item.
 struct ReleaseNoteItem: Codable, Identifiable {

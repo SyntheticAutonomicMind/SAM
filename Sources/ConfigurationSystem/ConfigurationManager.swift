@@ -7,7 +7,7 @@ import Logging
 /// Comprehensive file-based configuration management for SAM Replaces UserDefaults with robust JSON configuration system.
 @MainActor
 public class ConfigurationManager: ObservableObject {
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.ConfigurationManager")
+    private let logger = Logger(label: "com.sam.config.manager")
 
     // MARK: - Configuration Directories
 

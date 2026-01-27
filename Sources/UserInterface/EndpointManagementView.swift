@@ -8,7 +8,7 @@ import Logging
 
 /// Enhanced endpoint management view for configuring AI endpoints in preferences Adapted from SAM 1.0's excellent design.
 struct EndpointManagementView: View {
-    private static let logger = Logger(label: "com.syntheticautonomicmind.sam.EndpointManagement")
+    private static let logger = Logger(label: "com.sam.ui.endpointmanagement")
     @EnvironmentObject private var endpointManager: EndpointManager
     @State private var showingAddEndpoint = false
     @State private var editingProvider: ProviderConfiguration?
@@ -422,7 +422,7 @@ struct ProviderRowView: View {
 // MARK: - Provider Configuration Sheet
 
 struct ProviderConfigurationSheet: View {
-    private static let logger = Logger(label: "com.syntheticautonomicmind.sam.ProviderConfiguration")
+    private static let logger = Logger(label: "com.sam.ui.providerconfig")
 
     let provider: ProviderConfiguration?
     let onSave: (ProviderConfiguration) -> Void

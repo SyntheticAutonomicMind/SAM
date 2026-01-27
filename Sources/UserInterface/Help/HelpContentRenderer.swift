@@ -4,7 +4,7 @@
 import SwiftUI
 import Logging
 
-private let logger = Logger(label: "SAM.UserInterface.HelpContentRenderer")
+private let logger = Logger(label: "com.sam.help.renderer")
 
 // MARK: - Help Content Renderer
 

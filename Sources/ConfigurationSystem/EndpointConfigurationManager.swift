@@ -7,7 +7,7 @@ import Logging
 /// File-based API endpoint configuration replacing UserDefaults.
 @MainActor
 public class EndpointConfigurationManager: ObservableObject {
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.EndpointConfigurationManager")
+    private let logger = Logger(label: "com.sam.config.endpointconfigmanager")
     private let configManager = ConfigurationManager.shared
 
     // MARK: - File Configuration

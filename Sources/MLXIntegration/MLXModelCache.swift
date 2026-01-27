@@ -20,11 +20,17 @@ public class MLXModelCache {
 
     public func initialize() async throws {
         /// Create models directory in user's cache.
-        let userCacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        guard let userCacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            throw MLXCacheError.initializationFailed("Could not find user cache directory")
+        }
         modelsDirectory = userCacheDir.appendingPathComponent("sam-rewritten/models")
 
-        try fileManager.createDirectory(at: modelsDirectory!, withIntermediateDirectories: true)
-        logger.debug("MLX Model Cache initialized at: \(modelsDirectory!.path)")
+        guard let directory = modelsDirectory else {
+            throw MLXCacheError.initializationFailed("Failed to create models directory path")
+        }
+        
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        logger.debug("MLX Model Cache initialized at: \(directory.path)")
     }
 
     public func getModelsDirectory() async throws -> URL {
@@ -164,6 +170,7 @@ public class MLXModelCache {
 
 public enum MLXCacheError: LocalizedError {
     case notInitialized
+    case initializationFailed(String)
     case modelNotFound(String)
     case validationFailed(String)
     case fileSystemError(String)
@@ -172,6 +179,8 @@ public enum MLXCacheError: LocalizedError {
         switch self {
         case .notInitialized:
             return "MLX model cache is not initialized"
+        case .initializationFailed(let message):
+            return "MLX model cache initialization failed: \(message)"
 
         case .modelNotFound(let modelId):
             return "Model not found in cache: \(modelId)"

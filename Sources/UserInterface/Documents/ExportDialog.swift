@@ -18,7 +18,7 @@ struct ExportDialog: View {
     @State private var exportError: String?
     @State private var showingTrainingOptions: Bool = false
 
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.ExportDialog")
+    private let logger = Logger(label: "com.sam.ui.export")
 
     init(conversation: ConversationModel, isPresented: Binding<Bool>) {
         self.conversation = conversation

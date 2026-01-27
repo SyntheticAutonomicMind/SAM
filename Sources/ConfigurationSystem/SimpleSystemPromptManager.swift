@@ -7,13 +7,6 @@ import Foundation
 import Logging
 import SwiftUI
 
-// MARK: - Protocol Conformance
-
-public protocol ToolRegistryProtocol: Sendable {
-    nonisolated func getToolsDescription() -> String
-    @MainActor func getToolsDescriptionMainActor() -> String
-}
-
 // MARK: - Simple Data Models
 
 public struct SystemPrompt: Codable, Identifiable, Hashable {
@@ -45,7 +38,7 @@ public class SimpleSystemPromptManager: ObservableObject {
     /// Optional reference to tool registry for tool discovery injection DESIGN NOTE: Enables system prompts to include available tool information.
     public var toolRegistry: ToolRegistryProtocol?
 
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.SimpleSystemPromptManager")
+    private let logger = Logger(label: "com.sam.config.systempromptmanager")
 
     public init() {
         loadSystemPrompts()
