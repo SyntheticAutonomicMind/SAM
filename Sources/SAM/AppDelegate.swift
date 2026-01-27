@@ -119,11 +119,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             _ = semaphore.wait(timeout: .now() + 5.0)
         }
         
-        /// CRITICAL: Free llama.cpp backend resources after all models are unloaded
-        /// This must be called exactly ONCE at app termination, after all LlamaContext
-        /// instances are deallocated. Calling it in LlamaContext.deinit causes crashes
-        /// when multiple contexts exist or when Metal resources aren't ready to be freed.
-        llamaBackendCleanup()
+        /// NOTE: We do NOT call llama_backend_free() here because:
+        /// 1. Metal resources may not be fully deallocated even after unload() completes
+        /// 2. LlamaContext deinit may not have run yet (Swift actor cleanup timing)
+        /// 3. Calling llama_backend_free() while Metal resources exist causes crashes:
+        ///    "GGML_ASSERT([rsets->data count] == 0) failed"
+        /// 4. The OS will clean up all resources when the process exits anyway
+        /// 
+        /// Previous approach (calling llamaBackendCleanup here) caused crashes on exit
+        /// when models were loaded. Letting OS handle cleanup is safer and more reliable.
     }
 
     // MARK: - Window Frame Persistence

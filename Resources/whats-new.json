@@ -1,6 +1,71 @@
 {
   "releases": [
     {
+      "version": "20260127.1",
+      "release_date": "January 27, 2026",
+      "introduction": "This release includes a new application icon, important stability fixes, and code quality improvements.",
+      "highlights": [
+        {
+          "id": "new-app-icon",
+          "icon": "app.badge",
+          "title": "New Application Icon",
+          "description": "SAM has a new, modern application icon."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "exit-crash-fix",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Crash on Exit",
+          "description": "SAM no longer crashes when you quit the app while a local model is loaded. The cleanup process now lets the operating system handle resource deallocation safely."
+        },
+        {
+          "id": "whats-new-bugfixes",
+          "icon": "doc.text.fill",
+          "title": "Fixed What's New Display",
+          "description": "The What's New panel now displays all release information correctly."
+        },
+        {
+          "id": "crash-prevention",
+          "icon": "exclamationmark.shield.fill",
+          "title": "Improved Error Handling",
+          "description": "Fixed several edge cases that could cause crashes during startup or when working with local models. SAM now handles missing files and initialization errors more gracefully."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "better-diagnostics",
+          "icon": "waveform.path.ecg",
+          "title": "Improved Diagnostic Logging",
+          "description": "Log messages are now more consistent and organized, making it easier to troubleshoot issues."
+        },
+        {
+          "id": "code-quality",
+          "icon": "hammer.fill",
+          "title": "Code Quality Improvements",
+          "description": "Eliminated duplicate code, standardized error handling patterns, and improved internal code organization for better long-term maintainability."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "exit-cleanup-fix",
+          "content": "Removed llama_backend_free() call from applicationWillTerminate to prevent Metal resource assertion failures. Now relies on OS cleanup during process exit, eliminating race condition between Swift actor cleanup and manual resource deallocation."
+        },
+        {
+          "id": "error-handling-refactor",
+          "content": "Replaced try! and force unwraps with proper do-catch blocks and optional binding. Added initializationFailed error case to MLXModelCache. SharedTopicManager and TerminalOperationsTool now handle initialization failures gracefully."
+        },
+        {
+          "id": "logger-standardization",
+          "content": "All logger labels standardized to com.sam.{module}.{component} format across ConfigurationSystem (5 files), APIFramework (5 files), ConversationEngine (2 files), MLXIntegration (2 files), StableDiffusionIntegration (3 files), UserInterface (8 files), and SAM (1 file)."
+        },
+        {
+          "id": "documentation-cleanup",
+          "content": "Converted TODO comments to proper documentation. Future enhancement comments now clearly marked to distinguish from actual incomplete work."
+        }
+      ]
+    },
+    {
       "version": "20260125.1",
       "release_date": "January 25, 2026",
       "introduction": "This release significantly improves markdown rendering, especially for complex nested lists and numbered items.",
