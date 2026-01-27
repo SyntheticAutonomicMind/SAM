@@ -5,30 +5,33 @@ import SwiftUI
 import MCPFramework
 @preconcurrency import Sparkle
 import AppKit
+import Logging
 
 struct SAMCommands: Commands {
+    private let logger = Logger(label: "com.sam.commands")
+    
     var body: some Commands {
         /// Application Menu - Add Preferences and Check for Updates.
         CommandGroup(after: .appInfo) {
             #if DEBUG
             /// In DEBUG builds, Sparkle is initialized but manual checks are allowed.
             Button("Check for Updates… (Debug)") {
-                NSLog("Check for Updates clicked in DEBUG build")
+                logger.debug("Check for Updates clicked in DEBUG build")
                 if let appDelegate = AppDelegate.shared {
-                    NSLog("AppDelegate.shared found, checking for updates...")
+                    logger.debug("AppDelegate.shared found, checking for updates...")
                     appDelegate.updater.checkForUpdates()
                 } else {
-                    NSLog("ERROR: Could not get AppDelegate.shared")
+                    logger.error("ERROR: Could not get AppDelegate.shared")
                 }
             }
             #else
             Button("Check for Updates…") {
-                NSLog("Check for Updates clicked")
+                logger.info("Check for Updates clicked")
                 if let appDelegate = AppDelegate.shared {
-                    NSLog("AppDelegate.shared found, checking for updates...")
+                    logger.debug("AppDelegate.shared found, checking for updates...")
                     appDelegate.updater.checkForUpdates()
                 } else {
-                    NSLog("ERROR: Could not get AppDelegate.shared")
+                    logger.error("ERROR: Could not get AppDelegate.shared")
                 }
             }
             #endif

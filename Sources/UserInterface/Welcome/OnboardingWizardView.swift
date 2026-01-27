@@ -7,7 +7,7 @@ import ConfigurationSystem
 import ConversationEngine
 import Logging
 
-private let logger = Logger(label: "SAM.UserInterface.OnboardingWizardView")
+private let logger = Logger(label: "com.sam.ui.onboarding")
 
 /// Onboarding wizard for first-time setup when no models or providers are configured.
 struct OnboardingWizardView: View {

@@ -8,7 +8,7 @@ import Foundation
 extension Logging.Logger {
     /// Create a logger for SAM components with standardized category naming.
     static func sam(_ category: SAMLogCategory) -> Logging.Logger {
-        return Logging.Logger(label: "com.syntheticautonomicmind.sam.\(category.rawValue)")
+        return Logging.Logger(label: "com.sam.api.\(category.rawValue)")
     }
 }
 

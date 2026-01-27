@@ -4,7 +4,7 @@
 import Foundation
 import Logging
 
-private let logger = Logger(label: "SAM.UserInterface.HelpContentManager")
+private let logger = Logger(label: "com.sam.help.contentmanager")
 
 // MARK: - Help Content Data Models
 

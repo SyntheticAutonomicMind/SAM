@@ -6,7 +6,7 @@ import Logging
 
 /// Universal tool call extractor that supports all major tool calling formats Supports: OpenAI, Ministral, Qwen, Hermes, and JSON code blocks Format auto-detection for: - OpenAI: Native function_call JSON format (remote API) - Ministral: [TOOL_CALLS][{...}] format (Mistral models) - Qwen: <function_call>...</function_call> XML tags (Qwen3 models) - Hermes: Nous Research Hermes format (Hermes-2/3 models) - JSON fallback: ```json {...} ``` code blocks and bare JSON.
 public class ToolCallExtractor {
-    private let logger = Logger(label: "SAM.ToolCallExtractor.extraction")
+    private let logger = Logger(label: "com.sam.api.toolextractor")
 
     /// Detected tool call format types **Why multiple formats**: Different LLM providers/models use different tool call syntax **Format details**: - `openai`: Native OpenAI API format (remote API only, structured tool_calls field) - `ministral`: Mistral-style `[TOOL_CALLS][...]` markers - `qwen`: Qwen models use `<function_call>...</function_call>` XML-style tags - `hermes`: Hermes/Nous models - OpenAI-like JSON but with format variations - `jsonCodeBlock`: Generic JSON in markdown code blocks `\`\`\`json {...} \`\`\`` - `bareJSON`: Direct JSON array/object in response text - `none`: No tool calls detected in response.
     public enum ToolCallFormat {

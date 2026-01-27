@@ -651,10 +651,10 @@ public enum TrainingError: Error, LocalizedError {
     }
 }
 
-// MARK: - TODO: Full LoRA Training Implementation
+// MARK: - Future Enhancement: Full LoRA Training Implementation
 
 /*
- IMPLEMENTATION NOTES FOR FUTURE ENHANCEMENT:
+ IMPLEMENTATION NOTES FOR FUTURE DEVELOPMENT:
  
  The current implementation provides the training orchestration structure
  but uses simulated loss computation. To implement full LoRA training:

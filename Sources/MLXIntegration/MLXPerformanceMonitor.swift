@@ -8,7 +8,7 @@ import Logging
 /// Performance monitoring for MLX inference to identify CPU vs GPU bottlenecks.
 @MainActor
 public class MLXPerformanceMonitor {
-    private let logger = Logger(label: "MLXPerformanceMonitor")
+    private let logger = Logger(label: "com.sam.mlx.perfmonitor")
 
     /// Metal device for GPU monitoring.
     private let metalDevice: MTLDevice?

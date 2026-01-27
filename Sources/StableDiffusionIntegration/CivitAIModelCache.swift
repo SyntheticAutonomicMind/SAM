@@ -6,7 +6,7 @@ import Logging
 
 /// Cache for CivitAI model catalog to avoid excessive API requests
 public actor CivitAIModelCache {
-    private let logger = Logger(label: "CivitAIModelCache")
+    private let logger = Logger(label: "com.sam.sd.modelcache")
     private let cacheDirectory: URL
     private let cacheExpiryInterval: TimeInterval = 24 * 60 * 60  /// 24 hours
     

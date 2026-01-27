@@ -16,8 +16,26 @@ public struct SharedTopic {
 public final class SharedTopicManager {
     private let storage: SharedStorage
 
-    public init(storage: SharedStorage = try! SharedStorage()) {
+    /// Primary initializer with explicit storage
+    public init(storage: SharedStorage) {
         self.storage = storage
+    }
+    
+    /// Convenience initializer using shared storage
+    /// Falls back to creating new storage if shared instance is nil
+    public convenience init() {
+        if let sharedStorage = SharedStorage.shared {
+            self.init(storage: sharedStorage)
+        } else {
+            topicLogger.error("SharedStorage.shared is nil, attempting to create new instance")
+            do {
+                let newStorage = try SharedStorage()
+                self.init(storage: newStorage)
+            } catch {
+                topicLogger.error("Failed to create SharedStorage: \(error.localizedDescription)")
+                fatalError("Cannot initialize SharedTopicManager without valid SharedStorage")
+            }
+        }
     }
 
     /// Get the files directory path for a shared topic

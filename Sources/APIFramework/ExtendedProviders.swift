@@ -8,7 +8,7 @@ import Logging
 public class DeepSeekProvider: AIProvider {
     public let identifier: String
     public let config: ProviderConfiguration
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.DeepSeekProvider")
+    private let logger = Logger(label: "com.sam.api.deepseek")
 
     public init(config: ProviderConfiguration) {
         self.identifier = config.providerId
@@ -230,7 +230,7 @@ public struct ModelStatus {
 public class CustomProvider: AIProvider {
     public let identifier: String
     public let config: ProviderConfiguration
-    private let logger = Logger(label: "com.syntheticautonomicmind.sam.CustomProvider")
+    private let logger = Logger(label: "com.sam.api.customprovider")
 
     public init(config: ProviderConfiguration) {
         self.identifier = config.providerId

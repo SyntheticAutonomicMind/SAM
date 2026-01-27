@@ -6,7 +6,7 @@ import Logging
 
 /// HuggingFace Hub API service for browsing and downloading Stable Diffusion models
 public class HuggingFaceService {
-    private let logger = Logger(label: "HuggingFaceService")
+    private let logger = Logger(label: "com.sam.sd.huggingface")
     private let baseURL = "https://huggingface.co/api"
     private var apiToken: String?
 

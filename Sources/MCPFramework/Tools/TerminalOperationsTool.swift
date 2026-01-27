@@ -394,14 +394,23 @@ public class TerminalOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                         "message": "Terminal session already exists for this conversation. Use session_id for commands."
                     ]
 
-                    let jsonData = try! JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
-                    let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+                    do {
+                        let jsonData = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
+                        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
 
-                    return MCPToolResult(
-                        toolName: name,
-                        success: true,
-                        output: MCPOutput(content: jsonString, mimeType: "application/json")
-                    )
+                        return MCPToolResult(
+                            toolName: name,
+                            success: true,
+                            output: MCPOutput(content: jsonString, mimeType: "application/json")
+                        )
+                    } catch {
+                        logger.error("Failed to serialize terminal session info to JSON: \(error)")
+                        return MCPToolResult(
+                            toolName: name,
+                            success: false,
+                            output: MCPOutput(content: "Failed to serialize session info: \(error.localizedDescription)")
+                        )
+                    }
                 }
             }
         }
