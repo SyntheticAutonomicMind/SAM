@@ -76,3 +76,4 @@ reference/
 .clio/sessions/
 .clio/memory/
 .clio/*.json
+.clio/instructions.md.backup.*
