@@ -52,28 +52,12 @@ venv/
 node_modules/
 
 # Agent session handoffs (development only, not for public release)
-ai-assisted/20*/
+# These contain internal session context and should NEVER be committed
+ai-assisted/
 
-# Scratch directory (development work, not for release)
-scratch/
-
-# Temp directory (testing artifacts)
-temp/
-
-# macOS
-.Trashes
-.fseventsd
-.Spotlight-V100
-.TemporaryItems
-
-# Generated release notes
-release-notes/
-
-reference/
-
-# CLIO
+# CLIO agent system files (local only)
 .clio/logs/
 .clio/sessions/
 .clio/memory/
-.clio/*.json
+.clio/*.json.backup
 .clio/instructions.md.backup.*
