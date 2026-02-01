@@ -1,10 +1,24 @@
-# SAM (Synthetic Autonomic Mind) - CLIO Project Instructions
+# SAM - CLIO Project Instructions
 
-**Project Methodology:** The Unbroken Method for Human-AI Collaboration
+**Project:** Synthetic Autonomic Mind (SAM)  
+**Language:** Swift 6.0+  
+**Platform:** macOS 14.0+ (native)  
+**Build System:** Swift Package Manager + Makefile  
+**License:** GPL-3.0-only
 
-## CRITICAL: READ FIRST BEFORE ANY WORK
+---
 
-### The Unbroken Method (Core Principles)
+## Quick Reference
+
+- **Repository:** https://github.com/SyntheticAutonomicMind/SAM
+- **Build:** `make build-debug` / `make build-release`
+- **Test:** `swift test` / `./Tests/run_all_tests.sh`
+- **Run:** `.build/Build/Products/Debug/SAM.app/Contents/MacOS/SAM`
+- **Architecture:** Modular, actor-based, Swift 6 concurrency throughout
+
+---
+
+## Core Methodology: The Unbroken Method
 
 This project follows **The Unbroken Method** for human-AI collaboration. This isn't just project style—it's the core operational framework.
 
@@ -22,415 +36,318 @@ This project follows **The Unbroken Method** for human-AI collaboration. This is
 
 ---
 
-## Project Overview
+## Collaboration Checkpoint Discipline (MANDATORY)
 
-**SAM (Synthetic Autonomic Mind)** is a native macOS AI assistant built with Swift and SwiftUI. It provides:
-- Multi-AI provider support (OpenAI, Anthropic, GitHub Copilot, DeepSeek, local MLX/llama.cpp models)
-- Local image generation with Stable Diffusion
-- Voice control with "Hey SAM" wake word
-- Document intelligence (PDF, Word, Excel, text files)
-- Semantic memory and conversation search
-- MCP (Model Context Protocol) framework for autonomous agents with 14+ integrated tools
-- Custom model training with LoRA fine-tuning
-- Remote access via SAM-Web (browser-based interface)
-- 100% privacy-first architecture (data stays on your Mac)
+**Use collaboration tool at EVERY key decision point:**
 
-**Repository:** https://github.com/SyntheticAutonomicMind/SAM  
-**Website:** https://www.syntheticautonomicmind.org
+| Checkpoint | When | Purpose |
+|-----------|------|---------|
+| Session Start | Multi-step work OR handoff recovery | Evaluate request, develop plan, confirm with user |
+| After Investigation | Before implementation | Share findings, get approval |
+| After Implementation | Before commit | Show results, get OK |
+| Session End | When work complete | Summary & handoff |
+
+### Session Start Checkpoint Format
+
+**CORRECT:**
+```
+Based on your request to [X], here's my plan:
+1) [investigation step with files to read]
+2) [implementation step with changes to make]
+3) [verification step with tests to run]
+
+Proceed with this approach?
+```
+
+**WRONG:**
+- "What would you like me to do?" (user already told you)
+- "Please confirm the context..." (you should investigate first)
+- Starting implementation without checkpoint
+
+The user has already provided their request. Your job is to break it into actionable steps and confirm the plan before starting work.
+
+### Guidelines
+
+- [OK] Investigate freely (reading files, searching code, git status)
+- [CHECKPOINT REQUIRED] Checkpoint BEFORE making changes
+- [OK] Checkpoint AFTER implementation (show results)
+- [SKIP] Single-line explanations, pure research, answering questions
 
 ---
 
-## Technology Stack
+## Swift 6 Concurrency (CRITICAL - Non-Negotiable)
 
-### Languages & Frameworks
-- **Primary Language:** Swift 6.0+ (strict concurrency mode enabled)
-- **UI Framework:** SwiftUI (native macOS, no UIKit/AppKit unless unavoidable)
-- **Platform:** macOS 14.0+ (development on macOS 15.0+)
-- **Build System:** Swift Package Manager (SPM) + Makefile
-- **Architecture:** Apple Silicon (arm64) optimized, Intel support
+All code in SAM MUST follow Swift 6 strict concurrency rules. This is not optional.
 
-### Key Dependencies
-- **MLX Swift** - Apple Silicon ML acceleration (local model inference)
-- **mlx-swift-lm** - Language models with MLX
-- **swift-transformers** - Tokenization and model support
-- **ml-stable-diffusion** - Apple's Stable Diffusion for image generation
-- **llama.cpp** - Local model support (XCFramework, built via Makefile)
-- **Vapor** - HTTP server for OpenAI-compatible API
-- **SQLite.swift** - Conversation and memory database
-- **Sparkle** - Automatic updates
-- **swift-markdown** - AST-based markdown parsing
-- **ZIPFoundation** - Office document extraction (DOCX, XLSX)
-- **AsyncHTTPClient** - HTTP networking
-- **swift-log** - Structured logging
-
-### Module Structure
-```
-SAM (executable)
-├── ConversationEngine    - Core conversation system, memory, database
-├── MLXIntegration       - MLX and model management
-├── UserInterface        - SwiftUI views and UI components
-├── ConfigurationSystem  - App preferences, config management
-├── APIFramework         - OpenAI-compatible server, providers, agent orchestration
-├── MCPFramework         - Model Context Protocol tools (14 tools, 46+ operations)
-├── SharedData           - Shared topics, storage, locking
-├── StableDiffusionIntegration - Image generation
-├── Training             - LoRA model training
-└── VoiceFramework       - Speech recognition, TTS, wake word
-```
-
----
-
-## Swift 6 Concurrency (CRITICAL)
-
-SAM uses **Swift 6 strict concurrency checking**. All code MUST be concurrency-safe.
-
-### Non-Negotiable Rules
+### Rules (Do NOT Skip These)
 
 1. **Sendable Conformance Required**
    - All types crossing actor boundaries must conform to `Sendable`
-   - Use `@unchecked Sendable` ONLY when safe (immutable after init, JSON-serializable dictionaries)
-   - Document why `@unchecked Sendable` is safe in comments
+   - Use `@unchecked Sendable` ONLY when safe, with documentation
+   - Document WHY it's safe
 
 2. **MainActor Isolation for UI**
-   - All SwiftUI views and ViewModels must be `@MainActor`
-   - NSAttributedString operations MUST run on MainActor (not Sendable)
+   - All SwiftUI views and ViewModels MUST be `@MainActor`
+   - NSAttributedString operations MUST run on MainActor
    - AppKit/UIKit operations require MainActor
 
 3. **Capture Before Crossing Actor Boundaries**
    ```swift
-   // BAD - property access across actor boundary
+   // [FAIL] BAD - will not compile
    await withTaskGroup { group in
-       group.addTask {
-           await self.property.doSomething()  // ❌ Error
-       }
+       group.addTask { await self.property.doSomething() }
    }
    
-   // GOOD - capture before async
-   let property = self.property  // Capture synchronously
+   // [OK] GOOD - captures first
+   let property = self.property
    await withTaskGroup { group in
-       group.addTask {
-           await property.doSomething()  // ✅ OK
-       }
+       group.addTask { await property.doSomething() }
    }
    ```
 
-4. **SQLite Expression Helpers**
-   - Use `column("name", String.self)` instead of `Expression<String>("name")`
-   - Import helpers from `ConversationEngine/SQLiteHelpers.swift`
-
-5. **Expected Build Results**
-   - **0 errors** (always)
+4. **Expected Build Results**
+   - **0 errors** (always - non-negotiable)
    - **~211 warnings** (Sendable-related, non-blocking, acceptable)
-   - Use `make build-debug` to verify locally
-   - Use `./scripts/test_like_pipeline.sh` to simulate CI/CD
+   - Run `make build-debug` to verify locally
+   - Run `./scripts/test_like_pipeline.sh` to simulate CI/CD
 
-### Common Patterns
+### Common Patterns in SAM
 
-**Pattern 1: Wrapper for Non-Sendable Dictionaries**
-```swift
-private struct SendableParams: @unchecked Sendable {
-    let value: [String: Any]  // Safe if only JSON types
-}
+See `project-docs/SWIFT6_CONCURRENCY_MIGRATION.md` for:
+- Wrapper types for non-Sendable dictionaries (e.g., `SendableParams`)
+- Using `nonisolated(unsafe)` for safe immutable state
+- Capture patterns in loops and closures
+- Custom type erasure for Sendable compliance
 
-let params = SendableParams(value: toolCall.arguments)
-await withTaskGroup { group in
-    group.addTask { @Sendable in
-        await execute(params: params.value)
-    }
-}
-```
+### When You Encounter Concurrency Issues
 
-**Pattern 2: nonisolated(unsafe) for Safe Non-Sendable**
-```swift
-class ToolManager {
-    nonisolated(unsafe) private let toolRegistry: [String: Tool]
-    
-    // Safe because toolRegistry is immutable after init
-    init(tools: [String: Tool]) {
-        self.toolRegistry = tools
-    }
-}
-```
-
-**Pattern 3: Capture Before Loops**
-```swift
-// BAD
-for item in items {
-    await process(options: self.options)  // ❌ Capture in loop
-}
-
-// GOOD
-let options = self.options  // Capture once
-for item in items {
-    await process(options: options)  // ✅ OK
-}
-```
-
-**See:** `project-docs/SWIFT6_CONCURRENCY_MIGRATION.md` for complete migration history.
+1. **First attempt:** Add proper actor boundaries and Sendable conformance
+2. **Second attempt:** Use capture-before-crossing pattern
+3. **Third attempt:** Read the concurrency migration guide, consult similar code
+4. **Report:** Explain what you tried and ask user for guidance
 
 ---
 
-## Code Style & Conventions
+## Code Style & Conventions (Enforce These)
 
-### File Headers
-All Swift files MUST include SPDX headers:
+### SPDX License Headers (MANDATORY)
+
+Every Swift file MUST start with:
 ```swift
 // SPDX-License-Identifier: GPL-3.0-only
 // SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
 ```
 
+This is non-negotiable. Reject any commit without it.
+
 ### Naming Conventions
-- **Classes/Structs/Enums:** `PascalCase`
-- **Functions/Variables:** `camelCase`
-- **Constants:** `camelCase` (not SCREAMING_SNAKE_CASE)
+
+- **Classes/Structs/Enums:** `PascalCase` (e.g., `ConversationManager`, `ModelLoadingActor`)
+- **Functions/Variables:** `camelCase` (e.g., `loadModel()`, `conversationHistory`)
+- **Constants:** `camelCase`, NOT `SCREAMING_SNAKE_CASE` (e.g., `let maxTokens = 2048`)
 - **Protocols:** Descriptive names ending in `Protocol` when needed (e.g., `ToolRegistryProtocol`)
 - **Actors:** `PascalCase` with `Actor` suffix when ambiguous (e.g., `ModelLoadingActor`)
 
-### Comments
-- Use `///` for documentation comments (shown in Xcode Quick Help)
-- Use `//` for implementation notes
-- Use `// MARK: -` to organize code sections
-- Document WHY, not WHAT (code should be self-documenting)
+### Comments & Documentation
 
-### Logging
-- Use `swift-log` Logger (not `print()`)
-- Logger label format: `com.sam.<module>` (e.g., `com.sam.orchestrator`)
-- Log levels: `.trace`, `.debug`, `.info`, `.notice`, `.warning`, `.error`, `.critical`
+- **Documentation comments:** `///` (shown in Xcode Quick Help)
+- **Implementation comments:** `//` (explain WHY, not WHAT)
+- **Section markers:** `// MARK: -` to organize code sections
+- **Document intent:** Code should be self-documenting; comments explain decisions
+
+### Logging (NEVER use print())
+
+Use `swift-log` Logger only:
+```swift
+private let logger = Logger(label: "com.sam.modulename")
+
+logger.debug("Debug message")
+logger.info("Info message")
+logger.warning("Warning message")
+logger.error("Error message")
+```
+
+Logger label format: `com.sam.<module>` (e.g., `com.sam.orchestrator`, `com.sam.conversation`)
 
 ---
 
-## Build System
+## Build & Test Workflow
 
-### Makefile Targets (Primary Interface)
+### Build Commands
+
 ```bash
-make build-debug          # Debug build (faster, includes debug symbols)
-make build-release        # Release build (optimized for production)
-make build-dev            # Development release (auto-increments -dev.N suffix)
-make clean               # Clean build artifacts
-make test                # Run all tests
-make sign-release        # Sign release build (requires APPLE_DEVELOPER_ID)
-make llamacpp            # Build llama.cpp XCFramework
+make build-debug        # Debug build (faster, includes symbols)
+make build-release      # Release build (optimized)
+make build-dev          # Dev release (auto-increments -dev.N)
+make clean              # Clean all artifacts
+make llamacpp           # Build llama.cpp framework only
 ```
 
-### Development Workflow
-1. **First Build:** `make build-debug` (builds llama.cpp + SAM)
-2. **Incremental:** `make build-debug` (only rebuilds changed code)
-3. **Clean Build:** `make clean && make build-debug`
-4. **Test Like CI:** `./scripts/test_like_pipeline.sh`
+### Test Commands
 
-### Important Files
-- `Package.swift` - Swift package manifest (dependencies, targets)
-- `Makefile` - Build automation (llama.cpp, bundling, signing)
-- `Info.plist` - App metadata, version, entitlements
-- `BUILDING.md` - Comprehensive build instructions
-- `CONTRIBUTING.md` - Contribution guidelines
-
----
-
-## Testing
-
-### Test Structure
-```
-Tests/
-├── APIFrameworkTests/        - API provider, orchestrator tests
-├── ConfigurationSystemTests/ - Config management tests
-├── ConversationEngineTests/  - Conversation, memory tests
-├── MCPFrameworkTests/        - MCP tool tests
-├── TrainingTests/            - LoRA training tests
-├── UserInterfaceTests/       - UI component tests
-├── e2e/                      - End-to-end integration tests
-└── run_all_tests.sh          - Master test runner
-```
-
-### Running Tests
 ```bash
-swift test                    # All unit tests
-swift test --filter MyTests   # Specific test suite
-./Tests/run_all_tests.sh      # All tests (unit + e2e)
-./Tests/mcp_api_tests.sh      # MCP API integration tests
+swift test                      # All unit tests
+swift test --filter MyTests     # Specific test suite
+./Tests/run_all_tests.sh        # Unit + e2e tests
+./Tests/mcp_api_tests.sh        # MCP API tests
+./scripts/test_like_pipeline.sh # Like CI/CD
 ```
 
-### Test Requirements
-- All new features MUST have tests
-- Tests must pass in CI/CD (GitHub Actions)
-- Use `XCTest` framework
-- Mock external dependencies (network, file system when appropriate)
+### Verification Before Commit
 
----
-
-## CI/CD
-
-### GitHub Actions Workflows
-- `.github/workflows/ci.yml` - Build and test on every push
-- `.github/workflows/release.yml` - Release builds and distribution
-- `.github/workflows/nightly-dev.yml` - Nightly development builds
-
-### CI Requirements
-- **Must pass:** Build succeeds with 0 errors
-- **Acceptable:** ~211 Sendable-related warnings
-- **Must pass:** All tests pass
-- **Must pass:** Code signing succeeds (release only)
-
----
-
-## MCP Framework (Critical Component)
-
-SAM's autonomous agent capabilities are powered by the **MCP (Model Context Protocol) Framework**.
-
-### Tool Categories (14 tools, 46+ operations)
-1. **file_operations** - Read, write, search, manage files
-2. **version_control** - Git operations
-3. **terminal_operations** - Execute shell commands safely
-4. **memory_operations** - Session memory and LTM (Long-Term Memory)
-5. **web_operations** - Fetch URLs, web search
-6. **todo_operations** - Task tracking for multi-step workflows
-7. **code_intelligence** - Symbol search, code analysis
-8. **user_collaboration** - Request user input during workflows
-
-### Agent Orchestration
-- **AgentOrchestrator** (`Sources/APIFramework/AgentOrchestrator.swift`) - Multi-step autonomous workflow engine
-- Implements VS Code Copilot's tool calling loop pattern
-- YaRN context processor for intelligent context management (128M token profile)
-- Tool result storage for large outputs (persisted to disk)
-- Smart loop detection and context pruning
-
-### Tool Development
-- Tools are defined in `Sources/MCPFramework/Tools/`
-- Each tool implements `MCPTool` protocol
-- Tools are registered in `UniversalToolRegistry`
-- Tool calls are extracted by `ToolCallExtractor` (supports OpenAI, Anthropic, Qwen, Hermes formats)
-
----
-
-## Versioning & Releases
-
-### Version Scheme
-- **Format:** `YYYYMMDD.RELEASE[-dev.BUILD]`
-- **Example:** `20260127.1` (stable), `20260127.1-dev.3` (development)
-- **File:** `Info.plist` (`CFBundleShortVersionString`)
-
-### Release Types
-1. **Stable Releases**
-   - Version: `YYYYMMDD.RELEASE`
-   - Published as GitHub releases
-   - Listed in `appcast.xml`
-   - All users receive these
-
-2. **Development Releases**
-   - Version: `YYYYMMDD.RELEASE-dev.BUILD`
-   - Published as GitHub pre-releases
-   - Listed in `appcast-dev.xml`
-   - Opt-in via Preferences -> "Receive development updates"
-
-### Creating Releases
 ```bash
-# Development release
-make build-dev              # Auto-increments -dev.N suffix
-./scripts/sign-and-notarize.sh
-# Create GitHub pre-release
-make appcast-dev            # Update development appcast
-
-# Stable release
-./scripts/increment-version.sh
-make build-release
-./scripts/sign-and-notarize.sh
-# Create GitHub release
-# Update appcast.xml manually
-```
-
-**See:** `VERSIONING.md` for complete details.
-
----
-
-## Collaboration Checkpoint Discipline (MANDATORY)
-
-**Use collaboration checkpoints at these key moments:**
-
-| Checkpoint | When | MANDATORY |
-|-----------|------|-----------|
-| **Session Start** | Multi-step work OR recovering from handoff | YES - Present plan BEFORE starting |
-| **After Investigation** | Before making any code/config changes | YES - Get approval first |
-| **Before Commit** | After implementation complete | YES - Show results |
-| **Session End** | Work complete or blocked | YES - Summary & handoff |
-
-### Session Start Checkpoint (MANDATORY)
-When user provides multi-step request OR you're recovering a previous session:
-1. STOP - do NOT start implementation yet
-2. Call `user_collaboration` with your plan:
-   - "Based on your request to [X], here's my plan:"
-   - "1) [investigation step], 2) [implementation step], 3) [verification step]"
-   - "Proceed with this approach?"
-3. WAIT for user response
-4. ONLY THEN begin work
-
-### After Investigation Checkpoint (MANDATORY)
-After reading files, searching code, understanding context:
-1. STOP - do NOT start making changes yet
-2. Call `user_collaboration` with findings:
-   - "Here's what I found: [summary]"
-   - "I'll make these changes: [specific files + what will change]"
-   - "Proceed?"
-3. WAIT for user response
-4. ONLY THEN make changes
-
-### When You CAN Skip Checkpoints
-- Single-line code explanations
-- Reading files (non-destructive)
-- Searching codebase (investigation)
-- Answering questions (no implementation)
-- User explicitly says "just do it" or "don't ask, just fix it"
-
----
-
-## Core Workflow
-
-```
-1. Read code first (investigation)
-2. Use collaboration tool (get approval)
-3. Make changes (implementation)
-4. Test thoroughly (verify)
-5. Commit with clear message (handoff)
+# Always do this before committing:
+make clean
+make build-debug
+./scripts/test_like_pipeline.sh
+git status  # Ensure no unintended changes
 ```
 
 ---
 
-## Tool-First Approach (MANDATORY)
+## Git & Commit Discipline
 
-**NEVER describe what you would do - DO IT:**
-- ❌ WRONG: "I'll create a file with the following content..."
-- ✅ RIGHT: [calls file_operations to create the file]
+### Commit Message Format (Conventional Commits)
 
-- ❌ WRONG: "I'll search for that pattern in the codebase..."
-- ✅ RIGHT: [calls grep_search to find the pattern]
+```
+<type>(<scope>): <subject>
 
-**IF A TOOL EXISTS TO DO SOMETHING, YOU MUST USE IT:**
-- File changes → Use `file_operations`, NEVER print code blocks
-- Terminal commands → Use `terminal_operations`, NEVER print commands for user to run
-- Git operations → Use `version_control`
-- Multi-step tasks → Use `todo_operations` to track progress
-- Code search → Use `grep_search` or `semantic_search`
-- Web research → Use `web_operations`
+[optional body]
+
+[optional footer]
+```
+
+**Types:** `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `style`, `ci`
+
+**Scopes:** `ui`, `api`, `mcp`, `conversation`, `config`, `build`, `voice`, `training`, `image`, `memory`
+
+**Examples:**
+```bash
+git commit -m "feat(mcp): Add web scraping tool with structured data extraction"
+git commit -m "fix(ui): Prevent toolbar overflow on narrow windows"
+git commit -m "refactor(api): Extract streaming logic into separate service"
+```
+
+### Before Every Commit
+
+```bash
+# 1. Verify no handoff files are staged
+git status | grep "ai-assisted" && echo "ERROR: Remove handoff files" || echo "OK"
+
+# 2. Review changes
+git diff --staged
+
+# 3. Run tests
+./scripts/test_like_pipeline.sh
+
+# 4. If everything passes, commit
+git commit -m "type(scope): description"
+```
 
 ---
 
 ## Investigation-First Principle
 
-**Before making changes, understand the context:**
-1. Read files before editing them
-2. Check current state before making changes (git status, file structure)
-3. Search for patterns to understand codebase organization
-4. Use `semantic_search` when you don't know exact filenames/strings
+**Before making ANY changes, understand the context:**
 
-**Don't assume - verify:**
-- Don't assume how code works - read it
-- Don't guess file locations - search for them
-- Don't make changes blind - investigate first
+1. **Read the relevant code**
+   - Find the file/function you're modifying
+   - Read surrounding code for context
+   - Check existing patterns and conventions
+
+2. **Check current state**
+   - `git status` - what's changed?
+   - `git log` - recent commits
+   - Check if similar features exist
+
+3. **Search for patterns**
+   - Use semantic_search for unknown code locations
+   - grep_search for specific patterns
+   - Look at tests to understand expected behavior
+
+4. **Use multiple tools in parallel**
+   - If you need to investigate multiple areas, do it in one function call
+   - Don't wait for one result before searching the next
+
+---
+
+## Multi-Step Task Workflow (MANDATORY)
+
+Use todo_operations for ANY work spanning multiple steps:
+
+```
+1. CREATE todo list (with all tasks as "not-started")
+2. Mark first as "in-progress"
+3. DO THE WORK
+4. Mark complete (immediately after finishing)
+5. Mark next as "in-progress"
+6. Repeat until all done
+```
+
+**ANTI-PATTERN (WRONG):**
+```
+"I'll create a todo list:
+1. Read code
+2. Fix bugs
+3. Test
+
+Let's get started..."
+[Never creates todo in system]
+```
+
+**CORRECT (RIGHT):**
+```
+[Calls todo_operations with 3 todos]
+[Marks #1 in-progress]
+[Does the work]
+[Calls todo_operations to mark #1 done]
+[Calls todo_operations to mark #2 in-progress]
+[Continues...]
+```
+
+---
+
+## Common Development Tasks
+
+### Adding a New Tool to MCP Framework
+
+1. **Create:** `Sources/MCPFramework/Tools/MyTool.swift`
+2. **Implement:** `MCPTool` protocol with all required methods
+3. **Register:** In `UniversalToolRegistry`
+4. **Test:** Add tests in `Tests/MCPFrameworkTests/`
+5. **Document:** Tool's docstring, operation descriptions
+6. **Commit:** `feat(mcp): Add my-tool with X operations`
+
+### Adding a New AI Provider
+
+1. **Create:** `Sources/APIFramework/Providers/MyProvider.swift`
+2. **Implement:** `APIProvider` protocol
+3. **Handle:** Streaming responses, error handling
+4. **Test:** Mock responses, edge cases
+5. **Register:** In `ProviderRegistry`
+6. **Commit:** `feat(api): Add MyProvider support`
+
+### Fixing a Bug
+
+1. **Investigate:** Read code, reproduce bug, understand root cause
+2. **Fix:** Make minimal change, don't refactor unrelated code
+3. **Test:** Add test that catches this bug
+4. **Commit:** `fix(scope): Description of fix, not symptoms`
+
+### Updating Dependencies
+
+```bash
+swift package update              # Update SPM packages
+swift package describe            # Check current versions
+git add Package.resolved           # Commit new resolution
+```
 
 ---
 
 ## Error Recovery - 3-Attempt Rule
 
 **When a tool call fails:**
+
 1. **Retry** with corrected parameters or approach
 2. **Try alternative** tool or method
 3. **Analyze root cause** - why are attempts failing?
@@ -440,18 +357,24 @@ After reading files, searching code, understanding context:
 - Suggest alternatives or ask for clarification
 - Don't just give up - offer options
 
+**NEVER:**
+- Give up after first failure
+- Stop when errors remain unresolved
+- Skip items in a batch because one failed
+- Say "I cannot do this" without trying alternatives
+
 ---
 
 ## Session Handoff Procedures (MANDATORY)
 
-When ending a session, **ALWAYS** create a properly structured handoff directory:
+When ending a session, ALWAYS create a properly structured handoff:
 
 ```
 ai-assisted/YYYYMMDD/HHMM/
-├── CONTINUATION_PROMPT.md  [MANDATORY] - Next session's complete context
-├── AGENT_PLAN.md           [MANDATORY] - Remaining priorities & blockers
-├── CHANGELOG.md            [OPTIONAL]  - User-facing changes (if applicable)
-└── NOTES.md                [OPTIONAL]  - Additional technical notes
+├── CONTINUATION_PROMPT.md  [MANDATORY]
+├── AGENT_PLAN.md           [MANDATORY]
+├── CHANGELOG.md            [OPTIONAL]
+└── NOTES.md                [OPTIONAL]
 ```
 
 ### NEVER COMMIT Handoff Files
@@ -459,167 +382,91 @@ ai-assisted/YYYYMMDD/HHMM/
 **[CRITICAL] BEFORE EVERY COMMIT:**
 
 ```bash
-# ALWAYS verify no handoff files are staged:
-git status
-
-# If any `ai-assisted/` files appear:
+git status | grep "ai-assisted" && echo "ERROR: Remove handoff" || echo "OK"
 git reset HEAD ai-assisted/
-
-# Then commit only actual code/docs:
-git add -A && git commit -m "type(scope): description"
+git commit -m "type(scope): description"
 ```
 
-**Why:** Handoff documentation contains internal session context that should NEVER be in the public repository. This is a **HARD REQUIREMENT**.
+Handoff files are INTERNAL SESSION CONTEXT. They must NEVER appear in public repository commits.
 
 ### CONTINUATION_PROMPT.md (MANDATORY)
 
-**Purpose:** Provides complete standalone context for the next session to start immediately.
+**Provides complete context for next session.** Minimum content:
 
-**Minimum Content:**
-- What Was Accomplished (completed tasks list)
-- Current State (code changes, test results, git activity)
-- What's Next (Priority 1, 2, 3 tasks with specific details)
+- What Was Accomplished (✓ completed tasks)
+- Current State (code changes, test results, git commits)
+- What's Next (Priority 1/2/3 tasks with specific file paths)
 - Key Discoveries & Lessons Learned
 - Context for Next Developer (architecture notes, known issues)
-- Complete File List (modified and new files with paths)
 
 ### AGENT_PLAN.md (MANDATORY)
 
-**Purpose:** Remaining work plan with priorities and blockers.
+**Remaining work plan.** Minimum content:
 
-**Minimum Content:**
 - Current Blockers (specific issues preventing progress)
-- Immediate Next Steps (actionable tasks)
+- Immediate Next Steps (actionable first tasks)
 - Medium-term Goals (upcoming features)
 - Open Questions (decisions needed from user)
-
----
-
-## Commit Message Format (Conventional Commits)
-
-**Format:**
-```
-<type>(<scope>): <subject>
-
-[optional body]
-
-[optional footer]
-```
-
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `refactor`: Code refactoring (no functional changes)
-- `docs`: Documentation changes
-- `test`: Adding or updating tests
-- `chore`: Maintenance (dependencies, build config)
-- `perf`: Performance improvements
-- `style`: Code style changes (formatting)
-
-**Scopes:**
-- `ui`: User interface changes
-- `api`: API provider implementations
-- `mcp`: MCP framework and tools
-- `conversation`: Conversation management
-- `config`: Configuration system
-- `build`: Build system and dependencies
-- `voice`: Voice framework (wake word, TTS)
-- `training`: Model training
-- `image`: Image generation
-- `memory`: Memory and LTM
-
-**Examples:**
-```bash
-git commit -m "feat(mcp): Add web scraping tool with structured data extraction"
-git commit -m "fix(ui): Prevent toolbar overflow on narrow windows"
-git commit -m "refactor(api): Extract streaming logic into separate service"
-```
 
 ---
 
 ## Project-Specific Notes
 
 ### Privacy First
-- **NO telemetry, NO tracking, NO cloud data by default**
-- API credentials stored locally in UserDefaults (consider KeychainManager for sensitive keys)
-- All conversations stored in local SQLite database
+
+- NO telemetry, NO tracking by default
+- All data stays on Mac unless user chooses cloud
+- API credentials stored locally (UserDefaults, consider KeychainManager)
 - Local models run entirely offline (MLX, llama.cpp)
-- Cloud providers (OpenAI, Anthropic) are opt-in only
 
 ### Performance Considerations
+
 - Apple Silicon optimization is priority (arm64 Metal, MLX acceleration)
-- Intel support is secondary but should remain functional
-- MLX Metal library bundle must be embedded in app Resources
-- Large language models require significant RAM (16GB+ recommended)
-- Image generation (Stable Diffusion) is memory-intensive
+- Intel support is secondary
+- MLX Metal library bundle must be embedded
+- Large models require significant RAM (16GB+ recommended)
 
-### Known Limitations
-- macOS 14.0+ only (no iOS, no cross-platform)
-- Apple Silicon strongly recommended (Intel has limited ML acceleration)
-- Local models require significant disk space (10GB+ for larger models)
-- Voice features require microphone permissions
-- File access requires proper sandbox entitlements
+### Critical Files (Never Break These)
 
-### Critical Files to Never Break
 - `Info.plist` - Version, bundle ID, entitlements
 - `Package.swift` - Dependencies, targets
 - `Makefile` - Build system
 - `SAM.entitlements` - Sandbox permissions
-- `external/llama.cpp/` - Submodule (do not modify directly)
+- `external/llama.cpp/` - Submodule (don't modify directly)
 
 ---
 
-## Resources & Documentation
+## Troubleshooting
 
-### Internal Documentation
-- `BUILDING.md` - Build instructions
-- `CONTRIBUTING.md` - Contribution guidelines
-- `VERSIONING.md` - Version scheme and release process
-- `RELEASE_NOTES.md` - User-facing release notes
-- `project-docs/` - Architecture, migration guides
-- `Tests/KNOWN_ISSUES.md` - Test suite known issues
+### Build Fails: "llama.cpp not found"
 
-### External Resources
-- **Website:** https://www.syntheticautonomicmind.org
-- **Repository:** https://github.com/SyntheticAutonomicMind/SAM
-- **Issue Tracker:** https://github.com/SyntheticAutonomicMind/SAM/issues
-- **Support:** https://www.patreon.com/fewtarius
-
----
-
-## Quick Reference
-
-### Common Commands
 ```bash
-# Build
+git submodule update --init --recursive
+make clean llamacpp
 make build-debug
-make build-release
-make clean
-
-# Test
-swift test
-./Tests/run_all_tests.sh
-
-# Run
-.build/Build/Products/Debug/SAM.app/Contents/MacOS/SAM
-
-# Version
-./scripts/increment-version.sh        # Stable release
-./scripts/increment-dev-version.sh    # Dev release
-
-# Sign & Notarize
-export APPLE_DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
-./scripts/sign-and-notarize.sh
 ```
 
-### File Locations
-- **Source Code:** `Sources/`
-- **Tests:** `Tests/`
-- **Resources:** `Resources/`
-- **Build Output:** `.build/Build/Products/`
-- **External Dependencies:** `external/`
-- **Scripts:** `scripts/`
-- **Documentation:** `project-docs/`
+### Swift 6 Concurrency Errors
+
+1. Check for actor boundaries
+2. Verify Sendable conformance
+3. Use capture-before-crossing pattern
+4. See `project-docs/SWIFT6_CONCURRENCY_MIGRATION.md`
+
+### Tests Fail
+
+```bash
+cd SAM  # Always from root
+swift test
+./Tests/run_all_tests.sh
+```
+
+### DMG Creation Fails
+
+```bash
+make build-release
+make create-dmg  # Or part of `make distribute`
+```
 
 ---
 
@@ -636,3 +483,5 @@ Your value is in:
 ---
 
 **This project follows The Unbroken Method. Maintain context, own the work, investigate first, fix root causes, deliver completely, handoff properly, and learn from failures.**
+
+*Last Updated: 2026-02-01*
