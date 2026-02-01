@@ -1,0 +1,106 @@
+name: Update Homebrew Cask
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-cask:
+    name: Update SAM Homebrew Cask
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${{ github.ref }}"
+          VERSION="${VERSION#refs/tags/}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Get DMG asset details
+        id: asset
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: context.payload.release.id,
+            });
+            
+            // Find the DMG asset (the one users will download)
+            const dmgAsset = release.data.assets.find(a => a.name.endsWith('.dmg'));
+            if (!dmgAsset) {
+              throw new Error('No DMG asset found in release');
+            }
+            
+            console.log('DMG Asset:', dmgAsset.name);
+            console.log('Download URL:', dmgAsset.browser_download_url);
+            core.setOutput('url', dmgAsset.browser_download_url);
+
+      - name: Download DMG and calculate SHA256
+        id: hash
+        run: |
+          DMG_URL="${{ steps.asset.outputs.url }}"
+          echo "Downloading: $DMG_URL"
+          curl -L -o /tmp/SAM.dmg "$DMG_URL"
+          
+          # Calculate SHA256
+          SHA256=$(shasum -a 256 /tmp/SAM.dmg | cut -d' ' -f1)
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA256"
+
+      - name: Checkout homebrew repo
+        uses: actions/checkout@v4
+        with:
+          repository: SyntheticAutonomicMind/homebrew
+          token: ${{ secrets.HOMEBREW_TOKEN }}
+          path: homebrew
+
+      - name: Update SAM cask
+        working-directory: homebrew
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA256="${{ steps.hash.outputs.sha256 }}"
+          DMG_URL="${{ steps.asset.outputs.url }}"
+          
+          echo "Updating Casks/sam.rb"
+          echo "  Version: $VERSION"
+          echo "  SHA256: $SHA256"
+          
+          # Update the cask file with the new version and SHA256
+          sed -i.bak \
+            -e "s|version \"[^\"]*\"|version \"$VERSION\"|" \
+            -e "s|sha256 \"[^\"]*\"|sha256 \"$SHA256\"|" \
+            Casks/sam.rb
+          
+          # Show the updated file
+          echo "Updated Casks/sam.rb:"
+          head -10 Casks/sam.rb
+
+      - name: Commit and push
+        working-directory: homebrew
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          git add Casks/sam.rb
+          if git diff --staged --quiet; then
+            echo "No changes detected"
+          else
+            git commit -m "chore(sam): update cask to version $VERSION"
+            git push
+            echo "[OK] Pushed homebrew cask update for SAM $VERSION"
+          fi
+
+      - name: Verify update
+        working-directory: homebrew
+        run: |
+          echo "Final Casks/sam.rb:"
+          grep -E "version|sha256" Casks/sam.rb | head -2
