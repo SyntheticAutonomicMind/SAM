@@ -250,6 +250,20 @@ Get a glimpse of SAM's native macOS interface in action:
 
 ### Download & Install
 
+**Option 1: Using Homebrew (Recommended)**
+
+```bash
+brew tap SyntheticAutonomicMind/homebrew-SAM
+brew install --cask sam
+```
+
+To update SAM in the future, simply run:
+```bash
+brew upgrade --cask sam
+```
+
+**Option 2: Manual Download**
+
 1. **Download** the latest release from [GitHub Releases](https://github.com/SyntheticAutonomicMind/SAM/releases)
 2. **Extract** the downloaded zip file
 3. **Move** `SAM.app` to your Applications folder
