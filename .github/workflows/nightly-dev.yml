@@ -43,14 +43,16 @@ jobs:
             exit 0
           fi
           
-          # Check if there are commits since the last dev release
-          COMMITS_SINCE=$(git rev-list ${LATEST_DEV_TAG}..HEAD --count)
+          # Check if there are meaningful commits since the last dev release
+          # Ignore appcast files which are auto-updated by the build process
+          MEANINGFUL_CHANGES=$(git diff --name-only ${LATEST_DEV_TAG}..HEAD | grep -v -E '^appcast-dev' | wc -l)
           
-          if [ "$COMMITS_SINCE" -gt 0 ]; then
-            echo "Found $COMMITS_SINCE commits since $LATEST_DEV_TAG"
+          if [ "$MEANINGFUL_CHANGES" -gt 0 ]; then
+            echo "Found meaningful changes since $LATEST_DEV_TAG (excluding appcast files)"
+            git diff --name-only ${LATEST_DEV_TAG}..HEAD | grep -v -E '^appcast-dev' | sed 's/^/  - /'
             echo "has_changes=true" >> $GITHUB_OUTPUT
           else
-            echo "No changes since $LATEST_DEV_TAG"
+            echo "No meaningful changes since $LATEST_DEV_TAG (only appcast updates)"
             echo "has_changes=false" >> $GITHUB_OUTPUT
           fi
 
