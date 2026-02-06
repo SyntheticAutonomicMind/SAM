@@ -3632,6 +3632,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Mini prompt reminder - user's enabled mini prompts (instructions)
         if let miniPromptReminder = miniPromptReminderContent {
             messages.append(createSystemReminder(content: miniPromptReminder, model: model))
+            /// Record successful injection to prevent repeating
+            MiniPromptReminderInjector.shared.recordInjection(
+                conversationId: conversation.id,
+                enabledMiniPromptIds: conversation.enabledMiniPromptIds
+            )
             logger.debug("callLLM: Injected mini prompt reminder RIGHT BEFORE user message")
         }
 
@@ -4618,6 +4623,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 enabledMiniPromptIds: conversation.enabledMiniPromptIds
             ) {
                 messages.append(createSystemReminder(content: miniPromptReminder, model: model))
+                /// Record successful injection to prevent repeating
+                MiniPromptReminderInjector.shared.recordInjection(
+                    conversationId: conversation.id,
+                    enabledMiniPromptIds: conversation.enabledMiniPromptIds
+                )
                 logger.debug("callLLMStreaming: Injected mini prompt reminder at END of messages")
             }
         }
