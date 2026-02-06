@@ -1,6 +1,47 @@
 {
   "releases": [
     {
+      "version": "20260206.1",
+      "release_date": "February 6, 2026",
+      "introduction": "This release fixes important conversation reliability issues, especially for users who use mini-prompts to customize SAM's behavior.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "message-ordering-fix",
+          "icon": "arrow.up.arrow.down.circle.fill",
+          "title": "Fixed Message Order in Database",
+          "description": "Messages now appear in the correct order in your conversation history. Previously, under certain conditions, a user message could appear after the assistant's response in the database, even though it displayed correctly in the chat."
+        },
+        {
+          "id": "mini-prompt-repetition-fix",
+          "icon": "repeat.circle.fill",
+          "title": "Mini-Prompts No Longer Repeat",
+          "description": "Mini-prompts (custom instructions) are now sent to the AI only once per conversation instead of being included in every message. This saves context space and prevents potential confusion."
+        },
+        {
+          "id": "mini-prompt-state-management",
+          "icon": "gearshape.2.fill",
+          "title": "Smart Mini-Prompt Handling",
+          "description": "SAM now properly handles when you enable, disable, or change mini-prompts mid-conversation. When you enable a mini-prompt after starting a conversation, it will be sent to the AI immediately. If you disable then re-enable a mini-prompt, it will be sent again as expected."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": [
+        {
+          "id": "message-sync-fix",
+          "content": "ConversationMessageBus now syncs user messages immediately (like tool messages) to prevent race conditions. AgentOrchestrator reads conversation.messages which must be up-to-date before API call construction."
+        },
+        {
+          "id": "mini-prompt-injection-logic",
+          "content": "ChatWidget injects mini-prompts only on first user message (MessageBus count == 0). MiniPromptReminderInjector tracks injected sets per conversation and detects changes. State is cleared when enabledMiniPromptIds becomes empty, enabling proper re-injection on re-enable."
+        },
+        {
+          "id": "mini-prompt-debug-logging",
+          "content": "Added comprehensive MINI_PROMPT_TRACE logging throughout injection flow: ChatWidget first message checks, shouldInjectReminder decision logic, formatMiniPromptReminder calls, and recordInjection state updates."
+        }
+      ]
+    },
+    {
       "version": "20260127.1",
       "release_date": "January 27, 2026",
       "introduction": "This release includes a new application icon, important stability fixes, and code quality improvements.",

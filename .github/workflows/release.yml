@@ -112,12 +112,18 @@ jobs:
           VERSION=${{ steps.version.outputs.VERSION }}
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
+          
+          # Fetch latest main and switch to it
+          git fetch origin main
+          git checkout main
+          git pull origin main
+          
           git add appcast.xml
           if git diff --staged --quiet; then
             echo "No changes to appcast.xml"
           else
             git commit -m "chore(release): update appcast.xml for v${VERSION}"
-            git push origin HEAD:main
+            git push origin main
           fi
       
       - name: Create GitHub Release
