@@ -3847,19 +3847,40 @@ public struct ChatWidget: View {
         var textForAPI = originalText
         var injectedContexts: [String] = []
 
-        /// FEATURE: Inject mini-prompts into user message for maximum AI attention (per-conversation).
+        /// FEATURE: Inject mini-prompts into FIRST user message only (per-conversation).
+        /// Mini-prompts are persistent instructions that should be set once at conversation start,
+        /// not repeated in every user message (which would waste context and cause issues).
         if let activeConversation = activeConversation {
-            let miniPromptText = MiniPromptManager.shared.getInjectedText(
-                for: activeConversation.id,
-                enabledIds: activeConversation.enabledMiniPromptIds
-            )
-            if !miniPromptText.isEmpty {
-                injectedContexts.append(miniPromptText)
-                let enabledPrompts = MiniPromptManager.shared.enabledPrompts(
+            /// CRITICAL: Check MessageBus directly (not conversation.messages) for accurate count
+            /// conversation.messages may be stale due to sync delays
+            let currentUserMessageCount = messageBus.messages.filter { $0.isFromUser }.count
+            let isFirstUserMessage = currentUserMessageCount == 0
+            
+            if isFirstUserMessage {
+                logger.debug("MINI_PROMPT_TRACE: ChatWidget first message check - convId=\(activeConversation.id.uuidString.prefix(8)), enabledCount=\(activeConversation.enabledMiniPromptIds.count)")
+                let miniPromptText = MiniPromptManager.shared.getInjectedText(
                     for: activeConversation.id,
                     enabledIds: activeConversation.enabledMiniPromptIds
                 )
-                logger.info("Injected \(enabledPrompts.count) mini-prompt(s) into user message: \(enabledPrompts.map { $0.name }.joined(separator: ", "))")
+                if !miniPromptText.isEmpty {
+                    injectedContexts.append(miniPromptText)
+                    let enabledPrompts = MiniPromptManager.shared.enabledPrompts(
+                        for: activeConversation.id,
+                        enabledIds: activeConversation.enabledMiniPromptIds
+                    )
+                    /// CRITICAL: Record injection to synchronize state tracking
+                    /// This prevents MiniPromptReminderInjector from injecting again
+                    /// and enables mid-conversation detection of new mini-prompts
+                    MiniPromptReminderInjector.shared.recordInjection(
+                        conversationId: activeConversation.id,
+                        enabledMiniPromptIds: activeConversation.enabledMiniPromptIds
+                    )
+                    logger.info("MINI_PROMPT_TRACE: ChatWidget injected \(enabledPrompts.count) mini-prompt(s) into FIRST user message: \(enabledPrompts.map { $0.name }.joined(separator: ", "))")
+                } else {
+                    logger.debug("MINI_PROMPT_TRACE: ChatWidget miniPromptText was empty")
+                }
+            } else {
+                logger.debug("MINI_PROMPT_TRACE: ChatWidget skipped injection (not first message, count=\(currentUserMessageCount), enabledCount=\(activeConversation.enabledMiniPromptIds.count))")
             }
         }
 

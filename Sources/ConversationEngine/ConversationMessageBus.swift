@@ -745,12 +745,14 @@ public class ConversationMessageBus: ObservableObject {
         }
 
         /// Sync to ConversationModel for persistence
-        /// Tool messages sync immediately, non-tool messages throttled
-        if message.isToolMessage {
-            logger.debug("IMMEDIATE_SYNC: Tool message appended, syncing synchronously id=\(message.id.uuidString.prefix(8))")
+        /// CRITICAL: User messages and tool messages sync IMMEDIATELY to prevent race conditions
+        /// Assistant messages (streaming chunks) use throttled sync for performance
+        /// FIX: User messages MUST sync immediately before AgentOrchestrator reads conversation.messages
+        if message.isToolMessage || message.isFromUser {
+            logger.debug("IMMEDIATE_SYNC: Critical message appended, syncing synchronously id=\(message.id.uuidString.prefix(8)), isUser=\(message.isFromUser), isTool=\(message.isToolMessage)")
             conversation?.syncMessagesFromMessageBus()
         } else {
-            /// Non-tool messages use throttled sync
+            /// Assistant streaming messages use throttled sync (performance optimization)
             notifyConversationOfChanges()
         }
     }

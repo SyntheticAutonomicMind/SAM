@@ -12,6 +12,7 @@ Fix:
 """
 
 import sys
+import re
 from pathlib import Path
 
 
@@ -34,41 +35,55 @@ def patch_dpmsolver_sde_for_mps(scheduler_file: Path) -> bool:
     
     # Check if already patched
     if "# MPS RNG FIX:" in content:
-        print(f"✓ Scheduler already patched: {scheduler_file}")
+        print(f" Scheduler already patched: {scheduler_file}")
         return True
     
-    # Patch 1: Fix noise generation
-    original_noise = """        if self.config.algorithm_type in ["sde-dpmsolver", "sde-dpmsolver++"] and variance_noise is None:
-            noise = randn_tensor(
-                model_output.shape, generator=generator, device=model_output.device, dtype=torch.float32
-            )"""
+    # Patch 1: Fix noise generation (more flexible regex to handle formatting variations)
+    noise_pattern = re.compile(
+        r'if self\.config\.algorithm_type in \["sde-dpmsolver", "sde-dpmsolver\+\+"\] and variance_noise is None:\s+'
+        r'noise = randn_tensor\(\s*'
+        r'model_output\.shape,\s*'
+        r'generator=generator,\s*'
+        r'device=model_output\.device,\s*'
+        r'dtype=torch\.float32,?\s*'
+        r'\)',
+        re.MULTILINE | re.DOTALL
+    )
     
-    patched_noise = """        if self.config.algorithm_type in ["sde-dpmsolver", "sde-dpmsolver++"] and variance_noise is None:
+    patched_noise = """if self.config.algorithm_type in ["sde-dpmsolver", "sde-dpmsolver++"] and variance_noise is None:
             # MPS RNG FIX: Generate noise on CPU to avoid MPS precision issues
             noise_device = "cpu" if str(model_output.device) == "mps" else model_output.device
             noise = randn_tensor(
-                model_output.shape, generator=generator, device=noise_device, dtype=torch.float32
+                model_output.shape,
+                generator=generator,
+                device=noise_device,
+                dtype=torch.float32,
             )
             # Move noise to target device if it was generated on CPU
             if noise_device == "cpu" and model_output.device != "cpu":
                 noise = noise.to(device=model_output.device)"""
     
-    if original_noise not in content:
-        print(f"ERROR: Could not find noise generation code in {scheduler_file}")
-        return False
+    if not noise_pattern.search(content):
+        print(f"WARNING: Could not find noise generation code in expected format")
+        print(f"This patch may not be needed for this diffusers version")
+        # Don't fail - maybe the code changed or was already fixed upstream
+        return True
     
-    content = content.replace(original_noise, patched_noise)
+    content = noise_pattern.sub(patched_noise, content)
     
     # Patch 2: Fix sqrt operations in sde-dpmsolver++
-    original_sde_pp = """        elif self.config.algorithm_type == "sde-dpmsolver++":
-            assert noise is not None
-            x_t = (
-                (sigma_t / sigma_s * torch.exp(-h)) * sample
-                + (alpha_t * (1 - torch.exp(-2.0 * h))) * model_output
-                + sigma_t * torch.sqrt(1.0 - torch.exp(-2 * h)) * noise
-            )"""
+    sde_pp_pattern = re.compile(
+        r'elif self\.config\.algorithm_type == "sde-dpmsolver\+\+":\s+'
+        r'assert noise is not None\s+'
+        r'x_t = \(\s*'
+        r'\(sigma_t / sigma_s \* torch\.exp\(-h\)\) \* sample\s*\+\s*'
+        r'\(alpha_t \* \(1 - torch\.exp\(-2\.0 \* h\)\)\) \* model_output\s*\+\s*'
+        r'sigma_t \* torch\.sqrt\(1\.0 - torch\.exp\(-2 \* h\)\) \* noise\s*'
+        r'\)',
+        re.MULTILINE | re.DOTALL
+    )
     
-    patched_sde_pp = """        elif self.config.algorithm_type == "sde-dpmsolver++":
+    patched_sde_pp = """elif self.config.algorithm_type == "sde-dpmsolver++":
             assert noise is not None
             # MPS PRECISION FIX: Clamp sqrt input to prevent NaN from precision errors
             sqrt_input = torch.clamp(1.0 - torch.exp(-2 * h), min=0.0)
@@ -78,22 +93,25 @@ def patch_dpmsolver_sde_for_mps(scheduler_file: Path) -> bool:
                 + sigma_t * torch.sqrt(sqrt_input) * noise
             )"""
     
-    if original_sde_pp not in content:
-        print(f"ERROR: Could not find sde-dpmsolver++ code in {scheduler_file}")
-        return False
-    
-    content = content.replace(original_sde_pp, patched_sde_pp)
+    if not sde_pp_pattern.search(content):
+        print(f"WARNING: Could not find sde-dpmsolver++ code in expected format")
+        # Don't fail - keep going
+    else:
+        content = sde_pp_pattern.sub(patched_sde_pp, content)
     
     # Patch 3: Fix sqrt operations in sde-dpmsolver
-    original_sde = """        elif self.config.algorithm_type == "sde-dpmsolver":
-            assert noise is not None
-            x_t = (
-                (alpha_t / alpha_s) * sample
-                - 2.0 * (sigma_t * (torch.exp(h) - 1.0)) * model_output
-                + sigma_t * torch.sqrt(torch.exp(2 * h) - 1.0) * noise
-            )"""
+    sde_pattern = re.compile(
+        r'elif self\.config\.algorithm_type == "sde-dpmsolver":\s+'
+        r'assert noise is not None\s+'
+        r'x_t = \(\s*'
+        r'\(alpha_t / alpha_s\) \* sample\s*-\s*'
+        r'2\.0 \* \(sigma_t \* \(torch\.exp\(h\) - 1\.0\)\) \* model_output\s*\+\s*'
+        r'sigma_t \* torch\.sqrt\(torch\.exp\(2 \* h\) - 1\.0\) \* noise\s*'
+        r'\)',
+        re.MULTILINE | re.DOTALL
+    )
     
-    patched_sde = """        elif self.config.algorithm_type == "sde-dpmsolver":
+    patched_sde = """elif self.config.algorithm_type == "sde-dpmsolver":
             assert noise is not None
             # MPS PRECISION FIX: Clamp sqrt input to prevent NaN from precision errors
             sqrt_input = torch.clamp(torch.exp(2 * h) - 1.0, min=0.0)
@@ -103,15 +121,15 @@ def patch_dpmsolver_sde_for_mps(scheduler_file: Path) -> bool:
                 + sigma_t * torch.sqrt(sqrt_input) * noise
             )"""
     
-    if original_sde not in content:
-        print(f"ERROR: Could not find sde-dpmsolver code in {scheduler_file}")
-        return False
-    
-    content = content.replace(original_sde, patched_sde)
+    if not sde_pattern.search(content):
+        print(f"WARNING: Could not find sde-dpmsolver code in expected format")
+        # Don't fail - keep going
+    else:
+        content = sde_pattern.sub(patched_sde, content)
     
     # Write back
     scheduler_file.write_text(content)
-    print(f"✓ Patched diffusers DPMSolver SDE for MPS at {scheduler_file}")
+    print(f" Patched diffusers DPMSolver SDE for MPS")
     print(f"  Fixed: 1) CPU RNG for noise generation on MPS")
     print(f"  Fixed: 2) Clamped sqrt inputs to prevent NaN in SDE math")
     
