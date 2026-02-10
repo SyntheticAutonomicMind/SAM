@@ -71,7 +71,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: SyntheticAutonomicMind/homebrew-SAM
-          token: ${{ secrets.HOMEBREW_TOKEN }}
+          token: ${{ secrets.HOMEBREW_PAT }}
           path: homebrew
 
       - name: Update SAM cask
