@@ -3,6 +3,12 @@ name: Update Homebrew Cask
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to update (e.g., 2.0.0)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,8 +22,12 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          VERSION="${{ github.ref }}"
-          VERSION="${VERSION#refs/tags/}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref }}"
+            VERSION="${VERSION#refs/tags/}"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
 
@@ -26,16 +36,19 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const release = await github.rest.repos.getRelease({
+            const version = '${{ steps.version.outputs.version }}';
+            
+            // Get release by tag (works for both release trigger and manual dispatch)
+            const release = await github.rest.repos.getReleaseByTag({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: context.payload.release.id,
+              tag: version,
             });
             
             // Find the DMG asset (the one users will download)
             const dmgAsset = release.data.assets.find(a => a.name.endsWith('.dmg'));
             if (!dmgAsset) {
-              throw new Error('No DMG asset found in release');
+              throw new Error('No DMG asset found in release for version ' + version);
             }
             
             console.log('DMG Asset:', dmgAsset.name);
@@ -54,10 +67,10 @@ jobs:
           echo "sha256=$SHA256" >> $GITHUB_OUTPUT
           echo "SHA256: $SHA256"
 
-      - name: Checkout homebrew repo
+      - name: Checkout homebrew-SAM repo
         uses: actions/checkout@v4
         with:
-          repository: SyntheticAutonomicMind/homebrew
+          repository: SyntheticAutonomicMind/homebrew-SAM
           token: ${{ secrets.HOMEBREW_TOKEN }}
           path: homebrew
 
