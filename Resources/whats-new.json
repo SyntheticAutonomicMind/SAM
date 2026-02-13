@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "20260213.1",
+      "release_date": "February 13, 2026",
+      "introduction": "This release fixes a critical system prompt bug that caused SAM to use training data instead of researching current information.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "training-data-loophole-fix",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Training Data Fallback",
+          "description": "SAM now properly uses tools to verify current information instead of relying on training data. Previously, weak language in the system prompt (\"Do NOT rely solely on training data\") created a loophole where SAM would output information from memory and only verify when corrected. Now SAM MUST use tools FIRST before responding with any current information (recipes, prices, URLs, product details, etc.)."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": [
+        {
+          "id": "system-prompt-training-data-prohibition",
+          "content": "buildCoreIdentity() now explicitly prohibits training data usage with \"TRAINING DATA IS PROHIBITED\" instead of \"Do NOT rely solely on training data\". Aligns with buildToolUsage() RESEARCH-FIRST principle. Removes loophole where models could use training data first if they planned to verify later."
+        }
+      ]
+    },
+    {
       "version": "20260206.1",
       "release_date": "February 6, 2026",
       "introduction": "This release fixes important conversation reliability issues, especially for users who use mini-prompts to customize SAM's behavior.",
