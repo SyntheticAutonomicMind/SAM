@@ -1,12 +1,17 @@
 name: Update Homebrew Cask
 
+# Trigger when release workflow completes successfully
+# Note: Using workflow_run instead of release:published because
+# releases created by workflows using GITHUB_TOKEN don't trigger release events
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release SAM"]
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to update (e.g., 2.0.0)'
+        description: 'Version to update (e.g., 20260210.1)'
         required: true
         type: string
 
@@ -17,16 +22,19 @@ jobs:
   update-cask:
     name: Update SAM Homebrew Cask
     runs-on: ubuntu-latest
+    # Only run if the release workflow succeeded (or manual dispatch)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     
     steps:
-      - name: Extract version from tag
+      - name: Extract version from workflow run
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            VERSION="${{ github.ref }}"
-            VERSION="${VERSION#refs/tags/}"
+            # Get the tag from the workflow run
+            # The release workflow runs on tag push, so we extract from head_branch
+            VERSION="${{ github.event.workflow_run.head_branch }}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
