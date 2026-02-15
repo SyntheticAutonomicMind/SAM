@@ -3,6 +3,7 @@
 
 import Foundation
 import Logging
+import ConfigurationSystem
 
 /// List available mini-prompts for contextual awareness
 /// Enables agents to discover mini-prompts available in the system
@@ -47,80 +48,33 @@ Returns JSON array with:
     ) async -> MCPToolResult {
         logger.debug("Listing mini-prompts")
 
-        /// Call API endpoint to get mini-prompts
-        guard let url = URL(string: "http://127.0.0.1:8080/api/prompts/mini") else {
-            return MCPToolResult(
-                success: false,
-                output: MCPOutput(content: "ERROR: Invalid API URL"),
-                toolName: name
-            )
+        // Access MiniPromptManager directly (same process, no API needed)
+        let allMiniPrompts = await MainActor.run {
+            MiniPromptManager.shared.miniPrompts
         }
 
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            
-            // Check HTTP status
-            if let httpResponse = response as? HTTPURLResponse {
-                guard httpResponse.statusCode == 200 else {
-                    logger.error("API returned status \(httpResponse.statusCode)")
-                    return MCPToolResult(
-                        success: false,
-                        output: MCPOutput(content: "ERROR: API returned status \(httpResponse.statusCode)"),
-                        toolName: name
-                    )
-                }
-            }
+        /// Format output for agent consumption
+        var output = "Available Mini-Prompts:\n\n"
 
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                let rawResponse = String(data: data, encoding: .utf8) ?? "Unable to decode"
-                logger.error("Failed to parse JSON: \(rawResponse.prefix(500))")
-                return MCPToolResult(
-                    success: false,
-                    output: MCPOutput(content: "ERROR: Failed to parse JSON response"),
-                    toolName: name
-                )
-            }
-            
-            guard let prompts = json["prompts"] as? [[String: Any]] else {
-                logger.error("No 'prompts' array in response: \(json.keys)")
-                return MCPToolResult(
-                    success: false,
-                    output: MCPOutput(content: "ERROR: Response missing 'prompts' array"),
-                    toolName: name
-                )
-            }
+        for prompt in allMiniPrompts {
+            let id = prompt.id.uuidString
+            let promptName = prompt.name
+            let content = prompt.content
 
-            /// Format output for agent consumption
-            var output = "Available Mini-Prompts:\n\n"
-
-            for prompt in prompts {
-                let id = (prompt["id"] as? String) ?? "unknown"
-                let promptName = (prompt["name"] as? String) ?? "unknown"
-                let content = (prompt["content"] as? String) ?? ""
-
-                output += "ID: \(id)\n"
-                output += "Name: \(promptName)\n"
-                output += "Content: \(content)\n"
-                output += "\n---\n\n"
-            }
-
-            if prompts.isEmpty {
-                output = "No mini-prompts configured yet.\n\nMini-prompts can be created in Preferences to add contextual information to conversations."
-            }
-
-            return MCPToolResult(
-                success: true,
-                output: MCPOutput(content: output),
-                toolName: name
-            )
-
-        } catch {
-            logger.error("Failed to list mini-prompts: \(error)")
-            return MCPToolResult(
-                success: false,
-                output: MCPOutput(content: "ERROR: Failed to fetch mini-prompts - \(error.localizedDescription)"),
-                toolName: name
-            )
+            output += "ID: \(id)\n"
+            output += "Name: \(promptName)\n"
+            output += "Content: \(content)\n"
+            output += "\n---\n\n"
         }
+
+        if allMiniPrompts.isEmpty {
+            output = "No mini-prompts configured yet.\n\nMini-prompts can be created in Preferences to add contextual information to conversations."
+        }
+
+        return MCPToolResult(
+            success: true,
+            output: MCPOutput(content: output),
+            toolName: name
+        )
     }
 }
