@@ -3,7 +3,7 @@
     {
       "version": "20260215.1",
       "release_date": "February 15, 2026",
-      "introduction": "This release fixes issues with Claude model workflows, adds session cost tracking, and improves agent reliability.",
+      "introduction": "This release fixes issues with Claude model workflows, adds session cost tracking with persistence, and improves agent reliability.",
       "highlights": [
         {
           "id": "workflow-fix",
@@ -15,7 +15,7 @@
           "id": "cost-tracking",
           "icon": "creditcard.fill",
           "title": "Session Cost Tracking",
-          "description": "New cost tracking panel in the chat toolbar shows your session usage: total requests, tokens, and premium vs free breakdown by model."
+          "description": "New cost tracking panel in the chat toolbar shows your session usage: total requests, tokens, and premium vs free breakdown by model. Cost data is saved per conversation and persists across app restarts."
         }
       ],
       "bugfixes": [
@@ -50,6 +50,10 @@
         {
           "id": "empty-arguments-fix",
           "content": "AgentOrchestrator tool call parsing now handles empty string arguments (returned for tools with no params). Previously JSONSerialization.jsonObject failed on '' causing the entire tool call to be skipped. Now creates tool call with empty {} arguments."
+        },
+        {
+          "id": "cost-tracking-persistence",
+          "content": "Cost tracking data (performanceMetrics) is persisted per conversation in ConversationModel. Metrics are saved when switching conversations and restored on load. Uses onMetricsRecorded callback in PerformanceMonitor for real-time updates. Panel state (showingCostTrackingPanel) follows the same pattern as other panels."
         },
         {
           "id": "cost-tracking-view",
