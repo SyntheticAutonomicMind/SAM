@@ -100,6 +100,7 @@ public struct ConversationSettings: Codable, Sendable {
     public var showingWorkingDirectoryPanel: Bool
     public var showAdvancedParameters: Bool
     public var showingPerformanceMetrics: Bool
+    public var showingCostTrackingPanel: Bool
     
     /// Telemetry for Session Intelligence UI - tracks memory/archive/compression usage
     public var telemetry: ConversationTelemetry
@@ -140,6 +141,7 @@ public struct ConversationSettings: Codable, Sendable {
         showingWorkingDirectoryPanel: Bool = false,
         showAdvancedParameters: Bool = false,
         showingPerformanceMetrics: Bool = false,
+        showingCostTrackingPanel: Bool = false,
         telemetry: ConversationTelemetry = ConversationTelemetry()
     ) {
         self.selectedModel = selectedModel
@@ -194,6 +196,7 @@ public struct ConversationSettings: Codable, Sendable {
         self.showingWorkingDirectoryPanel = showingWorkingDirectoryPanel
         self.showAdvancedParameters = showAdvancedParameters
         self.showingPerformanceMetrics = showingPerformanceMetrics
+        self.showingCostTrackingPanel = showingCostTrackingPanel
         self.telemetry = telemetry
 
         /// Default to SAM Default system prompt if none specified This ensures guard rails are always active in API calls and UI.
@@ -217,7 +220,7 @@ public struct ConversationSettings: Codable, Sendable {
         case sdNegativePrompt, sdSteps, sdGuidanceScale, sdScheduler, sdSeed, sdUseKarras, sdImageCount, sdImageWidth, sdImageHeight
         case sdEngine, sdDevice, sdUpscaleModel
         case sdStrength, sdInputImagePath
-        case showingMemoryPanel, showingTerminalPanel, showingWorkingDirectoryPanel, showAdvancedParameters, showingPerformanceMetrics
+        case showingMemoryPanel, showingTerminalPanel, showingWorkingDirectoryPanel, showAdvancedParameters, showingPerformanceMetrics, showingCostTrackingPanel
         case telemetry
     }
 
@@ -279,6 +282,7 @@ public struct ConversationSettings: Codable, Sendable {
         showingWorkingDirectoryPanel = try container.decodeIfPresent(Bool.self, forKey: .showingWorkingDirectoryPanel) ?? false
         showAdvancedParameters = try container.decodeIfPresent(Bool.self, forKey: .showAdvancedParameters) ?? false
         showingPerformanceMetrics = try container.decodeIfPresent(Bool.self, forKey: .showingPerformanceMetrics) ?? false
+        showingCostTrackingPanel = try container.decodeIfPresent(Bool.self, forKey: .showingCostTrackingPanel) ?? false
         
         /// Telemetry - default to empty if not present (for old conversations)
         telemetry = try container.decodeIfPresent(ConversationTelemetry.self, forKey: .telemetry) ?? ConversationTelemetry()
@@ -313,8 +317,11 @@ public struct ConversationData: Codable, Sendable {
 
     /// Track if conversation was created via API (for UI filtering)
     public let isFromAPI: Bool?
+    
+    /// Performance metrics for this conversation (cost tracking)
+    public let performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]?
 
-    public init(id: UUID, title: String, created: Date, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: [UUID]? = nil, isSubagent: Bool? = nil, parentConversationId: UUID? = nil, isWorking: Bool? = nil, subagentIds: [UUID]? = nil, folderId: String? = nil, isFromAPI: Bool = false) {
+    public init(id: UUID, title: String, created: Date, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: [UUID]? = nil, isSubagent: Bool? = nil, parentConversationId: UUID? = nil, isWorking: Bool? = nil, subagentIds: [UUID]? = nil, folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]? = nil) {
         self.id = id
         self.title = title
         self.created = created
@@ -334,6 +341,7 @@ public struct ConversationData: Codable, Sendable {
         self.subagentIds = subagentIds
         self.folderId = folderId
         self.isFromAPI = isFromAPI
+        self.performanceMetrics = performanceMetrics
     }
 }
 
@@ -383,6 +391,10 @@ public class ConversationModel: ObservableObject, Identifiable {
 
     /// Track if conversation was created via API (for UI filtering)
     @Published public var isFromAPI: Bool = false
+    
+    /// Performance metrics for this conversation (cost tracking)
+    /// Persisted per-conversation so cost data survives app restart/conversation switch
+    @Published public var performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []
 
     /// Working directory for terminal operations and file access Default: {basePath}/<conversation-id>/ (per-conversation isolation, App Store compliant, user can select different folder via picker).
     public var workingDirectory: String
@@ -472,7 +484,7 @@ public class ConversationModel: ObservableObject, Identifiable {
         return ConversationModel.from(data: data)
     }
 
-    private init(id: UUID, created: Date, title: String, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: Set<UUID> = [], isSubagent: Bool = false, parentConversationId: UUID? = nil, isWorking: Bool = false, subagentIds: [UUID] = [], folderId: String? = nil, isFromAPI: Bool = false) {
+    private init(id: UUID, created: Date, title: String, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: Set<UUID> = [], isSubagent: Bool = false, parentConversationId: UUID? = nil, isWorking: Bool = false, subagentIds: [UUID] = [], folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []) {
         self.id = id
         self.created = created
         self.title = title
@@ -491,6 +503,7 @@ public class ConversationModel: ObservableObject, Identifiable {
         self.subagentIds = subagentIds
         self.folderId = folderId
         self.isFromAPI = isFromAPI
+        self.performanceMetrics = performanceMetrics
 
         /// Set working directory (use provided or default to ~/SAM/).
         if let providedWorkingDir = workingDirectory {
@@ -528,7 +541,8 @@ public class ConversationModel: ObservableObject, Identifiable {
             isWorking: isWorking,
             subagentIds: subagentIds,
             folderId: folderId,
-            isFromAPI: isFromAPI
+            isFromAPI: isFromAPI,
+            performanceMetrics: performanceMetrics
         )
     }
 
@@ -553,7 +567,8 @@ public class ConversationModel: ObservableObject, Identifiable {
             isWorking: data.isWorking ?? false,
             subagentIds: data.subagentIds ?? [],
             folderId: data.folderId,
-            isFromAPI: data.isFromAPI ?? false
+            isFromAPI: data.isFromAPI ?? false,
+            performanceMetrics: data.performanceMetrics ?? []
         )
     }
 

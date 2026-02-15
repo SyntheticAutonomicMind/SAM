@@ -6,7 +6,7 @@ import Combine
 
 // MARK: - Performance Metrics Models
 
-public struct APIPerformanceMetrics: Identifiable, Codable {
+public struct APIPerformanceMetrics: Identifiable, Codable, Sendable {
     public let id: UUID
     public let timestamp: Date
     public let model: String
@@ -275,6 +275,9 @@ public class PerformanceMonitor: ObservableObject {
     @Published public var recentWorkflows: [WorkflowMetrics] = []
     @Published public var recentLoopDetections: [LoopDetectionMetrics] = []
     @Published public var recentContextFiltering: [ContextFilteringMetrics] = []
+    
+    /// Callback to notify when metrics are recorded (for conversation persistence)
+    public var onMetricsRecorded: ((APIPerformanceMetrics) -> Void)?
 
     public init() {}
 
@@ -296,6 +299,22 @@ public class PerformanceMonitor: ObservableObject {
         if recentMetrics.count > 100 {
             recentMetrics = Array(recentMetrics.prefix(100))
         }
+        
+        // Notify listener for conversation persistence
+        onMetricsRecorded?(metrics)
+    }
+    
+    // MARK: - Conversation Persistence
+    
+    /// Load metrics from a conversation (called when switching conversations)
+    public func loadMetricsFromConversation(_ metrics: [APIPerformanceMetrics]) {
+        recentMetrics = metrics
+        currentMetrics = metrics.first
+    }
+    
+    /// Get current metrics for saving to conversation
+    public func getMetricsForConversation() -> [APIPerformanceMetrics] {
+        return recentMetrics
     }
 
     /// PHASE 2-4 ENHANCEMENTS: Record workflow metrics.
