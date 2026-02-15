@@ -393,6 +393,9 @@ public struct ChatWidget: View {
             .onChange(of: showingPerformanceMetrics) { _, newValue in
                 savePanelState(panel: "perf", value: newValue)
             }
+            .onChange(of: showingCostTrackingPanel) { _, newValue in
+                savePanelState(panel: "cost", value: newValue)
+            }
     }
 
     /// Scroll lock is now in toolbar (removed overlay)
@@ -460,10 +463,15 @@ public struct ChatWidget: View {
                let prevConversation = conversationManager.conversations.first(where: { $0.id == prevId }) {
                 if !messageText.isEmpty {
                     prevConversation.settings.draftMessage = messageText
-                    /// Save immediately when switching (no debounce)
-                    conversationManager.saveConversations()
                     logger.debug("DRAFT_SAVE: Saved draft (\(messageText.count) chars) to conversation \(prevId.uuidString.prefix(8))")
                 }
+                
+                // Save performance metrics to previous conversation
+                prevConversation.performanceMetrics = performanceMonitor.getMetricsForConversation()
+                logger.debug("METRICS_SAVE: Saved \(prevConversation.performanceMetrics.count) metrics to conversation \(prevId.uuidString.prefix(8))")
+                
+                // Save immediately when switching (handles both draft and metrics)
+                conversationManager.saveConversations()
             }
 
             /// Cancel any pending debounced draft save
@@ -488,6 +496,22 @@ public struct ChatWidget: View {
                 } else {
                     /// Clear input when switching to conversation with no draft
                     messageText = ""
+                }
+                
+                // Restore performance metrics from new conversation
+                performanceMonitor.loadMetricsFromConversation(conv.performanceMetrics)
+                logger.debug("METRICS_RESTORE: Loaded \(conv.performanceMetrics.count) metrics from conversation \(conv.id.uuidString.prefix(8))")
+                
+                // Set up callback to persist metrics when recorded
+                // Uses weak reference to conversation to avoid capture issues
+                let weakConversation = conv
+                performanceMonitor.onMetricsRecorded = { [weak weakConversation] metrics in
+                    guard let conversation = weakConversation else { return }
+                    conversation.performanceMetrics.append(metrics)
+                    // Trim to 100 entries like PerformanceMonitor does
+                    if conversation.performanceMetrics.count > 100 {
+                        conversation.performanceMetrics = Array(conversation.performanceMetrics.suffix(100))
+                    }
                 }
             }
 
@@ -580,6 +604,21 @@ public struct ChatWidget: View {
                     messageText = draftMessage
                     logger.debug("DRAFT_RESTORE: Restored draft on appear (\(draftMessage.count) chars) from conversation \(conversation.id.uuidString.prefix(8))")
                 }
+                
+                // Restore performance metrics on initial appearance
+                performanceMonitor.loadMetricsFromConversation(conversation.performanceMetrics)
+                logger.debug("METRICS_RESTORE_APPEAR: Loaded \(conversation.performanceMetrics.count) metrics from conversation \(conversation.id.uuidString.prefix(8))")
+                
+                // Set up callback to persist metrics when recorded
+                let weakConversation = conversation
+                performanceMonitor.onMetricsRecorded = { [weak weakConversation] metrics in
+                    guard let conv = weakConversation else { return }
+                    conv.performanceMetrics.append(metrics)
+                    if conv.performanceMetrics.count > 100 {
+                        conv.performanceMetrics = Array(conv.performanceMetrics.suffix(100))
+                    }
+                }
+                
                 /// Track this conversation as previous for future switches
                 previousConversationId = conversation.id
             }
@@ -3279,8 +3318,9 @@ public struct ChatWidget: View {
         showingWorkingDirectoryPanel = conversation.settings.showingWorkingDirectoryPanel
         showAdvancedParameters = conversation.settings.showAdvancedParameters
         showingPerformanceMetrics = conversation.settings.showingPerformanceMetrics
+        showingCostTrackingPanel = conversation.settings.showingCostTrackingPanel
 
-        logger.debug("PANEL_SYNC: Loaded panel states - memory:\(showingMemoryPanel) terminal:\(showingTerminalPanel) workdir:\(showingWorkingDirectoryPanel) advanced:\(showAdvancedParameters) perf:\(showingPerformanceMetrics)")
+        logger.debug("PANEL_SYNC: Loaded panel states - memory:\(showingMemoryPanel) terminal:\(showingTerminalPanel) workdir:\(showingWorkingDirectoryPanel) advanced:\(showAdvancedParameters) perf:\(showingPerformanceMetrics) cost:\(showingCostTrackingPanel)")
 
         /// Sync settings from conversation with validation to prevent crashes.
         selectedModel = conversation.settings.selectedModel
@@ -3757,6 +3797,7 @@ public struct ChatWidget: View {
         conversation.settings.showingWorkingDirectoryPanel = showingWorkingDirectoryPanel
         conversation.settings.showAdvancedParameters = showAdvancedParameters
         conversation.settings.showingPerformanceMetrics = showingPerformanceMetrics
+        conversation.settings.showingCostTrackingPanel = showingCostTrackingPanel
 
         conversation.updated = Date()
 
@@ -3784,6 +3825,8 @@ public struct ChatWidget: View {
             conversation.settings.showAdvancedParameters = value
         case "perf":
             conversation.settings.showingPerformanceMetrics = value
+        case "cost":
+            conversation.settings.showingCostTrackingPanel = value
         default:
             logger.error("Unknown panel: \(panel)")
             return
@@ -7021,6 +7064,9 @@ public struct ChatWidget: View {
 
         /// Connect performance monitor for metrics tracking.
         orchestrator.performanceMonitor = performanceMonitor
+        
+        // Note: onMetricsRecorded callback is set up in conversation switch handler
+        // to ensure it stays in sync with the current conversation
 
         /// Store orchestrator reference for cancellation support
         await MainActor.run {
