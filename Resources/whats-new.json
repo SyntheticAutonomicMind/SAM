@@ -3,47 +3,47 @@
     {
       "version": "20260215.1",
       "release_date": "February 15, 2026",
-      "introduction": "This release fixes a critical workflow loop bug with Claude models, adds session cost tracking, and improves agent error recovery.",
+      "introduction": "This release fixes issues with Claude model workflows, adds session cost tracking, and improves agent reliability.",
       "highlights": [
         {
           "id": "workflow-fix",
           "icon": "arrow.triangle.2.circlepath.circle.fill",
-          "title": "Fixed Claude Workflow Loop",
-          "description": "Resolved a critical issue where Claude model workflows would stop prematurely when calling tools that take no arguments (like list_system_prompts). Agents now properly continue working through their todo lists."
+          "title": "Fixed Agent Workflow Loops",
+          "description": "Resolved an issue where agent workflows would stop unexpectedly when using Claude models. Agents now properly continue through multi-step tasks."
         },
         {
           "id": "cost-tracking",
           "icon": "creditcard.fill",
           "title": "Session Cost Tracking",
-          "description": "New cost tracking panel in the chat toolbar shows your session usage: total requests, tokens, premium vs free breakdown, and per-model costs with billing multipliers."
+          "description": "New cost tracking panel in the chat toolbar shows your session usage: total requests, tokens, and premium vs free breakdown by model."
         }
       ],
       "bugfixes": [
         {
           "id": "empty-args-fix",
           "icon": "wrench.and.screwdriver.fill",
-          "title": "Empty Tool Arguments Parsing",
-          "description": "Tools with no parameters (returning empty arguments) are now parsed correctly instead of being silently skipped, which was breaking multi-step workflows."
+          "title": "Tool Call Parsing",
+          "description": "Fixed an issue where certain tool calls were being skipped during multi-step workflows."
+        },
+        {
+          "id": "prompt-discovery-fix",
+          "icon": "list.bullet.rectangle.fill",
+          "title": "Prompt Discovery Tools",
+          "description": "The list_system_prompts and list_mini_prompts tools now work correctly. Previously they would fail with 'Failed to parse response' errors."
         }
       ],
       "improvements": [
         {
           "id": "copilot-user-api",
           "icon": "person.badge.clock.fill",
-          "title": "Pre-Fetched Quota Display",
-          "description": "SAM now fetches your GitHub Copilot quota when the app starts, so the usage display shows current data immediately."
+          "title": "Faster Quota Display",
+          "description": "Your GitHub Copilot quota is now fetched when SAM starts, so usage information appears immediately."
         },
         {
           "id": "tool-error-guidance",
           "icon": "lightbulb.fill",
-          "title": "Better Error Recovery",
-          "description": "When tool calls fail, agents now receive clearer error guidance with examples to help them fix the problem and continue working."
-        },
-        {
-          "id": "billing-fallback",
-          "icon": "chart.bar.fill",
-          "title": "Improved Billing Detection",
-          "description": "Cost tracking now works even when billing cache isn't populated, with intelligent fallback detection for Claude, GPT-4.5, and o1/o3 models."
+          "title": "Better Error Messages",
+          "description": "When tool calls fail, agents now receive clearer instructions to help them fix the problem and continue working."
         }
       ],
       "developer_notes": [
@@ -64,8 +64,8 @@
           "content": "Added CopilotUserAPI.swift with actor-based CopilotUserAPIClient that fetches from GET https://api.github.com/copilot_internal/user. Uses 'token <token>' auth format, 5-minute cache TTL, and Sendable response types."
         },
         {
-          "id": "session-cost-statistics",
-          "content": "Added SessionCostSummary and SessionCostStatistics structs to PerformanceMonitor. generateSessionCostStatistics(billingLookup:) aggregates metrics by model and calculates premium request counts using multipliers."
+          "id": "prompt-discovery-direct-access",
+          "content": "ListSystemPromptsTool and ListMiniPromptsTool now access SystemPromptManager.shared and MiniPromptManager.shared directly instead of calling the HTTP API. Fixes auth issues and reduces complexity."
         }
       ]
     },
