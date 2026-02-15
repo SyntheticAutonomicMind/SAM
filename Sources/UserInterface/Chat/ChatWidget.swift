@@ -99,6 +99,10 @@ public struct ChatWidget: View {
     /// Flag to prevent syncSettingsToConversation during syncWithActiveConversation.
     @State private var isLoadingConversationSettings = false
 
+    /// Cached Copilot User API response for quota display
+    /// Fetched on appear and refreshed periodically
+    @State private var cachedCopilotUserResponse: CopilotUserResponse?
+
     /// Flag to prevent bidirectional sync loop between UI and ConversationModel.
     @State private var isSyncingMessages = false
 
@@ -1331,11 +1335,34 @@ public struct ChatWidget: View {
                                 : "Cost multiplier (0x = free)")
 
                             /// Quota status (GitHub Copilot only)
-                            if isGitHubCopilot, let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() {
-                                let percentUsed = 100.0 - quotaInfo.percentRemaining
-                                Text("Status: \(quotaInfo.used)/\(quotaInfo.entitlement) Used: \(String(format: "%.1f%%", percentUsed))")
-                                    .font(.caption)
-                                    .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
+                            /// Prefers CopilotUserAPI data (richer, pre-request check), falls back to header-based quota
+                            if isGitHubCopilot {
+                                if let userResponse = cachedCopilotUserResponse, let premium = userResponse.premiumQuota {
+                                    // Rich data from CopilotUserAPI
+                                    let percentUsed = premium.percentUsed
+                                    HStack(spacing: 4) {
+                                        if let login = userResponse.login {
+                                            Text(login)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Text("•")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        Text("\(premium.used)/\(premium.entitlement)")
+                                            .font(.caption)
+                                            .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
+                                        Text("(\(String(format: "%.1f%%", percentUsed)))")
+                                            .font(.caption)
+                                            .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
+                                    }
+                                } else if let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() {
+                                    // Fallback to header-based quota
+                                    let percentUsed = 100.0 - quotaInfo.percentRemaining
+                                    Text("Status: \(quotaInfo.used)/\(quotaInfo.entitlement) Used: \(String(format: "%.1f%%", percentUsed))")
+                                        .font(.caption)
+                                        .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
+                                }
                             }
                         }
                     }
@@ -3121,6 +3148,11 @@ public struct ChatWidget: View {
             if isSDModel {
                 logger.info("Detected SD-only mode on load: \\(activeConv.settings.selectedModel)")
             }
+        }
+
+        /// Pre-fetch Copilot user info for quota display (non-blocking)
+        Task {
+            await refreshCopilotUserInfo()
         }
 
         /// Check if local model is already loaded on startup (Issue #1: input box disabled)
@@ -6806,6 +6838,24 @@ public struct ChatWidget: View {
     }
 
     // MARK: - Helper Methods
+
+    /// Refresh Copilot user info from the User API for quota display
+    /// Non-blocking, updates cachedCopilotUserResponse state
+    private func refreshCopilotUserInfo() async {
+        do {
+            let token = try await CopilotTokenStore.shared.getCopilotToken()
+            let userResponse = try await CopilotUserAPIClient.shared.fetchUser(token: token)
+            await MainActor.run {
+                cachedCopilotUserResponse = userResponse
+            }
+            if let login = userResponse.login {
+                logger.debug("Fetched Copilot user info for: \(login)")
+            }
+        } catch {
+            // Non-fatal - fall back to header-based quota display
+            logger.debug("Could not fetch Copilot user info: \(error.localizedDescription)")
+        }
+    }
 
     /// Check if message is a tool call JSON message.
     private func isToolCallJSONMessage(_ message: EnhancedMessage) -> Bool {

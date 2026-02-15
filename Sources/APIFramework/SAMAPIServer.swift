@@ -3400,25 +3400,70 @@ AVAILABLE TOOLS:
 
     /// Handle GET /api/github-copilot/quota - return GitHub Copilot quota information
     /// Returns current usage and entitlement for GitHub Copilot models
+    /// Prioritizes CopilotUserAPI for richer data, falls back to header-based tracking
     private func handleGetGitHubCopilotQuota(_ req: Request) async throws -> Response {
         logger.debug("Getting GitHub Copilot quota information")
 
+        // Check for force refresh query parameter
+        let forceRefresh = req.url.query?.contains("refresh=true") ?? false
+        
+        // Try CopilotUserAPI first (richer data, pre-request check)
+        do {
+            let token = try await CopilotTokenStore.shared.getCopilotToken()
+            let userResponse = try await CopilotUserAPIClient.shared.fetchUser(token: token, forceRefresh: forceRefresh)
+            
+            if let premium = userResponse.premiumQuota {
+                let response: [String: Any] = [
+                    "available": true,
+                    "source": "user_api",
+                    "login": userResponse.login ?? "unknown",
+                    "plan": userResponse.copilotPlan ?? "unknown",
+                    "entitlement": premium.entitlement,
+                    "used": premium.used,
+                    "remaining": premium.remaining,
+                    "percentUsed": premium.percentUsed,
+                    "percentRemaining": premium.percentRemaining,
+                    "overageCount": premium.overageCount ?? 0,
+                    "overagePermitted": premium.overagePermitted ?? false,
+                    "unlimited": premium.unlimited,
+                    "resetDate": userResponse.quotaResetDateUTC ?? "unknown"
+                ]
+                let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
+                return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
+            }
+        } catch {
+            logger.debug("CopilotUserAPI unavailable, falling back to header-based quota: \(error.localizedDescription)")
+        }
+        
+        // Fall back to header-based quota info
         guard let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() else {
-            let response: [String: Any] = ["available": false]
+            let response: [String: Any] = ["available": false, "reason": "No quota information available. Make an API call first or authenticate with GitHub."]
             let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
             return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
         }
 
         let percentUsed = 100.0 - quotaInfo.percentRemaining
 
-        let response: [String: Any] = [
+        var response: [String: Any] = [
             "available": true,
+            "source": "response_headers",
             "entitlement": quotaInfo.entitlement,
             "used": quotaInfo.used,
             "percentUsed": percentUsed,
             "percentRemaining": quotaInfo.percentRemaining,
             "resetDate": quotaInfo.resetDate
         ]
+        
+        // Include enhanced fields if available
+        if let login = quotaInfo.login {
+            response["login"] = login
+        }
+        if let plan = quotaInfo.copilotPlan {
+            response["plan"] = plan
+        }
+        if let overageCount = quotaInfo.overageCount {
+            response["overageCount"] = overageCount
+        }
 
         let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
         return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))

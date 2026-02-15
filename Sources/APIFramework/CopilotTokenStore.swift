@@ -25,6 +25,7 @@ public class CopilotTokenStore: ObservableObject {
     }
     
     /// Store GitHub user token and exchange for Copilot token
+    /// Also fetches user info from CopilotUserAPI for enhanced quota tracking
     public func setGitHubToken(_ token: String) async throws {
         githubToken = token
         
@@ -35,6 +36,32 @@ public class CopilotTokenStore: ObservableObject {
         // Update published properties
         isSignedIn = true
         username = copilotToken?.username
+        
+        // Fetch additional user info from CopilotUserAPI (non-blocking)
+        Task {
+            do {
+                let userResponse = try await CopilotUserAPIClient.shared.fetchUser(token: token)
+                
+                // Update username if we got a better one
+                if let login = userResponse.login {
+                    await MainActor.run {
+                        self.username = login
+                    }
+                    logger.info("User API: authenticated as \(login)")
+                }
+                
+                if let plan = userResponse.copilotPlan {
+                    logger.info("User API: Copilot plan = \(plan)")
+                }
+                
+                if let premium = userResponse.premiumQuota {
+                    logger.info("User API: Premium quota \(premium.used)/\(premium.entitlement) used (\(String(format: "%.1f", premium.percentUsed))%)")
+                }
+            } catch {
+                // Non-fatal - user info is supplementary
+                logger.debug("Could not prefetch user info: \(error.localizedDescription)")
+            }
+        }
         
         // Start refresh timer
         startRefreshTimer()
@@ -48,6 +75,7 @@ public class CopilotTokenStore: ObservableObject {
     
     /// Store GitHub user token directly (no Copilot token exchange)
     /// GitHub user tokens from device flow already have billing access
+    /// Also fetches user info from CopilotUserAPI to get username and plan
     public func setGitHubTokenDirect(_ token: String) async {
         githubToken = token
         
@@ -56,7 +84,26 @@ public class CopilotTokenStore: ObservableObject {
         
         // Update published properties
         isSignedIn = true
-        username = nil  // We don't have username without Copilot token response
+        
+        // Fetch user info from CopilotUserAPI to get username and plan
+        do {
+            let userResponse = try await CopilotUserAPIClient.shared.fetchUser(token: token)
+            username = userResponse.login
+            
+            if let login = userResponse.login {
+                logger.info("Authenticated as: \(login)")
+            }
+            if let plan = userResponse.copilotPlan {
+                logger.info("Copilot plan: \(plan)")
+            }
+            if let premium = userResponse.premiumQuota {
+                logger.info("Premium quota: \(premium.used)/\(premium.entitlement) used")
+            }
+        } catch {
+            // Non-fatal - we can still use the token without user info
+            logger.debug("Could not fetch user info: \(error.localizedDescription)")
+            username = nil
+        }
         
         // No refresh needed - GitHub tokens are long-lived
         refreshTask?.cancel()
