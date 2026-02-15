@@ -392,6 +392,27 @@ git commit -m "docs(training): Add LoRA fine-tuning guide"
 5. Document in tool's docstring
 6. Add entry to CHANGELOG
 
+**Important:** If your tool needs to access SAM data (system prompts, mini-prompts, settings), access the manager directly (e.g., `SystemPromptManager.shared`) instead of calling the HTTP API. Tools run in the same process, so direct access is simpler and doesn't require authentication.
+
+### Adding Per-Conversation UI State (Panel, Setting, etc.)
+
+When adding UI state that should persist per conversation:
+
+1. **ConversationSettings struct** (`ConversationModel.swift`):
+   - Add property to struct (e.g., `public var showingMyPanel: Bool`)
+   - Add to init parameters with default value
+   - Add to `CodingKeys` enum
+   - Add to decoder with `decodeIfPresent` and default
+
+2. **ChatWidget integration** (`ChatWidget.swift`):
+   - Add `@State private var showingMyPanel = false`
+   - Add `.onChange(of: showingMyPanel)` handler calling `savePanelState(panel: "mypanel", value: newValue)`
+   - Add `case "mypanel":` to `savePanelState` switch
+   - Add `showingMyPanel = conversation.settings.showingMyPanel` in `syncWithActiveConversation()`
+   - Add `conversation.settings.showingMyPanel = showingMyPanel` in `saveUISettings()`
+
+3. **Important:** SwiftUI's `onChange` doesn't fire when value is already set before view loads. Always ALSO set up state in `onAppear` for initial load.
+
 ### Adding a New AI Provider
 
 1. Create provider in `Sources/APIFramework/Providers/MyProvider.swift`
