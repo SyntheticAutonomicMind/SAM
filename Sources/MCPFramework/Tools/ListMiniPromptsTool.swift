@@ -57,13 +57,35 @@ Returns JSON array with:
         }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(from: url)
+            
+            // Check HTTP status
+            if let httpResponse = response as? HTTPURLResponse {
+                guard httpResponse.statusCode == 200 else {
+                    logger.error("API returned status \(httpResponse.statusCode)")
+                    return MCPToolResult(
+                        success: false,
+                        output: MCPOutput(content: "ERROR: API returned status \(httpResponse.statusCode)"),
+                        toolName: name
+                    )
+                }
+            }
 
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let prompts = json["prompts"] as? [[String: String]] else {
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                let rawResponse = String(data: data, encoding: .utf8) ?? "Unable to decode"
+                logger.error("Failed to parse JSON: \(rawResponse.prefix(500))")
                 return MCPToolResult(
                     success: false,
-                    output: MCPOutput(content: "ERROR: Failed to parse response"),
+                    output: MCPOutput(content: "ERROR: Failed to parse JSON response"),
+                    toolName: name
+                )
+            }
+            
+            guard let prompts = json["prompts"] as? [[String: Any]] else {
+                logger.error("No 'prompts' array in response: \(json.keys)")
+                return MCPToolResult(
+                    success: false,
+                    output: MCPOutput(content: "ERROR: Response missing 'prompts' array"),
                     toolName: name
                 )
             }
@@ -72,12 +94,12 @@ Returns JSON array with:
             var output = "Available Mini-Prompts:\n\n"
 
             for prompt in prompts {
-                let id = prompt["id"] ?? "unknown"
-                let name = prompt["name"] ?? "unknown"
-                let content = prompt["content"] ?? ""
+                let id = (prompt["id"] as? String) ?? "unknown"
+                let promptName = (prompt["name"] as? String) ?? "unknown"
+                let content = (prompt["content"] as? String) ?? ""
 
                 output += "ID: \(id)\n"
-                output += "Name: \(name)\n"
+                output += "Name: \(promptName)\n"
                 output += "Content: \(content)\n"
                 output += "\n---\n\n"
             }
