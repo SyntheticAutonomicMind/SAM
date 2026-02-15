@@ -1,6 +1,56 @@
 {
   "releases": [
     {
+      "version": "20260215.1",
+      "release_date": "February 15, 2026",
+      "introduction": "This release adds pre-fetched GitHub Copilot quota tracking, so you can see your usage immediately when SAM starts instead of waiting for your first API call.",
+      "highlights": [
+        {
+          "id": "copilot-user-api",
+          "icon": "person.badge.clock.fill",
+          "title": "Pre-Fetched Quota Display",
+          "description": "SAM now fetches your GitHub Copilot quota when the app starts, so the usage display shows current data immediately instead of waiting for your first API call to populate it from response headers."
+        }
+      ],
+      "bugfixes": [],
+      "improvements": [
+        {
+          "id": "quota-api-integration",
+          "icon": "chart.bar.fill",
+          "title": "Direct GitHub API Integration",
+          "description": "Quota data is now fetched directly from GitHub's Copilot API endpoint for more accurate information including your username and plan type."
+        },
+        {
+          "id": "quota-caching",
+          "icon": "clock.arrow.circlepath",
+          "title": "Smart Quota Caching",
+          "description": "Quota information is cached for 5 minutes to minimize API calls while keeping the display current."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "copilot-user-api-client",
+          "content": "Added CopilotUserAPI.swift with actor-based CopilotUserAPIClient that fetches from GET https://api.github.com/copilot_internal/user. Uses 'token <token>' auth format, 5-minute cache TTL, and Sendable response types for Swift 6 concurrency."
+        },
+        {
+          "id": "quota-info-extended",
+          "content": "Extended GitHubCopilotProvider.QuotaInfo struct with optional fields: overageCount, login, copilotPlan, and remaining (direct count from API). Added factory method QuotaInfo.from(userResponse:) for conversion."
+        },
+        {
+          "id": "api-endpoint-enhanced",
+          "content": "GET /api/github-copilot/quota now tries CopilotUserAPI first (richer data) then falls back to header-based tracking. Response includes 'source' field indicating data origin. Supports ?refresh=true query parameter."
+        },
+        {
+          "id": "auth-integration",
+          "content": "CopilotTokenStore.setGitHubToken() and setGitHubTokenDirect() now fetch user info from CopilotUserAPI after authentication to populate username and quota data immediately."
+        },
+        {
+          "id": "chatwidget-quota-display",
+          "content": "ChatWidget fetches CopilotUserResponse on appear via refreshCopilotUserInfo(). When user API data is available, displays username with quota; falls back to header-based display otherwise."
+        }
+      ]
+    },
+    {
       "version": "20260213.1",
       "release_date": "February 13, 2026",
       "introduction": "This release fixes a critical system prompt bug that caused SAM to use training data instead of researching current information.",
