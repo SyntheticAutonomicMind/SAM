@@ -3,6 +3,7 @@
 
 import Foundation
 import Logging
+import ConfigurationSystem
 
 /// List available system prompts for agent awareness
 /// Enables agents to discover system prompts for run_subagent tool
@@ -46,80 +47,37 @@ Returns JSON array with:
     ) async -> MCPToolResult {
         logger.debug("Listing system prompts")
 
-        /// Call API endpoint to get prompts
-        guard let url = URL(string: "http://127.0.0.1:8080/api/prompts/system") else {
-            return MCPToolResult(
-                success: false,
-                output: MCPOutput(content: "ERROR: Invalid API URL"),
-                toolName: name
-            )
+        // Access SystemPromptManager directly (same process, no API needed)
+        let allPrompts = await MainActor.run {
+            SystemPromptManager.shared.allConfigurations
+        }
+        
+        /// Format output for agent consumption
+        var output = "Available System Prompts:\n\n"
+
+        for prompt in allPrompts {
+            let id = prompt.id.uuidString
+            let promptName = prompt.name
+            let description = prompt.description ?? ""
+
+            output += "ID: \(id)\n"
+            output += "Name: \(promptName)\n"
+            if !description.isEmpty {
+                output += "Description: \(description)\n"
+            }
+            output += "\n"
         }
 
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            
-            // Check HTTP status
-            if let httpResponse = response as? HTTPURLResponse {
-                guard httpResponse.statusCode == 200 else {
-                    logger.error("API returned status \(httpResponse.statusCode)")
-                    return MCPToolResult(
-                        success: false,
-                        output: MCPOutput(content: "ERROR: API returned status \(httpResponse.statusCode)"),
-                        toolName: name
-                    )
-                }
-            }
-
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                let rawResponse = String(data: data, encoding: .utf8) ?? "Unable to decode"
-                logger.error("Failed to parse JSON: \(rawResponse.prefix(500))")
-                return MCPToolResult(
-                    success: false,
-                    output: MCPOutput(content: "ERROR: Failed to parse JSON response"),
-                    toolName: name
-                )
-            }
-            
-            guard let prompts = json["prompts"] as? [[String: Any]] else {
-                logger.error("No 'prompts' array in response: \(json.keys)")
-                return MCPToolResult(
-                    success: false,
-                    output: MCPOutput(content: "ERROR: Response missing 'prompts' array"),
-                    toolName: name
-                )
-            }
-
-            /// Format output for agent consumption
-            var output = "Available System Prompts:\n\n"
-
-            for prompt in prompts {
-                let id = (prompt["id"] as? String) ?? "unknown"
-                let promptName = (prompt["name"] as? String) ?? "unknown"
-                let description = (prompt["description"] as? String) ?? ""
-
-                output += "ID: \(id)\n"
-                output += "Name: \(promptName)\n"
-                if !description.isEmpty {
-                    output += "Description: \(description)\n"
-                }
-                output += "\n"
-            }
-
+        if allPrompts.isEmpty {
+            output = "No system prompts configured.\n\nSystem prompts can be created in Preferences > System Prompts."
+        } else {
             output += "\nTO USE: Call run_subagent with systemPromptId parameter set to desired prompt ID"
-
-            return MCPToolResult(
-                success: true,
-                output: MCPOutput(content: output),
-                toolName: name
-            )
-
-        } catch {
-            logger.error("Failed to list system prompts: \(error)")
-            return MCPToolResult(
-                success: false,
-                output: MCPOutput(content: "ERROR: Failed to fetch prompts - \(error.localizedDescription)"),
-                toolName: name
-            )
         }
+
+        return MCPToolResult(
+            success: true,
+            output: MCPOutput(content: output),
+            toolName: name
+        )
     }
 }
