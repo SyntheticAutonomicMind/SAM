@@ -28,15 +28,19 @@ jobs:
     steps:
       - name: Extract version from workflow run
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
           else
             # Get the tag from the workflow run
             # The release workflow runs on tag push, so we extract from head_branch
-            VERSION="${{ github.event.workflow_run.head_branch }}"
+            VERSION="$HEAD_BRANCH"
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release version: $VERSION"
 
       - name: Get DMG asset details
@@ -79,16 +83,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: SyntheticAutonomicMind/homebrew-SAM
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.hash.outputs.sha256 }}
+          DMG_URL: ${{ steps.asset.outputs.url }}
           token: ${{ secrets.HOMEBREW_PAT }}
           path: homebrew
 
       - name: Update SAM cask
         working-directory: homebrew
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          SHA256="${{ steps.hash.outputs.sha256 }}"
-          DMG_URL="${{ steps.asset.outputs.url }}"
-          
           echo "Updating Casks/sam.rb"
           echo "  Version: $VERSION"
           echo "  SHA256: $SHA256"
@@ -99,6 +103,8 @@ jobs:
             -e "s|sha256 \"[^\"]*\"|sha256 \"$SHA256\"|" \
             Casks/sam.rb
           
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
           # Show the updated file
           echo "Updated Casks/sam.rb:"
           head -10 Casks/sam.rb
@@ -108,8 +114,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          VERSION="${{ steps.version.outputs.version }}"
           
           git add Casks/sam.rb
           if git diff --staged --quiet; then
