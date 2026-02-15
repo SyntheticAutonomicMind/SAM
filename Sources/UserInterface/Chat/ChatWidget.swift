@@ -243,6 +243,9 @@ public struct ChatWidget: View {
     @State private var searchInStored = true
     @State private var searchInActive = false
     @State private var searchInArchive = false
+    
+    /// Cost tracking panel
+    @State private var showingCostTrackingPanel = false
 
     /// Terminal panel.
     @State private var showingTerminalPanel = false
@@ -402,6 +405,14 @@ public struct ChatWidget: View {
             UserInterface.PerformanceMetricsView(
                 performanceMonitor: performanceMonitor,
                 isVisible: $showingPerformanceMetrics
+            )
+        }
+        
+        if showingCostTrackingPanel {
+            Divider()
+            UserInterface.CostTrackingView(
+                performanceMonitor: performanceMonitor,
+                isVisible: $showingCostTrackingPanel
             )
         }
 
@@ -2737,6 +2748,16 @@ public struct ChatWidget: View {
                     .frame(width: 36)
                     .fixedSize()
                     .help("Performance Metrics")
+                    
+                    Button(action: { showingCostTrackingPanel.toggle() }) {
+                        Image(systemName: "creditcard")
+                            .foregroundColor(showingCostTrackingPanel ? .accentColor : .secondary)
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(width: 36)
+                    .fixedSize()
+                    .help("Session Costs")
 
                     Button(action: {
                         if enableTerminalAccess {

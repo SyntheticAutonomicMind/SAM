@@ -49,6 +49,78 @@ public struct APIPerformanceMetrics: Identifiable, Codable {
     }
 }
 
+// MARK: - Billing/Cost Tracking Models
+
+/// Session cost summary by model
+public struct SessionCostSummary: Identifiable, Sendable {
+    public let id = UUID()
+    public let model: String
+    public let requestCount: Int
+    public let totalInputTokens: Int
+    public let totalOutputTokens: Int
+    public let totalTokens: Int
+    public let premiumMultiplier: Double?
+    public let isPremium: Bool
+    
+    /// Estimated premium requests used (for GitHub Copilot)
+    public var premiumRequestsUsed: Int {
+        guard let multiplier = premiumMultiplier, multiplier > 0 else {
+            return isPremium ? requestCount : 0
+        }
+        return Int(ceil(Double(requestCount) * multiplier))
+    }
+    
+    public init(
+        model: String,
+        requestCount: Int,
+        totalInputTokens: Int,
+        totalOutputTokens: Int,
+        totalTokens: Int,
+        premiumMultiplier: Double?,
+        isPremium: Bool
+    ) {
+        self.model = model
+        self.requestCount = requestCount
+        self.totalInputTokens = totalInputTokens
+        self.totalOutputTokens = totalOutputTokens
+        self.totalTokens = totalTokens
+        self.premiumMultiplier = premiumMultiplier
+        self.isPremium = isPremium
+    }
+}
+
+/// Aggregate session cost statistics
+public struct SessionCostStatistics: Sendable {
+    public let totalRequests: Int
+    public let totalInputTokens: Int
+    public let totalOutputTokens: Int
+    public let totalTokens: Int
+    public let premiumRequestsUsed: Int
+    public let freeRequestsUsed: Int
+    public let modelBreakdown: [SessionCostSummary]
+    public let sessionStartTime: Date
+    
+    public init(
+        totalRequests: Int,
+        totalInputTokens: Int,
+        totalOutputTokens: Int,
+        totalTokens: Int,
+        premiumRequestsUsed: Int,
+        freeRequestsUsed: Int,
+        modelBreakdown: [SessionCostSummary],
+        sessionStartTime: Date
+    ) {
+        self.totalRequests = totalRequests
+        self.totalInputTokens = totalInputTokens
+        self.totalOutputTokens = totalOutputTokens
+        self.totalTokens = totalTokens
+        self.premiumRequestsUsed = premiumRequestsUsed
+        self.freeRequestsUsed = freeRequestsUsed
+        self.modelBreakdown = modelBreakdown
+        self.sessionStartTime = sessionStartTime
+    }
+}
+
 public struct PerformanceStatistics: Codable {
     public let totalRequests: Int
     public let successfulRequests: Int
@@ -281,6 +353,73 @@ public class PerformanceMonitor: ObservableObject {
             averageLatency: avgLatency,
             averageTTFT: avgTTFT,
             averageTokensPerSecond: avgTokensPerSec
+        )
+    }
+    
+    // MARK: - Session Cost Tracking
+    
+    /// Generate session cost statistics with per-model breakdown
+    /// - Parameter billingLookup: Closure to get billing info for a model (isPremium, multiplier)
+    /// - Returns: SessionCostStatistics with complete cost breakdown
+    public func generateSessionCostStatistics(
+        billingLookup: (String) -> (isPremium: Bool, multiplier: Double?)?
+    ) -> SessionCostStatistics {
+        // Group metrics by model
+        var modelStats: [String: (requests: Int, inputTokens: Int, outputTokens: Int)] = [:]
+        
+        for metric in recentMetrics {
+            var stats = modelStats[metric.model] ?? (requests: 0, inputTokens: 0, outputTokens: 0)
+            stats.requests += 1
+            stats.inputTokens += metric.requestTokens
+            stats.outputTokens += metric.responseTokens
+            modelStats[metric.model] = stats
+        }
+        
+        // Build model breakdown with billing info
+        var modelBreakdown: [SessionCostSummary] = []
+        var totalPremium = 0
+        var totalFree = 0
+        var totalInput = 0
+        var totalOutput = 0
+        
+        for (model, stats) in modelStats.sorted(by: { $0.value.requests > $1.value.requests }) {
+            let billing = billingLookup(model)
+            let isPremium = billing?.isPremium ?? false
+            let multiplier = billing?.multiplier
+            
+            let summary = SessionCostSummary(
+                model: model,
+                requestCount: stats.requests,
+                totalInputTokens: stats.inputTokens,
+                totalOutputTokens: stats.outputTokens,
+                totalTokens: stats.inputTokens + stats.outputTokens,
+                premiumMultiplier: multiplier,
+                isPremium: isPremium
+            )
+            
+            modelBreakdown.append(summary)
+            totalInput += stats.inputTokens
+            totalOutput += stats.outputTokens
+            
+            if isPremium {
+                totalPremium += summary.premiumRequestsUsed
+            } else {
+                totalFree += stats.requests
+            }
+        }
+        
+        // Determine session start time from oldest metric
+        let sessionStart = recentMetrics.last?.timestamp ?? Date()
+        
+        return SessionCostStatistics(
+            totalRequests: recentMetrics.count,
+            totalInputTokens: totalInput,
+            totalOutputTokens: totalOutput,
+            totalTokens: totalInput + totalOutput,
+            premiumRequestsUsed: totalPremium,
+            freeRequestsUsed: totalFree,
+            modelBreakdown: modelBreakdown,
+            sessionStartTime: sessionStart
         )
     }
 

@@ -3,50 +3,69 @@
     {
       "version": "20260215.1",
       "release_date": "February 15, 2026",
-      "introduction": "This release adds pre-fetched GitHub Copilot quota tracking, so you can see your usage immediately when SAM starts instead of waiting for your first API call.",
+      "introduction": "This release fixes a critical workflow loop bug with Claude models, adds session cost tracking, and improves agent error recovery.",
       "highlights": [
+        {
+          "id": "workflow-fix",
+          "icon": "arrow.triangle.2.circlepath.circle.fill",
+          "title": "Fixed Claude Workflow Loop",
+          "description": "Resolved a critical issue where Claude model workflows would stop prematurely when calling tools that take no arguments (like list_system_prompts). Agents now properly continue working through their todo lists."
+        },
+        {
+          "id": "cost-tracking",
+          "icon": "creditcard.fill",
+          "title": "Session Cost Tracking",
+          "description": "New cost tracking panel in the chat toolbar shows your session usage: total requests, tokens, premium vs free breakdown, and per-model costs with billing multipliers."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "empty-args-fix",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Empty Tool Arguments Parsing",
+          "description": "Tools with no parameters (returning empty arguments) are now parsed correctly instead of being silently skipped, which was breaking multi-step workflows."
+        }
+      ],
+      "improvements": [
         {
           "id": "copilot-user-api",
           "icon": "person.badge.clock.fill",
           "title": "Pre-Fetched Quota Display",
-          "description": "SAM now fetches your GitHub Copilot quota when the app starts, so the usage display shows current data immediately instead of waiting for your first API call to populate it from response headers."
-        }
-      ],
-      "bugfixes": [],
-      "improvements": [
-        {
-          "id": "quota-api-integration",
-          "icon": "chart.bar.fill",
-          "title": "Direct GitHub API Integration",
-          "description": "Quota data is now fetched directly from GitHub's Copilot API endpoint for more accurate information including your username and plan type."
+          "description": "SAM now fetches your GitHub Copilot quota when the app starts, so the usage display shows current data immediately."
         },
         {
-          "id": "quota-caching",
-          "icon": "clock.arrow.circlepath",
-          "title": "Smart Quota Caching",
-          "description": "Quota information is cached for 5 minutes to minimize API calls while keeping the display current."
+          "id": "tool-error-guidance",
+          "icon": "lightbulb.fill",
+          "title": "Better Error Recovery",
+          "description": "When tool calls fail, agents now receive clearer error guidance with examples to help them fix the problem and continue working."
+        },
+        {
+          "id": "billing-fallback",
+          "icon": "chart.bar.fill",
+          "title": "Improved Billing Detection",
+          "description": "Cost tracking now works even when billing cache isn't populated, with intelligent fallback detection for Claude, GPT-4.5, and o1/o3 models."
         }
       ],
       "developer_notes": [
         {
+          "id": "empty-arguments-fix",
+          "content": "AgentOrchestrator tool call parsing now handles empty string arguments (returned for tools with no params). Previously JSONSerialization.jsonObject failed on '' causing the entire tool call to be skipped. Now creates tool call with empty {} arguments."
+        },
+        {
+          "id": "cost-tracking-view",
+          "content": "Added CostTrackingView.swift with compact/detailed views for session costs. Uses PerformanceMonitor.generateSessionCostStatistics() for per-model breakdown. Refreshes on appear, metrics change, and 2-second timer for duration updates."
+        },
+        {
+          "id": "tool-error-guidance",
+          "content": "Added ToolErrorGuidance.swift that categorizes errors (missing required, invalid operation, JSON parse, etc.) and provides category-specific fix instructions with tool examples. Integrated into MCPManager for validation and execution errors."
+        },
+        {
           "id": "copilot-user-api-client",
-          "content": "Added CopilotUserAPI.swift with actor-based CopilotUserAPIClient that fetches from GET https://api.github.com/copilot_internal/user. Uses 'token <token>' auth format, 5-minute cache TTL, and Sendable response types for Swift 6 concurrency."
+          "content": "Added CopilotUserAPI.swift with actor-based CopilotUserAPIClient that fetches from GET https://api.github.com/copilot_internal/user. Uses 'token <token>' auth format, 5-minute cache TTL, and Sendable response types."
         },
         {
-          "id": "quota-info-extended",
-          "content": "Extended GitHubCopilotProvider.QuotaInfo struct with optional fields: overageCount, login, copilotPlan, and remaining (direct count from API). Added factory method QuotaInfo.from(userResponse:) for conversion."
-        },
-        {
-          "id": "api-endpoint-enhanced",
-          "content": "GET /api/github-copilot/quota now tries CopilotUserAPI first (richer data) then falls back to header-based tracking. Response includes 'source' field indicating data origin. Supports ?refresh=true query parameter."
-        },
-        {
-          "id": "auth-integration",
-          "content": "CopilotTokenStore.setGitHubToken() and setGitHubTokenDirect() now fetch user info from CopilotUserAPI after authentication to populate username and quota data immediately."
-        },
-        {
-          "id": "chatwidget-quota-display",
-          "content": "ChatWidget fetches CopilotUserResponse on appear via refreshCopilotUserInfo(). When user API data is available, displays username with quota; falls back to header-based display otherwise."
+          "id": "session-cost-statistics",
+          "content": "Added SessionCostSummary and SessionCostStatistics structs to PerformanceMonitor. generateSessionCostStatistics(billingLookup:) aggregates metrics by model and calculates premium request counts using multipliers."
         }
       ]
     },

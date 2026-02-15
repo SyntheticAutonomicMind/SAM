@@ -4053,17 +4053,26 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         toolCalls = []
 
                         for toolCall in openAIToolCalls {
-                            let argumentsData = toolCall.function.arguments.data(using: String.Encoding.utf8) ?? Data()
-                            if let arguments = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
-                                toolCalls?.append(ToolCall(
-                                    id: toolCall.id,
-                                    name: toolCall.function.name,
-                                    arguments: arguments
-                                ))
-                                logger.debug("callLLM: Parsed tool call '\(toolCall.function.name)' (id: \(toolCall.id))")
-                            } else {
-                                logger.error("callLLM: Failed to parse arguments JSON for tool '\(toolCall.function.name)'")
+                            let argumentsString = toolCall.function.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
+                            var arguments: [String: Any] = [:]
+                            
+                            // Handle empty arguments (some tools take no params)
+                            if !argumentsString.isEmpty && argumentsString != "{}" {
+                                let argumentsData = argumentsString.data(using: String.Encoding.utf8) ?? Data()
+                                if let parsedArgs = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
+                                    arguments = parsedArgs
+                                } else {
+                                    logger.warning("callLLM: Failed to parse arguments JSON for tool '\(toolCall.function.name)': \(argumentsString)")
+                                    // Still create the tool call with empty arguments - don't skip it!
+                                }
                             }
+                            
+                            toolCalls?.append(ToolCall(
+                                id: toolCall.id,
+                                name: toolCall.function.name,
+                                arguments: arguments
+                            ))
+                            logger.debug("callLLM: Parsed tool call '\(toolCall.function.name)' (id: \(toolCall.id))")
                         }
                     }
 
@@ -4197,17 +4206,26 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
             for toolCall in openAIToolCalls {
                 /// Parse arguments JSON string to dictionary.
-                let argumentsData = toolCall.function.arguments.data(using: String.Encoding.utf8) ?? Data()
-                if let arguments = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
-                    toolCalls?.append(ToolCall(
-                        id: toolCall.id,
-                        name: toolCall.function.name,
-                        arguments: arguments
-                    ))
-                    logger.debug("callLLM: Parsed tool call '\(toolCall.function.name)' (id: \(toolCall.id))")
-                } else {
-                    logger.error("callLLM: Failed to parse arguments JSON for tool '\(toolCall.function.name)'")
+                let argumentsString = toolCall.function.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
+                var arguments: [String: Any] = [:]
+                
+                // Handle empty arguments (some tools take no params)
+                if !argumentsString.isEmpty && argumentsString != "{}" {
+                    let argumentsData = argumentsString.data(using: String.Encoding.utf8) ?? Data()
+                    if let parsedArgs = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
+                        arguments = parsedArgs
+                    } else {
+                        logger.warning("callLLM: Failed to parse arguments JSON for tool '\(toolCall.function.name)': \(argumentsString)")
+                        // Still create the tool call with empty arguments - don't skip it!
+                    }
                 }
+                
+                toolCalls?.append(ToolCall(
+                    id: toolCall.id,
+                    name: toolCall.function.name,
+                    arguments: arguments
+                ))
+                logger.debug("callLLM: Parsed tool call '\(toolCall.function.name)' (id: \(toolCall.id))")
             }
         }
 
@@ -5116,17 +5134,27 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             parsedToolCalls = []
 
             for toolCall in completedToolCalls {
-                let argumentsData = toolCall.function.arguments.data(using: .utf8) ?? Data()
-                if let arguments = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
-                    parsedToolCalls?.append(ToolCall(
-                        id: toolCall.id,
-                        name: toolCall.function.name,
-                        arguments: arguments
-                    ))
-                    logger.debug("callLLMStreaming: Parsed tool call '\(toolCall.function.name)' with \(arguments.count) arguments")
-                } else {
-                    logger.warning("callLLMStreaming: Failed to parse arguments for tool '\(toolCall.function.name)': \(toolCall.function.arguments)")
+                let argumentsString = toolCall.function.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
+                var arguments: [String: Any] = [:]
+                
+                // Handle empty arguments (some tools like list_system_prompts take no params)
+                // An empty string or "{}" should result in an empty dictionary
+                if !argumentsString.isEmpty && argumentsString != "{}" {
+                    let argumentsData = argumentsString.data(using: .utf8) ?? Data()
+                    if let parsedArgs = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
+                        arguments = parsedArgs
+                    } else {
+                        logger.warning("callLLMStreaming: Failed to parse arguments for tool '\(toolCall.function.name)': \(argumentsString)")
+                        // Still create the tool call with empty arguments - don't skip it!
+                    }
                 }
+                
+                parsedToolCalls?.append(ToolCall(
+                    id: toolCall.id,
+                    name: toolCall.function.name,
+                    arguments: arguments
+                ))
+                logger.debug("callLLMStreaming: Parsed tool call '\(toolCall.function.name)' with \(arguments.count) arguments")
             }
         } else if finishReason == "tool_calls" {
             logger.warning("callLLMStreaming: finish_reason=tool_calls but no accumulated tool calls found")
