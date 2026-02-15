@@ -13,6 +13,9 @@ public class MCPManager: ObservableObject {
     private let logger = Logging.Logger(label: "com.sam.mcp.MCPManager")
     private var builtinTools: [any MCPTool] = []
     private var memoryManager: MemoryManagerProtocol?
+    
+    /// Error guidance for providing helpful messages when tool calls fail
+    private let errorGuidance = ToolErrorGuidance()
 
     /// Tool factory closures to avoid circular dependencies.
     private var createAdvancedTools: (() async -> [any MCPTool])?
@@ -96,7 +99,15 @@ public class MCPManager: ObservableObject {
             _ = try tool.validateParameters(resolvedParameters)
         } catch {
             logger.error("Parameter validation failed for tool \(resolvedName): \(error)")
-            throw MCPError.invalidParameters(error.localizedDescription)
+            
+            // Provide enhanced error guidance (no schema available from protocol)
+            let enhancedError = errorGuidance.enhanceToolError(
+                error: error.localizedDescription,
+                toolName: resolvedName,
+                toolSchema: nil,
+                attemptedParams: resolvedParameters
+            )
+            throw MCPError.invalidParameters(enhancedError)
         }
 
         /// Execute tool.
@@ -107,7 +118,23 @@ public class MCPManager: ObservableObject {
         if result.success {
             logger.debug("Tool \(resolvedName) executed successfully in \(String(format: "%.3f", executionTime))s")
         } else {
-            logger.error("Tool \(resolvedName) execution failed after \(String(format: "%.3f", executionTime))s: \(result.output.content)")
+            // Enhance failed tool results with guidance
+            let enhancedOutput = errorGuidance.enhanceToolError(
+                error: result.output.content,
+                toolName: resolvedName,
+                toolSchema: nil,
+                attemptedParams: resolvedParameters
+            )
+            
+            // Return enhanced result with guidance
+            return MCPToolResult(
+                success: false,
+                output: MCPOutput(
+                    content: enhancedOutput,
+                    mimeType: result.output.mimeType
+                ),
+                toolName: resolvedName
+            )
         }
 
         return result
