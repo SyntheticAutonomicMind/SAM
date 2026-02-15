@@ -2406,18 +2406,55 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         public let overageUsed: Double
         public let overagePermitted: Bool
         public let resetDate: String
+        
+        // New fields from CopilotUserAPI (optional for backward compatibility)
+        public let overageCount: Int?
+        public let login: String?
+        public let copilotPlan: String?
+        public let remaining: Int?  // Direct remaining count from user API
 
         public var available: Int {
+            // Use direct remaining if available (more accurate), otherwise calculate
+            if let remaining = remaining {
+                return remaining
+            }
             return max(0, entitlement - used)
         }
+        
+        /// Percent used for UI display (convenience computed property)
+        public var percentUsed: Double {
+            return 100.0 - percentRemaining
+        }
 
-        public init(entitlement: Int, used: Int, percentRemaining: Double, overageUsed: Double, overagePermitted: Bool, resetDate: String) {
+        public init(entitlement: Int, used: Int, percentRemaining: Double, overageUsed: Double, overagePermitted: Bool, resetDate: String, overageCount: Int? = nil, login: String? = nil, copilotPlan: String? = nil, remaining: Int? = nil) {
             self.entitlement = entitlement
             self.used = used
             self.percentRemaining = percentRemaining
             self.overageUsed = overageUsed
             self.overagePermitted = overagePermitted
             self.resetDate = resetDate
+            self.overageCount = overageCount
+            self.login = login
+            self.copilotPlan = copilotPlan
+            self.remaining = remaining
+        }
+        
+        /// Create QuotaInfo from CopilotUserResponse premium quota
+        public static func from(userResponse: CopilotUserResponse) -> QuotaInfo? {
+            guard let premium = userResponse.premiumQuota else { return nil }
+            
+            return QuotaInfo(
+                entitlement: premium.entitlement,
+                used: premium.used,
+                percentRemaining: premium.percentRemaining,
+                overageUsed: Double(premium.overageCount ?? 0),
+                overagePermitted: premium.overagePermitted ?? false,
+                resetDate: userResponse.quotaResetDateUTC ?? "unknown",
+                overageCount: premium.overageCount,
+                login: userResponse.login,
+                copilotPlan: userResponse.copilotPlan,
+                remaining: premium.remaining
+            )
         }
     }
 
