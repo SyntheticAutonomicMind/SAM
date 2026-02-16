@@ -2599,7 +2599,6 @@ public struct ChatWidget: View {
                         modelListManager: modelListManager,
                         endpointManager: endpointManager
                     )
-                    .frame(minWidth: 150, idealWidth: 200)
 
                     /// Load/Eject buttons for local models only.
                     if endpointManager.isLocalModel(selectedModel) {
