@@ -46,6 +46,11 @@ struct SoundPreferencesPane: View {
     @State private var nativeTester = NativeSpeechTester()
     @State private var showingVoiceHelp = false
 
+    /// Wake words state
+    @State private var wakeWords: [String] = []
+    @State private var newWakeWord: String = ""
+    @State private var wakeWordError: String?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -67,6 +72,11 @@ struct SoundPreferencesPane: View {
 
                 /// Voice Section
                 voiceSection
+
+                Divider()
+
+                /// Wake Words Section
+                wakeWordsSection
             }
             .padding(24)
         }
@@ -77,6 +87,7 @@ struct SoundPreferencesPane: View {
                     testingSpeech = false
                 }
             }
+            loadWakeWords()
         }
         .sheet(isPresented: $showingVoiceHelp) {
             VoiceDownloadHelpView()
@@ -266,6 +277,157 @@ struct SoundPreferencesPane: View {
                 .padding(8)
             }
         }
+    }
+
+    // MARK: - Wake Words Section
+
+    private var wakeWordsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "ear.fill")
+                    .foregroundColor(.orange)
+                Text("Wake Words")
+                    .font(.headline)
+            }
+
+            Text("Say one of these phrases to activate voice input.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            /// List of current wake words
+            GroupBox {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(wakeWords.enumerated()), id: \.offset) { index, word in
+                        HStack {
+                            Text(word)
+                                .font(.system(.body, design: .monospaced))
+
+                            Spacer()
+
+                            Button(action: {
+                                removeWakeWord(at: index)
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove wake word")
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 8)
+
+                        if index < wakeWords.count - 1 {
+                            Divider()
+                        }
+                    }
+
+                    if wakeWords.isEmpty {
+                        Text("No wake words configured. Add at least one to use voice activation.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(8)
+                    }
+                }
+            }
+            .frame(maxWidth: 400)
+
+            /// Add new wake word
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    TextField("New wake word (e.g., hey assistant)", text: $newWakeWord)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 300)
+                        .onSubmit {
+                            addWakeWord()
+                        }
+
+                    Button("Add") {
+                        addWakeWord()
+                    }
+                    .disabled(newWakeWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                if let error = wakeWordError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+
+            /// Reset button
+            HStack {
+                Button(action: resetWakeWordsToDefaults) {
+                    Label("Reset to Defaults", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.link)
+
+                Spacer()
+            }
+
+            Text("Wake words are case-insensitive. For best recognition, use 2-3 word phrases that are easy to pronounce clearly.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    // MARK: - Wake Words Helpers
+
+    private func loadWakeWords() {
+        wakeWords = WakeWordDetector.loadWakeWords()
+    }
+
+    private func saveWakeWords() {
+        WakeWordDetector.saveWakeWords(wakeWords)
+        /// Notify VoiceManager to reload wake words
+        Task { @MainActor in
+            VoiceManager.shared.reloadWakeWords()
+        }
+    }
+
+    private func addWakeWord() {
+        let trimmed = newWakeWord.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        wakeWordError = nil
+
+        /// Validate: must have at least 2 words
+        let wordCount = trimmed.split(separator: " ").count
+        if wordCount < 2 {
+            wakeWordError = "Wake word must contain at least 2 words."
+            return
+        }
+
+        /// Validate: not already in list
+        if wakeWords.contains(trimmed) {
+            wakeWordError = "This wake word already exists."
+            return
+        }
+
+        /// Validate: reasonable length
+        if trimmed.count > 50 {
+            wakeWordError = "Wake word is too long. Keep it short and simple."
+            return
+        }
+
+        wakeWords.append(trimmed)
+        newWakeWord = ""
+        saveWakeWords()
+        logger.info("Added wake word: '\(trimmed)'")
+    }
+
+    private func removeWakeWord(at index: Int) {
+        guard index >= 0 && index < wakeWords.count else { return }
+        let removed = wakeWords.remove(at: index)
+        saveWakeWords()
+        logger.info("Removed wake word: '\(removed)'")
+    }
+
+    private func resetWakeWordsToDefaults() {
+        WakeWordDetector.resetToDefaults()
+        loadWakeWords()
+        /// Notify VoiceManager to reload wake words
+        Task { @MainActor in
+            VoiceManager.shared.reloadWakeWords()
+        }
+        logger.info("Reset wake words to defaults")
     }
 
     /// Human-readable label for current speech rate

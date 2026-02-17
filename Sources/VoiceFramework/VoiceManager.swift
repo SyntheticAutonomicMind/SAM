@@ -596,6 +596,12 @@ public class VoiceManager: ObservableObject {
         statusMessage = ""
     }
 
+    /// Reload wake words from preferences (call when settings change)
+    public func reloadWakeWords() {
+        wakeWordDetector.reloadWakeWords()
+        logger.info("Wake words reloaded from preferences")
+    }
+
     /// Play wake word acknowledgment sound (like Siri chime)
     private func playWakeWordAcknowledgment() {
         /// Use configured notification sound for wake word acknowledgment
