@@ -8,7 +8,11 @@ import Logging
 public class WakeWordDetector {
     private let logger = Logger(label: "com.sam.voice.wakeword")
 
-    private let wakeWords = [
+    /// UserDefaults key for storing custom wake words
+    public static let wakeWordsKey = "voice.wakeWords"
+
+    /// Default wake words - used when no custom configuration exists
+    public static let defaultWakeWords = [
         "hey sam",
         "ok sam",
         "okay sam",
@@ -17,6 +21,47 @@ public class WakeWordDetector {
         "hello computer",
         "hey computer"
     ]
+
+    /// Current active wake words (loaded from UserDefaults or defaults)
+    private var wakeWords: [String]
+
+    public init() {
+        self.wakeWords = Self.loadWakeWords()
+        logger.debug("WakeWordDetector initialized with \(wakeWords.count) wake words")
+    }
+
+    /// Reload wake words from UserDefaults (call when settings change)
+    public func reloadWakeWords() {
+        wakeWords = Self.loadWakeWords()
+        logger.debug("WakeWordDetector reloaded with \(wakeWords.count) wake words")
+    }
+
+    /// Get current wake words
+    public var currentWakeWords: [String] {
+        return wakeWords
+    }
+
+    /// Load wake words from UserDefaults, falling back to defaults
+    public static func loadWakeWords() -> [String] {
+        if let data = UserDefaults.standard.data(forKey: wakeWordsKey),
+           let decoded = try? JSONDecoder().decode([String].self, from: data),
+           !decoded.isEmpty {
+            return decoded
+        }
+        return defaultWakeWords
+    }
+
+    /// Save wake words to UserDefaults
+    public static func saveWakeWords(_ words: [String]) {
+        if let encoded = try? JSONEncoder().encode(words) {
+            UserDefaults.standard.set(encoded, forKey: wakeWordsKey)
+        }
+    }
+
+    /// Reset wake words to defaults
+    public static func resetToDefaults() {
+        UserDefaults.standard.removeObject(forKey: wakeWordsKey)
+    }
 
     /// Detect if text contains a wake word
     /// Returns tuple of (detected: Bool, textWithoutWakeWord: String)
