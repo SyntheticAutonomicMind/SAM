@@ -53,6 +53,24 @@ public class VoiceManager: ObservableObject {
     private var transcriptionPauseTimer: Timer?
     private let transcriptionPauseDelay: TimeInterval = 2.0
 
+    /// Conversation timeout timer - returns to wake word detection if no speech after SAM finishes speaking
+    private var conversationTimeoutTimer: Timer?
+
+    /// UserDefaults key for conversation timeout setting
+    public static let conversationTimeoutKey = "voice.conversationTimeout"
+    /// Default conversation timeout in seconds (0 = disabled, return to wake word immediately)
+    public static let defaultConversationTimeout: Double = 8.0
+
+    /// Get current conversation timeout setting
+    private var conversationTimeoutSeconds: Double {
+        let value = UserDefaults.standard.double(forKey: Self.conversationTimeoutKey)
+        /// If not set (0), use default. But 0 is also valid (disabled), so check if key exists
+        if UserDefaults.standard.object(forKey: Self.conversationTimeoutKey) == nil {
+            return Self.defaultConversationTimeout
+        }
+        return value
+    }
+
     /// Cancellation phrases that return to wake word detection without sending message
     /// Only triggers if the transcription is EXACTLY one of these phrases (no other content)
     private let cancellationPhrases = [
@@ -354,6 +372,10 @@ public class VoiceManager: ObservableObject {
 
             logger.info("ACTIVE_LISTENING: text='\(text)', wakeDetected=\(detected), cleaned='\(cleanedText)', isFinal=\(isFinal)")
 
+            /// Cancel conversation timeout as soon as we receive any transcription
+            /// This means the user is speaking, so we shouldn't timeout
+            cancelConversationTimeout()
+
             /// Check for cancellation phrase BEFORE passing to UI
             /// Only cancel if it's EXACTLY a cancellation phrase (no other content)
             if checkForCancellation(cleanedText) {
@@ -484,12 +506,10 @@ public class VoiceManager: ObservableObject {
         logger.info("speakResponse called: speakingMode=\(speakingMode), listeningMode=\(listeningMode), textLength=\(text.count)")
 
         guard speakingMode else {
-            logger.info("Speaking mode disabled, returning to wake word detection")
-            /// Speech recognition is already running continuously - just update state
+            logger.info("Speaking mode disabled, entering relay mode for follow-up")
+            /// Speech recognition is already running continuously - enter relay mode
             if listeningMode {
-                currentState = .waitingForWakeWord
-                statusMessage = "Listening for wake word..."
-                logger.info("State updated: currentState=\(currentState), statusMessage=\(statusMessage)")
+                enterRelayMode()
             } else {
                 logger.warning("listeningMode is disabled, not changing state")
             }
@@ -508,12 +528,11 @@ public class VoiceManager: ObservableObject {
             guard let self = self else { return }
 
             Task { @MainActor in
-                /// Return to wake word detection if listening mode enabled
-                /// Speech recognition continues running - just update state
+                /// Enter relay mode (active listening with timeout) if listening mode enabled
+                /// This allows the user to continue the conversation without a wake word
                 if self.listeningMode {
-                    self.logger.info("Response spoken, returning to wake word detection")
-                    self.currentState = .waitingForWakeWord
-                    self.statusMessage = "Listening for wake word..."
+                    self.logger.info("Response spoken, entering relay mode for follow-up")
+                    self.enterRelayMode()
                 } else {
                     self.currentState = .idle
                     self.statusMessage = ""
@@ -547,10 +566,9 @@ public class VoiceManager: ObservableObject {
     /// TTS will continue playing queued sentences and call completion when done
     public func finishStreamingSpeech() {
         guard speakingMode else {
-            /// If speaking mode disabled, just return to listening
+            /// If speaking mode disabled, enter relay mode for follow-up
             if listeningMode {
-                currentState = .waitingForWakeWord
-                statusMessage = "Listening for wake word..."
+                enterRelayMode()
             }
             return
         }
@@ -559,11 +577,11 @@ public class VoiceManager: ObservableObject {
             guard let self = self else { return }
 
             Task { @MainActor in
-                /// Return to wake word detection if listening mode enabled
+                /// Enter relay mode (active listening with timeout) if listening mode enabled
+                /// This allows the user to continue the conversation without a wake word
                 if self.listeningMode {
-                    self.logger.info("Streaming speech complete, returning to wake word detection")
-                    self.currentState = .waitingForWakeWord
-                    self.statusMessage = "Listening for wake word..."
+                    self.logger.info("Streaming speech complete, entering relay mode for follow-up")
+                    self.enterRelayMode()
                 } else {
                     self.currentState = .idle
                     self.statusMessage = ""
@@ -600,6 +618,72 @@ public class VoiceManager: ObservableObject {
     public func reloadWakeWords() {
         wakeWordDetector.reloadWakeWords()
         logger.info("Wake words reloaded from preferences")
+    }
+
+    // MARK: - Relay Mode (Continuous Conversation)
+
+    /// Enter relay mode: active listening with a timeout
+    /// This allows the user to continue the conversation without repeating the wake word
+    /// After the timeout expires, returns to wake word detection
+    private func enterRelayMode() {
+        let timeout = conversationTimeoutSeconds
+
+        /// If timeout is 0, relay mode is disabled - go directly to wake word detection
+        if timeout <= 0 {
+            logger.info("Relay mode disabled (timeout=0), returning to wake word detection")
+            currentState = .waitingForWakeWord
+            statusMessage = "Listening for wake word..."
+            return
+        }
+
+        logger.info("Entering relay mode: listening for follow-up (\(timeout)s timeout)")
+
+        /// Clear any existing conversation timeout
+        conversationTimeoutTimer?.invalidate()
+
+        /// Reset transcription state for new utterance
+        hasReceivedTranscriptionInActiveState = false
+        transcriptionPauseTimer?.invalidate()
+        transcriptionPauseTimer = nil
+
+        /// Enter active listening state
+        currentState = .activeListening
+        statusMessage = "Listening..."
+
+        /// Start conversation timeout - if no speech within timeout, return to wake word detection
+        conversationTimeoutTimer = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleConversationTimeout()
+            }
+        }
+    }
+
+    /// Handle conversation timeout - no speech detected after SAM finished speaking
+    private func handleConversationTimeout() {
+        guard currentState == .activeListening else {
+            logger.debug("Conversation timeout fired but state is \(currentState), ignoring")
+            return
+        }
+
+        /// Only timeout if we haven't received any transcription
+        /// If user started speaking, the transcription pause timer handles it
+        guard !hasReceivedTranscriptionInActiveState else {
+            logger.debug("Conversation timeout fired but transcription received, letting transcription timer handle it")
+            return
+        }
+
+        logger.info("Conversation timeout - no follow-up speech detected, returning to wake word detection")
+        currentState = .waitingForWakeWord
+        statusMessage = "Listening for wake word..."
+    }
+
+    /// Cancel conversation timeout (called when user starts speaking)
+    private func cancelConversationTimeout() {
+        if conversationTimeoutTimer != nil {
+            conversationTimeoutTimer?.invalidate()
+            conversationTimeoutTimer = nil
+            logger.debug("Cancelled conversation timeout - user is speaking")
+        }
     }
 
     /// Play wake word acknowledgment sound (like Siri chime)
