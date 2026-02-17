@@ -1,6 +1,43 @@
 {
   "releases": [
     {
+      "version": "20260217.1",
+      "release_date": "February 17, 2026",
+      "introduction": "This release brings major voice interaction improvements with natural conversation flow and customizable wake words.",
+      "highlights": [
+        {
+          "id": "conversation-mode",
+          "icon": "waveform.circle.fill",
+          "title": "Conversation Mode",
+          "description": "After SAM responds, you can now speak follow-up questions without repeating the wake word. SAM listens for your reply for a configurable duration (default 8 seconds) before returning to wake word mode."
+        },
+        {
+          "id": "custom-wake-words",
+          "icon": "ear.fill",
+          "title": "Customizable Wake Words",
+          "description": "Add your own wake words in Sound preferences! Say 'Hey SAM', 'Hello Assistant', or whatever phrase works best for you. Add, remove, and reset wake words to your preference."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "toolbar-picker-fix",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Model Picker Layout",
+          "description": "Fixed a layout issue with the model picker in the toolbar that could cause visual inconsistencies."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "relay-mode-implementation",
+          "content": "VoiceManager now has enterRelayMode() that transitions to activeListening with a configurable timeout (voice.conversationTimeout UserDefaults key). After SAM speaks, it enters relay mode instead of waitingForWakeWord. Timeout fires handleConversationTimeout() which returns to wake word detection. Timeout is cancelled when transcription is received."
+        },
+        {
+          "id": "wake-word-configuration",
+          "content": "WakeWordDetector.swift now reads from UserDefaults (voice.wakeWords key) with static methods loadWakeWords(), saveWakeWords(), resetToDefaults(). VoiceManager.reloadWakeWords() triggers detector reload. SoundPreferencesPane has new Wake Words section with add/remove/reset UI."
+        }
+      ]
+    },
+    {
       "version": "20260215.1",
       "release_date": "February 15, 2026",
       "introduction": "This release fixes issues with Claude model workflows, adds session cost tracking with persistence, and improves agent reliability.",
