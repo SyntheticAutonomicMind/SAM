@@ -51,6 +51,9 @@ struct SoundPreferencesPane: View {
     @State private var newWakeWord: String = ""
     @State private var wakeWordError: String?
 
+    /// Conversation timeout state
+    @State private var conversationTimeout: Double = VoiceManager.defaultConversationTimeout
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -77,6 +80,11 @@ struct SoundPreferencesPane: View {
 
                 /// Wake Words Section
                 wakeWordsSection
+
+                Divider()
+
+                /// Conversation Timeout Section
+                conversationTimeoutSection
             }
             .padding(24)
         }
@@ -88,6 +96,7 @@ struct SoundPreferencesPane: View {
                 }
             }
             loadWakeWords()
+            loadConversationTimeout()
         }
         .sheet(isPresented: $showingVoiceHelp) {
             VoiceDownloadHelpView()
@@ -368,6 +377,99 @@ struct SoundPreferencesPane: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+    }
+
+    // MARK: - Conversation Timeout Section
+
+    private var conversationTimeoutSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "timer")
+                    .foregroundColor(.cyan)
+                Text("Conversation Mode")
+                    .font(.headline)
+            }
+
+            Text("After SAM speaks, stay in active listening mode for follow-up questions without requiring a wake word.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Follow-up Timeout:")
+                        .frame(width: 140, alignment: .leading)
+
+                    Slider(
+                        value: $conversationTimeout,
+                        in: 0...20,
+                        step: 1
+                    ) {
+                        Text("Timeout")
+                    }
+                    .frame(maxWidth: 200)
+                    .onChange(of: conversationTimeout) { _, newValue in
+                        saveConversationTimeout()
+                    }
+
+                    Text(conversationTimeoutLabel)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .frame(width: 80, alignment: .leading)
+                }
+
+                HStack {
+                    Button("Reset to Default") {
+                        conversationTimeout = VoiceManager.defaultConversationTimeout
+                        saveConversationTimeout()
+                    }
+                    .buttonStyle(.link)
+
+                    Spacer()
+                }
+            }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("How it works", systemImage: "info.circle")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+
+                    Text("""
+• After SAM finishes speaking, you can speak your follow-up immediately
+• If no speech is detected within the timeout, SAM returns to wake word mode
+• Set to 0 to disable (always require wake word)
+• Recommended: 5-10 seconds for natural conversation flow
+""")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(8)
+            }
+        }
+    }
+
+    /// Human-readable label for conversation timeout
+    private var conversationTimeoutLabel: String {
+        if conversationTimeout <= 0 {
+            return "Disabled"
+        } else {
+            return "\(Int(conversationTimeout))s"
+        }
+    }
+
+    // MARK: - Conversation Timeout Helpers
+
+    private func loadConversationTimeout() {
+        if UserDefaults.standard.object(forKey: VoiceManager.conversationTimeoutKey) != nil {
+            conversationTimeout = UserDefaults.standard.double(forKey: VoiceManager.conversationTimeoutKey)
+        } else {
+            conversationTimeout = VoiceManager.defaultConversationTimeout
+        }
+    }
+
+    private func saveConversationTimeout() {
+        UserDefaults.standard.set(conversationTimeout, forKey: VoiceManager.conversationTimeoutKey)
+        logger.info("Saved conversation timeout: \(conversationTimeout)s")
     }
 
     // MARK: - Wake Words Helpers
