@@ -266,6 +266,9 @@ struct EndpointManagementView: View {
         case .gemini:
             return "Get your API key from aistudio.google.com"
 
+        case .openrouter:
+            return "Get your API key from openrouter.ai/keys"
+
         case .localLlama:
             return "No API key required - local models loaded from ~/Library/Caches/sam/models"
 
@@ -412,6 +415,7 @@ struct ProviderRowView: View {
         case .githubCopilot: return "arrow.triangle.branch"
         case .deepseek: return "magnifyingglass"
         case .gemini: return "globe"
+        case .openrouter: return "arrow.triangle.merge"
         case .localLlama: return "laptopcomputer"
         case .localMLX: return "flame"
         case .custom: return "gear"
@@ -865,6 +869,9 @@ struct ProviderConfigurationSheet: View {
         case .gemini:
             return "Create an API key at aistudio.google.com"
 
+        case .openrouter:
+            return "Get your API key from openrouter.ai/keys - provides access to 400+ AI models"
+
         case .localLlama:
             return "No API key required for local models - models are loaded from ~/Library/Caches/sam/models"
 
@@ -928,6 +935,11 @@ struct ProviderConfigurationSheet: View {
             switch providerType {
             case .openai, .deepseek, .custom:
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+            case .openrouter:
+                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                request.setValue("https://www.syntheticautonomicmind.org", forHTTPHeaderField: "HTTP-Referer")
+                request.setValue("SAM", forHTTPHeaderField: "X-Title")
 
             case .anthropic:
                 request.setValue(apiKey, forHTTPHeaderField: "x-api-key")

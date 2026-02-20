@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "20260220.1",
+      "release_date": "February 20, 2026",
+      "introduction": "This release adds native OpenRouter support, giving you access to 400+ AI models through a single API.",
+      "highlights": [
+        {
+          "id": "openrouter-provider",
+          "icon": "arrow.triangle.merge",
+          "title": "OpenRouter Support",
+          "description": "SAM now includes built-in OpenRouter support. Configure your OpenRouter API key in Preferences → Endpoints to access over 400 AI models including the latest from every major provider through a single unified API."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "openrouter-auth-fix",
+          "icon": "key.fill",
+          "title": "Fixed OpenRouter Authentication",
+          "description": "Resolved a 401 authentication error when using OpenRouter via the custom provider. OpenRouter requires specific identification headers that are now automatically included."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "openrouter-implementation",
+          "content": "Added OpenRouterProvider.swift with automatic HTTP-Referer and X-Title headers. Added 'openrouter' case to ProviderType enum in EndpointConfigurationModels.swift. Wired into EndpointManager createDefaultConfiguration() and createProvider(). Default base URL: https://openrouter.ai/api/v1. Model capabilities fetched from /v1/models with context_length from top_provider block."
+        }
+      ]
+    },
+    {
       "version": "20260217.1",
       "release_date": "February 17, 2026",
       "introduction": "This release brings major voice interaction improvements with natural conversation flow and customizable wake words.",

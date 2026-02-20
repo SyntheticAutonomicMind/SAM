@@ -880,6 +880,15 @@ public class EndpointManager: ObservableObject {
                 models: []
             )
 
+        case .openrouter:
+            return ProviderConfiguration(
+                providerId: "openrouter",
+                providerType: .openrouter,
+                isEnabled: false,
+                baseURL: "https://openrouter.ai/api/v1",
+                models: []
+            )
+
         case .localLlama:
             return ProviderConfiguration(
                 providerId: "local-llama",
@@ -925,6 +934,9 @@ public class EndpointManager: ObservableObject {
 
         case .gemini:
             return GeminiProvider(config: config)
+
+        case .openrouter:
+            return OpenRouterProvider(config: config)
 
         case .localLlama:
             /// Local llama providers must specify model path - use addLocalModelProvider() instead.
