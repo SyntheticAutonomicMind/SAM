@@ -1492,6 +1492,7 @@ AVAILABLE TOOLS:
         case "MLXProvider": return "mlx"
         case "LlamaProvider": return "gguf"
         case "CustomProvider": return "custom"
+        case "OpenRouterProvider": return "openrouter"
         default: return providerType.lowercased()
         }
     }
@@ -1506,6 +1507,7 @@ AVAILABLE TOOLS:
         case "MLXProvider": return "MLX (Local)"
         case "LlamaProvider": return "llama.cpp (Local)"
         case "CustomProvider": return "Custom Provider"
+        case "OpenRouterProvider": return "OpenRouter"
         default: return providerType
         }
     }

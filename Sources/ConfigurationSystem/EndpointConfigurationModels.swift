@@ -180,6 +180,7 @@ public enum ProviderType: String, CaseIterable, Codable {
     case githubCopilot = "github-copilot"
     case deepseek = "deepseek"
     case gemini = "gemini"
+    case openrouter = "openrouter"
     case localLlama = "local-llama"
     case localMLX = "local-mlx"
     case custom = "custom"
@@ -191,6 +192,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .githubCopilot: return "GitHub Copilot"
         case .deepseek: return "DeepSeek"
         case .gemini: return "Google Gemini"
+        case .openrouter: return "OpenRouter"
         case .localLlama: return "Local Models (llama.cpp)"
         case .localMLX: return "Local Models (MLX)"
         case .custom: return "Custom"
@@ -209,6 +211,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .githubCopilot: return "github_copilot"
         case .deepseek: return "deepseek"
         case .gemini: return "gemini"
+        case .openrouter: return "openrouter"
         case .localLlama: return "llama"
         case .localMLX: return "mlx"
         case .custom: return "custom"
@@ -218,7 +221,7 @@ public enum ProviderType: String, CaseIterable, Codable {
     public var requiresApiKey: Bool {
         switch self {
         case .localLlama, .localMLX: return false
-        case .openai, .anthropic, .githubCopilot, .deepseek, .gemini, .custom: return true
+        case .openai, .anthropic, .githubCopilot, .deepseek, .gemini, .openrouter, .custom: return true
         }
     }
 
@@ -229,6 +232,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .githubCopilot: return "https://api.githubcopilot.com"
         case .deepseek: return "https://api.deepseek.com/v1"
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
+        case .openrouter: return "https://openrouter.ai/api/v1"
         case .localLlama, .localMLX, .custom: return nil
         }
     }
@@ -248,6 +252,9 @@ public enum ProviderType: String, CaseIterable, Codable {
             return ["deepseek-chat", "deepseek-coder"]
 
         case .gemini:
+            return []
+
+        case .openrouter:
             return []
 
         case .localLlama:
@@ -275,6 +282,9 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .gemini:
             return "g.circle.fill"
 
+        case .openrouter:
+            return "arrow.triangle.merge"
+
         case .localLlama:
             return "laptopcomputer"
         case .localMLX:
@@ -300,6 +310,9 @@ public enum ProviderType: String, CaseIterable, Codable {
 
         case .gemini:
             return .blue
+
+        case .openrouter:
+            return .teal
 
         case .localLlama:
             return .cyan
