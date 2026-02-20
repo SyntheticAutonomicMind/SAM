@@ -29,29 +29,134 @@ public class OpenRouterProvider: AIProvider {
     }
 
     public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
+        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
+            throw ProviderError.authenticationFailed("OpenRouter API key not configured. Check Preferences -> Endpoints -> OpenRouter.")
+        }
+
+        let baseURL = config.baseURL ?? ProviderType.openrouter.defaultBaseURL ?? "https://openrouter.ai/api/v1"
+
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw ProviderError.invalidConfiguration("Invalid OpenRouter base URL: \(baseURL)")
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue(httpReferer, forHTTPHeaderField: "HTTP-Referer")
+        urlRequest.setValue(appTitle, forHTTPHeaderField: "X-Title")
+
+        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
+        urlRequest.timeoutInterval = max(configuredTimeout, 300)
+
+        let requestBody: [String: Any] = [
+            "model": request.model,
+            "messages": request.messages.map { message -> [String: Any] in
+                var msgDict: [String: Any] = ["role": message.role]
+                msgDict["content"] = message.content ?? NSNull()
+                return msgDict
+            },
+            "max_tokens": request.maxTokens ?? config.maxTokens ?? 2048,
+            "temperature": request.temperature ?? config.temperature ?? 0.7,
+            "stream": true  /// Enable actual SSE streaming from OpenRouter.
+        ]
+
+        do {
+            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        } catch {
+            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
+        }
+
         return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    /// Check cancellation before HTTP request.
                     if Task.isCancelled {
-                        self.logger.debug("TASK_CANCELLED: OpenRouter request cancelled before start")
+                        self.logger.debug("TASK_CANCELLED: OpenRouter streaming cancelled before start")
                         continuation.finish()
                         return
                     }
 
-                    let response = try await self.processChatCompletion(request)
-                    let chunks = self.convertToStreamChunks(response)
+                    let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest)
 
-                    for chunk in chunks {
-                        /// Check cancellation in streaming loop.
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        continuation.finish(throwing: ProviderError.networkError("Invalid response type"))
+                        return
+                    }
+
+                    self.logger.debug("OpenRouter streaming response: \(httpResponse.statusCode)")
+
+                    guard 200...299 ~= httpResponse.statusCode else {
+                        /// Read error body from the stream.
+                        var errorBody = ""
+                        for try await byte in bytes {
+                            errorBody.append(Character(UnicodeScalar(byte)))
+                            if errorBody.count > 2000 { break }
+                        }
+                        self.logger.error("OpenRouter streaming error [\(httpResponse.statusCode)]: \(errorBody.prefix(500))")
+
+                        var errorMessage = "OpenRouter returned status \(httpResponse.statusCode)"
+                        if let errorJson = try? JSONSerialization.jsonObject(with: Data(errorBody.utf8)) as? [String: Any],
+                           let error = errorJson["error"] as? [String: Any],
+                           let message = error["message"] as? String {
+                            errorMessage = "OpenRouter error: \(message)"
+                        }
+
+                        if httpResponse.statusCode == 429 {
+                            continuation.finish(throwing: ProviderError.rateLimitExceeded(errorMessage))
+                        } else if httpResponse.statusCode == 401 {
+                            continuation.finish(throwing: ProviderError.authenticationFailed(errorMessage))
+                        } else {
+                            continuation.finish(throwing: ProviderError.networkError(errorMessage))
+                        }
+                        return
+                    }
+
+                    /// Parse SSE stream: accumulate bytes into lines, decode JSON chunks.
+                    var incompleteBuffer = ""
+                    var byteBuffer: [UInt8] = []
+
+                    for try await byte in bytes {
                         if Task.isCancelled {
                             self.logger.debug("TASK_CANCELLED: OpenRouter streaming cancelled")
                             continuation.finish()
                             return
                         }
 
-                        continuation.yield(chunk)
-                        try await Task.sleep(nanoseconds: 50_000_000)
+                        byteBuffer.append(byte)
+
+                        /// Try to decode accumulated bytes (handles multi-byte UTF-8).
+                        if let char = String(bytes: byteBuffer, encoding: .utf8) {
+                            incompleteBuffer.append(char)
+                            byteBuffer.removeAll(keepingCapacity: true)
+                        }
+
+                        /// Process complete SSE events (ending with double newline).
+                        while incompleteBuffer.contains("\n\n") {
+                            guard let doubleNewlineRange = incompleteBuffer.range(of: "\n\n") else { break }
+                            let completeEvent = String(incompleteBuffer[..<doubleNewlineRange.lowerBound])
+                            incompleteBuffer = String(incompleteBuffer[doubleNewlineRange.upperBound...])
+
+                            for line in completeEvent.components(separatedBy: "\n") {
+                                guard line.hasPrefix("data: ") else { continue }
+                                let jsonString = String(line.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                                if jsonString == "[DONE]" {
+                                    self.logger.debug("OpenRouter SSE: received [DONE]")
+                                    continuation.finish()
+                                    return
+                                }
+
+                                guard !jsonString.isEmpty,
+                                      let jsonData = jsonString.data(using: .utf8) else { continue }
+
+                                do {
+                                    let streamChunk = try JSONDecoder().decode(ServerOpenAIChatStreamChunk.self, from: jsonData)
+                                    continuation.yield(streamChunk)
+                                } catch {
+                                    self.logger.warning("OpenRouter SSE: failed to decode chunk: \(error)")
+                                }
+                            }
+                        }
                     }
 
                     continuation.finish()
@@ -60,40 +165,6 @@ public class OpenRouterProvider: AIProvider {
                 }
             }
         }
-    }
-
-    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else { return [] }
-        var chunks: [ServerOpenAIChatStreamChunk] = []
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
-        ))
-
-        let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-        for word in words {
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
-            ))
-        }
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-        ))
-
-        return chunks
     }
 
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
