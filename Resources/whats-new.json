@@ -3,27 +3,57 @@
     {
       "version": "20260220.1",
       "release_date": "February 20, 2026",
-      "introduction": "This release adds native OpenRouter support, giving you access to 400+ AI models through a single API.",
+      "introduction": "This release adds native OpenRouter support with access to 400+ AI models, real-time streaming, smart rate limit handling, and a new status bar.",
       "highlights": [
         {
           "id": "openrouter-provider",
           "icon": "arrow.triangle.merge",
           "title": "OpenRouter Support",
-          "description": "SAM now includes built-in OpenRouter support. Configure your OpenRouter API key in Preferences → Endpoints to access over 400 AI models including the latest from every major provider through a single unified API."
+          "description": "SAM now has built-in OpenRouter support. Configure your OpenRouter API key in Preferences -> Endpoints to access over 400 AI models from every major provider — DeepSeek, Qwen, Mistral, Llama, and more — through a single unified API."
+        },
+        {
+          "id": "status-bar",
+          "icon": "circle.fill",
+          "title": "Status Bar",
+          "description": "A new status bar at the bottom of the chat window keeps you informed. When idle it shows \"Ready.\" When SAM is working, an animated spinner appears with a description of what SAM is doing — generating, thinking, running a tool, or waiting after a rate limit."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "openrouter-streaming",
+          "icon": "bolt.fill",
+          "title": "Real-Time Response Streaming",
+          "description": "OpenRouter responses now stream in real-time — you see tokens appear as they are generated instead of waiting for the entire response. This makes conversations with long-running models like DeepSeek R1 feel much more responsive."
+        },
+        {
+          "id": "rate-limit-handling",
+          "icon": "arrow.clockwise",
+          "title": "Smarter Rate Limit Handling",
+          "description": "When a provider hits its rate limit, SAM automatically retries with exponential backoff (4s, 8s, 16s…). The status bar shows a live countdown so you always know what is happening rather than wondering if SAM is stuck."
         }
       ],
       "bugfixes": [
         {
-          "id": "openrouter-auth-fix",
-          "icon": "key.fill",
-          "title": "Fixed OpenRouter Authentication",
-          "description": "Resolved a 401 authentication error when using OpenRouter via the custom provider. OpenRouter requires specific identification headers that are now automatically included."
+          "id": "openrouter-markdown-rendering",
+          "icon": "text.alignleft",
+          "title": "Fixed Response Formatting",
+          "description": "Responses from OpenRouter models were appearing as one unformatted block of text with no line breaks, headers, or code blocks. Real streaming now preserves all markdown formatting correctly."
+        },
+        {
+          "id": "openrouter-context-size",
+          "icon": "memorychip",
+          "title": "Fixed Context Window Detection",
+          "description": "OpenRouter models were incorrectly limited to 8,192 tokens because SAM did not know their actual context window sizes. SAM now fetches real context sizes from the OpenRouter API on first use, allowing models with 32K, 128K, or larger contexts to work correctly."
         }
       ],
       "developer_notes": [
         {
           "id": "openrouter-implementation",
-          "content": "Added OpenRouterProvider.swift with automatic HTTP-Referer and X-Title headers. Added 'openrouter' case to ProviderType enum in EndpointConfigurationModels.swift. Wired into EndpointManager createDefaultConfiguration() and createProvider(). Default base URL: https://openrouter.ai/api/v1. Model capabilities fetched from /v1/models with context_length from top_provider block."
+          "content": "Added OpenRouterProvider.swift with SSE streaming via URLSession.bytes(), HTTP-Referer and X-Title headers, and proper 429/401 error classification. Added 'openrouter' ProviderType, wired into EndpointManager. fetchModelCapabilities() fetches context_length from /v1/models top_provider block. lazyFetchModelCapabilitiesIfNeeded() now handles 'openrouter' via EndpointManager.getFirstProvider(ofType:). AgentOrchestrator rate limit retry loops now post providerRateLimitHit/providerRateLimitRetrying notifications."
+        },
+        {
+          "id": "status-bar-implementation",
+          "content": "Added statusBar computed property to ChatWidget (always visible, 20px height). Uses .task modifier for 10fps braille animation. busyStatusText updated via onChange(of: processingStatus). Idle shows green dot + 'Ready.'. Busy shows spinner + context text (Generating/Thinking/Running: <tool>/Rate limited countdown)."
         }
       ]
     },
