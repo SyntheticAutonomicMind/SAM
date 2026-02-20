@@ -128,9 +128,17 @@ public class CopilotTokenStore: ObservableObject {
             return token.token
         }
         
-        // Fall back to GitHub token (from device flow)
+        // Have a GitHub token but no Copilot token - try exchange
         if let githubToken = githubToken {
-            logger.debug("Using GitHub user token (no Copilot token available)")
+            logger.info("No Copilot token, attempting exchange...")
+            do {
+                try await refreshCopilotToken()
+                if let token = copilotToken {
+                    return token.token
+                }
+            } catch {
+                logger.warning("Copilot token exchange failed: \(error.localizedDescription), using GitHub token directly")
+            }
             return githubToken
         }
         
@@ -226,6 +234,10 @@ public class CopilotTokenStore: ObservableObject {
             } else {
                 logger.warning("Loaded expired Copilot token, will need refresh")
             }
+        } else if githubToken != nil {
+            // Have a GitHub token but no Copilot token - exchange on first use
+            isSignedIn = true
+            logger.info("Loaded GitHub token from disk, will exchange for Copilot token on first use")
         }
     }
     

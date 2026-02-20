@@ -197,10 +197,17 @@ struct GitHubDeviceFlowSheet: View {
         do {
             let githubToken = try await deviceFlow.startDeviceFlow()
             
-            /// Store GitHub token directly in CopilotTokenStore (no exchange needed)
-            /// GitHub user tokens from device flow already have billing access
+            /// Store GitHub token and exchange for Copilot session token
+            /// The Copilot token provides full model access (42+ models)
             let copilotTokenStore = CopilotTokenStore.shared
-            await copilotTokenStore.setGitHubTokenDirect(githubToken)
+            do {
+                try await copilotTokenStore.setGitHubToken(githubToken)
+            } catch {
+                // Exchange failed - store raw token as fallback
+                // getCopilotToken() will retry exchange on first API call
+                Self.logger.warning("Copilot token exchange failed during login: \(error.localizedDescription), will retry on first use")
+                await copilotTokenStore.setGitHubTokenDirect(githubToken)
+            }
             
             /// Return token for API usage
             onTokenReceived(githubToken)
