@@ -179,6 +179,13 @@ public class OpenRouterProvider: AIProvider {
                         errorMessage = "OpenRouter returned status \(httpResponse.statusCode): \(errorData.prefix(200))"
                     }
                 }
+
+                /// Throw specific error types so the orchestrator can handle them properly.
+                if httpResponse.statusCode == 429 {
+                    throw ProviderError.rateLimitExceeded(errorMessage)
+                } else if httpResponse.statusCode == 401 {
+                    throw ProviderError.authenticationFailed(errorMessage)
+                }
                 throw ProviderError.networkError(errorMessage)
             }
 
