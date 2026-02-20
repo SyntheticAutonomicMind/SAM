@@ -946,7 +946,14 @@ struct ProviderConfigurationSheet: View {
                 request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
 
             case .githubCopilot:
-                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                // Use CopilotTokenStore to get the exchanged session token (tid=...)
+                // which provides full model access (42+ models)
+                let copilotToken = try await CopilotTokenStore.shared.getCopilotToken()
+                request.setValue("Bearer \(copilotToken)", forHTTPHeaderField: "Authorization")
+                let samVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
+                request.setValue("vscode/\(samVersion)", forHTTPHeaderField: "Editor-Version")
+                request.setValue("copilot-chat/\(samVersion)", forHTTPHeaderField: "Editor-Plugin-Version")
+                request.setValue("GitHubCopilotChat/\(samVersion)", forHTTPHeaderField: "User-Agent")
 
             case .gemini:
                 /// Gemini uses API key as query parameter (already added to URL above)

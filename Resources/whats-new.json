@@ -1,10 +1,22 @@
 {
   "releases": [
     {
-      "version": "20260220.1",
+      "version": "20260220.2",
       "release_date": "February 20, 2026",
-      "introduction": "This release adds native OpenRouter support with access to 400+ AI models, real-time streaming, smart rate limit handling, and a new status bar.",
+      "introduction": "This release adds native OpenRouter support with 400+ AI models, upgrades GitHub Copilot authentication to unlock the full 42+ model catalog, adds a status bar, and improves streaming and rate limit handling. Important: Existing GitHub Copilot users must remove and re-add their provider in Preferences.",
       "highlights": [
+        {
+          "id": "copilot-reauth",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Action Required: Re-add GitHub Copilot Provider",
+          "description": "Due to an authentication upgrade, existing GitHub Copilot users must remove their current provider and add a new one in Preferences -> Endpoints. You will be prompted to sign in with GitHub again. This is a one-time action that unlocks access to 42+ models."
+        },
+        {
+          "id": "full-model-catalog",
+          "icon": "cpu.fill",
+          "title": "42+ GitHub Copilot Models",
+          "description": "SAM now uses GitHub's official Copilot authentication, giving you access to the full model catalog: Claude Opus 4.6, Claude Sonnet 4.6, Gemini 3 Pro, GPT-5.2, GPT-5.1 Codex, Grok, and many more. Previously only 8 base GPT models were available."
+        },
         {
           "id": "openrouter-provider",
           "icon": "arrow.triangle.merge",
@@ -20,6 +32,12 @@
       ],
       "improvements": [
         {
+          "id": "copilot-token-exchange",
+          "icon": "key.fill",
+          "title": "Automatic Copilot Token Exchange",
+          "description": "SAM now automatically exchanges your GitHub token for a Copilot session token on first use. This happens transparently and enables access to premium models based on your Copilot subscription."
+        },
+        {
           "id": "openrouter-streaming",
           "icon": "bolt.fill",
           "title": "Real-Time Response Streaming",
@@ -34,6 +52,12 @@
       ],
       "bugfixes": [
         {
+          "id": "provider-model-refresh",
+          "icon": "arrow.clockwise",
+          "title": "Model List Refresh on Login",
+          "description": "When adding a GitHub Copilot provider, the model list now correctly shows all available models immediately after signing in, instead of requiring an app restart."
+        },
+        {
           "id": "openrouter-markdown-rendering",
           "icon": "text.alignleft",
           "title": "Fixed Response Formatting",
@@ -47,6 +71,10 @@
         }
       ],
       "developer_notes": [
+        {
+          "id": "auth-upgrade",
+          "content": "Switched from custom OAuth App (Ov23lix5mfpW4hHM7y9G) to GitHub's official Copilot Plugin GitHub App (Iv1.b507a08c87ecfe98). Scope reduced from 'read:user copilot' to 'read:user' - Copilot access is via /copilot_internal/v2/token exchange. Exchange endpoint requires GET (not POST) for GitHub App tokens. CopilotTokenStore.getCopilotToken() now auto-exchanges on first use. EndpointManagementView.fetchModelsFromProvider() uses CopilotTokenStore for GitHub Copilot authentication."
+        },
         {
           "id": "openrouter-implementation",
           "content": "Added OpenRouterProvider.swift with SSE streaming via URLSession.bytes(), HTTP-Referer and X-Title headers, and proper 429/401 error classification. Added 'openrouter' ProviderType, wired into EndpointManager. fetchModelCapabilities() fetches context_length from /v1/models top_provider block. lazyFetchModelCapabilitiesIfNeeded() now handles 'openrouter' via EndpointManager.getFirstProvider(ofType:). AgentOrchestrator rate limit retry loops now post providerRateLimitHit/providerRateLimitRetrying notifications."

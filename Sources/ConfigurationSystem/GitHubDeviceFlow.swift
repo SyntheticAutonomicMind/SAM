@@ -20,7 +20,7 @@ public class GitHubDeviceFlowService: ObservableObject {
     private let clientId: String
     private var pollingTask: Task<Void, Never>?
 
-    public init(clientId: String = "Ov23lix5mfpW4hHM7y9G") {
+    public init(clientId: String = "Iv1.b507a08c87ecfe98") {
         self.clientId = clientId
     }
 
@@ -83,7 +83,7 @@ public class GitHubDeviceFlowService: ObservableObject {
     public func exchangeForCopilotToken(githubToken: String) async throws -> CopilotTokenResponse {
         let url = URL(string: "https://api.github.com/copilot_internal/v2/token")!
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        request.httpMethod = "GET"
         request.setValue("token \(githubToken)", forHTTPHeaderField: "Authorization")
 
         /// Add editor version headers (required by GitHub)
@@ -119,7 +119,7 @@ public class GitHubDeviceFlowService: ObservableObject {
 
         let body: [String: String] = [
             "client_id": clientId,
-            "scope": "read:user copilot"
+            "scope": "read:user"
         ]
 
         request.httpBody = try JSONEncoder().encode(body)
