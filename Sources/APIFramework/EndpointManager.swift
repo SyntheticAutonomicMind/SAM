@@ -840,7 +840,7 @@ public class EndpointManager: ObservableObject {
                 providerId: "github-copilot",
                 providerType: .githubCopilot,
                 isEnabled: false,
-                baseURL: "https://api.githubcopilot.com",
+                baseURL: nil,  // Resolved dynamically from user profile at request time
                 models: []
             )
 

@@ -763,7 +763,16 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
         let apiKey = try await getAPIKey()
 
-        let baseURL = config.baseURL ?? "https://api.githubcopilot.com"
+        let baseURL: String
+        let configuredURL = config.baseURL
+        if let url = configuredURL, url != "https://api.githubcopilot.com" {
+            // User has explicitly configured a non-default URL - respect it
+            baseURL = url
+        } else {
+            // Use user-specific endpoint from profile (e.g. api.individual.githubcopilot.com)
+            // Falls back to api.githubcopilot.com if profile not yet fetched
+            baseURL = await CopilotUserAPIClient.shared.getCopilotBaseURL()
+        }
         let modelsURL = "\(baseURL)/models"
 
         guard let url = URL(string: modelsURL) else {
@@ -1477,7 +1486,13 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     }
 
     private func createGitHubCopilotRequest(_ request: OpenAIChatRequest, apiKey: String, streaming: Bool) async throws -> URLRequest {
-        let baseURL = config.baseURL ?? "https://api.githubcopilot.com"
+        let baseURL: String
+        let configuredURL = config.baseURL
+        if let url = configuredURL, url != "https://api.githubcopilot.com" {
+            baseURL = url
+        } else {
+            baseURL = await CopilotUserAPIClient.shared.getCopilotBaseURL()
+        }
         let fullURL: String
         if baseURL.hasSuffix("/chat/completions") {
             fullURL = baseURL
@@ -2126,7 +2141,13 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     ///
     /// Request structure follows GitHub Copilot Responses API specification.
     private func createResponsesAPIRequest(_ request: OpenAIChatRequest, apiKey: String) async throws -> URLRequest {
-        let baseURL = config.baseURL ?? "https://api.githubcopilot.com"
+        let baseURL: String
+        let configuredURL = config.baseURL
+        if let url = configuredURL, url != "https://api.githubcopilot.com" {
+            baseURL = url
+        } else {
+            baseURL = await CopilotUserAPIClient.shared.getCopilotBaseURL()
+        }
         let fullURL: String
         if baseURL.hasSuffix("/responses") {
             fullURL = baseURL
