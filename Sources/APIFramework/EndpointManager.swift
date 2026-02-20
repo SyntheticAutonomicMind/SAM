@@ -1205,6 +1205,11 @@ public class EndpointManager: ObservableObject {
         return providers[id]
     }
 
+    /// Get the first provider of a specific type (e.g., OpenRouterProvider).
+    public func getFirstProvider<T: AIProvider>(ofType type: T.Type) -> T? {
+        return providers.values.first(where: { $0 is T }) as? T
+    }
+
     private func getProviderType(for providerId: String) -> ProviderType? {
         return ProviderType.allCases.first { $0.defaultIdentifier == providerId }
     }

@@ -441,6 +441,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             providerType = "gemini"
         } else if modelLower.contains("claude") {
             providerType = "anthropic"
+        } else if let providerTypeName = endpointManager.getProviderTypeForModel(model),
+                  providerTypeName == "OpenRouterProvider" {
+            /// OpenRouter model detected via provider registry.
+            providerType = "openrouter"
         } else {
             /// Unknown provider, skip.
             return
@@ -465,6 +469,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// Get OpenAI provider and fetch capabilities.
                 if let provider = endpointManager.getProvider(id: "openai") as? OpenAIProvider {
                     capabilities = try await provider.fetchModelCapabilities()
+                }
+
+            case "openrouter":
+                /// Get OpenRouter provider and fetch capabilities from /v1/models endpoint.
+                /// OpenRouter returns context_length in the top_provider block per model.
+                if let provider = endpointManager.getFirstProvider(ofType: OpenRouterProvider.self) {
+                    capabilities = try await provider.fetchModelCapabilities()
+                    logger.debug("LAZY_FETCH: Fetched \(capabilities?.count ?? 0) model context sizes from OpenRouter")
                 }
 
             case "anthropic":

@@ -132,11 +132,14 @@ public class OpenRouterProvider: AIProvider {
         /// Create request body (OpenAI-compatible format).
         let requestBody: [String: Any] = [
             "model": request.model,
-            "messages": request.messages.map { message in
-                [
-                    "role": message.role,
-                    "content": message.content
-                ]
+            "messages": request.messages.map { message -> [String: Any] in
+                var msgDict: [String: Any] = ["role": message.role]
+                if let content = message.content {
+                    msgDict["content"] = content
+                } else {
+                    msgDict["content"] = NSNull()
+                }
+                return msgDict
             },
             "max_tokens": request.maxTokens ?? config.maxTokens ?? 2048,
             "temperature": request.temperature ?? config.temperature ?? 0.7,
