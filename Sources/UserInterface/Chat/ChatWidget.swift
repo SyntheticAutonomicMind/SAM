@@ -219,10 +219,10 @@ public struct ChatWidget: View {
     @State private var showAPIError = false
     @State private var apiErrorMessage = ""
     
-    /// Rate limit notification
-    @State private var showRateLimitAlert = false
-    @State private var rateLimitMessage = ""
-    @State private var rateLimitRetrySeconds: Double = 0
+    /// Braille spinner busy indicator state
+    @State private var brailleSpinnerFrame = 0
+    @State private var busyStatusText: String = ""
+    private let brailleFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     /// Stable Diffusion model management.
     @StateObject private var sdModelManager = StableDiffusionModelManager()
@@ -369,13 +369,6 @@ public struct ChatWidget: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(apiErrorMessage)
-            }
-            .alert("Rate Limited", isPresented: $showRateLimitAlert) {
-                Button("OK", role: .cancel) {
-                    showRateLimitAlert = false
-                }
-            } message: {
-                Text(rateLimitMessage)
             }
             .onChange(of: showingMemoryPanel) { _, newValue in
                 savePanelState(panel: "memory", value: newValue)
@@ -624,6 +617,23 @@ public struct ChatWidget: View {
             }
         }
         .onChange(of: processingStatus) { oldValue, newValue in
+            /// Update braille spinner status text based on processing state.
+            switch newValue {
+            case .idle:
+                busyStatusText = ""
+            case .thinking:
+                busyStatusText = "Thinking..."
+            case .generating:
+                /// Don't overwrite rate-limit status text.
+                if !busyStatusText.contains("Rate limited") {
+                    busyStatusText = "Generating..."
+                }
+            case .processingTools(let toolName):
+                busyStatusText = "Running: \(toolName)"
+            case .loadingModel:
+                busyStatusText = "Loading model..."
+            }
+
             /// Sync messages when processing completes
             /// Problem: If message count doesn't change (placeholder updated), onChange doesn't fire
             /// Solution: Explicitly sync when transitioning from thinking/generating to idle
@@ -1802,8 +1812,55 @@ public struct ChatWidget: View {
             } else {
                 standardMessageInputUI
             }
+
+            /// Status bar - always visible at the bottom of the window.
+            Divider()
+            statusBar
         }
         .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    /// Status bar at the bottom of the chat window.
+    /// Always visible. Shows animated braille spinner and contextual status when busy,
+    /// or idle info (model name, provider) when not processing.
+    private var statusBar: some View {
+        HStack(spacing: 6) {
+            if isSending {
+                /// Animated braille spinner when processing.
+                Text(brailleFrames[brailleSpinnerFrame % brailleFrames.count])
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.accentColor)
+                    .frame(width: 14)
+                    .task {
+                        while !Task.isCancelled {
+                            try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s = 10fps
+                            brailleSpinnerFrame = (brailleSpinnerFrame + 1) % brailleFrames.count
+                        }
+                    }
+
+                Text(busyStatusText.isEmpty ? "Generating..." : busyStatusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            } else {
+                /// Idle state: ready indicator.
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 6))
+                    .foregroundColor(.green)
+                    .frame(width: 14)
+
+                Text("Ready.")
+                    .font(.caption)
+                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 3)
+        .frame(height: 20)
+        .background(Color(NSColor.windowBackgroundColor).opacity(0.6))
     }
 
     /// Standard text input for LLM chat.
@@ -3247,21 +3304,19 @@ public struct ChatWidget: View {
         /// Model updates are now handled by ModelListManager automatically
         /// (listens to .endpointManagerDidUpdateModels, .stableDiffusionModelInstalled, .aliceModelsLoaded)
         
-        /// Listen for rate limit notifications
+        /// Listen for rate limit notifications - update braille spinner status bar.
         NotificationCenter.default.addObserver(
             forName: .providerRateLimitHit,
             object: nil,
             queue: .main
         ) { notification in
             guard let userInfo = notification.userInfo,
-                  let retrySeconds = userInfo["retryAfterSeconds"] as? Double,
-                  let providerName = userInfo["providerName"] as? String else {
+                  let retrySeconds = userInfo["retryAfterSeconds"] as? Double else {
                 return
             }
             
-            rateLimitRetrySeconds = retrySeconds
-            rateLimitMessage = "\\(providerName) rate limit reached. Retrying in \\(Int(retrySeconds)) seconds..."
-            showRateLimitAlert = true
+            /// Update braille spinner status bar with retry countdown.
+            busyStatusText = "Rate limited – retrying in \(Int(retrySeconds))s..."
         }
         
         /// Listen for rate limit retry
@@ -3270,7 +3325,7 @@ public struct ChatWidget: View {
             object: nil,
             queue: .main
         ) { _ in
-            showRateLimitAlert = false
+            busyStatusText = "Generating..."
         }
 
         /// Auto-focus input box when chat opens.
@@ -4018,6 +4073,7 @@ public struct ChatWidget: View {
             conversation.isProcessing = true
             isActivelyStreaming = true
             processingStatus = .generating
+            busyStatusText = "Generating..."
             
             /// IMMEDIATE FEEDBACK: Create placeholder user message NOW
             /// This ensures user message appears before import tool cards
