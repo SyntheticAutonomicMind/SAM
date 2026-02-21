@@ -3052,16 +3052,28 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         }
 
         /// Semantic search for relevant memories (automatic RAG).
+        /// CRITICAL FIX: Use effectiveScopeId for shared topic support
+        /// When a conversation has a shared topic, search the TOPIC's memory pool
+        /// (not the conversation's empty per-conversation database).
+        /// This ensures new conversations attached to a shared topic can access
+        /// all previously stored memories from other conversations in that topic.
+        let memoryScopeId = conversationManager.getEffectiveScopeId(for: conversation)
+        let isSharedScope = memoryScopeId != conversation.id
+        if isSharedScope {
+            logger.debug("AUTO_RETRIEVAL: Using shared topic scope \(memoryScopeId) (topic: \(conversation.settings.sharedTopicName ?? "unknown"))")
+        }
+
         do {
             let memories = try await conversationManager.memoryManager.retrieveRelevantMemories(
                 for: currentUserMessage,
-                conversationId: conversation.id,
+                conversationId: memoryScopeId,
                 limit: 5,
                 similarityThreshold: 0.3
             )
 
             if !memories.isEmpty {
-                logger.debug("AUTO_RETRIEVAL: Retrieved \(memories.count) relevant memories via semantic search")
+                let scopeLabel = isSharedScope ? "shared topic" : "conversation"
+                logger.debug("AUTO_RETRIEVAL: Retrieved \(memories.count) relevant memories via semantic search (\(scopeLabel) scope)")
 
                 var memoryContext = "\n=== RELEVANT PRIOR CONTEXT (Semantic Search) ===\n"
                 for (index, memory) in memories.enumerated() {
@@ -3069,10 +3081,52 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 }
                 contextParts.append(memoryContext)
             } else {
-                logger.debug("AUTO_RETRIEVAL: No relevant memories found via semantic search")
+                logger.debug("AUTO_RETRIEVAL: No relevant memories found via semantic search (scope: \(memoryScopeId))")
             }
         } catch {
             logger.warning("AUTO_RETRIEVAL: Memory retrieval failed: \(error), continuing without memory context")
+        }
+
+        /// PHASE 2b: Shared Topic Archive Retrieval
+        /// When a conversation is in a shared topic, automatically retrieve relevant archived
+        /// context from other conversations in the topic. This gives the agent awareness of
+        /// prior discussions, decisions, and context from the shared topic's history.
+        if isSharedScope,
+           let topicId = conversation.settings.sharedTopicId,
+           let archiveProvider = RecallHistoryTool.sharedArchiveProvider {
+            do {
+                let topicChunks = try await archiveProvider.recallTopicHistory(
+                    query: currentUserMessage,
+                    topicId: topicId,
+                    limit: 3
+                )
+
+                if !topicChunks.isEmpty {
+                    logger.debug("AUTO_RETRIEVAL: Retrieved \(topicChunks.count) relevant topic archive chunks from shared topic \(topicId.uuidString.prefix(8))")
+
+                    var topicContext = "\n=== SHARED TOPIC HISTORY (From Other Conversations) ===\n"
+                    topicContext += "The following context was found in other conversations within the shared topic:\n"
+                    for (index, chunk) in topicChunks.enumerated() {
+                        topicContext += "\n[Topic Archive \(index + 1) - \(chunk.timeRange), \(chunk.messageCount) messages]:\n"
+                        topicContext += "Summary: \(chunk.summary)\n"
+                        if !chunk.keyTopics.isEmpty {
+                            topicContext += "Topics: \(chunk.keyTopics.joined(separator: ", "))\n"
+                        }
+                        // Include a preview of the most relevant messages
+                        let previewMessages = chunk.messages.prefix(3)
+                        for msg in previewMessages {
+                            let role = msg.isFromUser ? "USER" : "ASSISTANT"
+                            let preview = String(msg.content.prefix(500))
+                            topicContext += "  [\(role)]: \(preview)\n"
+                        }
+                    }
+                    contextParts.append(topicContext)
+                } else {
+                    logger.debug("AUTO_RETRIEVAL: No relevant topic archive chunks found for shared topic \(topicId.uuidString.prefix(8))")
+                }
+            } catch {
+                logger.warning("AUTO_RETRIEVAL: Topic archive retrieval failed: \(error), continuing without topic context")
+            }
         }
 
         /// Include high-importance messages not yet pinned (>=0.8 threshold) CRITICAL FIX Track retrieved message IDs to prevent duplication across iterations - Problem: Phase 3 was pulling same messages on every iteration (from conversation history) - Solution: Track which message IDs already retrieved, only include NEW high-importance messages - This preserves context (unlike skipping Phase 3 entirely) while preventing exponential growth.
@@ -3418,6 +3472,33 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             All file operations and terminal commands will execute relative to this directory by default.
             You do not need to run 'pwd' or ask about the starting directory - this IS your working directory.
             """
+        }
+
+        /// SHARED TOPIC CONTEXT INJECTION
+        /// When a conversation is attached to a shared topic, inject topic awareness
+        /// so the agent knows about the shared context and can use recall_history with topic_id
+        if conversation.settings.useSharedData,
+           let topicId = conversation.settings.sharedTopicId,
+           let topicName = conversation.settings.sharedTopicName {
+            systemPromptAdditions += """
+
+
+            # SHARED TOPIC CONTEXT
+
+            You are working within the shared topic: "\(topicName)"
+            Topic ID: \(topicId.uuidString)
+
+            This conversation shares memory and context with other conversations in this topic.
+            Previous conversations in this topic may contain relevant information, decisions, and context.
+
+            To access shared topic history, use the `recall_history` tool with:
+            - topic_id: "\(topicId.uuidString)" to search across ALL conversations in this topic
+            - Or omit topic_id to search only this conversation's history
+
+            If the user references prior discussions, decisions, or context you don't see in the current
+            conversation, use recall_history with the topic_id to find it from other topic conversations.
+            """
+            logger.debug("callLLM: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }
 
         let systemPromptWithId = systemPromptAdditions
@@ -4420,6 +4501,33 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             All file operations and terminal commands will execute relative to this directory by default.
             You do not need to run 'pwd' or ask about the starting directory - this IS your working directory.
             """
+        }
+
+        /// SHARED TOPIC CONTEXT INJECTION
+        /// When a conversation is attached to a shared topic, inject topic awareness
+        /// so the agent knows about the shared context and can use recall_history with topic_id
+        if conversation.settings.useSharedData,
+           let topicId = conversation.settings.sharedTopicId,
+           let topicName = conversation.settings.sharedTopicName {
+            systemPromptAdditions += """
+
+
+            # SHARED TOPIC CONTEXT
+
+            You are working within the shared topic: "\(topicName)"
+            Topic ID: \(topicId.uuidString)
+
+            This conversation shares memory and context with other conversations in this topic.
+            Previous conversations in this topic may contain relevant information, decisions, and context.
+
+            To access shared topic history, use the `recall_history` tool with:
+            - topic_id: "\(topicId.uuidString)" to search across ALL conversations in this topic
+            - Or omit topic_id to search only this conversation's history
+
+            If the user references prior discussions, decisions, or context you don't see in the current
+            conversation, use recall_history with the topic_id to find it from other topic conversations.
+            """
+            logger.debug("callLLMStreaming: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }
 
         let systemPromptWithId = systemPromptAdditions
