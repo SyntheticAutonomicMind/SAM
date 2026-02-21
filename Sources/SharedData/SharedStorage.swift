@@ -114,6 +114,24 @@ public final class SharedStorage {
         try execute(sql: createEntries)
         try execute(sql: createLocks)
         try execute(sql: createAudit)
+
+        /// Migration: Deduplicate topic names before adding UNIQUE constraint
+        /// If duplicate names exist (from previous bug), keep only the oldest one per name.
+        /// Note: Conversations referencing deleted duplicate topic IDs will be automatically
+        /// reassigned when the user next selects the topic from the picker (which now shows
+        /// only unique topics). The UNIQUE index prevents future duplicates.
+        let deduplicateTopics = """
+        DELETE FROM topics WHERE id IN (
+            SELECT t2.id FROM topics t1
+            JOIN topics t2 ON t1.name = t2.name AND t1.createdAt < t2.createdAt
+        );
+        """
+        try execute(sql: deduplicateTopics)
+
+        /// Add UNIQUE constraint on topic name to prevent future duplicates
+        /// SQLite doesn't support ALTER TABLE ADD CONSTRAINT, so we use CREATE UNIQUE INDEX
+        /// IF NOT EXISTS to safely add it on both new and existing databases.
+        try execute(sql: "CREATE UNIQUE INDEX IF NOT EXISTS idx_topics_name ON topics(name);")
     }
 
     // Minimal helper to run simple queries returning no results

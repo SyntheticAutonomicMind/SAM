@@ -3562,15 +3562,18 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             You are working within the shared topic: "\(topicName)"
             Topic ID: \(topicId.uuidString)
 
-            This conversation shares memory and context with other conversations in this topic.
-            Previous conversations in this topic may contain relevant information, decisions, and context.
+            **IMPORTANT: You already have access to data from this topic.** Context from other conversations
+            in the "\(topicName)" topic is automatically retrieved and injected into your context on every request.
+            Look for the "SHARED TOPIC CONVERSATION HISTORY" and "HIGH IMPORTANCE MESSAGES" sections in your
+            system context - these contain real data from the topic that you should use to answer questions.
 
-            To access shared topic history, use the `recall_history` tool with:
+            This conversation shares memory and working files with other conversations in this topic.
+            When answering questions, ALWAYS check the injected topic context first before claiming you
+            don't have information. The data is already in your context.
+
+            If you need MORE context beyond what was auto-injected, use the `recall_history` tool with:
             - topic_id: "\(topicId.uuidString)" to search across ALL conversations in this topic
-            - Or omit topic_id to search only this conversation's history
-
-            If the user references prior discussions, decisions, or context you don't see in the current
-            conversation, use recall_history with the topic_id to find it from other topic conversations.
+            - Or omit topic_id to search only this conversation's archived history
             """
             logger.debug("callLLM: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }
@@ -4591,15 +4594,18 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             You are working within the shared topic: "\(topicName)"
             Topic ID: \(topicId.uuidString)
 
-            This conversation shares memory and context with other conversations in this topic.
-            Previous conversations in this topic may contain relevant information, decisions, and context.
+            **IMPORTANT: You already have access to data from this topic.** Context from other conversations
+            in the "\(topicName)" topic is automatically retrieved and injected into your context on every request.
+            Look for the "SHARED TOPIC CONVERSATION HISTORY" and "HIGH IMPORTANCE MESSAGES" sections in your
+            system context - these contain real data from the topic that you should use to answer questions.
 
-            To access shared topic history, use the `recall_history` tool with:
+            This conversation shares memory and working files with other conversations in this topic.
+            When answering questions, ALWAYS check the injected topic context first before claiming you
+            don't have information. The data is already in your context.
+
+            If you need MORE context beyond what was auto-injected, use the `recall_history` tool with:
             - topic_id: "\(topicId.uuidString)" to search across ALL conversations in this topic
-            - Or omit topic_id to search only this conversation's history
-
-            If the user references prior discussions, decisions, or context you don't see in the current
-            conversation, use recall_history with the topic_id to find it from other topic conversations.
+            - Or omit topic_id to search only this conversation's archived history
             """
             logger.debug("callLLMStreaming: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }

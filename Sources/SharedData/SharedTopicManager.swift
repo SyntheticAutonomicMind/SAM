@@ -57,6 +57,13 @@ public final class SharedTopicManager {
     }
 
     public func createTopic(id: String = UUID().uuidString, name: String, description: String? = nil, ownerUserId: String? = nil, acl: String? = nil) throws -> SharedTopic {
+        /// Check for existing topic with the same name to prevent duplicates
+        let existing = try storage.queryRows("SELECT id, name, description FROM topics WHERE name = ?", params: [name])
+        if let existingTopic = existing.first, let existingId = existingTopic["id"], let existingName = existingTopic["name"] {
+            topicLogger.debug("Topic with name '\(name)' already exists (id: \(existingId)), returning existing topic")
+            return SharedTopic(id: existingId, name: existingName, description: existingTopic["description"])
+        }
+
         let sql = "INSERT INTO topics (id, name, ownerUserId, description, acl) VALUES (?, ?, ?, ?, ?)"
         try storage.runStatement(sql, params: [id, name, ownerUserId ?? "", description ?? "", acl ?? ""])
 
