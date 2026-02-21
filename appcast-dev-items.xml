@@ -37,6 +37,34 @@
 <!-- Development items will be added below this line -->
 
 <item>
+    <title>SAM 20260220.3-dev.1</title>
+    <description><![CDATA[
+        <h2>SAM 20260220.3-dev.1 (Development Build)</h2>
+        <p><strong>⚠️ This is a DEVELOPMENT release for testing purposes.</strong></p>
+        <h3>What's New:</h3>
+        <ul>
+            <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260220.3-dev.1">GitHub Releases</a> for details</li>
+        </ul>
+        <h3>Known Issues:</h3>
+        <ul>
+            <li>Development builds may contain bugs and incomplete features</li>
+        </ul>
+    ]]></description>
+    <pubDate>Sat, 21 Feb 2026 05:06:54 +0000</pubDate>
+    <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260220.3-dev.1</sparkle:releaseNotesLink>
+    <sparkle:channel>development</sparkle:channel>
+    <enclosure 
+        url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260220.3-dev.1/SAM-20260220.3-dev.1.zip"
+        sparkle:version="20260220.3-dev.1"
+        sparkle:shortVersionString="20260220.3-dev.1"
+        sparkle:edSignature="BraqoO1OrzBM/t1CxI2tfKTla5MfI4KA10WKAbFpTrK2I7ZehHlJ5PeDVNuIY4UlEpIzyYT7ZfMZPnRpwJUWCw=="
+        length="878611998"
+        type="application/octet-stream"
+    />
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+</item>
+
+<item>
     <title>SAM 20260217.2-dev.1</title>
     <description><![CDATA[
         <h2>SAM 20260217.2-dev.1 (Development Build)</h2>
