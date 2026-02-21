@@ -5564,6 +5564,18 @@ public struct ChatWidget: View {
             let list = try sharedTopicManager.listTopics()
             await MainActor.run {
                 sharedTopics = list
+
+                /// Heal stale topic references after deduplication migration
+                /// If conversation points to a topic ID that no longer exists, but the name matches
+                /// an existing topic, reassign to the correct one.
+                if let currentTopicId = assignedSharedTopicId,
+                   !list.contains(where: { $0.id == currentTopicId }),
+                   let topicName = conversationManager.activeConversation?.settings.sharedTopicName,
+                   let matchingTopic = list.first(where: { $0.name == topicName }) {
+                    logger.info("Healing stale topic reference: \(currentTopicId) -> \(matchingTopic.id) for topic '\(topicName)'")
+                    assignedSharedTopicId = matchingTopic.id
+                    conversationManager.attachSharedTopic(topicId: UUID(uuidString: matchingTopic.id), topicName: matchingTopic.name)
+                }
             }
         } catch {
             logger.error("Failed to load shared topics: \(error)")
