@@ -3129,6 +3129,80 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             }
         }
 
+        /// PHASE 2c: Direct Conversation Message Search for Shared Topics
+        /// When memories and archives are empty (common: messages aren't auto-indexed into memory DBs),
+        /// search the actual conversation messages of OTHER conversations in the shared topic.
+        /// This is the primary data source since conversation content lives in ConversationModel.messages,
+        /// not in the per-conversation memory.db (which is only populated by explicit memory_operations
+        /// tool calls or document imports).
+        if isSharedScope,
+           let topicId = conversation.settings.sharedTopicId {
+
+            /// Find all OTHER conversations in this topic (exclude current conversation)
+            let topicConversations = conversationManager.conversations.filter {
+                $0.settings.sharedTopicId == topicId && $0.id != conversation.id
+            }
+
+            if !topicConversations.isEmpty {
+                /// Extract keywords from the user's message for relevance scoring
+                let queryWords = Set(currentUserMessage.lowercased()
+                    .components(separatedBy: .whitespacesAndNewlines)
+                    .filter { $0.count > 3 }  // Skip short words
+                )
+
+                /// Score and collect relevant messages from topic conversations
+                var scoredMessages: [(message: ConfigurationSystem.EnhancedMessage, score: Double, conversationTitle: String)] = []
+
+                for topicConversation in topicConversations {
+                    let messages = topicConversation.messages.filter {
+                        !$0.isToolMessage && !$0.isSystemGenerated && !$0.content.isEmpty
+                    }
+
+                    for msg in messages {
+                        let contentLower = msg.content.lowercased()
+                        var score = 0.0
+
+                        /// Keyword match scoring
+                        for word in queryWords {
+                            if contentLower.contains(word) {
+                                score += 1.0
+                            }
+                        }
+
+                        /// Boost pinned and high-importance messages
+                        if msg.isPinned { score += 2.0 }
+                        score += msg.importance * 0.5
+
+                        /// Include if any relevance detected, or if pinned/high-importance
+                        if score > 0 {
+                            scoredMessages.append((msg, score, topicConversation.title))
+                        }
+                    }
+                }
+
+                /// Sort by score and take top results
+                scoredMessages.sort { $0.score > $1.score }
+                let topMessages = scoredMessages.prefix(8)
+
+                if !topMessages.isEmpty {
+                    logger.debug("AUTO_RETRIEVAL: Found \(topMessages.count) relevant messages from \(topicConversations.count) other topic conversation(s)")
+
+                    var topicMsgContext = "\n=== SHARED TOPIC CONVERSATION HISTORY ===\n"
+                    topicMsgContext += "The following messages were found in other conversations within the \"\(conversation.settings.sharedTopicName ?? "shared")\" topic:\n"
+
+                    for (index, item) in topMessages.enumerated() {
+                        let role = item.message.isFromUser ? "USER" : "ASSISTANT"
+                        /// Cap message preview to 800 chars to avoid overwhelming context
+                        let preview = String(item.message.content.prefix(800))
+                        topicMsgContext += "\n[Topic Message \(index + 1) from \"\(item.conversationTitle)\" - \(role), Relevance: \(String(format: "%.1f", item.score))]:\n\(preview)\n"
+                    }
+                    contextParts.append(topicMsgContext)
+                } else {
+                    logger.debug("AUTO_RETRIEVAL: No keyword-relevant messages found in \(topicConversations.count) other topic conversation(s)")
+                }
+            }
+        }
+
         /// Include high-importance messages not yet pinned (>=0.8 threshold) CRITICAL FIX Track retrieved message IDs to prevent duplication across iterations - Problem: Phase 3 was pulling same messages on every iteration (from conversation history) - Solution: Track which message IDs already retrieved, only include NEW high-importance messages - This preserves context (unlike skipping Phase 3 entirely) while preventing exponential growth.
         let newHighImportanceMessages = conversation.messages.filter {
             !$0.isPinned &&
