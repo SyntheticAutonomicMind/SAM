@@ -221,6 +221,7 @@ public struct ResponseNormalizer {
 
 public enum ProviderError: LocalizedError {
     case authenticationFailed(String)
+    case authRecoverable(String)  // Token was refreshed, caller should retry
     case invalidConfiguration(String)
     case networkError(String)
     case modelNotSupported(String)
@@ -233,6 +234,9 @@ public enum ProviderError: LocalizedError {
         switch self {
         case .authenticationFailed(let message):
             return "Authentication failed: \(message)"
+
+        case .authRecoverable(let message):
+            return "Authentication recovered: \(message)"
 
         case .invalidConfiguration(let message):
             return "Invalid configuration: \(message)"
@@ -255,5 +259,11 @@ public enum ProviderError: LocalizedError {
         case .invalidRequest(let message):
             return "Invalid request: \(message)"
         }
+    }
+    
+    /// Whether this error indicates the token was refreshed and a retry should succeed
+    public var isAuthRecoverable: Bool {
+        if case .authRecoverable = self { return true }
+        return false
     }
 }

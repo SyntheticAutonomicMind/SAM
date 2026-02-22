@@ -561,6 +561,10 @@ public class EndpointManager: ObservableObject {
             let response = try await provider.processChatCompletion(request)
             logger.debug("Successfully processed request [req:\(requestId)] via \(provider.identifier)")
             return response
+        } catch let error as ProviderError where error.isAuthRecoverable {
+            // Token was refreshed - retry once with same provider
+            logger.info("Auth recovered for provider \(provider.identifier) [req:\(requestId)], retrying non-streaming request")
+            return try await provider.processChatCompletion(request)
         } catch {
             logger.error("Provider \(provider.identifier) failed for request [req:\(requestId)]: \(error)")
 
@@ -586,6 +590,10 @@ public class EndpointManager: ObservableObject {
         logger.debug("Selected provider \(provider.identifier) for streaming model: \(request.model)")
 
         do {
+            return try await provider.processStreamingChatCompletion(request)
+        } catch let error as ProviderError where error.isAuthRecoverable {
+            // Token was refreshed - retry once with same provider
+            logger.info("Auth recovered for provider \(provider.identifier) [req:\(requestId)], retrying streaming request")
             return try await provider.processStreamingChatCompletion(request)
         } catch {
             logger.error("Provider \(provider.identifier) failed for streaming request [req:\(requestId)]: \(error)")

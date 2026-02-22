@@ -831,6 +831,25 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                     throw ProviderError.invalidRequest("GitHub Copilot /models API bad request (400). Details: \(errorMessage.prefix(200))")
 
                 case 401, 403:
+                    // Attempt token recovery before failing
+                    if let freshToken = await CopilotTokenStore.shared.attemptTokenRecovery() {
+                        logger.info("Token recovered after \(httpResponse.statusCode) on /models, retrying")
+                        var retryRequest = URLRequest(url: urlRequest.url!)
+                        retryRequest.httpMethod = urlRequest.httpMethod
+                        retryRequest.allHTTPHeaderFields = urlRequest.allHTTPHeaderFields
+                        retryRequest.setValue("Bearer \(freshToken)", forHTTPHeaderField: "Authorization")
+                        let (retryData, retryResponse) = try await URLSession.shared.data(for: retryRequest)
+                        if let retryHttp = retryResponse as? HTTPURLResponse, 200...299 ~= retryHttp.statusCode {
+                            let decoder = JSONDecoder()
+                            let modelsResponse = try decoder.decode(GitHubCopilotModelsResponse.self, from: retryData)
+                            // Continue processing below (need to break out of guard)
+                            // For simplicity, recurse by calling fetchModelCapabilities again
+                            // Token is now fresh so it should succeed
+                            Self.modelCapabilitiesCache = nil  // Clear cache to force refetch
+                            Self.modelCapabilitiesCacheTime = nil
+                            return try await fetchModelCapabilities()
+                        }
+                    }
                     throw ProviderError.authenticationFailed("GitHub Copilot /models API authentication failed (\(httpResponse.statusCode)). Check API key validity.")
 
                 default:
@@ -1129,9 +1148,15 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                             return
 
                         case 401, 403:
-                            /// Authentication issues.
-                            self.logger.error("GitHub Copilot authentication failed (\(statusCode)) [req:\(requestId.prefix(8))]. Check API key validity.")
-                            continuation.finish(throwing: ProviderError.authenticationFailed("GitHub Copilot authentication failed (\(statusCode)). Check API key validity."))
+                            /// Authentication failure - attempt token recovery before giving up
+                            self.logger.warning("GitHub Copilot authentication failed (\(statusCode)) [req:\(requestId.prefix(8))], attempting token recovery...")
+                            if let _ = await CopilotTokenStore.shared.attemptTokenRecovery() {
+                                self.logger.info("Token recovered after \(statusCode), signaling retry [req:\(requestId.prefix(8))]")
+                                continuation.finish(throwing: ProviderError.authRecoverable("Token refreshed after \(statusCode). Retry the request."))
+                            } else {
+                                self.logger.error("Token recovery failed [req:\(requestId.prefix(8))]")
+                                continuation.finish(throwing: ProviderError.authenticationFailed("GitHub Copilot authentication failed (\(statusCode)). Check API key validity."))
+                            }
                             return
 
                         case 500...599:
@@ -1296,6 +1321,21 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                     throw ProviderError.invalidRequest("GitHub Copilot rejected request (400). This often indicates payload size limits or invalid parameters. Consider reducing conversation history or tool count. Details: \(errorMessage.prefix(200))")
 
                 case 401, 403:
+                    // Attempt token recovery before failing
+                    // The Copilot session token may have expired between getCopilotToken() and the request
+                    if let freshToken = await CopilotTokenStore.shared.attemptTokenRecovery() {
+                        logger.info("Token recovered after \(httpResponse.statusCode), retrying request [req:\(requestId.prefix(8))]")
+                        // Retry with fresh token
+                        var retryRequest = urlRequest
+                        retryRequest.setValue("Bearer \(freshToken)", forHTTPHeaderField: "Authorization")
+                        let (retryData, retryResponse) = try await URLSession.shared.data(for: retryRequest)
+                        if let retryHttp = retryResponse as? HTTPURLResponse, 200...299 ~= retryHttp.statusCode {
+                            await processGitHubCopilotQuotaHeaders(retryHttp.allHeaderFields, requestId: requestId)
+                            return try parseGitHubCopilotResponse(retryData, requestId: requestId)
+                        }
+                        // Retry also failed - fall through to error
+                        logger.error("Token recovery retry also failed (\((retryResponse as? HTTPURLResponse)?.statusCode ?? 0)) [req:\(requestId.prefix(8))]")
+                    }
                     throw ProviderError.authenticationFailed("GitHub Copilot authentication failed (\(httpResponse.statusCode)). Check API key validity.")
 
                 case 500...599:
@@ -1988,7 +2028,15 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                             return
 
                         case 401, 403:
-                            continuation.finish(throwing: ProviderError.authenticationFailed("GitHub Copilot Responses API authentication failed (\(httpResponse.statusCode)). Check API key validity."))
+                            /// Authentication failure - attempt token recovery before giving up
+                            self.logger.warning("GitHub Copilot Responses API authentication failed (\(httpResponse.statusCode)) [req:\(requestId.prefix(8))], attempting token recovery...")
+                            if let _ = await CopilotTokenStore.shared.attemptTokenRecovery() {
+                                self.logger.info("Token recovered after \(httpResponse.statusCode) on Responses API, signaling retry [req:\(requestId.prefix(8))]")
+                                continuation.finish(throwing: ProviderError.authRecoverable("Token refreshed after \(httpResponse.statusCode). Retry the request."))
+                            } else {
+                                self.logger.error("Token recovery failed for Responses API [req:\(requestId.prefix(8))]")
+                                continuation.finish(throwing: ProviderError.authenticationFailed("GitHub Copilot Responses API authentication failed (\(httpResponse.statusCode)). Check API key validity."))
+                            }
                             return
 
                         case 500...599:

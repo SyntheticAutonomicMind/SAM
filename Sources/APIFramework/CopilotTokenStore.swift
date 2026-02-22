@@ -147,7 +147,8 @@ public class CopilotTokenStore: ObservableObject {
     }
     
     /// Refresh Copilot token using stored GitHub token
-    private func refreshCopilotToken() async throws {
+    /// Called automatically on expiration, or manually on 401/403 from API
+    public func refreshCopilotToken() async throws {
         guard let githubToken = githubToken else {
             throw TokenStoreError.noGitHubToken
         }
@@ -177,6 +178,31 @@ public class CopilotTokenStore: ObservableObject {
                 }
             }
         }
+    }
+    
+    /// Attempt token recovery after a 401/403 error
+    /// Forces a Copilot token refresh and returns the new token
+    /// Returns nil if recovery fails (e.g., GitHub token also invalid)
+    public func attemptTokenRecovery() async -> String? {
+        logger.info("Attempting token recovery after authentication failure")
+        
+        do {
+            try await refreshCopilotToken()
+            if let token = copilotToken {
+                logger.info("Token recovery succeeded")
+                return token.token
+            }
+        } catch {
+            logger.warning("Token recovery failed: \(error.localizedDescription)")
+        }
+        
+        // If Copilot refresh failed, try returning the raw GitHub token
+        if let githubToken = githubToken {
+            logger.info("Falling back to GitHub token after Copilot refresh failure")
+            return githubToken
+        }
+        
+        return nil
     }
     
     /// Clear all tokens (sign out)
