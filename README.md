@@ -623,8 +623,8 @@ Complete documentation is available:
 
 **License:** GPL-3.0 - See [LICENSE](LICENSE) for details
 
-**Created by:** Andrew Wyatt (Fewtarius)
-**Website:** [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)
+**Created by:** Andrew Wyatt (Fewtarius)  
+**Website:** [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)  
 **Repository:** [github.com/SyntheticAutonomicMind/SAM](https://github.com/SyntheticAutonomicMind/SAM)
 
 **Built with open source:**
