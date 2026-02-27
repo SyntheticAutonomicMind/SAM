@@ -1,6 +1,6 @@
 # SAM - Synthetic Autonomic Mind
 
-**The AI assistant that actually remembers, actually works, and actually stays private.**
+**A native macOS AI assistant that remembers, gets work done, and keeps your data on your Mac.**
 
 Built for macOS. Built for privacy. Built for you.
 
@@ -527,6 +527,24 @@ When you use cloud AI providers (OpenAI, Claude, etc.), only the messages you se
 
 ---
 
+## Part of the Ecosystem
+
+SAM is part of [Synthetic Autonomic Mind](https://github.com/SyntheticAutonomicMind) - a family of open source AI tools that work together:
+
+- **[CLIO](https://github.com/SyntheticAutonomicMind/CLIO)** - AI code assistant for the terminal. Runs on macOS and Linux.
+- **[ALICE](https://github.com/SyntheticAutonomicMind/ALICE)** - Local Stable Diffusion server. Offload image generation to dedicated hardware.
+- **[SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web)** - Access SAM from your iPad, iPhone, or any browser.
+
+SAM can use ALICE for image generation and CLIO can use SAM as an AI provider. All three share the same providers and the same commitment to privacy.
+
+---
+
+## Spread the Word
+
+SAM is a small open source project with no marketing budget. Word of mouth is how projects like this grow. If SAM has been useful to you, the best way to help is to tell someone about it - a blog post, a tweet, a recommendation to a colleague, or a star on GitHub.
+
+---
+
 ## Contributing
 
 We welcome contributions! To contribute:
@@ -603,16 +621,11 @@ Complete documentation is available:
 
 ## License & Credits
 
-**License**: GPLv3 - See [LICENSE](LICENSE) for details
+**License:** GPL-3.0 - See [LICENSE](LICENSE) for details
 
-**Created by**: Andrew Wyatt (Fewtarius)  
-**Website**: https://syntheticautonomicmind.org  
-**Repository**: https://github.com/SyntheticAutonomicMind/SAM
-
-**Part of the [Synthetic Autonomic Mind](https://github.com/SyntheticAutonomicMind) organization**, which also maintains:
-- [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) - Remote access for iPad/iPhone
-- [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) - Image generation backend
-- [CLIO](https://github.com/SyntheticAutonomicMind/CLIO) - Terminal AI assistant
+**Created by:** Andrew Wyatt (Fewtarius)
+**Website:** [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)
+**Repository:** [github.com/SyntheticAutonomicMind/SAM](https://github.com/SyntheticAutonomicMind/SAM)
 
 **Built with open source:**
 - [Vapor](https://vapor.codes) - Web framework
