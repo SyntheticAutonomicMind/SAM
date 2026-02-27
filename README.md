@@ -45,7 +45,7 @@ You're always in control.
 SAM helps you finish things.  
 Whether it's organizing files, helping you draft documents, creating images, or researching a topic - SAM acts on your ideas.
 
-### 🧠 **Smart Memory**
+### **Smart Memory**
 SAM remembers what matters across conversations.  
 Create "Shared Topics" to connect chats around the same project, and find anything you've shared with semantic search.
 
@@ -623,8 +623,8 @@ Complete documentation is available:
 
 **License:** GPL-3.0 - See [LICENSE](LICENSE) for details
 
-**Created by:** Andrew Wyatt (Fewtarius)
-**Website:** [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)
+**Created by:** Andrew Wyatt (Fewtarius)  
+**Website:** [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)  
 **Repository:** [github.com/SyntheticAutonomicMind/SAM](https://github.com/SyntheticAutonomicMind/SAM)
 
 **Built with open source:**

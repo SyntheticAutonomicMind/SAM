@@ -56,13 +56,12 @@ node_modules/
 ai-assisted/
 
 # CLIO agent system files (local only)
-.clio/logs/
-.clio/sessions/
-.clio/memory/
 .clio/*.json.backup
 .clio/instructions.md.backup.*
-.clio/*.json
-
 # Transient Data
 reference/
 scratch/
+
+# CLIO (managed automatically)
+.clio/*
+!.clio/instructions.md
