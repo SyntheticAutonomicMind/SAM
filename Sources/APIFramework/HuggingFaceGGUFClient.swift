@@ -3,6 +3,7 @@
 
 import Foundation
 import Logging
+import CryptoKit
 
 private let hfLogger = Logger(label: "com.sam.huggingface.GGUFClient")
 
@@ -125,6 +126,78 @@ public class HuggingFaceGGUFClient {
         hfLogger.info("Retrieved model info for: \(model.id)")
 
         return model
+    }
+
+    // MARK: - File Tree (for checksums)
+
+    /// Fetch the file tree for a repository, which includes LFS SHA256 hashes and sizes.
+    /// This data is used to verify downloaded files and skip already-downloaded files.
+    /// - Parameter repoId: Repository ID (e.g., "TheBloke/Llama-2-7B-GGUF")
+    /// - Returns: Array of HFTreeFile entries with hash and size info
+    public func getFileTree(repoId: String) async throws -> [HFTreeFile] {
+        hfLogger.info("Fetching file tree for: \(repoId)")
+
+        let urlString = "\(apiURL)/models/\(repoId)/tree/main"
+        guard let url = URL(string: urlString) else {
+            throw HFError.invalidURL
+        }
+
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw HFError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw HFError.apiError(httpResponse.statusCode, "Failed to fetch file tree")
+        }
+
+        let files = try JSONDecoder().decode([HFTreeFile].self, from: data)
+        hfLogger.info("Retrieved \(files.count) files in tree for: \(repoId)")
+
+        return files
+    }
+
+    // MARK: - SHA256 Verification
+
+    /// Verify a local file against an expected SHA256 hash (from HuggingFace LFS).
+    /// - Parameters:
+    ///   - fileURL: Path to the local file
+    ///   - expectedHash: Expected SHA256 hex string (from HuggingFace LFS oid)
+    /// - Returns: true if file exists and hash matches, false otherwise
+    public static func verifySHA256(fileURL: URL, expectedHash: String) -> Bool {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            hfLogger.debug("File does not exist for verification: \(fileURL.path)")
+            return false
+        }
+
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
+            hfLogger.error("Cannot open file for SHA256 verification: \(fileURL.path)")
+            return false
+        }
+        defer { fileHandle.closeFile() }
+
+        var hasher = SHA256()
+        let bufferSize = 1024 * 1024 // 1MB chunks for large files
+
+        while autoreleasepool(invoking: {
+            let data = fileHandle.readData(ofLength: bufferSize)
+            if data.isEmpty { return false }
+            hasher.update(data: data)
+            return true
+        }) {}
+
+        let digest = hasher.finalize()
+        let computedHash = digest.map { String(format: "%02x", $0) }.joined()
+
+        let matches = computedHash.lowercased() == expectedHash.lowercased()
+        if matches {
+            hfLogger.info("SHA256 verified for: \(fileURL.lastPathComponent)")
+        } else {
+            hfLogger.warning("SHA256 mismatch for \(fileURL.lastPathComponent): expected=\(expectedHash.prefix(16))... got=\(computedHash.prefix(16))...")
+        }
+
+        return matches
     }
 
     // MARK: - Model Download
@@ -350,6 +423,37 @@ public enum HFError: LocalizedError {
             return "Network error: \(message)"
         }
     }
+}
+
+// MARK: - File Tree Types
+
+/// Represents a file entry from the HuggingFace /tree/main API.
+/// Includes LFS hash information for SHA256 verification.
+public struct HFTreeFile: Codable {
+    public let type: String
+    public let oid: String
+    public let size: Int64?
+    public let path: String
+    public let lfs: HFLFSInfo?
+
+    /// Get the SHA256 hash for verification.
+    /// For LFS files (large model files), this is the lfs.oid.
+    /// For small files, this is the git oid (not SHA256, so we skip verification).
+    public var sha256Hash: String? {
+        return lfs?.oid
+    }
+
+    /// Get the expected file size in bytes.
+    public var expectedSize: Int64? {
+        return lfs?.size ?? size
+    }
+}
+
+/// LFS (Large File Storage) metadata from HuggingFace.
+public struct HFLFSInfo: Codable {
+    public let oid: String
+    public let size: Int64
+    public let pointerSize: Int?
 }
 
 // MARK: - Protocol Conformance
