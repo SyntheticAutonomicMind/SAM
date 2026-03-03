@@ -1,6 +1,69 @@
 {
   "releases": [
     {
+      "version": "20260303.1",
+      "release_date": "March 3, 2026",
+      "introduction": "This release upgrades SAM's local model support with 20+ new architectures, adds smart download management that verifies file integrity and skips already-downloaded models, and improves Shared Topics reliability.",
+      "highlights": [
+        {
+          "id": "expanded-local-models",
+          "icon": "cpu.fill",
+          "title": "20+ New Local Model Architectures",
+          "description": "Updated MLX runtime to support many more model families: GLM-4, MiniCPM, NemotronH, DeepSeek V3, Falcon H1, SmolLM 3, Qwen3-Next, Exaone 4, and more. If a model didn't load before, try it again."
+        },
+        {
+          "id": "smart-downloads",
+          "icon": "arrow.down.circle.fill",
+          "title": "Smart Model Downloads",
+          "description": "SAM now verifies downloaded model files using SHA-256 checksums from Hugging Face. Already-downloaded files with matching checksums are skipped instead of re-downloaded. Corrupted or incomplete files are automatically detected and re-fetched."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "gguf-split-auto-download",
+          "icon": "square.split.1x2.fill",
+          "title": "Automatic Split Model Downloads",
+          "description": "When downloading a split GGUF model (multiple parts), clicking download on any single part now automatically downloads all remaining parts. Previously, you had to click download on each part individually."
+        },
+        {
+          "id": "llamacpp-update",
+          "icon": "bolt.fill",
+          "title": "Updated llama.cpp Engine",
+          "description": "The local GGUF inference engine has been updated to the latest release with performance improvements and expanded model compatibility."
+        },
+        {
+          "id": "shared-topic-context",
+          "icon": "bubble.left.and.bubble.right.fill",
+          "title": "Improved Shared Topics",
+          "description": "Shared Topics now correctly provide context from other conversations in the topic when starting a new conversation. Fixed an issue where new conversations could miss relevant context from the topic."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "copilot-token-recovery",
+          "icon": "key.fill",
+          "title": "Automatic Token Recovery",
+          "description": "Fixed an issue where expired GitHub Copilot session tokens could cause persistent authentication errors. SAM now automatically refreshes the token and retries the request."
+        },
+        {
+          "id": "duplicate-topics",
+          "icon": "doc.on.doc.fill",
+          "title": "Fixed Duplicate Topics",
+          "description": "Fixed an issue where duplicate Shared Topics could be created, leading to confused context. Topic creation is now properly deduplicated."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "mlx-dependency-update",
+          "content": "Updated mlx-swift 0.29.1->0.30.6, mlx-swift-lm 2.29.2->2.30.6, swift-transformers->1.1.9, llama.cpp->b8192. Breaking API changes: ModelTypeRegistry.createModel() now takes Data instead of URL. ToolSpec/Message typealiases changed from [String: Any] to [String: any Sendable]. Note: Qwen 3.5 (model_type: qwen3_5) not yet supported upstream - hybrid linear attention + Mamba SSM architecture."
+        },
+        {
+          "id": "download-checksum-implementation",
+          "content": "Added HuggingFaceGGUFClient.getFileTree() to fetch /api/models/{repoId}/tree/main for LFS SHA256 hashes. verifySHA256() streams files in 1MB chunks via CryptoKit. ModelDownloadManager caches file tree per-repo, checks isFileAlreadyDownloaded() before each download, verifies post-download. getRelatedFiles() extended with GGUF split pattern (-NNNNN-of-NNNNN.gguf) detection."
+        }
+      ]
+    },
+    {
       "version": "20260220.2",
       "release_date": "February 20, 2026",
       "introduction": "This release adds native OpenRouter support with 400+ AI models, upgrades GitHub Copilot authentication to unlock the full 42+ model catalog, adds a status bar, and improves streaming and rate limit handling. Important: Existing GitHub Copilot users must remove and re-add their provider in Preferences.",
