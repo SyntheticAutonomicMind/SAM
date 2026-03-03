@@ -5,6 +5,7 @@ import Foundation
 import Logging
 import Combine
 import ZIPFoundation
+import CryptoKit
 
 private let downloadLogger = Logger(label: "com.sam.download.ModelDownloadManager")
 
@@ -51,6 +52,9 @@ public class ModelDownloadManager: ObservableObject {
 
     /// Debounce timer for model refresh to prevent race conditions
     private var refreshDebounceTask: Task<Void, Never>?
+
+    /// Cache of file tree metadata (SHA256 hashes) per repo, keyed by repoId
+    private var fileTreeCache: [String: [HFTreeFile]] = [:]
 
     public init(endpointManager: EndpointManager? = nil) {
         self.apiClient = HuggingFaceGGUFClient()
@@ -248,21 +252,22 @@ public class ModelDownloadManager: ObservableObject {
     }
 
     /// Get all files that should be downloaded together with a given file.
+    /// Handles both MLX safetensors multi-part models and GGUF split models.
     private func getRelatedFiles(for file: HFModelFile, in model: HFModel) -> [HFModelFile] {
         var relatedFiles: [HFModelFile] = []
 
         /// Always include the clicked file.
         relatedFiles.append(file)
 
+        guard let allSiblings = model.siblings else {
+            downloadLogger.warning("No siblings array found for model")
+            return relatedFiles
+        }
+
         /// If this is a safetensors file, look for other parts and config files.
         if file.rfilename.hasSuffix(".safetensors") {
-            /// Get all siblings (not just mlxFiles).
-            guard let allSiblings = model.siblings else {
-                downloadLogger.warning("No siblings array found for model")
-                return relatedFiles
-            }
-
-            /// Find all other safetensors files with matching base name pattern e.g., model-00001-of-00002.safetensors → also download model-00002-of-00002.safetensors.
+            /// Find all other safetensors files with matching base name pattern
+            /// e.g., model-00001-of-00002.safetensors -> also download model-00002-of-00002.safetensors.
             let baseNamePattern = file.rfilename.replacingOccurrences(of: #"-\d{5}-of-\d{5}\.safetensors$"#, with: "", options: .regularExpression)
 
             for siblingFile in allSiblings {
@@ -288,23 +293,108 @@ public class ModelDownloadManager: ObservableObject {
             }
         }
 
+        /// If this is a GGUF split model file, find all other parts.
+        /// Split GGUF pattern: model-00001-of-00003.gguf or similar patterns with -NNNNN-of-NNNNN.gguf
+        if file.rfilename.hasSuffix(".gguf") {
+            let splitPattern = #"^(.+)-(\d{5})-of-(\d{5})\.gguf$"#
+            if let regex = try? NSRegularExpression(pattern: splitPattern),
+               let match = regex.firstMatch(in: file.rfilename, range: NSRange(file.rfilename.startIndex..., in: file.rfilename)) {
+
+                let baseName = String(file.rfilename[Range(match.range(at: 1), in: file.rfilename)!])
+                let totalPartsStr = String(file.rfilename[Range(match.range(at: 3), in: file.rfilename)!])
+
+                downloadLogger.info("Detected GGUF split model: base='\(baseName)', totalParts=\(totalPartsStr)")
+
+                /// Find all other parts in the siblings.
+                for siblingFile in allSiblings {
+                    if siblingFile.rfilename == file.rfilename {
+                        continue
+                    }
+
+                    /// Match siblings with the same base name and split pattern.
+                    if siblingFile.rfilename.hasSuffix(".gguf"),
+                       let siblingMatch = regex.firstMatch(in: siblingFile.rfilename, range: NSRange(siblingFile.rfilename.startIndex..., in: siblingFile.rfilename)),
+                       String(siblingFile.rfilename[Range(siblingMatch.range(at: 1), in: siblingFile.rfilename)!]) == baseName {
+                        relatedFiles.append(siblingFile)
+                        downloadLogger.info("Adding related GGUF part: \(siblingFile.rfilename)")
+                    }
+                }
+            }
+        }
+
         downloadLogger.info("Found \(relatedFiles.count) files to download for \(file.rfilename)")
         return relatedFiles
     }
 
+    // MARK: - File Tree & Checksum Cache
+
+    /// Fetch and cache the file tree for a repository (contains SHA256 hashes).
+    /// Results are cached per-repo to avoid repeated API calls during multi-file downloads.
+    private func fetchFileTree(repoId: String) async -> [HFTreeFile] {
+        /// Return cached tree if available.
+        if let cached = fileTreeCache[repoId] {
+            downloadLogger.debug("Using cached file tree for: \(repoId)")
+            return cached
+        }
+
+        do {
+            let tree = try await apiClient.getFileTree(repoId: repoId)
+            fileTreeCache[repoId] = tree
+            downloadLogger.info("Fetched and cached file tree for \(repoId): \(tree.count) entries")
+            return tree
+        } catch {
+            downloadLogger.warning("Failed to fetch file tree for \(repoId): \(error.localizedDescription). Checksum verification will be skipped.")
+            return []
+        }
+    }
+
+    /// Look up the expected SHA256 hash for a file from the file tree.
+    private func expectedHash(for filename: String, in tree: [HFTreeFile]) -> String? {
+        return tree.first(where: { $0.path == filename })?.sha256Hash
+    }
+
+    /// Check if a local file exists and matches the expected SHA256 from HuggingFace.
+    /// - Parameters:
+    ///   - destination: Local file path
+    ///   - expectedHash: Expected SHA256 hex string (from HuggingFace LFS)
+    /// - Returns: true if file exists and hash matches
+    private func isFileAlreadyDownloaded(destination: URL, expectedHash: String?) -> Bool {
+        guard FileManager.default.fileExists(atPath: destination.path) else {
+            return false
+        }
+
+        guard let hash = expectedHash else {
+            /// No hash available (non-LFS file or tree fetch failed).
+            /// For small files (config.json, etc.), check size > 0 as a basic check.
+            let attrs = try? FileManager.default.attributesOfItem(atPath: destination.path)
+            let fileSize = attrs?[.size] as? Int64 ?? 0
+            if fileSize > 0 {
+                downloadLogger.info("File exists but no SHA256 available (non-LFS). Assuming valid: \(destination.lastPathComponent)")
+                return true
+            }
+            return false
+        }
+
+        /// Verify SHA256.
+        return HuggingFaceGGUFClient.verifySHA256(fileURL: destination, expectedHash: hash)
+    }
+
     /// Download a model file and all related files (multi-file models, config files, etc.).
+    /// Fetches file tree first for SHA256 verification, then skips already-downloaded files.
     @MainActor
     public func downloadModelWithRelatedFiles(model: HFModel, file: HFModelFile) async {
         let relatedFiles = getRelatedFiles(for: file, in: model)
 
         downloadLogger.info("Downloading \(relatedFiles.count) files for model: \(model.id)")
 
-        /// Download all files sequentially (already async).
+        /// Pre-fetch file tree for checksum verification (cached for all files in this batch).
+        let tree = await fetchFileTree(repoId: model.id)
+
+        /// Download all files sequentially, skipping already-verified files.
         for relatedFile in relatedFiles {
-            await self.downloadModel(model: model, file: relatedFile)
+            await self.downloadModel(model: model, file: relatedFile, fileTree: tree)
         }
     }
-
     /// Download a model file and register provider.
     @MainActor
     /// Download with automatic retry on failure using exponential backoff
@@ -353,7 +443,7 @@ public class ModelDownloadManager: ObservableObject {
         throw lastError ?? DownloadError.httpError
     }
 
-    public func downloadModel(model: HFModel, file: HFModelFile) async {
+    public func downloadModel(model: HFModel, file: HFModelFile, fileTree: [HFTreeFile] = []) async {
         let modelId = "\(model.id)_\(file.rfilename)"
 
         /// Check if this specific file is already downloading.
@@ -387,9 +477,16 @@ public class ModelDownloadManager: ObservableObject {
                 let tmpDestination = modelDir.appendingPathComponent("\(file.rfilename).tmp")
                 let destination = modelDir.appendingPathComponent(file.rfilename)
 
-                /// Check if already exists.
+                /// Check if file already exists with valid checksum - skip download if so.
+                let hash = expectedHash(for: file.rfilename, in: fileTree)
+                if isFileAlreadyDownloaded(destination: destination, expectedHash: hash) {
+                    downloadLogger.info("File already exists with valid checksum, skipping download: \(file.rfilename)")
+                    return destination
+                }
+
+                /// File exists but checksum doesn't match (corrupted/incomplete) - remove and re-download.
                 if FileManager.default.fileExists(atPath: destination.path) {
-                    downloadLogger.warning("Model file already exists, removing: \(destination.path)")
+                    downloadLogger.warning("File exists but checksum verification failed, re-downloading: \(destination.path)")
                     try FileManager.default.removeItem(at: destination)
                 }
 
@@ -419,6 +516,18 @@ public class ModelDownloadManager: ObservableObject {
                 /// Atomic rename: .tmp -> final destination.
                 try FileManager.default.moveItem(at: downloadedURL, to: destination)
                 downloadLogger.info("Download complete (atomic rename): \(destination.path)")
+
+                /// Verify checksum of downloaded file (if hash available).
+                if let hash = hash {
+                    if HuggingFaceGGUFClient.verifySHA256(fileURL: destination, expectedHash: hash) {
+                        downloadLogger.info("Post-download SHA256 verified: \(file.rfilename)")
+                    } else {
+                        downloadLogger.error("Post-download SHA256 MISMATCH for \(file.rfilename) - file may be corrupted!")
+                        await MainActor.run {
+                            self.errorMessage = "Checksum mismatch for \(file.rfilename). The download may be corrupted."
+                        }
+                    }
+                }
 
                 return destination
             }
