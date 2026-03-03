@@ -56,10 +56,10 @@ let package = Package(
     ],
     dependencies: [
         // MLX Swift for Apple Silicon AI acceleration
-        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.29.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.0"),
 
         // MLX Swift LM - LLMs and VLMs with MLX Swift (split from mlx-swift-examples)
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "2.29.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "2.30.0"),
 
         // Transformers and tokenization support
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.0"),
