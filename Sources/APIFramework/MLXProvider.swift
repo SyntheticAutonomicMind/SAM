@@ -185,7 +185,7 @@ public class MLXProvider: AIProvider {
                             "name": toolCall.function.name,
                             "arguments": toolCall.function.arguments
                         ]
-                    ] as [String: Any]
+                    ] as [String: any Sendable]
                 }
             }
 
@@ -194,14 +194,14 @@ public class MLXProvider: AIProvider {
 
         /// Convert tools if present.
         let tools: [ToolSpec]? = request.tools?.map { tool in
-            /// ToolSpec is a typealias for [String: Any] in Tokenizers.
+            /// ToolSpec is a typealias for [String: any Sendable] in Tokenizers.
             var toolSpec: ToolSpec = [:]
             toolSpec["type"] = "function"
 
             /// Parse parametersJson back to dictionary.
-            var parameters: [String: Any] = [:]
+            var parameters: [String: any Sendable] = [:]
             if let data = tool.function.parametersJson.data(using: .utf8),
-               let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+               let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: any Sendable] {
                 parameters = parsed
             }
 
@@ -209,7 +209,7 @@ public class MLXProvider: AIProvider {
                 "name": tool.function.name,
                 "description": tool.function.description,
                 "parameters": parameters
-            ]
+            ] as [String: any Sendable]
             return toolSpec
         }
 
@@ -468,7 +468,7 @@ public class MLXProvider: AIProvider {
                                         "name": toolCall.function.name,
                                         "arguments": toolCall.function.arguments
                                     ]
-                                ] as [String: Any]
+                                ] as [String: any Sendable]
                             }
                         }
 
@@ -481,9 +481,9 @@ public class MLXProvider: AIProvider {
                         toolSpec["type"] = "function"
 
                         /// Parse parametersJson back to dictionary.
-                        var parameters: [String: Any] = [:]
+                        var parameters: [String: any Sendable] = [:]
                         if let data = tool.function.parametersJson.data(using: .utf8),
-                           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: any Sendable] {
                             parameters = parsed
                         }
 
@@ -491,7 +491,7 @@ public class MLXProvider: AIProvider {
                             "name": tool.function.name,
                             "description": tool.function.description,
                             "parameters": parameters
-                        ]
+                        ] as [String: any Sendable]
                         return toolSpec
                     }
 
