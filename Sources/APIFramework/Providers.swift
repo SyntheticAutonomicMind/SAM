@@ -668,6 +668,9 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     private static var modelCapabilitiesCache: [String: Int]?
     private static var modelCapabilitiesCacheTime: Date?
 
+    /// Cache for model supported endpoints (determines Chat Completions vs Responses API routing)
+    private static var modelEndpointsCache: [String: [ModelSupportedEndpoint]]?
+
     /// Cache for model billing information (premium status + multipliers).
     private var modelBillingCache: [String: (isPremium: Bool, multiplier: Double?)]?
 
@@ -846,6 +849,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                             // For simplicity, recurse by calling fetchModelCapabilities again
                             // Token is now fresh so it should succeed
                             Self.modelCapabilitiesCache = nil  // Clear cache to force refetch
+                            Self.modelEndpointsCache = nil
                             Self.modelCapabilitiesCacheTime = nil
                             return try await fetchModelCapabilities()
                         }
@@ -868,6 +872,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             /// Build capabilities dictionary.
             var capabilities: [String: Int] = [:]
             var billingInfo: [String: (isPremium: Bool, multiplier: Double?)] = [:]
+            var endpointsInfo: [String: [ModelSupportedEndpoint]] = [:]
 
             for model in modelsResponse.data {
                 if let maxInputTokens = model.maxInputTokens {
@@ -881,12 +886,18 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                         logger.debug("BILLING: \(model.id) - isPremium=\(model.isPremium), multiplier=\(model.premiumMultiplier?.description ?? "nil"), raw_billing=\(model.billing != nil ? "present" : "nil")")
                     }
                 }
+                
+                /// Store supported endpoints for API routing (Chat Completions vs Responses)
+                if let endpoints = model.supportedEndpoints {
+                    endpointsInfo[model.id] = endpoints
+                }
             }
 
-            logger.info("Successfully fetched capabilities for \(capabilities.count) models")
+            logger.info("Successfully fetched capabilities for \(capabilities.count) models, endpoints for \(endpointsInfo.count) models")
 
             /// Update caches.
             Self.modelCapabilitiesCache = capabilities
+            Self.modelEndpointsCache = endpointsInfo
             modelBillingCache = billingInfo
             Self.modelCapabilitiesCacheTime = Date()
 
@@ -925,6 +936,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     /// Clear the capabilities cache to force a fresh fetch next time
     public func clearCapabilitiesCache() {
         Self.modelCapabilitiesCache = nil
+        Self.modelEndpointsCache = nil
         Self.modelCapabilitiesCacheTime = nil
         logger.debug("Cleared capabilities cache - next fetch will be fresh from API")
     }
@@ -1551,19 +1563,24 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
         let samVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
         let requestId = UUID().uuidString
-        urlRequest.setValue(requestId, forHTTPHeaderField: "X-Request-Id")
-        urlRequest.setValue("conversational", forHTTPHeaderField: "X-Interaction-Type")
-        urlRequest.setValue("conversational", forHTTPHeaderField: "OpenAI-Intent")
+
+        /// Required headers per VS Code Copilot Chat reference
         urlRequest.setValue("2025-05-01", forHTTPHeaderField: "X-GitHub-Api-Version")
+        urlRequest.setValue(requestId, forHTTPHeaderField: "X-Request-Id")
+        urlRequest.setValue("GitHubCopilotChat/\(samVersion)", forHTTPHeaderField: "User-Agent")
+        urlRequest.setValue("conversation-agent", forHTTPHeaderField: "OpenAI-Intent")
+        urlRequest.setValue("conversation-agent", forHTTPHeaderField: "X-Interaction-Type")
+        urlRequest.setValue(requestId, forHTTPHeaderField: "X-Agent-Task-Id")
         /// GitHub Copilot API requires "vscode/" prefix for Editor-Version header per API specification.
         urlRequest.setValue("vscode/\(samVersion)", forHTTPHeaderField: "Editor-Version")
         urlRequest.setValue("copilot-chat/\(samVersion)", forHTTPHeaderField: "Editor-Plugin-Version")
-        urlRequest.setValue("GitHubCopilotChat/\(samVersion)", forHTTPHeaderField: "User-Agent")
 
-        /// Set X-Initiator based on iteration number iteration 0 = user-initiated (charges premium quota) iteration 1+ = agent-initiated tool continuation (no additional charge).
+        /// X-Initiator controls premium billing:
+        /// 'user' (iteration 0): User-initiated request, charges premium quota
+        /// 'agent' (iteration 1+): Tool-calling continuation, no additional charge
         let initiator = (request.iterationNumber ?? 0) == 0 ? "user" : "agent"
         urlRequest.setValue(initiator, forHTTPHeaderField: "X-Initiator")
-        logger.debug("X-Initiator: \(initiator) (iteration: \(request.iterationNumber ?? 0))")
+        logger.debug("Copilot headers: initiator=\(initiator), request_id=\(requestId.prefix(8))")
 
         /// YARN (YaRN Context Processor) handles all context management BEFORE provider
         /// Provider should NEVER re-truncate - trust YARN compression output
@@ -1920,20 +1937,32 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
     // MARK: - GitHub Copilot Responses API Support
 
-    /// Determines whether to use Responses API vs standard Chat Completions API **CURRENT STATUS**: Responses API DISABLED - GitHub Copilot doesn't support it for current models **Investigation Results** - Tested with gpt-4.1: GitHub returned "model not supported via Responses API" - GitHub /models API doesn't return supported_endpoints field - Chat Completions API with previous_response_id WORKS for session continuity **Decision**: Use Chat Completions API exclusively - Simpler codebase (one API instead of two) - Works with ALL models - Session continuity via copilot_thread_id + previous_response_id **Future**: Re-enable if GitHub adds Responses API support for models.
+    /// Determines whether to use Responses API vs Chat Completions API.
+    /// Uses supported_endpoints from the GitHub Copilot /models API response.
+    /// Models like codex only support /responses, while most models support /chat/completions.
     private func useResponsesApi(for model: String) -> Bool {
-        /// DISABLED: No models currently support Responses API.
-        let responsesApiModels: [String] = []
-
         let modelWithoutPrefix = model.components(separatedBy: "/").last ?? model
-        let isSupported = responsesApiModels.contains(modelWithoutPrefix)
 
-        if isSupported {
-            logger.debug("Model \(model) supports Responses API - will use /responses endpoint")
-        } else {
-            logger.debug("Model \(model) uses Chat Completions API - will use /chat/completions endpoint")
+        /// Check cached endpoint data from /models API
+        if let endpointsCache = Self.modelEndpointsCache,
+           let endpoints = endpointsCache[modelWithoutPrefix] {
+            let hasResponses = endpoints.contains(.responses)
+            let hasChatCompletions = endpoints.contains(.chatCompletions)
+
+            /// Use Responses API if model supports it (prefer /responses when available)
+            if hasResponses {
+                logger.debug("Model \(modelWithoutPrefix) supports Responses API (endpoints: \(endpoints)) - using /responses")
+                return true
+            }
+            if hasChatCompletions {
+                logger.debug("Model \(modelWithoutPrefix) supports Chat Completions only - using /chat/completions")
+                return false
+            }
         }
-        return isSupported
+
+        /// No endpoint data available - default to Chat Completions
+        logger.debug("Model \(modelWithoutPrefix) has no endpoint data cached - defaulting to /chat/completions")
+        return false
     }
 
     /// Process streaming chat completion via Responses API CRITICAL: Responses API returns statefulMarker in response.completed event's response.id field.
@@ -2212,16 +2241,22 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        /// GitHub Copilot API requires specific headers (see Chat Completions API for full explanation).
+        /// Required headers per VS Code Copilot Chat reference
         let samVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.0"
         let requestId = UUID().uuidString
-        urlRequest.setValue(requestId, forHTTPHeaderField: "X-Request-Id")
-        urlRequest.setValue("conversational", forHTTPHeaderField: "X-Interaction-Type")
-        urlRequest.setValue("conversational", forHTTPHeaderField: "OpenAI-Intent")
         urlRequest.setValue("2025-05-01", forHTTPHeaderField: "X-GitHub-Api-Version")
-        urlRequest.setValue("SAM/\(samVersion)", forHTTPHeaderField: "Editor-Version")
-        urlRequest.setValue("sam-copilot/\(samVersion)", forHTTPHeaderField: "Editor-Plugin-Version")
+        urlRequest.setValue(requestId, forHTTPHeaderField: "X-Request-Id")
         urlRequest.setValue("GitHubCopilotChat/\(samVersion)", forHTTPHeaderField: "User-Agent")
+        urlRequest.setValue("conversation-agent", forHTTPHeaderField: "OpenAI-Intent")
+        urlRequest.setValue("conversation-agent", forHTTPHeaderField: "X-Interaction-Type")
+        urlRequest.setValue(requestId, forHTTPHeaderField: "X-Agent-Task-Id")
+        urlRequest.setValue("vscode/\(samVersion)", forHTTPHeaderField: "Editor-Version")
+        urlRequest.setValue("copilot-chat/\(samVersion)", forHTTPHeaderField: "Editor-Plugin-Version")
+
+        /// X-Initiator for premium billing control
+        let initiator = (request.iterationNumber ?? 0) == 0 ? "user" : "agent"
+        urlRequest.setValue(initiator, forHTTPHeaderField: "X-Initiator")
+        logger.debug("Copilot Responses API headers: initiator=\(initiator), request_id=\(requestId.prefix(8))")
 
         /// Strip provider prefix from model name for Responses API GitHub Copilot Responses API expects "gpt-4.1" not "github_copilot/gpt-4.1".
         let modelWithoutPrefix = request.model.components(separatedBy: "/").last ?? request.model
