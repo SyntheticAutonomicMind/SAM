@@ -44,9 +44,12 @@ jobs:
       
       - name: Extract version from tag
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
           else
             VERSION=${GITHUB_REF#refs/tags/}
           fi
@@ -54,8 +57,9 @@ jobs:
           echo "Building version: $VERSION"
       
       - name: Update version in Info.plist
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Info.plist
           UPDATED_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
           if [ "$UPDATED_VERSION" != "$VERSION" ]; then
@@ -77,8 +81,9 @@ jobs:
           make sign-only-release
       
       - name: Verify distribution files
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
           if [ ! -f "dist/SAM-${VERSION}.dmg" ]; then
             echo "ERROR: DMG not found"
             exit 1
@@ -93,9 +98,8 @@ jobs:
       - name: Update appcast.xml
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          
           # Create temporary file for private key
           TEMP_KEY_FILE=$(mktemp)
           echo "$SPARKLE_PRIVATE_KEY" > "$TEMP_KEY_FILE"
@@ -108,8 +112,9 @@ jobs:
           rm -f "$TEMP_KEY_FILE"
       
       - name: Commit and push appcast changes
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           
