@@ -143,7 +143,7 @@ jobs:
           fi
       
       - name: Create GitHub pre-release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.DEV_VERSION }}
           name: SAM ${{ env.DEV_VERSION }} (Development)
