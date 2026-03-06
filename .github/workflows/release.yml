@@ -132,24 +132,30 @@ jobs:
           fi
       
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          name: SAM ${{ steps.version.outputs.VERSION }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: |
-            dist/SAM-${{ steps.version.outputs.VERSION }}.dmg
-            dist/SAM-${{ steps.version.outputs.VERSION }}.zip
-          body: |
-            ## Downloads
-            
-            - **[SAM-${{ steps.version.outputs.VERSION }}.dmg](https://github.com/SyntheticAutonomicMind/SAM/releases/download/${{ steps.version.outputs.VERSION }}/SAM-${{ steps.version.outputs.VERSION }}.dmg)** - Recommended installer
-            - **[SAM-${{ steps.version.outputs.VERSION }}.zip](https://github.com/SyntheticAutonomicMind/SAM/releases/download/${{ steps.version.outputs.VERSION }}/SAM-${{ steps.version.outputs.VERSION }}.zip)** - For Sparkle updates
-            
-            ## Installation
-            
-            1. Download and open the DMG file
-            2. Drag SAM.app to your Applications folder
-            3. Launch SAM from Applications
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          # Write release notes to a temp file
+          NOTES_FILE=$(mktemp)
+          printf '%s\n' \
+            '## Downloads' \
+            '' \
+            "- **[SAM-${VERSION}.dmg](https://github.com/SyntheticAutonomicMind/SAM/releases/download/${VERSION}/SAM-${VERSION}.dmg)** - Recommended installer" \
+            "- **[SAM-${VERSION}.zip](https://github.com/SyntheticAutonomicMind/SAM/releases/download/${VERSION}/SAM-${VERSION}.zip)** - For Sparkle updates" \
+            '' \
+            '## Installation' \
+            '' \
+            '1. Download and open the DMG file' \
+            '2. Drag SAM.app to your Applications folder' \
+            '3. Launch SAM from Applications' \
+            > "$NOTES_FILE"
+
+          # Create release and upload assets using gh CLI (more reliable for large files)
+          gh release create "${VERSION}" \
+            --title "SAM ${VERSION}" \
+            --notes-file "$NOTES_FILE" \
+            --generate-notes \
+            "dist/SAM-${VERSION}.dmg" \
+            "dist/SAM-${VERSION}.zip"
+          rm -f "$NOTES_FILE"
