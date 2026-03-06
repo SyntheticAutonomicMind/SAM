@@ -1,14 +1,14 @@
-name: Nightly Development Release
+name: Weekly Development Release
 
-# Automated nightly builds for development channel testing
-# Runs at 2 AM UTC if there are changes since last development release
+# Automated weekly builds for development channel testing
+# Runs at 2 AM UTC on Sundays if there are changes since last development release
 # Keeps last 7 development releases, deletes older ones
 # Uses self-hosted runner like the release workflow
 
 on:
   schedule:
-    # Run every day at 2 AM UTC if there are changes
-    - cron: '0 2 * * *'
+    # Run every Sunday at 2 AM UTC if there are changes
+    - cron: '0 2 * * 0'
   workflow_dispatch:
     # Allow manual triggering
 
@@ -143,30 +143,40 @@ jobs:
           fi
       
       - name: Create GitHub pre-release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.DEV_VERSION }}
-          name: SAM ${{ env.DEV_VERSION }} (Development)
-          body: |
-            ⚠️ **This is a DEVELOPMENT pre-release build**
-            
-            Development builds are released automatically and may contain:
-            - Bugs and instability
-            - Incomplete features
-            - Breaking changes
-            
-            **Do not use development builds for production work.**
-            
-            Enable development updates in SAM → Preferences → General → "Receive development updates"
-            
-            ### Changes Since Last Development Release
-            
-            See commit history for details.
-          draft: false
-          prerelease: true
-          files: |
-            dist/SAM-${{ env.DEV_VERSION }}.zip
-            dist/SAM-${{ env.DEV_VERSION }}.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete any existing release/tag for this version (clean slate for re-runs)
+          gh release delete "${DEV_VERSION}" --yes 2>/dev/null || true
+          git push origin --delete "${DEV_VERSION}" 2>/dev/null || true
+
+          # Write release notes to a temp file
+          NOTES_FILE=$(mktemp)
+          printf '%s\n' \
+            '> **This is a DEVELOPMENT pre-release build**' \
+            '' \
+            'Development builds are released automatically and may contain:' \
+            '- Bugs and instability' \
+            '- Incomplete features' \
+            '- Breaking changes' \
+            '' \
+            '**Do not use development builds for production work.**' \
+            '' \
+            'Enable development updates in SAM -> Preferences -> General -> "Receive development updates"' \
+            '' \
+            '### Changes Since Last Development Release' \
+            '' \
+            'See commit history for details.' \
+            > "$NOTES_FILE"
+
+          # Create release and upload assets using gh CLI (more reliable for large files)
+          gh release create "${DEV_VERSION}" \
+            --title "SAM ${DEV_VERSION} (Development)" \
+            --notes-file "$NOTES_FILE" \
+            --prerelease \
+            "dist/SAM-${DEV_VERSION}.zip" \
+            "dist/SAM-${DEV_VERSION}.dmg"
+          rm -f "$NOTES_FILE"
 
   cleanup-old-releases:
     name: Cleanup Old Development Releases
