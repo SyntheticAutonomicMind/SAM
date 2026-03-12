@@ -11,7 +11,7 @@ import Logging
 
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     private(set) var updaterController: SPUStandardUpdaterController!
-    private var windowFrameObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var windowFrameObserver: NSObjectProtocol?
     private var configuredWindows: Set<ObjectIdentifier> = []
     private let logger = Logger(label: "com.sam.appdelegate")
 

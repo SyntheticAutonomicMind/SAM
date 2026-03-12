@@ -97,7 +97,7 @@ public struct ToolExecution: @unchecked Sendable {
     /// OpenAI tool call ID (for linking with API messages).
     public let toolCallId: String
 
-    /// Tool name (e.g., "think", "web_search", "document_import").
+    /// Tool name (e.g., "web_operations", "memory_operations", "todo_operations").
     public let toolName: String
 
     /// Arguments passed to the tool.

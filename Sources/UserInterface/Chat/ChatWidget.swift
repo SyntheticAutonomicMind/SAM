@@ -11,7 +11,6 @@ import SharedData
 import VoiceFramework
 import Logging
 import Combine
-import StableDiffusionIntegration
 
 /// ChatWidget with dynamic model loading, performance tracking, copy functionality, and chat management Includes chat duplication, JSON export, and session persistence features.
 public struct ChatWidget: View {
@@ -24,6 +23,9 @@ public struct ChatWidget: View {
     @EnvironmentObject private var sharedConversationService: SharedConversationService
 
     @State private var messageText = ""
+
+    /// Dynamic height of the text input (auto-grows with content)
+    @State private var inputTextHeight: CGFloat = 45
 
     /// Track previous conversation for draft save/restore
     @State private var previousConversationId: UUID?
@@ -88,7 +90,6 @@ public struct ChatWidget: View {
 
     /// Thinking indicator for UI feedback.
     @State private var isThinking = false
-    /// DEPRECATED: showThinkingSteps moved to per-conversation enableReasoning toggle.
     @State private var lastToolProcessorMessage = false
     @State private var lastToolName: String?
     @State private var lastToolExecutionId: String?
@@ -112,47 +113,9 @@ public struct ChatWidget: View {
     /// FEATURE: Enable/disable tool usage.
     @State private var enableTools: Bool = true
 
-    /// FEATURE: Auto-approve tool execution (bypasses security).
-    @State private var autoApprove: Bool = false
-    @State private var showAutoApproveWarning: Bool = false
-    @State private var dontShowAutoApproveAgain: Bool = false
-    @AppStorage("hasSeenAutoApproveWarning") private var hasSeenAutoApproveWarning: Bool = false
 
-    /// SECURITY: Terminal access control (disabled by default).
-    @State private var enableTerminalAccess: Bool = false
-    @State private var terminalStateBeforeDisable: Bool = false
 
-    /// Workflow mode control (disabled by default).
-    @State private var enableWorkflowMode: Bool = false
 
-    /// Dynamic iterations control (disabled by default).
-    @State private var enableDynamicIterations: Bool = false
-
-    /// FEATURE: Direct Stable Diffusion mode (when SD model selected with no LLM).
-    @State private var isStableDiffusionOnlyMode: Bool = false
-
-    /// Stable Diffusion default settings.
-    @AppStorage("sd_default_steps") private var sdDefaultSteps: Int = 25
-    @AppStorage("sd_default_guidance") private var sdDefaultGuidance: Double = 8.0
-    @AppStorage("sd_default_scheduler") private var sdDefaultScheduler: String = "dpm++"
-    @AppStorage("sd_default_negative_prompt") private var sdDefaultNegativePrompt: String = ""
-    @AppStorage("sd_remember_settings") private var sdRememberSettings: Bool = false
-
-    /// Stable Diffusion UI state variables (synced with conversation.settings)
-    @State private var sdSteps: Int = 25
-    @State private var sdGuidanceScale: Float = 8.0
-    @State private var sdScheduler: String = "dpm++"
-    @State private var sdNegativePrompt: String = ""
-    @State private var sdSeed: Int = -1
-    @State private var sdUseKarras: Bool = true
-    @State private var sdImageCount: Int = 1
-    @State private var sdImageWidth: Int = 512
-    @State private var sdImageHeight: Int = 512
-    @State private var sdEngine: String = "coreml"  /// "coreml" or "python"
-    @State private var sdDevice: String = "auto"  /// "auto", "mps", "cpu" (Python engine only)
-    @State private var sdUpscaleModel: String = "none"  /// "none", "general", "anime", "general_x2"
-    @State private var sdStrength: Double = 0.75  /// Denoising strength for img2img (0.0-1.0)
-    @State private var sdInputImagePath: String?  /// Input image path for img2img
 
     /// Shared data UI state
     @State private var useSharedData: Bool = false
@@ -187,13 +150,17 @@ public struct ChatWidget: View {
     @State private var userManuallyEnabledTools: Bool = false
 
     /// Memory validation state.
-    private let localModelManager = LocalModelManager()
+    private let localModelManager = LocalModelManager.shared
     @State private var showMemoryWarning: Bool = false
     @State private var memoryWarningMessage: String = ""
     @State private var pendingModelLoad: (provider: String, model: String)?
 
     /// Advanced parameters toolbar - collapsible.
     @State private var showAdvancedParameters = false
+
+    /// Bottom bar popover states.
+    @State private var showingPanelsMenu = false
+    @State private var showingSettingsPopover = false
 
     /// System prompt management - using systemPromptManager.selectedConfigurationId as single source of truth.
     @ObservedObject private var systemPromptManager = SystemPromptManager.shared
@@ -224,8 +191,6 @@ public struct ChatWidget: View {
     @State private var busyStatusText: String = ""
     private let brailleFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-    /// Stable Diffusion model management.
-    @StateObject private var sdModelManager = StableDiffusionModelManager()
 
     /// Document import system for auto-importing attached files
     @State private var documentImportSystem: DocumentImportSystem?
@@ -247,8 +212,6 @@ public struct ChatWidget: View {
     /// Cost tracking panel
     @State private var showingCostTrackingPanel = false
 
-    /// Terminal panel.
-    @State private var showingTerminalPanel = false
 
     /// Working directory panel.
     @State private var showingWorkingDirectoryPanel = false
@@ -279,7 +242,6 @@ public struct ChatWidget: View {
         }
     }
 
-    /// Terminal managers now stored in ConversationManager for persistence across view recreations Previously stored as @State which caused terminal history loss when switching conversations.
 
     public init(activeConversation: ConversationModel? = nil, messageBus: ConversationMessageBus, showingMiniPrompts: Binding<Bool>) {
         self.activeConversation = activeConversation
@@ -296,45 +258,6 @@ public struct ChatWidget: View {
         Group {
             mainChatView
         }
-            .alert("Enable Auto-Approve Mode?", isPresented: $showAutoApproveWarning) {
-                Button("Cancel", role: .cancel) {
-                    /// User declined - revert toggle and optionally suppress future warnings.
-                    autoApprove = false
-                    if dontShowAutoApproveAgain {
-                        hasSeenAutoApproveWarning = true
-                    }
-                    dontShowAutoApproveAgain = false
-                }
-                Button("Enable", role: .destructive) {
-                    /// User confirmed - enable auto-approve.
-                    /// CRITICAL: Set flag BEFORE changing autoApprove to prevent onChange from re-triggering warning.
-                    hasSeenAutoApproveWarning = true
-                    dontShowAutoApproveAgain = false
-                    autoApprove = true
-                    /// Sync and update AuthorizationManager.
-                    syncSettingsToConversation()
-                    if let conversationId = activeConversation?.id {
-                        AuthorizationManager.shared.setAutoApprove(true, conversationId: conversationId)
-                    }
-                }
-                Toggle("Don't show this warning again", isOn: $dontShowAutoApproveAgain)
-            } message: {
-                Text("""
-                    **WARNING** Security Feature Bypass **WARNING**
-
-                    Auto-approve mode allows the AI agent to execute ANY tool operation without asking for your permission first.
-
-                    This includes:
-                    • File creation, modification, and deletion
-                    • Terminal command execution
-                    • Web research and data retrieval
-                    • Document creation and imports
-
-                    It will have full authority to execute any of these actions without your explicit consent which could be destructive to your data or your system. Only enable this if you fully trust the AI agent and understand the risks.
-
-                    You can disable this at any time using the toggle in the chat controls.
-                    """)
-            }
             .alert("Memory Warning", isPresented: $showMemoryWarning) {
                 Button("Cancel", role: .cancel) {
                     pendingModelLoad = nil
@@ -373,9 +296,6 @@ public struct ChatWidget: View {
             .onChange(of: showingMemoryPanel) { _, newValue in
                 savePanelState(panel: "memory", value: newValue)
                 if newValue { loadMemoryStatistics() }
-            }
-            .onChange(of: showingTerminalPanel) { _, newValue in
-                savePanelState(panel: "terminal", value: newValue)
             }
             .onChange(of: showingWorkingDirectoryPanel) { _, newValue in
                 savePanelState(panel: "workdir", value: newValue)
@@ -422,13 +342,6 @@ public struct ChatWidget: View {
             workingDirectoryPanel
         }
 
-        if showingTerminalPanel {
-            Divider()
-            TerminalView(
-                terminalManager: getTerminalManager(),
-                isVisible: $showingTerminalPanel
-            )
-        }
     }
 
     /// Main content layout without modifiers
@@ -474,12 +387,9 @@ public struct ChatWidget: View {
             /// Update previous conversation ID tracking
             previousConversationId = newID
 
-            /// Log conversation opening with full message details
+            /// Log conversation switch
             if let conv = activeConversation {
                 logger.debug("[CONVERSATION_OPENED] id=\(conv.id.uuidString.prefix(8)), title='\(conv.title)', messageCount=\(conv.messages.count)")
-                for (index, msg) in conv.messages.enumerated() {
-                    logger.debug("[MSG_INDEX_\(index)] id=\(msg.id.uuidString.prefix(8)), from=\(msg.isFromUser ? "user" : "assistant"), len=\(msg.content.count), type=\(msg.type)")
-                }
 
                 /// FEATURE: Restore draft message from new conversation
                 let draftMessage = conv.settings.draftMessage
@@ -567,19 +477,7 @@ public struct ChatWidget: View {
 
             /// Cancel previous subscription.
             conversationSubscription?.cancel()
-
-            /// Set up new subscription to observe conversation changes.
-            if let conversation = activeConversation {
-                conversationSubscription = conversation.objectWillChange
-                    .receive(on: DispatchQueue.main)
-                    .sink { _ in
-                        /// Only sync if not currently streaming.
-                        guard processingStatus != .thinking && processingStatus != .generating else { return }
-
-                        logger.debug("MESSAGE_LIFECYCLE: Conversation objectWillChange detected, syncing to UI")
-                        syncWithActiveConversation()
-                    }
-            }
+            conversationSubscription = nil
 
             syncWithActiveConversation()
         }
@@ -669,77 +567,6 @@ public struct ChatWidget: View {
             /// Don't save settings or trigger preload if we're loading from conversation.
             guard !isLoadingConversationSettings else { return }
 
-            /// Detect Stable Diffusion-only mode (SD model with no LLM) - includes ALICE remote models
-            let isSDModel = newValue.hasPrefix("sd/") || newValue.hasPrefix("alice-")
-            isStableDiffusionOnlyMode = isSDModel
-
-            if isSDModel {
-                /// Initialize SD parameters from defaults if not already set
-                if let activeConv = conversationManager.activeConversation {
-                    if activeConv.settings.sdNegativePrompt.isEmpty && activeConv.settings.sdSteps == 25 {
-                        /// Looks like defaults, initialize from user preferences
-                        activeConv.settings.sdNegativePrompt = sdDefaultNegativePrompt
-                        activeConv.settings.sdSteps = sdDefaultSteps
-                        activeConv.settings.sdGuidanceScale = Float(sdDefaultGuidance)
-                        activeConv.settings.sdScheduler = sdDefaultScheduler
-                    }
-                }
-                logger.info("Switched to Stable Diffusion-only mode: \(newValue)")
-
-                /// Auto-adjust parameters based on model type (Z-Image vs SD)
-                /// Apply defaults if guidance is out of range for this model type
-                if isZImageModel && sdGuidanceScale > guidanceScaleRange.upperBound {
-                    sdGuidanceScale = defaultGuidanceScale
-                    logger.info("Auto-adjusted guidance scale for Z-Image model: \(sdGuidanceScale)")
-                } else if !isZImageModel && sdGuidanceScale < guidanceScaleRange.lowerBound {
-                    sdGuidanceScale = defaultGuidanceScale
-                    logger.info("Auto-adjusted guidance scale for SD model: \(sdGuidanceScale)")
-                }
-
-                /// Z-Image models now work on MPS with bfloat16 (2x faster than CPU)
-                /// No automatic device switching needed - Python script handles dtype selection
-                if isZImageModel {
-                    logger.info("Z-Image model selected - MPS with bfloat16 is now supported")
-                }
-
-                /// Auto-adjust steps for Z-Image models if needed
-                if isZImageModel {
-                    /// For Z-Image, use model-appropriate defaults
-                    let recommendedSteps = defaultSteps  /// 8 for turbo, 50 for standard
-                    if abs(sdSteps - recommendedSteps) > 20 {
-                        sdSteps = recommendedSteps
-                        logger.info("Auto-adjusted steps for Z-Image model: \(sdSteps)")
-                    }
-                }
-
-                /// SDXL models: Switch to Euler scheduler if using problematic schedulers
-                /// EDMDPMSolverMultistepScheduler produces garbage images on MPS
-                /// DPM++ SDE variants cause IndexError on SDXL
-                if isSDXLModel {
-                    let problematicSchedulers = ["dpm++_sde", "dpm++_sde_karras"]
-                    if problematicSchedulers.contains(sdScheduler) {
-                        sdScheduler = "euler"
-                        logger.info("Auto-switched scheduler to Euler for SDXL model (previous scheduler causes issues on MPS)")
-                    }
-                }
-
-                /// Validate image size for the selected model
-                /// If current size isn't available for this model, default to first size
-                let currentSize = "\(sdImageWidth)×\(sdImageHeight)"
-                if !availableImageSizes.contains(currentSize) {
-                    /// Default to first available size
-                    if let firstSize = availableImageSizes.first {
-                        let components = firstSize.split(separator: "×")
-                        if components.count == 2,
-                           let width = Int(components[0]),
-                           let height = Int(components[1]) {
-                            sdImageWidth = width
-                            sdImageHeight = height
-                            logger.info("Image size \(currentSize) not available for \(newValue), defaulting to \(firstSize)")
-                        }
-                    }
-                }
-            }
 
             /// Auto-select SAM Minimal for local models, SAM Default for remote models
             /// Only auto-switch if currently using SAM Default (00000000-0000-0000-0000-000000000001)
@@ -804,7 +631,7 @@ public struct ChatWidget: View {
 
             if let status = newStatus[selectedModel] {
                 switch status {
-                case .loading:
+                case .loading(_):
                     isLoadingLocalModel = true
                     isLocalModelLoaded = false
                 case .loaded:
@@ -842,23 +669,6 @@ public struct ChatWidget: View {
             }
 
             syncSettingsToConversation()
-        }
-        .onChange(of: autoApprove) { _, newValue in
-            guard !isLoadingConversationSettings else { return }
-
-            /// Show warning dialog on first-time enable.
-            if newValue && !hasSeenAutoApproveWarning {
-                showAutoApproveWarning = true
-                /// Revert toggle immediately (will be re-enabled if user confirms).
-                autoApprove = false
-                return
-            }
-
-            syncSettingsToConversation()
-            /// Update AuthorizationManager.
-            if let conversationId = activeConversation?.id {
-                AuthorizationManager.shared.setAutoApprove(newValue, conversationId: conversationId)
-            }
         }
         .onChange(of: maxTokens) { _, _ in
             guard !isLoadingConversationSettings else { return }
@@ -1226,7 +1036,7 @@ public struct ChatWidget: View {
 
                     Text(conversation.settings.useSharedData ?
                         "Using shared topic workspace. All file operations use this shared directory across conversations." :
-                        "All file operations and terminal commands will use this directory unless an absolute path is specified.")
+                        "All file operations will use this directory unless an absolute path is specified.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .lineLimit(3)
@@ -1283,13 +1093,6 @@ public struct ChatWidget: View {
                 VStack(alignment: .leading, spacing: 0) {
                     /// Line 1: Title + Shared indicator with topic name
                     HStack {
-                        /// Subagent indicator icon
-                        if conversation.isSubagent {
-                            Image(systemName: "person.2.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.accentColor)
-                        }
-
                         Text(conversation.title)
                             .font(.title2)
                             .fontWeight(.semibold)
@@ -1335,17 +1138,6 @@ public struct ChatWidget: View {
                             }
                         }
 
-                        /// Working indicator for active subagents
-                        if conversation.isSubagent && conversation.isWorking {
-                            HStack(spacing: 4) {
-                                ProgressView()
-                                    .scaleEffect(0.6)
-                                    .frame(width: 12, height: 12)
-                                Text("Working")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                            }
-                        }
                     }
 
                     /// Line 2: Message count, ID, provider status
@@ -1801,23 +1593,16 @@ public struct ChatWidget: View {
 
     private var messageInput: some View {
         VStack(spacing: 0) {
-            /// Expanded parameter controls (moved from top configuration panel).
-            parameterControlsPanel
-
-            Divider()
-
-            /// Show SD-specific UI or standard message input based on mode.
-            if isStableDiffusionOnlyMode {
-                stableDiffusionInputUI
-            } else {
-                standardMessageInputUI
-            }
+            standardMessageInputUI
 
             /// Status bar - always visible at the bottom of the window.
             Divider()
             statusBar
         }
         .background(Color(NSColor.controlBackgroundColor))
+        .onAppear {
+            loadGlobalMLXSettings()
+        }
     }
 
     /// Status bar at the bottom of the chat window.
@@ -1866,843 +1651,190 @@ public struct ChatWidget: View {
     /// Standard text input for LLM chat.
     private var standardMessageInputUI: some View {
         VStack(spacing: 0) {
-            /// Dynamic input area with stacked control buttons.
-            HStack(alignment: .bottom, spacing: 12) {
-                /// Multi-line text input with fixed 4-line height.
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: Binding(
-                        get: { messageText },
-                        set: { newValue in
-                            // Prevent typing if model not loaded
-                            if endpointManager.isLocalModel(selectedModel) && !isLocalModelLoaded {
-                                logger.warning("BLOCKED: Cannot type when model not loaded")
-                                return
-                            }
-                            messageText = newValue
+            /// Text input area.
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: Binding(
+                    get: { messageText },
+                    set: { newValue in
+                        // Prevent typing if model not loaded
+                        if endpointManager.isLocalModel(selectedModel) && !isLocalModelLoaded {
+                            logger.warning("BLOCKED: Cannot type when model not loaded")
+                            return
                         }
-                    ))
-                        .font(.body)
-                        .disabled(shouldDisableInput || (isSending && !isAwaitingUserInput))
-                        .scrollContentBackground(.hidden)
-                        .background(
-                            isAwaitingUserInput
-                                ? Color(NSColor.controlBackgroundColor).opacity(0.95)
-                                : Color(NSColor.controlBackgroundColor)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(
-                                    isAwaitingUserInput
-                                        ? Color.blue.opacity(0.6)
-                                        : Color(NSColor.separatorColor),
-                                    lineWidth: isAwaitingUserInput ? 2 : 1
-                                )
-                        )
-                        .frame(minHeight: 45, maxHeight: 120)
-                        .focused($isInputFocused)
-                        .onChange(of: messageText) { oldValue, newValue in
-                            /// Prevent typing if model not loaded
-                            if shouldDisableInput && newValue != oldValue {
-                                logger.warning("BLOCKED TYPING: shouldDisableInput=true, reverting '\(newValue)' to '\(oldValue)'")
-                                messageText = oldValue
-                                return
-                            }
-                            /// Keep bridge in sync for voice manager readback
-                            voiceBridge.currentMessageText = newValue
-
-                            /// FEATURE: Auto-save draft message to conversation with debounced disk persistence
-                            /// Save whenever text changes so it persists even if user quits app
-                            if let conversation = activeConversation, newValue != conversation.settings.draftMessage {
-                                conversation.settings.draftMessage = newValue
-
-                                /// Cancel previous save task and schedule new one (debounce)
-                                draftSaveTask?.cancel()
-                                draftSaveTask = Task {
-                                    /// Wait 500ms before saving to disk (debounce rapid typing)
-                                    try? await Task.sleep(nanoseconds: 500_000_000)
-                                    guard !Task.isCancelled else { return }
-                                    await MainActor.run {
-                                        conversationManager.saveConversations()
-                                        logger.debug("DRAFT_PERSIST: Saved draft to disk (\(newValue.count) chars)")
-                                    }
-                                }
-                            }
-                        }
-                        .onKeyPress { keyPress in
-                            /// Handle Enter key behavior based on modifiers.
-                            if keyPress.key == .return {
-                                /// Shift+Enter: Insert newline (allow default behavior) Note: Cmd+Enter doesn't work reliably in SwiftUI TextEditor, use Shift+Enter instead.
-                                if keyPress.modifiers.contains(.shift) {
-                                    return .ignored
-                                } else {
-                                    /// Plain Enter: Send message.
-                                    if isAwaitingUserInput {
-                                        submitUserResponse()
-                                    } else if !isSending && !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        sendMessage()
-                                    }
-                                    return .handled
-                                }
-                            }
-                            return .ignored
-                        }
-
-                    /// Placeholder text or collaboration prompt.
-                    if messageText.isEmpty {
-                        if isAwaitingUserInput {
-                            /// Show simple waiting indicator instead of full prompt (agent's prompt now appears as a message in the chat above).
-                            HStack {
-                                Image(systemName: "hourglass")
-                                    .foregroundColor(.blue)
-                                Text("Agent is waiting for your response...")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(8)
-                            .allowsHitTesting(false)
-                        } else if isStableDiffusionOnlyMode {
-                            /// Show SD-specific prompt placeholder.
-                            HStack {
-                                Image(systemName: "photo")
-                                    .foregroundColor(.purple)
-                                Text("Describe the image you want to generate...")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(8)
-                            .allowsHitTesting(false)
-                        } else if endpointManager.isLocalModel(selectedModel) && !isLocalModelLoaded {
-                            /// Show instruction to load local model.
-                            HStack {
-                                Image(systemName: "play.fill")
-                                    .foregroundColor(.orange)
-                                Text("Click Load Model button above to start chatting")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(8)
-                            .allowsHitTesting(false)
-                        } else {
-                            /// Show placeholder with voice or keyboard instructions
-                            if voiceManager.listeningMode {
-                                Text("Say \"Hey SAM\" and wait for chime, or type your message\n(Enter to send, Shift+Enter for newline)")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                    .allowsHitTesting(false)
-                                    .padding(8)
-                            } else {
-                                Text("Ask SAM anything...\n(Enter to send, Shift+Enter for newline)")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                    .allowsHitTesting(false)
-                                    .padding(8)
-                            }
-                        }
+                        messageText = newValue
                     }
-                }
-
-                /// Voice control buttons (speaker and microphone).
-                VStack(spacing: 8) {
-                    /// Paperclip button (top) - attach files to conversation.
-                    Button(action: {
-                        attachFiles()
-                    }) {
-                        Image(systemName: attachedFiles.isEmpty ? "paperclip" : "paperclip.badge.ellipsis")
-                            .foregroundColor(attachedFiles.isEmpty ? .secondary : .accentColor)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help(attachedFiles.isEmpty ? "Attach files to conversation" : "Attached files: \(attachedFiles.count)")
-
-                    /// Speaker button - toggles speaking mode.
-                    Button(action: {
-                        voiceManager.toggleSpeaking()
-                    }) {
-                        Image(systemName: voiceManager.speakingMode ? "speaker.fill" : "speaker")
-                            .foregroundColor(voiceManager.speakingMode ? .accentColor : .secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Toggle speaking mode: SAM will read responses aloud")
-
-                    /// Microphone button (middle) - toggles listening mode.
-                    Button(action: {
-                        voiceManager.toggleListening()
-                    }) {
-                        Image(systemName: voiceManager.listeningMode ? "mic.fill" : "mic")
-                            .foregroundColor(
-                                voiceManager.currentState == .activeListening ? .red :
-                                voiceManager.listeningMode ? .accentColor : .secondary
+                ))
+                    .font(.body)
+                    .disabled(shouldDisableInput || (isSending && !isAwaitingUserInput))
+                    .scrollContentBackground(.hidden)
+                    .background(
+                        isAwaitingUserInput
+                            ? Color(NSColor.controlBackgroundColor).opacity(0.95)
+                            : Color(NSColor.controlBackgroundColor)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(
+                                isAwaitingUserInput
+                                    ? Color.blue.opacity(0.6)
+                                    : Color(NSColor.separatorColor),
+                                lineWidth: isAwaitingUserInput ? 2 : 1
                             )
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Toggle listening mode: Voice control with wake word detection")
-                    .disabled(shouldDisableInput)
+                    )
+                    .frame(minHeight: 45, maxHeight: 200)
+                    .frame(height: max(45, min(inputTextHeight, 200)))
+                    .focused($isInputFocused)
+                    .onChange(of: messageText) { oldValue, newValue in
+                        /// Prevent typing if model not loaded
+                        if shouldDisableInput && newValue != oldValue {
+                            logger.warning("BLOCKED TYPING: shouldDisableInput=true, reverting '\(newValue)' to '\(oldValue)'")
+                            messageText = oldValue
+                            return
+                        }
+                        /// Keep bridge in sync for voice manager readback
+                        voiceBridge.currentMessageText = newValue
 
-                    /// Send/Stop button (bottom) - play.fill for send, stop.fill for cancel.
-                    Button(action: {
-                        if isAwaitingUserInput {
-                            submitUserResponse()
-                        } else if isSending {
-                            streamingTask?.cancel()
-                            streamingTask = nil
-                            isSending = false
-                            currentOrchestrator?.cancelWorkflow()
-                            currentOrchestrator = nil
-                            if let conversation = activeConversation {
-                                conversation.isProcessing = false
+                        /// Auto-resize input height based on content
+                        recalculateInputHeight(for: newValue)
+
+                        /// FEATURE: Auto-save draft message to conversation with debounced disk persistence
+                        /// Save whenever text changes so it persists even if user quits app
+                        if let conversation = activeConversation, newValue != conversation.settings.draftMessage {
+                            conversation.settings.draftMessage = newValue
+
+                            /// Cancel previous save task and schedule new one (debounce)
+                            draftSaveTask?.cancel()
+                            draftSaveTask = Task {
+                                /// Wait 500ms before saving to disk (debounce rapid typing)
+                                try? await Task.sleep(nanoseconds: 500_000_000)
+                                guard !Task.isCancelled else { return }
+                                await MainActor.run {
+                                    conversationManager.saveConversations()
+                                    logger.debug("DRAFT_PERSIST: Saved draft to disk (\(newValue.count) chars)")
+                                }
                             }
-                            Task {
-                                await endpointManager.cancelLocalModelGeneration()
-                            }
-                        } else {
-                            sendMessage()
-                        }
-                    }) {
-                        if isAwaitingUserInput {
-                            Image(systemName: "play.fill")
-                                .foregroundColor(.accentColor)
-                                .frame(width: 20, height: 20)
-                        } else if isSending {
-                            Image(systemName: "stop.fill")
-                                .foregroundColor(.red)
-                                .frame(width: 20, height: 20)
-                        } else if isStableDiffusionOnlyMode {
-                            Image(systemName: "photo.fill")
-                                .foregroundColor(.blue)
-                                .frame(width: 20, height: 20)
-                        } else {
-                            Image(systemName: "play.fill")
-                                .foregroundColor(.secondary)
-                                .frame(width: 20, height: 20)
                         }
                     }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .disabled(
-                        (!isAwaitingUserInput && !isSending && messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ||
-                        shouldDisableInput
-                    )
-                    .help(
-                        isAwaitingUserInput ? "Submit response" :
-                        isSending ? "Stop generation" :
-                        isStableDiffusionOnlyMode ? "Generate image" :
-                        "Send message"
-                    )
+                    .onKeyPress { keyPress in
+                        /// Handle Enter key behavior based on modifiers.
+                        if keyPress.key == .return {
+                            /// Shift+Enter: Insert newline (allow default behavior) Note: Cmd+Enter doesn't work reliably in SwiftUI TextEditor, use Shift+Enter instead.
+                            if keyPress.modifiers.contains(.shift) {
+                                return .ignored
+                            } else {
+                                /// Plain Enter: Send message.
+                                if isAwaitingUserInput {
+                                    submitUserResponse()
+                                } else if !isSending && !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    sendMessage()
+                                }
+                                return .handled
+                            }
+                        }
+                        return .ignored
+                    }
+
+                /// Placeholder text or collaboration prompt.
+                if messageText.isEmpty {
+                    if isAwaitingUserInput {
+                        /// Show simple waiting indicator instead of full prompt (agent's prompt now appears as a message in the chat above).
+                        HStack {
+                            Image(systemName: "hourglass")
+                                .foregroundColor(.blue)
+                            Text("Agent is waiting for your response...")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(8)
+                        .allowsHitTesting(false)
+                    } else if endpointManager.isLocalModel(selectedModel) && !isLocalModelLoaded {
+                        /// Show instruction to load local model.
+                        HStack {
+                            Image(systemName: "play.fill")
+                                .foregroundColor(.orange)
+                            Text("Click the Load Model button below to start chatting")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(8)
+                        .allowsHitTesting(false)
+                    } else {
+                        /// Show placeholder with voice or keyboard instructions
+                        if voiceManager.listeningMode {
+                            Text("Say \"Hey SAM\" and wait for chime, or type your message\n(Enter to send, Shift+Enter for newline)")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                                .allowsHitTesting(false)
+                                .padding(8)
+                        } else {
+                            Text("Ask SAM anything...\n(Enter to send, Shift+Enter for newline)")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                                .allowsHitTesting(false)
+                                .padding(8)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-        }
-    }
+            .padding(.top, 12)
+            .padding(.bottom, 6)
 
-    /// Available image sizes based on selected SD model
-    /// NOTE: UI picker stores user preference, but actual dimension support depends on Core ML model capabilities.
-    /// Future enhancement: Query Core ML model metadata to get truly supported dimensions.
-    /// Current implementation provides common sizes based on model type (SD 1.5 vs SDXL).
-
-    /// Get model info for currently selected SD model (local or ALICE remote)
-    private var currentSDModelInfo: StableDiffusionModelManager.ModelInfo? {
-        /// Handle both local SD models (sd/) and ALICE remote models (alice-)
-        let isLocalSD = selectedModel.hasPrefix("sd/")
-        let isAliceSD = selectedModel.hasPrefix("alice-")
-        guard isLocalSD || isAliceSD else { return nil }
-
-        /// Extract model ID for lookup
-        let modelId: String
-        if isAliceSD {
-            /// ALICE format: alice-sd-model-name - use as-is (matches createRemoteModelInfo ID)
-            modelId = selectedModel
-        } else {
-            /// Local format: sd/model-name - extract model name
-            modelId = selectedModel.replacingOccurrences(of: "sd/", with: "")
-        }
-
-        /// Get model info - check both local and ALICE models
-        var models = sdModelManager.listInstalledModels()
-
-        /// Add ALICE models if connected
-        if let aliceProvider = ALICEProvider.shared, aliceProvider.isHealthy {
-            let aliceModels = aliceProvider.availableModels.map { alice in
-                StableDiffusionModelManager.createRemoteModelInfo(
-                    aliceModelId: alice.id,
-                    displayName: alice.displayName,
-                    isSDXL: alice.isSDXL
+            /// Unified bottom bar: pickers on left, controls on right.
+            HStack(spacing: 6) {
+                /// Model picker - opens directly as a menu.
+                ModelPickerView(
+                    selectedModel: $selectedModel,
+                    modelListManager: modelListManager,
+                    endpointManager: endpointManager
                 )
-            }
-            models.append(contentsOf: aliceModels)
-        }
 
-        logger.debug("currentSDModelInfo: Looking for '\(modelId)' in \(models.count) models")
-
-        /// Match by ID or by name for local models
-        let found = models.first(where: {
-            $0.id == modelId
-        })
-        if let found = found {
-            logger.debug("currentSDModelInfo: Found model '\(found.id)' hasCoreML=\(found.hasCoreML) hasSafeTensors=\(found.hasSafeTensors) pipelineType=\(found.pipelineType) isRemote=\(found.isRemote)")
-        } else {
-            logger.warning("currentSDModelInfo: Model '\(modelId)' not found in SD models. Available IDs: \(models.map { $0.id }.joined(separator: ", "))")
-        }
-
-        return found
-    }
-
-    /// Detect if current model is Z-Image (or Qwen-Image)
-    private var isZImageModel: Bool {
-        guard let modelInfo = currentSDModelInfo else { return false }
-        return modelInfo.pipelineType.lowercased().contains("zimage") ||
-               modelInfo.pipelineType.lowercased().contains("qwenimage")
-    }
-
-    /// Detect if current model is SDXL
-    /// SDXL models require special handling:
-    /// - EDMDPMSolverMultistepScheduler produces garbage on MPS
-    /// - Need to switch to Euler scheduler for reliable results
-    private var isSDXLModel: Bool {
-        guard let modelInfo = currentSDModelInfo else {
-            /// Fallback to name-based detection
-            return selectedModel.lowercased().contains("xl") || selectedModel.lowercased().contains("sdxl")
-        }
-        return modelInfo.pipelineType == "StableDiffusionXL"
-    }
-
-    /// Get guidance scale range based on model type
-    private var guidanceScaleRange: ClosedRange<Float> {
-        if isZImageModel {
-            return 0.0...5.0  /// Z-Image uses low guidance (0.0-5.0)
-        } else {
-            return 1.0...20.0  /// Standard SD models (1.0-20.0)
-        }
-    }
-
-    /// Get default guidance scale based on model type
-    private var defaultGuidanceScale: Float {
-        if isZImageModel {
-            return 0.0  /// Z-Image works best with 0.0 guidance
-        } else {
-            return 8.0  /// Standard SD default
-        }
-    }
-
-    /// Get default steps based on model type
-    private var defaultSteps: Int {
-        if isZImageModel {
-            /// Z-Image turbo models use 8-9 steps, standard uses ~50
-            if let modelInfo = currentSDModelInfo, modelInfo.name.lowercased().contains("turbo") {
-                return 8
-            } else {
-                return 50
-            }
-        } else {
-            return 25  /// Standard SD default
-        }
-    }
-
-    private var availableImageSizes: [String] {
-        /// Z-Image models support 1024×1024 and higher, divisible by 16
-        if isZImageModel {
-            return [
-                "1024×1024",
-                "1152×896",
-                "896×1152",
-                "1216×832",
-                "832×1216",
-                "1344×768",
-                "768×1344",
-                "1536×640",
-                "640×1536"
-            ]
-        }
-
-        /// Determine model type from selectedModel
-        let isSDXL = selectedModel.lowercased().contains("xl") || selectedModel.lowercased().contains("sdxl")
-
-        if isSDXL {
-            /// SDXL models support 1024×1024 and common SDXL ratios
-            return [
-                "1024×1024",
-                "1152×896",
-                "896×1152",
-                "1216×832",
-                "832×1216",
-                "1344×768",
-                "768×1344",
-                "1536×640",
-                "640×1536"
-            ]
-        } else {
-            /// SD 1.5 and 2.x models support 512×512 and common ratios
-            return [
-                "512×512",
-                "512×768",
-                "768×512",
-                "640×512",
-                "512×640",
-                "768×768"
-            ]
-        }
-    }
-
-    /// Detect current image orientation
-    private var currentImageOrientation: String {
-        if sdImageWidth == sdImageHeight {
-            return "Square"
-        } else if sdImageWidth > sdImageHeight {
-            return "Landscape"
-        } else {
-            return "Portrait"
-        }
-    }
-
-    /// Toggle image orientation (swap width/height)
-    private func toggleImageOrientation() {
-        /// Don't toggle square images
-        guard sdImageWidth != sdImageHeight else { return }
-
-        /// Swap width and height
-        let temp = sdImageWidth
-        sdImageWidth = sdImageHeight
-        sdImageHeight = temp
-
-        /// Sync to conversation settings
-        syncSettingsToConversation()
-
-        logger.debug("Toggled image orientation: \(currentImageOrientation) (\(sdImageWidth)×\(sdImageHeight))")
-    }
-
-    /// Stable Diffusion-specific input UI with parameter controls.
-    private var stableDiffusionInputUI: some View {
-        VStack(spacing: 6) {
-            /// TOP ROW: Model/Engine + Image upload (left) + Prompts (right)
-            HStack(alignment: .top, spacing: 12) {
-                /// LEFT: Model/Engine selector + Image upload (Python only)
-                VStack(alignment: .leading, spacing: 8) {
-                    /// Model and Engine selection (compact, on same row)
-                    HStack(spacing: 12) {
-                        /// Engine selector
-                        HStack(spacing: 6) {
-                            Text("Engine:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .fixedSize()
-
-                            Menu {
-                                if currentSDModelInfo?.hasCoreML ?? false {
-                                    Button(action: { sdEngine = "coreml" }) {
-                                        Text("CoreML")
-                                            .font(.system(.caption, design: .monospaced))
-                                    }
-                                }
-                                if currentSDModelInfo?.hasSafeTensors ?? false {
-                                    Button(action: { sdEngine = "python" }) {
-                                        Text("Python")
-                                            .font(.system(.caption, design: .monospaced))
-                                    }
-                                }
-                            } label: {
-                                HStack {
-                                    Text(sdEngine == "coreml" ? "CoreML" : "Python")
-                                        .font(.system(.caption, design: .monospaced))
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Image(systemName: "chevron.down")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                                .frame(width: 100)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color(NSColor.controlBackgroundColor))
-                                .cornerRadius(5)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 5)
-                                        .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-                                )
-                            }
-                            .disabled(!((currentSDModelInfo?.hasCoreML ?? false) && (currentSDModelInfo?.hasSafeTensors ?? false)))
-                            .onChange(of: sdEngine) { _, newValue in
-                                /// When switching engines, update scheduler to a compatible default
-                                if newValue == "coreml" {
-                                    sdScheduler = "dpm++"
-                                    sdUseKarras = true
-                                    /// Clear img2img parameters when switching to CoreML (not supported)
-                                    sdInputImagePath = nil
-                                } else {
-                                    sdScheduler = "dpm++_sde_karras"
-                                    sdUseKarras = false
-                                }
-                                syncSettingsToConversation()
-                            }
-                            .onAppear {
-                                /// Auto-select available engine on first load
-                                autoSelectEngine()
-                            }
-                            .onChange(of: selectedModel) { _, _ in
-                                /// Auto-select when model changes
-                                autoSelectEngine()
-                            }
-                        }
-                    }
-
-                    /// Image upload with strength controls (Python engine only)
-                    if sdEngine == "python" {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Input Image (Optional)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            ImageUploadView(imagePath: $sdInputImagePath)
-                                .frame(width: 220)
-                                .onChange(of: sdInputImagePath) { _, _ in
-                                    syncSettingsToConversation()
-                                }
-
-                            /// Strength slider (only visible when image is uploaded)
-                            if sdInputImagePath != nil {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack(spacing: 4) {
-                                        Text("Strength")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        Text(String(format: "%.2f", sdStrength))
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .monospacedDigit()
-                                    }
-                                    Slider(value: $sdStrength, in: 0.0...1.0, step: 0.05)
-                                        .frame(width: 220)  /// Match image preview width
-                                        .onChange(of: sdStrength) { _, _ in
-                                            syncSettingsToConversation()
-                                        }
-                                    Text("0.0=no change • 1.0=full generation")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .frame(width: 220, alignment: .leading)  /// Match width
-                                }
-                            }
-                        }
-                    }
-                }
-
-                /// RIGHT: Prompt and negative prompt
-                VStack(alignment: .leading, spacing: 8) {
-                    /// Main prompt field
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Prompt")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        ZStack(alignment: .topLeading) {
-                            TextEditor(text: $messageText)
-                                .font(.body)
-                                .frame(minHeight: 60, maxHeight: 100)
-                                .scrollContentBackground(.hidden)
-                                .background(Color(NSColor.controlBackgroundColor))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
-                                )
-                                .focused($isInputFocused)
-                                .onSubmit {
-                                    /// Enter key triggers generation if text is not empty
-                                    if !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending {
-                                        sendMessage()
-                                    }
-                                }
-
-                            if messageText.isEmpty {
-                                Text("a beautiful sunset over mountains, vibrant colors, high detail")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                    .padding(.leading, 8)
-                                    .padding(.top, 8)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    }
-
-                    /// Negative prompt field
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Negative Prompt (Optional)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        ZStack(alignment: .topLeading) {
-                            TextEditor(text: $sdNegativePrompt)
-                                .font(.body)
-                                .frame(minHeight: 60, maxHeight: 80)
-                                .scrollContentBackground(.hidden)
-                                .background(Color(NSColor.controlBackgroundColor))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
-                                )
-                                .onChange(of: sdNegativePrompt) { _, _ in
-                                    syncSettingsToConversation()
-                                }
-
-                            if sdNegativePrompt.isEmpty {
-                                Text("ugly, blurry, low quality, distorted")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                    .padding(.leading, 8)
-                                    .padding(.top, 8)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    }
-                }
-            }
-
-            /// BOTTOM ROW: Parameter controls (Steps, CFG, Scheduler, Size, Upscale, Count, Seed, Generate button)
-            HStack(spacing: 16) {
-                /// Steps.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Steps")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack {
-                        TextField("", value: $sdSteps, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 60)
-                            .onChange(of: sdSteps) { _, _ in
-                                syncSettingsToConversation()
-                            }
-                        Stepper("", value: $sdSteps, in: 1...100)
-                            .labelsHidden()
-                    }
-                }
-
-                /// CFG Scale (formerly Guidance).
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("CFG Scale")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack {
-                        TextField("", value: $sdGuidanceScale, format: .number.precision(.fractionLength(1)))
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 60)
-                            .onChange(of: sdGuidanceScale) { _, _ in
-                                syncSettingsToConversation()
-                            }
-                        Stepper("", value: $sdGuidanceScale, in: guidanceScaleRange, step: Float(0.1))
-                            .labelsHidden()
-                    }
-                }
-
-                /// Scheduler.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Scheduler")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    SDSchedulerPickerView(
-                        selectedScheduler: $sdScheduler,
-                        engine: sdEngine,
-                        useKarras: $sdUseKarras
-                    )
-                    .onChange(of: sdScheduler) { _, _ in
-                        syncSettingsToConversation()
-                    }
-                    .onChange(of: sdUseKarras) { _, _ in
-                        syncSettingsToConversation()
-                    }
-                }
-
-                /// Device (Python engine only)
-                if sdEngine == "python" {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Device")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        SDDevicePickerView(selectedDevice: $sdDevice)
-                            .onChange(of: sdDevice) { _, _ in
-                                syncSettingsToConversation()
-                            }
-                    }
-                }
-
-                /// Image size.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Size")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 6) {
-                        SDSizePickerView(
-                            selectedSize: Binding(
-                                get: { "\(sdImageWidth)×\(sdImageHeight)" },
-                                set: { newValue in
-                                    let components = newValue.split(separator: "×")
-                                    if components.count == 2,
-                                       let width = Int(components[0]),
-                                       let height = Int(components[1]) {
-                                        sdImageWidth = width
-                                        sdImageHeight = height
-                                        syncSettingsToConversation()
-                                    }
-                                }
-                            ),
-                            availableSizes: availableImageSizes
-                        )
-
-                        /// Portrait/Landscape toggle button
-                        Button(action: toggleImageOrientation) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.left.arrow.right")
-                                    .font(.caption)
-                                Text(currentImageOrientation)
-                                    .font(.caption)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(sdImageWidth == sdImageHeight)  /// Disable for square images
-                        .help(sdImageWidth == sdImageHeight ? "Square images cannot be rotated" : "Toggle between portrait and landscape orientation")
-                    }
-                }
-
-                /// Upscaling model
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Upscale")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    UpscaleModelPickerView(selectedModel: $sdUpscaleModel)
-                        .onChange(of: sdUpscaleModel) { _, _ in
-                            syncSettingsToConversation()
-                        }
-                }
-
-                /// Image count.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Count")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack {
-                        TextField("", value: $sdImageCount, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 50)
-                            .onChange(of: sdImageCount) { _, _ in
-                                syncSettingsToConversation()
-                            }
-                        Stepper("", value: $sdImageCount, in: 1...10)
-                            .labelsHidden()
-                    }
-                }
-
-                /// Seed (up to 10 digits).
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Seed")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    TextField("-1 = random", value: $sdSeed, format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 100)
-                        .onChange(of: sdSeed) { _, _ in
-                            syncSettingsToConversation()
-                        }
-                }
-
-                Spacer()
-
-                /// Generate/Stop button aligned with bottom row.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(" ")
-                        .font(.caption)
-                        .foregroundColor(.clear)
-                    Button(action: {
-                        if !isSending {
-                            sendMessage()
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: isSending ? "hourglass" : "play.fill")
-                            Text(isSending ? "Generating..." : "Generate")
-                        }
-                        .font(.body)
-                    }
-                    .buttonStyle(.bordered)
-                    .help(isSending ? "Generation in progress" : "Generate image (or press Enter)")
-                    .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Parameter Controls Panel
-
-    private var parameterControlsPanel: some View {
-        VStack(spacing: 0) {
-            /// FIRST ROW: Model, Prompt, Tools, Actions.
-            HStack(spacing: 12) {
-                /// Model selection.
-                HStack(spacing: 6) {
-                    Text("Model:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize()
-                        .help("Select the AI model to use for this conversation. Local models require loading before use.")
-
-                    ModelPickerView(
-                        selectedModel: $selectedModel,
-                        modelListManager: modelListManager,
-                        endpointManager: endpointManager
-                    )
-
-                    /// Load/Eject buttons for local models only.
-                    if endpointManager.isLocalModel(selectedModel) {
-                        /// Check loading status directly from endpointManager (more reliable than @State)
-                        let currentStatus = endpointManager.modelLoadingStatus[selectedModel] ?? .notLoaded
-
-                        switch currentStatus {
-                        case .loading:
-                            ProgressView()
-                                .scaleEffect(0.6)
-                                .frame(width: 16, height: 16)
-                        case .loaded:
-                            Button(action: { ejectLocalModel() }) {
+                /// Local model load/eject controls.
+                if endpointManager.isLocalModel(selectedModel) {
+                    let currentStatus = endpointManager.modelLoadingStatus[selectedModel] ?? .notLoaded
+                    let isLoading: Bool = { if case .loading = currentStatus { return true }; return false }()
+                    if currentStatus == .loaded {
+                        Button(action: { ejectLocalModel() }) {
+                            HStack(spacing: 3) {
                                 Image(systemName: "eject.fill")
-                                    .frame(width: 20, height: 20)
+                                    .font(.system(size: 10))
+                                Text("Eject")
+                                    .font(.caption2)
                             }
-                            .buttonStyle(.bordered)
-                            .frame(width: 36)
-                            .fixedSize()
-                            .help("Eject model from memory")
-                        case .notLoaded:
-                            Button(action: { loadLocalModel() }) {
-                                Image(systemName: "play.fill")
-                                    .frame(width: 20, height: 20)
-                            }
-                            .buttonStyle(.bordered)
-                            .frame(width: 36)
-                            .fixedSize()
-                            .help("Load model into memory")
+                            .foregroundColor(.green)
                         }
+                        .buttonStyle(.borderless)
+                        .help("Eject model")
+                    } else if isLoading {
+                        HStack(spacing: 3) {
+                            ProgressView()
+                                .scaleEffect(0.5)
+                                .frame(width: 12, height: 12)
+                            Text("Loading...")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                    } else {
+                        Button(action: { loadLocalModel() }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 10))
+                                Text("Load")
+                                    .font(.caption2)
+                            }
+                            .foregroundColor(.orange)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Load model into memory")
                     }
                 }
 
-                /// System prompt selection.
-                HStack(spacing: 6) {
-                    Text("Prompt:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .help("Select a system prompt to guide the AI's behavior and capabilities.")
-
-                    /// Get conversation-scoped configurations (defaults + workspace + user).
+                /// System prompt picker - opens directly as a menu.
+                if let activeConv = conversationManager.activeConversation {
                     let conversationConfigs = systemPromptManager.configurationsForConversation(
-                        workspacePath: conversationManager.activeConversation?.workingDirectory
+                        workspacePath: activeConv.workingDirectory
                     )
-
-                    if !conversationConfigs.isEmpty, let activeConv = conversationManager.activeConversation {
-                        /// Use a local binding that ensures non-nil value.
+                    if !conversationConfigs.isEmpty {
                         let binding = Binding<UUID>(
                             get: {
                                 activeConv.settings.selectedSystemPromptId
@@ -2710,57 +1842,13 @@ public struct ChatWidget: View {
                                 ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
                             },
                             set: { newValue in
-                                /// Update conversation's selected prompt directly.
                                 if var conv = conversationManager.activeConversation {
                                     conv.settings.selectedSystemPromptId = newValue
-
-                                    /// Auto-enable/disable settings based on prompt configuration
-                                    if let config = conversationConfigs.first(where: { $0.id == newValue }) {
-                                        /// Workflow Mode: Enable if prompt requires it, disable if not
-                                        if config.autoEnableWorkflowMode {
-                                            conv.settings.enableWorkflowMode = true
-                                            enableWorkflowMode = true
-                                        } else if conv.settings.enableWorkflowMode {
-                                            /// Auto-disable if switching to non-workflow prompt
-                                            conv.settings.enableWorkflowMode = false
-                                            enableWorkflowMode = false
-                                        }
-
-                                        /// Terminal: Enable if tools available AND prompt requires it, disable otherwise
-                                        if config.autoEnableTerminal {
-                                            let toolsAvailable = enableTools || userManuallyEnabledTools
-                                            let isLocal = endpointManager.isLocalModel(selectedModel)
-
-                                            if toolsAvailable && (!isLocal || userManuallyEnabledTools) {
-                                                conv.settings.enableTerminalAccess = true
-                                                enableTerminalAccess = true
-                                            } else {
-                                                logger.info("CHATWIDGET: Skipped auto-enable terminal - tools not available (model: \(selectedModel), toolsEnabled: \(enableTools), isLocal: \(isLocal))")
-                                            }
-                                        } else if conv.settings.enableTerminalAccess {
-                                            /// Auto-disable terminal if switching to non-terminal prompt
-                                            conv.settings.enableTerminalAccess = false
-                                            enableTerminalAccess = false
-                                        }
-
-                                        /// Dynamic Iterations: Enable if prompt requires it, disable if not
-                                        if config.autoEnableDynamicIterations {
-                                            conv.settings.enableDynamicIterations = true
-                                            enableDynamicIterations = true
-                                        } else if conv.settings.enableDynamicIterations {
-                                            /// Auto-disable if switching to non-dynamic-iterations prompt
-                                            conv.settings.enableDynamicIterations = false
-                                            enableDynamicIterations = false
-                                        }
-                                        /// Note: autoEnableTools would control mcpToolsEnabled in SAMConfig (global setting)
-                                        /// For now, we'll skip it since tools are global, not per-conversation
-                                    }
 
                                     conversationManager.activeConversation = conv
                                     conversationManager.saveConversations()
                                 }
 
-                                /// Also update global selection for new conversations.
                                 systemPromptManager.selectedConfigurationId = newValue
                                 if let config = conversationConfigs.first(where: { $0.id == newValue }) {
                                     systemPromptManager.selectConfiguration(config)
@@ -2772,476 +1860,538 @@ public struct ChatWidget: View {
                             selectedPromptId: binding,
                             prompts: conversationConfigs
                         )
-                    } else {
-                        Text("Loading...")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .frame(width: 140)
                     }
+
+                    /// Personality picker - opens directly as a menu.
+                    PersonalityPickerView(
+                        selectedPersonalityId: Binding<UUID?>(
+                            get: { activeConv.settings.selectedPersonalityId },
+                            set: { newValue in
+                                if var conv = conversationManager.activeConversation {
+                                    conv.settings.selectedPersonalityId = newValue
+                                    conversationManager.activeConversation = conv
+                                    conversationManager.saveConversations()
+                                }
+                            }
+                        )
+                    )
                 }
 
-                /// Personality selection.
-                HStack(spacing: 6) {
-                    Text("Personality:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .help("Select a personality to customize the AI's tone and communication style.  May provide focused knowledge in specific areas.")
+                Divider()
+                    .frame(height: 14)
 
-                    if let activeConv = conversationManager.activeConversation {
-                        PersonalityPickerView(
-                            selectedPersonalityId: Binding<UUID?>(
-                                get: {
-                                    activeConv.settings.selectedPersonalityId
-                                },
-                                set: { newValue in
-                                    if var conv = conversationManager.activeConversation {
-                                        conv.settings.selectedPersonalityId = newValue
-                                        conversationManager.activeConversation = conv
-                                        conversationManager.saveConversations()
-                                    }
-                                }
-                            )
-                        )
-                    } else {
-                        Text("Loading...")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .frame(width: 140)
+                /// Panels menu button.
+                Button(action: { showingPanelsMenu.toggle() }) {
+                    Image(systemName: "square.grid.2x2")
+                        .foregroundColor(anyPanelOpen ? .accentColor : .secondary)
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.borderless)
+                .help("Panels")
+                .popover(isPresented: $showingPanelsMenu, arrowEdge: .top) {
+                    panelsMenuContent
+                        .frame(width: 220)
+                }
+
+                /// Settings button.
+                Button(action: { showingSettingsPopover.toggle() }) {
+                    Image(systemName: "slider.horizontal.3")
+                        .foregroundColor(showingSettingsPopover ? .accentColor : .secondary)
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.borderless)
+                .help("Parameters & settings")
+                .popover(isPresented: $showingSettingsPopover, arrowEdge: .top) {
+                    settingsPopoverContent
+                        .frame(width: 320)
+                }
+
+                /// Todo list button.
+                Button(action: { showingTodoListPopover.toggle() }) {
+                    ZStack {
+                        Image(systemName: "list.clipboard")
+                            .foregroundColor(showingTodoListPopover ? .accentColor : .secondary)
+                            .frame(width: 16, height: 16)
+
+                        if !agentTodoList.isEmpty {
+                            Text("\(agentTodoList.count)")
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(2)
+                                .background(Circle().fill(Color.accentColor))
+                                .offset(x: 8, y: -8)
+                        }
                     }
+                }
+                .buttonStyle(.borderless)
+                .help("Agent todo list")
+                .popover(isPresented: $showingTodoListPopover, arrowEdge: .top) {
+                    todoListPopoverContent
+                        .frame(width: 320)
                 }
 
                 Spacer()
 
-                /// Panel toggle buttons group.
-                HStack(spacing: 6) {
-                    Button(action: { showingWorkingDirectoryPanel.toggle() }) {
-                        Image(systemName: "folder")
-                            .foregroundColor(showingWorkingDirectoryPanel ? .accentColor : .secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Working Directory")
-
-                    Button(action: { showingMemoryPanel.toggle() }) {
-                        Image(systemName: "brain.head.profile")
-                            .foregroundColor(showingMemoryPanel ? .accentColor : .secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Session Intelligence")
-
-                    Button(action: { showingPerformanceMetrics.toggle() }) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .foregroundColor(showingPerformanceMetrics ? .accentColor : .secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Performance Metrics")
-                    
-                    Button(action: { showingCostTrackingPanel.toggle() }) {
-                        Image(systemName: "creditcard")
-                            .foregroundColor(showingCostTrackingPanel ? .accentColor : .secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Session Costs")
-
-                    Button(action: {
-                        if enableTerminalAccess {
-                            showingTerminalPanel.toggle()
-                        }
-                    }) {
-                        Image(systemName: "terminal")
-                            .foregroundColor(enableTerminalAccess ? (showingTerminalPanel ? .accentColor : .secondary) : .secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .disabled(!enableTerminalAccess)
-                    .help(enableTerminalAccess ? "Terminal" : "Terminal (Disabled - Enable in toolbar)")
+                /// Attach files button.
+                Button(action: { attachFiles() }) {
+                    Image(systemName: attachedFiles.isEmpty ? "paperclip" : "paperclip.badge.ellipsis")
+                        .foregroundColor(attachedFiles.isEmpty ? .secondary : .accentColor)
+                        .frame(width: 16, height: 16)
                 }
+                .buttonStyle(.borderless)
+                .help(attachedFiles.isEmpty ? "Attach files" : "Attached: \(attachedFiles.count)")
+
+                /// Speaker button.
+                Button(action: { voiceManager.toggleSpeaking() }) {
+                    Image(systemName: voiceManager.speakingMode ? "speaker.fill" : "speaker")
+                        .foregroundColor(voiceManager.speakingMode ? .accentColor : .secondary)
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.borderless)
+                .help("Speaking mode")
+
+                /// Microphone button.
+                Button(action: { voiceManager.toggleListening() }) {
+                    Image(systemName: voiceManager.listeningMode ? "mic.fill" : "mic")
+                        .foregroundColor(
+                            voiceManager.currentState == .activeListening ? .red :
+                            voiceManager.listeningMode ? .accentColor : .secondary
+                        )
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.borderless)
+                .help("Listening mode")
+                .disabled(shouldDisableInput)
 
                 Divider()
-                    .frame(height: 20)
-                    .padding(.horizontal, 4)
+                    .frame(height: 14)
 
-                /// Settings and actions group.
-                HStack(spacing: 6) {
-                    Button(action: { withAnimation { showAdvancedParameters.toggle() } }) {
-                        Image(systemName: "wrench.and.screwdriver")
-                            .foregroundColor(showAdvancedParameters ? .accentColor : .secondary)
-                            .frame(width: 20, height: 20)
+                /// Send/Stop button.
+                Button(action: {
+                    if isAwaitingUserInput {
+                        submitUserResponse()
+                    } else if isSending {
+                        streamingTask?.cancel()
+                        streamingTask = nil
+                        isSending = false
+                        currentOrchestrator?.cancelWorkflow()
+                        currentOrchestrator = nil
+                        if let conversation = activeConversation {
+                            conversation.isProcessing = false
+                        }
+                        Task {
+                            await endpointManager.cancelLocalModelGeneration()
+                        }
+                    } else {
+                        sendMessage()
                     }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Parameters")
-
-                    Button(action: { showingExportOptions.toggle() }) {
-                        Image(systemName: "square.and.arrow.up")
-                            .foregroundColor(showingExportOptions ? .accentColor : .secondary)
-                            .frame(width: 20, height: 20)
-                            .offset(y: -1)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Export Chat")
-
-                    Button(action: { showingTodoListPopover.toggle() }) {
-                        ZStack {
-                            Image(systemName: "list.clipboard.fill")
-                                .foregroundColor(showingTodoListPopover ? .accentColor : .secondary)
-                                .frame(width: 20, height: 20)
-
-                            /// Badge showing todo count
-                            if !agentTodoList.isEmpty {
-                                Text("\(agentTodoList.count)")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(3)
-                                    .background(Circle().fill(Color.accentColor))
-                                    .offset(x: 10, y: -10)
-                            }
+                }) {
+                    HStack(spacing: 4) {
+                        if isAwaitingUserInput {
+                            Image(systemName: "arrowshape.up.fill")
+                                .font(.caption)
+                            Text("Submit")
+                                .font(.caption)
+                        } else if isSending {
+                            Image(systemName: "stop.fill")
+                                .font(.caption)
+                            Text("Stop")
+                                .font(.caption)
+                        } else {
+                            Image(systemName: "arrowshape.up.fill")
+                                .font(.caption)
+                            Text("Send")
+                                .font(.caption)
                         }
                     }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help("Agent Todo List (\(agentTodoList.count) items)")
-                    .popover(isPresented: $showingTodoListPopover, arrowEdge: .bottom) {
-                        TodoListPopover(todos: agentTodoList)
-                    }
-
-                    Button(action: { scrollLockEnabled.toggle() }) {
-                        Image(systemName: scrollLockEnabled ? "lock.fill" : "lock.open.fill")
-                            .foregroundColor(scrollLockEnabled ? .accentColor : .secondary)
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(width: 36)
-                    .fixedSize()
-                    .help(scrollLockEnabled ? "Scroll Lock: ON (auto-scroll to new messages)" : "Scroll Lock: OFF (manual scroll)")
+                    .foregroundColor(
+                        isSending ? .red :
+                        isAwaitingUserInput ? .white :
+                        messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .secondary : .white
+                    )
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        isSending ? Color.red.opacity(0.15) :
+                        isAwaitingUserInput ? Color.accentColor :
+                        messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.clear : Color.accentColor
+                    )
+                    .cornerRadius(6)
                 }
+                .buttonStyle(.borderless)
+                .disabled(
+                    (!isAwaitingUserInput && !isSending && messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ||
+                    shouldDisableInput
+                )
+                .help(
+                    isAwaitingUserInput ? "Submit response" :
+                    isSending ? "Stop generation" :
+                    "Send message"
+                )
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Color(NSColor.windowBackgroundColor))
-            .overlay(
-                Rectangle()
-                    .frame(height: 1)
-                    .foregroundColor(Color(NSColor.separatorColor)),
-                alignment: .bottom
-            )
+            .padding(.bottom, 8)
+        }
+    }
 
-            /// SECOND ROW: Advanced Parameters (collapsible, responsive wrapping).
-            if showAdvancedParameters {
-                Divider()
+    /// NOTE: UI picker stores user preference, but actual dimension support depends on Core ML model capabilities.
+    /// Future enhancement: Query Core ML model metadata to get truly supported dimensions.
 
-                FlowLayout(spacing: 12, alignment: .leading) {
-                    /// Temperature.
-                    HStack(spacing: 4) {
-                        Text("Temp:")
-                            .font(.caption2)
+
+    /// Detect if current model is Z-Image (or Qwen-Image)
+
+    /// - EDMDPMSolverMultistepScheduler produces garbage on MPS
+
+    // MARK: - Bottom Bar Popovers
+    /// Whether any panel is currently open.
+    private var anyPanelOpen: Bool {
+        showingWorkingDirectoryPanel || showingMemoryPanel || showingPerformanceMetrics ||
+        showingCostTrackingPanel || showingTodoListPopover
+    }
+
+    /// Todo list popover content.
+    private var todoListPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Agent Tasks")
+                .font(.headline)
+
+            if agentTodoList.isEmpty {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.title2)
                             .foregroundColor(.secondary)
-                            .fixedSize()
-                        Slider(value: $temperature, in: 0.0...2.0, step: 0.1)
-                            .frame(width: 60)
-                        Text("\(temperature, specifier: "%.1f")")
-                            .font(.caption2)
-                            .monospacedDigit()
-                            .frame(width: 25)
+                        Text("No active tasks")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
-                    .help("Creativity Level: Higher values make responses more creative and varied. Lower values make responses more focused and predictable.")
-                    .fixedSize()
+                    Spacer()
+                }
+                .padding(.vertical, 12)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(agentTodoList) { item in
+                            HStack(spacing: 6) {
+                                Image(systemName: item.statusIcon)
+                                    .font(.caption)
+                                    .foregroundColor(todoStatusColor(item.status))
+                                    .frame(width: 14)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.title)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                    if !item.description.isEmpty {
+                                        Text(item.description)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(2)
+                                    }
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+            }
+        }
+        .padding(12)
+    }
 
-                    /// Top-P.
-                    HStack(spacing: 4) {
-                        Text("Top-P:")
+    /// Color for todo status.
+    private func todoStatusColor(_ status: String) -> Color {
+        switch status {
+        case "completed": return .green
+        case "in-progress": return .blue
+        case "blocked": return .orange
+        default: return .secondary
+        }
+    }
+
+    /// Panels menu popover content.
+    private var panelsMenuContent: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Panels")
+                .font(.headline)
+                .padding(.bottom, 4)
+
+            panelToggleRow(icon: "folder", label: "Working Directory", isOn: $showingWorkingDirectoryPanel)
+            panelToggleRow(icon: "brain.head.profile", label: "Session Intelligence", isOn: $showingMemoryPanel)
+            panelToggleRow(icon: "chart.line.uptrend.xyaxis", label: "Performance Metrics", isOn: $showingPerformanceMetrics)
+            panelToggleRow(icon: "creditcard", label: "Session Costs", isOn: $showingCostTrackingPanel)
+
+            Divider()
+
+            /// Export and scroll lock.
+            Button(action: {
+                showingPanelsMenu = false
+                showingExportOptions.toggle()
+            }) {
+                HStack {
+                    Image(systemName: "square.and.arrow.up")
+                        .frame(width: 20)
+                    Text("Export Chat")
+                    Spacer()
+                }
+                .font(.caption)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 4)
+            }
+            .buttonStyle(.borderless)
+
+            Button(action: { scrollLockEnabled.toggle() }) {
+                HStack {
+                    Image(systemName: scrollLockEnabled ? "lock.fill" : "lock.open.fill")
+                        .frame(width: 20)
+                    Text(scrollLockEnabled ? "Scroll Lock: ON" : "Scroll Lock: OFF")
+                    Spacer()
+                    if scrollLockEnabled {
+                        Image(systemName: "checkmark")
                             .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .fixedSize()
-                        Slider(value: $topP, in: 0.0...1.0, step: 0.05)
-                            .frame(width: 60)
-                        Text("\(topP, specifier: "%.2f")")
-                            .font(.caption2)
-                            .monospacedDigit()
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                .font(.caption)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 4)
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(12)
+    }
+
+    /// Helper for panel toggle rows in the panels menu.
+    private func panelToggleRow(icon: String, label: String, isOn: Binding<Bool>, disabled: Bool = false) -> some View {
+        Button(action: { if !disabled { isOn.wrappedValue.toggle() } }) {
+            HStack {
+                Image(systemName: icon)
+                    .frame(width: 20)
+                Text(label)
+                Spacer()
+                if isOn.wrappedValue {
+                    Image(systemName: "checkmark")
+                        .font(.caption2)
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .font(.caption)
+            .foregroundColor(disabled ? .secondary.opacity(0.5) : .primary)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 4)
+        }
+        .buttonStyle(.borderless)
+        .disabled(disabled)
+    }
+
+    /// Settings popover content - all parameters, toggles, and advanced settings.
+    private var settingsPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Settings")
+                .font(.headline)
+                .padding(.bottom, 2)
+
+            /// Sampling parameters.
+            Group {
+                Text("PARAMETERS")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fontWeight(.semibold)
+
+                HStack(spacing: 8) {
+                    Text("Temperature")
+                        .font(.caption)
+                        .frame(width: 80, alignment: .leading)
+                    Slider(value: $temperature, in: 0.0...2.0, step: 0.1)
+                        .frame(width: 100)
+                    Text("\(temperature, specifier: "%.1f")")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 30)
+                }
+
+                HStack(spacing: 8) {
+                    Text("Top-P")
+                        .font(.caption)
+                        .frame(width: 80, alignment: .leading)
+                    Slider(value: $topP, in: 0.0...1.0, step: 0.05)
+                        .frame(width: 100)
+                    Text("\(topP, specifier: "%.2f")")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 30)
+                }
+
+                if let repPenalty = repetitionPenalty {
+                    HStack(spacing: 8) {
+                        Text("Repetition")
+                            .font(.caption)
+                            .frame(width: 80, alignment: .leading)
+                        Slider(value: Binding(
+                            get: { repPenalty },
+                            set: { repetitionPenalty = $0 }
+                        ), in: 1.0...2.0, step: 0.1)
+                            .frame(width: 100)
+                        Text("\(repPenalty, specifier: "%.1f")")
+                            .font(.system(.caption, design: .monospaced))
                             .frame(width: 30)
-                    }
-                    .help("Response Variety: Controls how diverse the AI's word choices are. Higher values allow more varied responses.")
-                    .fixedSize()
-
-                    /// Repetition Penalty (optional).
-                    if let repPenalty = repetitionPenalty {
-                        HStack(spacing: 4) {
-                            Text("Rep:")
+                        Button(action: { repetitionPenalty = nil }) {
+                            Image(systemName: "xmark.circle.fill")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-                                .fixedSize()
-                            Slider(value: Binding(
-                                get: { repPenalty },
-                                set: { repetitionPenalty = $0 }
-                            ), in: 1.0...2.0, step: 0.1)
-                                .frame(width: 60)
-                            Text("\(repPenalty, specifier: "%.1f")")
-                                .font(.caption2)
-                                .monospacedDigit()
-                                .frame(width: 25)
-                            Button(action: { repetitionPenalty = nil }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .help("Repetition Control: Helps prevent the AI from repeating the same phrases. Higher values reduce repetition.")
-                        .fixedSize()
-                    } else {
-                        Button(action: { repetitionPenalty = 1.1 }) {
-                            HStack(spacing: 2) {
-                                Image(systemName: "plus.circle")
-                                    .font(.caption2)
-                                Text("Rep Penalty")
-                                    .font(.caption2)
-                            }
-                            .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
-                        .fixedSize()
                     }
-
-                    /// Vertical divider (wrapped in container).
-                    Divider()
-                        .frame(width: 1, height: 20)
-
-                    /// Reasoning toggle.
-                    Toggle(isOn: $enableReasoning) {
-                        Text("Reasoning")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .help("Enables or disables reasoning for models that support it.")
-                    .toggleStyle(.switch)
-                    .fixedSize()
-
-                    /// Tools toggle.
-                    Toggle(isOn: $enableTools) {
-                        Text("Tools")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .help("Allow SAM to search the web, read files, create documents, and perform other helpful tasks")
-                    .toggleStyle(.switch)
-                    .fixedSize()
-                    .onChange(of: enableTools) { _, newValue in
-                        guard !isLoadingConversationSettings else { return }
-                        if !newValue {
-                            /// Tools disabled → Save terminal state and disable terminal.
-                            terminalStateBeforeDisable = enableTerminalAccess
-                            enableTerminalAccess = false
-                        } else {
-                            /// Tools enabled → Restore previous terminal state.
-                            enableTerminalAccess = terminalStateBeforeDisable
+                } else {
+                    Button(action: { repetitionPenalty = 1.1 }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.circle")
+                                .font(.caption)
+                            Text("Add Repetition Penalty")
+                                .font(.caption)
                         }
-                        syncSettingsToConversation()
+                        .foregroundColor(.secondary)
                     }
+                    .buttonStyle(.plain)
+                }
 
-                    /// Auto-Approve toggle (WARNING: Bypasses security).
-                    Toggle(isOn: $autoApprove) {
-                        Text("Auto-Approve")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .help("Allow agents to run any command without prompting. WARNING: Bypasses all security!")
-                    .toggleStyle(.switch)
-                    .fixedSize()
+                HStack(spacing: 8) {
+                    Text("Max Tokens")
+                        .font(.caption)
+                        .frame(width: 80, alignment: .leading)
+                    let minTokens = 1024
+                    let effectiveMaxTokens = max(minTokens + 1024, maxMaxTokens)
+                    let clampedValue = min(max(minTokens, maxTokens ?? effectiveMaxTokens), effectiveMaxTokens)
+                    Slider(value: Binding(
+                        get: { Double(clampedValue) },
+                        set: { maxTokens = Int($0) }
+                    ), in: Double(minTokens)...Double(effectiveMaxTokens), step: 1024)
+                        .frame(width: 100)
+                    Text(maxTokens != nil ? (maxTokens! >= 1024 ? "\(maxTokens!/1024)k" : "\(maxTokens!)") : "∞")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 30)
+                }
 
-                    /// Terminal Access toggle (SECURITY: Default disabled).
-                    Toggle(isOn: $enableTerminalAccess) {
-                        Text("Terminal")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .help("Allow agents to use terminal commands (requires Tools)")
-                    .toggleStyle(.switch)
-                    .fixedSize()
-                    .disabled(!enableTools)
-                    .onChange(of: enableTerminalAccess) { _, _ in
-                        guard !isLoadingConversationSettings else { return }
-                        syncSettingsToConversation()
-                    }
+                HStack(spacing: 8) {
+                    Text("Context")
+                        .font(.caption)
+                        .frame(width: 80, alignment: .leading)
+                    let minContext = 2048
+                    let effectiveMaxContext = max(minContext + 2048, maxContextWindowSize)
+                    let clampedContext = min(max(minContext, contextWindowSize), effectiveMaxContext)
+                    Slider(value: Binding(
+                        get: { Double(clampedContext) },
+                        set: { contextWindowSize = Int($0) }
+                    ), in: Double(minContext)...Double(effectiveMaxContext), step: 1024)
+                        .frame(width: 100)
+                    Text("\(contextWindowSize/1024)k")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 30)
+                }
+            }
 
-                    /// Workflow Mode toggle.
-                    Toggle(isOn: $enableWorkflowMode) {
-                        Text("Workflow")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .help("Automatically prompt the agent to continue.")
-                    .toggleStyle(.switch)
-                    .fixedSize()
-                    .onChange(of: enableWorkflowMode) { _, _ in
-                        guard !isLoadingConversationSettings else { return }
-                        syncSettingsToConversation()
-                    }
+            Divider()
 
-                    /// Shared Topic toggle.
-                    Toggle(isOn: $useSharedData) {
-                        Text("Shared Topic")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+            /// Feature toggles.
+            Group {
+                Text("FEATURES")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fontWeight(.semibold)
+
+                Toggle(isOn: $enableReasoning) {
+                    Text("Reasoning")
+                        .font(.caption)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+                Toggle(isOn: $enableTools) {
+                    Text("Tools")
+                        .font(.caption)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .onChange(of: enableTools) { _, newValue in
+                    guard !isLoadingConversationSettings else { return }
+                    if !newValue {
                     }
-                    .help("Enable shared topics for cross-conversation memory")
-                    .toggleStyle(.switch)
-                    .fixedSize()
-                    .onChange(of: useSharedData) { _, newValue in
-                        guard !isLoadingConversationSettings else { return }
-                        if newValue {
-                            // Load topics when enabling
-                            Task { await loadSharedTopics() }
-                            // If no topic selected, auto-select first one
-                            if assignedSharedTopicId == nil, let first = sharedTopics.first {
-                                assignedSharedTopicId = first.id
-                                conversationManager.attachSharedTopic(topicId: UUID(uuidString: first.id), topicName: first.name)
-                            } else if let topicId = assignedSharedTopicId {
+                    syncSettingsToConversation()
+                }
+
+            }
+
+            Divider()
+
+            /// Shared topic.
+            Group {
+                Text("SHARED TOPIC")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fontWeight(.semibold)
+
+                Toggle(isOn: $useSharedData) {
+                    Text("Enable Shared Topic")
+                        .font(.caption)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .onChange(of: useSharedData) { _, newValue in
+                    guard !isLoadingConversationSettings else { return }
+                    if newValue {
+                        Task { await loadSharedTopics() }
+                        if assignedSharedTopicId == nil, let first = sharedTopics.first {
+                            assignedSharedTopicId = first.id
+                            conversationManager.attachSharedTopic(topicId: UUID(uuidString: first.id), topicName: first.name)
+                        } else if let topicId = assignedSharedTopicId {
+                            let topicName = sharedTopics.first(where: { $0.id == topicId })?.name
+                            conversationManager.attachSharedTopic(topicId: UUID(uuidString: topicId), topicName: topicName)
+                        }
+                    } else {
+                        conversationManager.detachSharedTopic()
+                    }
+                    syncSettingsToConversation()
+                }
+
+                if useSharedData {
+                    if sharedTopics.isEmpty {
+                        Button(action: {
+                            NotificationCenter.default.post(name: .showPreferences, object: nil)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.caption)
+                                Text("No Topics - Create One")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.orange)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        TopicPickerView(
+                            selectedTopicId: $assignedSharedTopicId,
+                            topics: sharedTopics
+                        )
+                        .onChange(of: assignedSharedTopicId) { _, newVal in
+                            guard !isLoadingConversationSettings else { return }
+                            if let topicId = newVal {
                                 let topicName = sharedTopics.first(where: { $0.id == topicId })?.name
                                 conversationManager.attachSharedTopic(topicId: UUID(uuidString: topicId), topicName: topicName)
                             }
-                        } else {
-                            conversationManager.detachSharedTopic()
-                        }
-                        syncSettingsToConversation()
-
-                        /// Terminal directory change is now handled via notification
-                        /// ConversationManager posts conversationWorkingDirectoryDidChange
-                        /// TerminalManager observes and restarts session in new directory
-                    }
-
-                    /// Topic picker (visible when shared data enabled).
-                    if useSharedData {
-                        if sharedTopics.isEmpty {
-                            /// No topics available - show button to open Preferences
-                            Button(action: {
-                                NotificationCenter.default.post(name: .showPreferences, object: nil)
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "exclamationmark.triangle")
-                                        .font(.caption2)
-                                    Text("No Topics - Create One")
-                                        .font(.caption2)
-                                }
-                                .foregroundColor(.orange)
-                            }
-                            .buttonStyle(.plain)
-                            .help("No shared topics available. Click to open Preferences and create a topic.")
-                        } else {
-                            TopicPickerView(
-                                selectedTopicId: $assignedSharedTopicId,
-                                topics: sharedTopics
-                            )
-                            .help("Select which shared topic to use for this conversation")
-                            .fixedSize()
-                            .onChange(of: assignedSharedTopicId) { _, newVal in
-                                guard !isLoadingConversationSettings else { return }
-                                if let topicId = newVal {
-                                    let topicName = sharedTopics.first(where: { $0.id == topicId })?.name
-                                    conversationManager.attachSharedTopic(topicId: UUID(uuidString: topicId), topicName: topicName)
-                                }
-                                syncSettingsToConversation()
-
-                                /// Terminal directory change is now handled via notification
-                                /// ConversationManager posts conversationWorkingDirectoryDidChange
-                                /// TerminalManager observes and restarts session in new directory
-                            }
+                            syncSettingsToConversation()
                         }
                     }
-
-                    /// Dynamic Iterations toggle.
-                    Toggle(isOn: $enableDynamicIterations) {
-                        Text("Extend")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .help("Allow agent to extend iteration limit when needed for complex tasks")
-                    .toggleStyle(.switch)
-                    .fixedSize()
-                    .onChange(of: enableDynamicIterations) { _, _ in
-                        guard !isLoadingConversationSettings else { return }
-                        syncSettingsToConversation()
-                    }
-                    .onChange(of: scrollLockEnabled) { _, _ in
-                        guard !isLoadingConversationSettings else { return }
-                        syncSettingsToConversation()
-                    }
-
-                    /// Vertical divider (wrapped in container).
-                    Divider()
-                        .frame(width: 1, height: 20)
-
-                    /// Max Tokens.
-                    HStack(spacing: 4) {
-                        Text("Max Tokens:")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .fixedSize()
-                        let minTokens = 1024
-                        let effectiveMaxTokens = max(minTokens + 1024, maxMaxTokens)
-                        let clampedValue = min(max(minTokens, maxTokens ?? effectiveMaxTokens), effectiveMaxTokens)
-                        Slider(value: Binding(
-                            get: { Double(clampedValue) },
-                            set: { maxTokens = Int($0) }
-                        ), in: Double(minTokens)...Double(effectiveMaxTokens), step: 1024)
-                            .frame(width: 80)
-                        Text(maxTokens != nil ? (maxTokens! >= 1024 ? "\(maxTokens!/1024)k" : "\(maxTokens!)") : "∞")
-                            .font(.caption2)
-                            .monospacedDigit()
-                            .frame(width: 30)
-                    }
-                    .fixedSize()
-
-                    /// Context Window.
-                    HStack(spacing: 4) {
-                        Text("Context:")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .fixedSize()
-                        let minContext = 2048
-                        let effectiveMaxContext = max(minContext + 2048, maxContextWindowSize)
-                        let clampedContext = min(max(minContext, contextWindowSize), effectiveMaxContext)
-                        Slider(value: Binding(
-                            get: { Double(clampedContext) },
-                            set: { contextWindowSize = Int($0) }
-                        ), in: Double(minContext)...Double(effectiveMaxContext), step: 1024)
-                            .frame(width: 80)
-                        Text("\(contextWindowSize/1024)k")
-                            .font(.caption2)
-                            .monospacedDigit()
-                            .frame(width: 30)
-                    }
-                    .fixedSize()
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            }
+
+            .onChange(of: scrollLockEnabled) { _, _ in
+                guard !isLoadingConversationSettings else { return }
+                syncSettingsToConversation()
             }
         }
-        .onAppear {
-            loadGlobalMLXSettings()
-            /// Initialize document import system if not already done
-            if documentImportSystem == nil {
-                documentImportSystem = DocumentImportSystem(conversationManager: conversationManager)
-            }
-        }
+        .padding(12)
     }
+
 
     // MARK: - Actions
 
@@ -3250,21 +2400,11 @@ public struct ChatWidget: View {
         
         // Initialize ModelListManager with dependencies
         modelListManager.initialize(endpointManager: endpointManager)
-        modelListManager.sdModelProvider = sdModelManager
         
         // ModelListManager handles model loading automatically
         loadSystemPrompts()
         loadRecentChatSession()
         syncWithActiveConversation()
-
-        /// Detect SD-only mode on load (Bug #1 fix) - includes local sd/ and remote alice- models
-        if let activeConv = conversationManager.activeConversation {
-            let isSDModel = activeConv.settings.selectedModel.hasPrefix("sd/") || activeConv.settings.selectedModel.hasPrefix("alice-")
-            isStableDiffusionOnlyMode = isSDModel
-            if isSDModel {
-                logger.info("Detected SD-only mode on load: \\(activeConv.settings.selectedModel)")
-            }
-        }
 
         /// Pre-fetch Copilot user info for quota display (non-blocking)
         Task {
@@ -3302,7 +2442,7 @@ public struct ChatWidget: View {
         setupVoiceCallbacks()
 
         /// Model updates are now handled by ModelListManager automatically
-        /// (listens to .endpointManagerDidUpdateModels, .stableDiffusionModelInstalled, .aliceModelsLoaded)
+        /// (listens to .endpointManagerDidUpdateModels, .aliceModelsLoaded)
         
         /// Listen for rate limit notifications - update braille spinner status bar.
         NotificationCenter.default.addObserver(
@@ -3352,10 +2492,15 @@ public struct ChatWidget: View {
         /// Set flags to prevent onChange handlers from triggering during sync.
         isLoadingConversationSettings = true
         isSyncingMessages = true
+
+        /// Reset flags after a delay to ensure onChange handlers that fire asynchronously
+        /// still see the loading flag. defer runs before onChange handlers execute.
         defer {
-            isLoadingConversationSettings = false
-            isSyncingMessages = false
-            logger.debug("MESSAGE_LIFECYCLE: syncWithActiveConversation - END")
+            DispatchQueue.main.async {
+                isLoadingConversationSettings = false
+                isSyncingMessages = false
+                logger.debug("MESSAGE_LIFECYCLE: syncWithActiveConversation - END (flags cleared)")
+            }
         }
 
         /// REMOVED: Message syncing - messages is now computed property reading activeConversation?.messages
@@ -3368,13 +2513,12 @@ public struct ChatWidget: View {
 
         // Sync panel visibility states from conversation settings
         showingMemoryPanel = conversation.settings.showingMemoryPanel
-        showingTerminalPanel = conversation.settings.showingTerminalPanel
         showingWorkingDirectoryPanel = conversation.settings.showingWorkingDirectoryPanel
         showAdvancedParameters = conversation.settings.showAdvancedParameters
         showingPerformanceMetrics = conversation.settings.showingPerformanceMetrics
         showingCostTrackingPanel = conversation.settings.showingCostTrackingPanel
 
-        logger.debug("PANEL_SYNC: Loaded panel states - memory:\(showingMemoryPanel) terminal:\(showingTerminalPanel) workdir:\(showingWorkingDirectoryPanel) advanced:\(showAdvancedParameters) perf:\(showingPerformanceMetrics) cost:\(showingCostTrackingPanel)")
+        logger.debug("PANEL_SYNC: Loaded panel states - memory:\(showingMemoryPanel) workdir:\(showingWorkingDirectoryPanel) advanced:\(showAdvancedParameters) perf:\(showingPerformanceMetrics) cost:\(showingCostTrackingPanel)")
 
         /// Sync settings from conversation with validation to prevent crashes.
         selectedModel = conversation.settings.selectedModel
@@ -3398,59 +2542,14 @@ public struct ChatWidget: View {
         contextWindowSize = conversation.settings.contextWindowSize
         enableReasoning = conversation.settings.enableReasoning
         enableTools = conversation.settings.enableTools
-        autoApprove = conversation.settings.autoApprove
-        enableTerminalAccess = conversation.settings.enableTerminalAccess
-        enableWorkflowMode = conversation.settings.enableWorkflowMode
-        enableDynamicIterations = conversation.settings.enableDynamicIterations
         /// scrollLockEnabled is now global (@AppStorage), not per-conversation
-
-        /// Sync Stable Diffusion settings from conversation
-        sdSteps = conversation.settings.sdSteps
-        sdGuidanceScale = conversation.settings.sdGuidanceScale
-        sdScheduler = conversation.settings.sdScheduler
-        sdNegativePrompt = conversation.settings.sdNegativePrompt
-        sdSeed = conversation.settings.sdSeed
-        sdUseKarras = conversation.settings.sdUseKarras
-        sdImageCount = conversation.settings.sdImageCount
-        sdImageWidth = conversation.settings.sdImageWidth
-        sdImageHeight = conversation.settings.sdImageHeight
-        sdEngine = conversation.settings.sdEngine
-        sdDevice = conversation.settings.sdDevice
-        sdUpscaleModel = conversation.settings.sdUpscaleModel
-        sdStrength = conversation.settings.sdStrength
-        sdInputImagePath = conversation.settings.sdInputImagePath
 
         /// Z-Image models now work on MPS with bfloat16 (2x faster than CPU)
         /// No automatic device switching needed on restore
-        if isZImageModel {
-            logger.info("Z-Image model restored - MPS with bfloat16 is now supported")
-        }
 
         /// Auto-adjust guidance scale for Z-Image models if out of range
-        if isZImageModel && sdGuidanceScale > guidanceScaleRange.upperBound {
-            sdGuidanceScale = defaultGuidanceScale
-            logger.info("Auto-adjusted restored guidance scale for Z-Image model: \\(sdGuidanceScale)")
-        }
 
         /// Auto-validate image size for Z-Image models on restore
-        if isZImageModel {
-            let currentSize = "\\(sdImageWidth)×\\(sdImageHeight)"
-            if !availableImageSizes.contains(currentSize) {
-                if let firstSize = availableImageSizes.first {
-                    let components = firstSize.split(separator: "×")
-                    if components.count == 2,
-                       let width = Int(components[0]),
-                       let height = Int(components[1]) {
-                        sdImageWidth = width
-                        sdImageHeight = height
-                        logger.info("Auto-adjusted restored image size for Z-Image model: \\(firstSize)")
-                    }
-                }
-            }
-        }
-
-        /// Sync auto-approve state to AuthorizationManager.
-        AuthorizationManager.shared.setAutoApprove(autoApprove, conversationId: conversation.id)
 
         /// Update max context window based on model (after loading selectedModel).
         updateMaxContextForModel()
@@ -3820,34 +2919,13 @@ public struct ChatWidget: View {
         /// and auto-select logic in onChange(of: selectedModel)
         conversation.settings.enableReasoning = enableReasoning
         conversation.settings.enableTools = enableTools
-        conversation.settings.autoApprove = autoApprove
-        conversation.settings.enableTerminalAccess = enableTerminalAccess
-        conversation.settings.enableWorkflowMode = enableWorkflowMode
-        conversation.settings.enableDynamicIterations = enableDynamicIterations
         /// scrollLockEnabled is now global (@AppStorage), not per-conversation
         conversation.settings.useSharedData = useSharedData
         conversation.settings.sharedTopicId = assignedSharedTopicId.flatMap { UUID(uuidString: $0) }
         conversation.settings.sharedTopicName = assignedSharedTopicId.flatMap { id in sharedTopics.first(where: { $0.id == id })?.name }
 
-        /// Sync Stable Diffusion settings to conversation
-        conversation.settings.sdSteps = sdSteps
-        conversation.settings.sdGuidanceScale = sdGuidanceScale
-        conversation.settings.sdScheduler = sdScheduler
-        conversation.settings.sdNegativePrompt = sdNegativePrompt
-        conversation.settings.sdSeed = sdSeed
-        conversation.settings.sdUseKarras = sdUseKarras
-        conversation.settings.sdImageCount = sdImageCount
-        conversation.settings.sdImageWidth = sdImageWidth
-        conversation.settings.sdImageHeight = sdImageHeight
-        conversation.settings.sdEngine = sdEngine
-        conversation.settings.sdDevice = sdDevice
-        conversation.settings.sdUpscaleModel = sdUpscaleModel
-        conversation.settings.sdStrength = sdStrength
-        conversation.settings.sdInputImagePath = sdInputImagePath
-
         /// Sync panel visibility states to conversation
         conversation.settings.showingMemoryPanel = showingMemoryPanel
-        conversation.settings.showingTerminalPanel = showingTerminalPanel
         conversation.settings.showingWorkingDirectoryPanel = showingWorkingDirectoryPanel
         conversation.settings.showAdvancedParameters = showAdvancedParameters
         conversation.settings.showingPerformanceMetrics = showingPerformanceMetrics
@@ -3871,8 +2949,6 @@ public struct ChatWidget: View {
         switch panel {
         case "memory":
             conversation.settings.showingMemoryPanel = value
-        case "terminal":
-            conversation.settings.showingTerminalPanel = value
         case "workdir":
             conversation.settings.showingWorkingDirectoryPanel = value
         case "advanced":
@@ -4018,13 +3094,9 @@ public struct ChatWidget: View {
                         for: activeConversation.id,
                         enabledIds: activeConversation.enabledMiniPromptIds
                     )
-                    /// CRITICAL: Record injection to synchronize state tracking
-                    /// This prevents MiniPromptReminderInjector from injecting again
-                    /// and enables mid-conversation detection of new mini-prompts
-                    MiniPromptReminderInjector.shared.recordInjection(
-                        conversationId: activeConversation.id,
-                        enabledMiniPromptIds: activeConversation.enabledMiniPromptIds
-                    )
+                    /// Mini prompt injection tracking is handled by AgentOrchestrator
+                    /// ChatWidget should NOT call recordInjection() here - that blocks the
+                    /// orchestrator from injecting its own <miniPromptReminder> system message
                     logger.info("MINI_PROMPT_TRACE: ChatWidget injected \(enabledPrompts.count) mini-prompt(s) into FIRST user message: \(enabledPrompts.map { $0.name }.joined(separator: ", "))")
                 } else {
                     logger.debug("MINI_PROMPT_TRACE: ChatWidget miniPromptText was empty")
@@ -4201,35 +3273,14 @@ public struct ChatWidget: View {
             textForAPI += "\n\n<userContext>\n\(injectedContexts.joined(separator: "\n"))\n</userContext>"
         }
 
-        /// Only clear message text if NOT in Stable Diffusion mode (SD keeps prompt for refinement)
-        if !isStableDiffusionOnlyMode {
-            messageText = ""
-            /// Clear draft when message is sent
-            if let conversation = activeConversation {
-                conversation.settings.draftMessage = ""
-            }
-        } else {
-            /// In SD mode, save the prompt as draft so it persists across restarts
-            /// (The prompt is kept in the UI for refinement, and should also persist to disk)
-            if let conversation = activeConversation {
-                conversation.settings.draftMessage = messageText
-            }
+        messageText = ""
+        /// Clear draft when message is sent
+        if let conversation = activeConversation {
+            conversation.settings.draftMessage = ""
         }
 
         /// Prevent multiple sends.
         isSending = true
-
-        /// FEATURE: Direct Stable Diffusion mode - route to image generation
-        if isStableDiffusionOnlyMode {
-            streamingTask = Task {
-                await generateImageDirectly(prompt: originalText)
-                await MainActor.run {
-                    isSending = false
-                    streamingTask = nil
-                }
-            }
-            return
-        }
 
         /// Sync with conversation-level state for persistence across conversation switches
         if let conversation = activeConversation {
@@ -4588,245 +3639,6 @@ public struct ChatWidget: View {
 
                 pendingStreamingUpdate = nil
             }
-        }
-    }
-
-    /// Auto-select engine based on available formats
-    private func autoSelectEngine() {
-        guard let modelInfo = currentSDModelInfo else {
-            logger.warning("autoSelectEngine: currentSDModelInfo is nil for selectedModel=\(selectedModel)")
-            return
-        }
-
-        if !modelInfo.hasCoreML && modelInfo.hasSafeTensors {
-            /// Only SafeTensors available - force Python
-            sdEngine = "python"
-            logger.info("autoSelectEngine: Selected Python (SafeTensors only)")
-        } else if modelInfo.hasCoreML && !modelInfo.hasSafeTensors {
-            /// Only CoreML available - force CoreML
-            sdEngine = "coreml"
-            logger.info("autoSelectEngine: Selected CoreML (CoreML only)")
-        }
-        /// If both available, keep user's selection
-    }
-
-    /// Direct Stable Diffusion generation (bypasses LLM)
-    private func generateImageDirectly(prompt: String) async {
-        logger.info("Direct SD generation started: \(prompt)")
-
-        /// Extract SD model ID from selected model (format: "sd/model-id")
-        let sdModelId = selectedModel.replacingOccurrences(of: "sd/", with: "")
-
-        /// Add user message with auto-pinning and importance
-        let currentUserMessageCount = messages.filter { $0.isFromUser }.count
-        let shouldPin = currentUserMessageCount < 3  /// Auto-pin first 3 user messages
-        let importance = calculateMessageImportance(text: prompt, isUser: true)
-
-        let userMessage = EnhancedMessage(
-            id: UUID(),
-            content: prompt,
-            isFromUser: true,
-            timestamp: Date(),
-            processingTime: nil,
-            isPinned: shouldPin,
-            importance: importance
-        )
-
-        await MainActor.run {
-            /// REMOVED: messages.append(userMessage) - use MessageBus
-            /// Messages are read-only computed property
-            activeConversation?.messageBus?.addUserMessage(content: prompt)
-            processingStatus = .generating
-        }
-
-        /// Get SD settings from conversation settings
-        struct SDSettings {
-            var steps: Int
-            var guidanceScale: Float
-            var scheduler: String
-            var negativePrompt: String
-            var seed: Int
-            var useKarras: Bool
-            var imageCount: Int
-            var engine: String
-            var device: String
-            var upscaleModel: String
-            var inputImagePath: String?
-            var strength: Double
-            var width: Int
-            var height: Int
-
-            /// Derived property: enable upscaling if model is not "none"
-            var enableUpscaling: Bool {
-                return upscaleModel != "none"
-            }
-
-            /// Derived property: img2img mode if input image provided
-            var isImg2Img: Bool {
-                return inputImagePath != nil
-            }
-        }
-
-        /// Z-Image models now work on MPS with bfloat16 (2x faster than CPU)
-        /// Python script auto-detects bfloat16 support and uses optimal dtype
-        let requestedDevice = activeConversation?.settings.sdDevice ?? "auto"
-        let effectiveDevice = requestedDevice
-        if isZImageModel {
-            logger.info("Z-Image direct generation - MPS with bfloat16 is now supported")
-        }
-
-        let settings = SDSettings(
-            steps: activeConversation?.settings.sdSteps ?? 25,
-            guidanceScale: activeConversation?.settings.sdGuidanceScale ?? 8.0,
-            scheduler: activeConversation?.settings.sdScheduler ?? "dpm++",
-            negativePrompt: activeConversation?.settings.sdNegativePrompt ?? "",
-            seed: activeConversation?.settings.sdSeed ?? -1,
-            useKarras: activeConversation?.settings.sdUseKarras ?? true,
-            imageCount: activeConversation?.settings.sdImageCount ?? 1,
-            engine: activeConversation?.settings.sdEngine ?? "coreml",
-            device: effectiveDevice,
-            upscaleModel: activeConversation?.settings.sdUpscaleModel ?? "none",
-            inputImagePath: activeConversation?.settings.sdInputImagePath,
-            strength: activeConversation?.settings.sdStrength ?? 0.75,
-            width: activeConversation?.settings.sdImageWidth ?? 512,
-            height: activeConversation?.settings.sdImageHeight ?? 512
-        )
-
-        /// Create SD service instances (reuse across all images)
-        let sdService = StableDiffusionService()
-        let pythonService = PythonDiffusersService()
-        let upscalingService = UpscalingService()
-        let orchestrator = StableDiffusionOrchestrator(
-            coreMLService: sdService,
-            pythonService: pythonService,
-            upscalingService: upscalingService
-        )
-        let loraManager = LoRAManager()
-        let imageTool = ImageGenerationTool(orchestrator: orchestrator, modelManager: sdModelManager, loraManager: loraManager)
-
-        /// Create execution context (minimal for direct generation)
-        let context = MCPExecutionContext(
-            conversationId: activeConversation?.id ?? UUID(),
-            workingDirectory: activeConversation?.workingDirectory
-        )
-
-        /// Generate multiple images in sequence
-        let totalStartTime = Date()
-        for imageIndex in 1...settings.imageCount {
-            /// Check for cancellation between images
-            if Task.isCancelled {
-                await MainActor.run {
-                    processingStatus = .idle
-                    logger.info("Direct SD generation cancelled after \(imageIndex - 1) image(s)")
-                }
-                return
-            }
-
-            /// Create placeholder assistant message for this image
-            let assistantId = UUID()
-            let placeholderContent = settings.imageCount > 1
-                ? "Generating image \(imageIndex)/\(settings.imageCount)..."
-                : "Generating image..."
-
-            let placeholderMessage = EnhancedMessage(
-                id: assistantId,
-                content: placeholderContent,
-                isFromUser: false,
-                timestamp: Date(),
-                processingTime: nil,
-                isToolMessage: false
-            )
-
-            await MainActor.run {
-                /// REMOVED: messages.append(placeholderMessage) - use MessageBus
-                /// Messages are read-only computed property
-                /// Use addAssistantMessage(id:) to preserve the assistantId for later update
-                activeConversation?.messageBus?.addAssistantMessage(
-                    id: assistantId,
-                    content: placeholderContent,
-                    isStreaming: false
-                )
-            }
-
-            /// Determine seed for this image
-            /// If seed is -1 (random), each image gets a different random seed
-            /// If seed is specified, increment for each image to get variations
-            let imageSeed: Int
-            if settings.seed == -1 {
-                imageSeed = -1  /// Random seed for each image
-            } else {
-                imageSeed = settings.seed + (imageIndex - 1)  /// Incremented seed for variations
-            }
-
-            let parameters: [String: Any] = [
-                "prompt": prompt,
-                "model": sdModelId,
-                "steps": settings.steps,
-                "guidance_scale": settings.guidanceScale,
-                "scheduler": settings.scheduler,
-                "negative_prompt": settings.negativePrompt,
-                "seed": imageSeed,
-                "use_karras": settings.useKarras,
-                "engine": settings.engine,
-                "device": settings.device,
-                "upscale": settings.enableUpscaling,
-                "upscale_model": settings.upscaleModel,
-                "input_image": settings.inputImagePath as Any,
-                "strength": settings.strength,
-                "width": settings.width,
-                "height": settings.height
-            ]
-
-            let startTime = Date()
-            let result = await imageTool.execute(parameters: parameters, context: context)
-            let duration = Date().timeIntervalSince(startTime)
-
-            /// Update assistant message with result
-            await MainActor.run {
-                if result.success {
-                    /// Extract image paths from metadata and create contentParts
-                    var contentParts: [MessageContentPart]?
-                    if let imagePaths = result.metadata.additionalContext["imagePaths"],
-                       !imagePaths.isEmpty {
-                        let paths = imagePaths.split(separator: ",").map { String($0) }
-                        contentParts = paths.map { path in
-                            MessageContentPart.imageUrl(ImageURL(url: "file://\(path)"))
-                        }
-                        logger.info("DIRECT_SD: Created contentParts for \(paths.count) image(s)")
-                    } else {
-                        logger.warning("DIRECT_SD: No imagePaths in metadata! additionalContext keys: \(result.metadata.additionalContext.keys.joined(separator: ", "))")
-                    }
-
-                    /// For Direct SD: Just show the image, no text needed
-                    let content = ""
-
-                    /// Update existing message with image content via MessageBus
-                    activeConversation?.messageBus?.updateMessage(
-                        id: assistantId,
-                        content: content,
-                        contentParts: contentParts,
-                        duration: duration
-                    )
-
-                    logger.info("DIRECT_SD: Updated message with image content via MessageBus")
-
-                    logger.info("Direct SD image \(imageIndex)/\(settings.imageCount) completed in \(String(format: "%.2f", duration))s")
-                } else {
-                    updateMessageContent(messageId: assistantId, newContent: result.output.content, isComplete: true)
-                    logger.error("Direct SD image \(imageIndex)/\(settings.imageCount) failed: \(result.output.content)")
-                }
-            }
-        }
-
-        /// All images complete
-        let totalDuration = Date().timeIntervalSince(totalStartTime)
-        await MainActor.run {
-            processingStatus = .idle
-            logger.info("Direct SD generation complete: \(settings.imageCount) image(s) in \(String(format: "%.2f", totalDuration))s")
-
-            /// Play completion sound using configured notification sound
-            let notificationSound = UserDefaults.standard.string(forKey: "notificationSound") ?? "Submarine"
-            NSSound(named: notificationSound)?.play()
         }
     }
 
@@ -6136,6 +4948,23 @@ public struct ChatWidget: View {
 
     // MARK: - Helper Methods
 
+    /// Calculate text input height based on content for auto-growing input field.
+    private func recalculateInputHeight(for text: String) {
+        let minHeight: CGFloat = 45
+        let maxHeight: CGFloat = 200
+        let lineHeight: CGFloat = 20
+
+        if text.isEmpty {
+            inputTextHeight = minHeight
+            return
+        }
+
+        let lineCount = CGFloat(text.components(separatedBy: "\n").count)
+        // Account for TextEditor padding (top + bottom ~12px)
+        let calculated = (lineCount * lineHeight) + 12
+        inputTextHeight = max(minHeight, min(calculated, maxHeight))
+    }
+
     /// Context menu for conversation title in header (matches sidebar menu)
     @ViewBuilder
     private func conversationHeaderContextMenu(_ conversation: ConversationModel) -> some View {
@@ -6421,46 +5250,6 @@ public struct ChatWidget: View {
 
     // MARK: - Helper Methods
 
-    /// Get or create terminal manager for the active conversation.
-    private func getTerminalManager() -> TerminalManager {
-        guard let conversation = conversationManager.activeConversation else {
-            /// No active conversation - create temporary terminal with base path.
-            let samDirectory = WorkingDirectoryConfiguration.shared.expandedBasePath
-            logger.debug("TERMINAL_MGR: No active conversation, creating temporary manager")
-            return TerminalManager(workingDirectory: samDirectory, conversationId: "temp-session")
-        }
-
-        logger.debug("TERMINAL_MGR: Getting manager for conversation \(conversation.id)")
-
-        /// Use effective working directory (topic directory if shared data enabled)
-        let effectiveWorkingDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-
-        /// Try to get existing manager from ConversationManager.
-        if let existing = conversationManager.getTerminalManager(for: conversation.id) as? TerminalManager {
-            logger.debug("TERMINAL_MGR: Found existing manager with \(existing.outputLines.count) lines")
-            /// Update working directory if it changed.
-            if existing.currentDirectory != effectiveWorkingDir {
-                logger.info("TERMINAL_MGR: Updating working directory (\(existing.currentDirectory) → \(effectiveWorkingDir))")
-                existing.currentDirectory = effectiveWorkingDir
-            }
-            return existing
-        } else {
-            /// Create new manager for this conversation.
-            logger.debug("TERMINAL_MGR: Creating new manager for conversation \(conversation.id)")
-            let manager = TerminalManager(
-                workingDirectory: effectiveWorkingDir,
-                conversationId: conversation.id.uuidString
-            )
-
-            /// Store in ConversationManager for persistence.
-            conversationManager.setTerminalManager(manager, for: conversation.id)
-
-            /// Start accessing security-scoped resource if bookmark exists.
-            conversationManager.startAccessingWorkingDirectory(for: conversation)
-
-            return manager
-        }
-    }
 
     private func exportChatAsJSON() {
         let chatSession = ChatSession(
@@ -6642,9 +5431,6 @@ public struct ChatWidget: View {
         } else if lowercased.contains("file_write") || lowercased.contains("writing file") {
             toolName = "file_write"
             icon = "pencil"
-        } else if lowercased.contains("terminal") || lowercased.contains("command") {
-            toolName = "terminal"
-            icon = "terminal"
         } else if lowercased.contains("memory") || lowercased.contains("remember") {
             toolName = "memory"
             icon = "brain.head.profile"
@@ -6842,6 +5628,11 @@ public struct ChatWidget: View {
                 if outputLines.last != "" {
                     outputLines.append("")
                 }
+                continue
+            }
+
+            /// Filter session naming markers (auto-naming feature)
+            if trimmed.contains("<!--session:") && trimmed.contains("-->") {
                 continue
             }
 
@@ -7114,8 +5905,6 @@ public struct ChatWidget: View {
             throw NSError(domain: "ChatWidget", code: 2, userInfo: [NSLocalizedDescriptionKey: "No user message with content"])
         }
 
-        /// Get terminal manager for this conversation (if exists).
-        let terminalManager = getTerminalManager()
 
         /// Create AgentOrchestrator instance (same as API).
         let orchestrator = AgentOrchestrator(
@@ -7123,11 +5912,8 @@ public struct ChatWidget: View {
             conversationService: sharedConversationService,
             conversationManager: conversationManager,
             maxIterations: WorkflowConfiguration.defaultMaxIterations,
-            terminalManager: terminalManager
         )
 
-        /// Inject WorkflowSpawner into MCPManager for subagent support.
-        conversationManager.mcpManager.setWorkflowSpawner(orchestrator)
 
         /// Connect performance monitor for metrics tracking.
         orchestrator.performanceMonitor = performanceMonitor
@@ -7154,10 +5940,7 @@ public struct ChatWidget: View {
             enableReasoning: enableReasoning,
             workingDirectory: nil,
             systemPromptId: nil,
-            isExternalAPICall: nil,
-            enableTerminalAccess: enableTerminalAccess,
-            enableWorkflowMode: enableWorkflowMode,
-            enableDynamicIterations: enableDynamicIterations
+            isExternalAPICall: nil
         )
 
         return try await orchestrator.runStreamingAutonomousWorkflow(
@@ -7169,388 +5952,3 @@ public struct ChatWidget: View {
     }
 }
 
-// MARK: - UI Setup
-
-struct MemoryItemView: View {
-    let memory: ConversationMemory
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                /// Memory content type icon.
-                Image(systemName: iconForContentType(memory.contentType))
-                    .foregroundColor(colorForContentType(memory.contentType))
-                    .font(.caption)
-
-                /// Content preview.
-                Text(memory.content)
-                    .font(.caption)
-                    .lineLimit(2)
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                /// Similarity score.
-                Text(String(format: "%.0f%%", memory.similarity * 100))
-                    .font(.caption2)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-            }
-
-            HStack {
-                Text(memory.createdAt, format: .dateTime.month().day().hour().minute())
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                Text("\(memory.accessCount) accesses")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-
-                if !memory.tags.isEmpty {
-                    Text("• \(memory.tags.joined(separator: ", "))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(8)
-        .background(Color(NSColor.controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
-    private func iconForContentType(_ type: ConversationEngine.MemoryContentType) -> String {
-        switch type {
-        case .message: return "message"
-        case .userInput: return "person.crop.circle"
-        case .assistantResponse: return "brain.head.profile"
-        case .systemEvent: return "gear"
-        case .toolResult: return "wrench.and.screwdriver"
-        case .contextInfo: return "info.circle"
-        case .document: return "doc.text"
-        }
-    }
-
-    private func colorForContentType(_ type: ConversationEngine.MemoryContentType) -> Color {
-        switch type {
-        case .message: return .primary
-        case .userInput: return .blue
-        case .assistantResponse: return .green
-        case .systemEvent: return .orange
-        case .toolResult: return .purple
-        case .contextInfo: return .secondary
-        case .document: return .indigo
-        }
-    }
-}
-
-struct EnhancedMemoryItemView: View {
-    let memory: ConversationMemory
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            /// Header with source badge
-            HStack(spacing: 6) {
-                sourceIcon
-
-                Text(sourceLabel)
-                    .font(.caption2)
-                    .fontWeight(.medium)
-                    .foregroundColor(sourceColor)
-
-                Spacer()
-
-                if memory.similarity > 0 && memory.similarity < 1.0 {
-                    Text(String(format: "%.0f%%", memory.similarity * 100))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            /// Content
-            Text(memory.content.prefix(200))
-                .font(.caption)
-                .foregroundColor(.primary)
-                .lineLimit(3)
-
-            /// Context from tags
-            if !memory.tags.isEmpty {
-                Text(memory.tags.first ?? "")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .italic()
-            }
-        }
-        .padding(8)
-        .background(sourceBackground)
-        .cornerRadius(6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(sourceColor.opacity(0.3), lineWidth: 1)
-        )
-    }
-
-    private var sourceIcon: some View {
-        Group {
-            switch memory.contentType {
-            case .message:
-                if isFromActiveConversation {
-                    Image(systemName: "message.fill")
-                } else {
-                    Image(systemName: "tray.full.fill")
-                }
-            case .contextInfo:
-                Image(systemName: "archivebox.fill")
-            default:
-                Image(systemName: "tray.full.fill")
-            }
-        }
-        .font(.caption2)
-        .foregroundColor(sourceColor)
-    }
-
-    private var isFromActiveConversation: Bool {
-        memory.tags.first?.contains("active conversation") ?? false
-    }
-
-    private var isFromArchive: Bool {
-        memory.tags.first?.contains("archive") ?? false
-    }
-
-    private var sourceLabel: String {
-        if isFromActiveConversation {
-            return "ACTIVE"
-        } else if isFromArchive {
-            return "ARCHIVE"
-        } else {
-            return "STORED"
-        }
-    }
-
-    private var sourceColor: Color {
-        if isFromActiveConversation {
-            return .blue
-        } else if isFromArchive {
-            return .orange
-        } else {
-            return .green
-        }
-    }
-
-    private var sourceBackground: Color {
-        sourceColor.opacity(0.05)
-    }
-}
-
-// MARK: - Enhanced Message Bubble
-
-struct EnhancedMessageBubble: View {
-    let message: EnhancedMessage
-    let enableAnimations: Bool
-    @State private var showCopyConfirmation = false
-
-    var body: some View {
-        HStack(alignment: .top) {
-            if message.isFromUser {
-                Spacer(minLength: 60)
-            }
-
-            VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 8) {
-                /// Reasoning content (for assistant messages only).
-                if !message.isFromUser && message.hasReasoning {
-                    ReasoningView(
-                        reasoningContent: message.reasoningContent ?? "",
-                        autoExpand: message.showReasoning
-                    )
-                }
-
-                /// Enhanced message content with beautiful markdown support ONLY show message bubble if there's actual content.
-                if !message.content.isEmpty {
-                    HStack {
-                        MarkdownText(message.content)
-                            .id("markdown-\(message.id)")
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(message.isFromUser ?
-                                          Color.accentColor :
-                                          Color.primary.opacity(0.05))
-                                    .shadow(
-                                        color: .primary.opacity(0.1),
-                                        radius: 2,
-                                        x: 0,
-                                        y: 1
-                                    )
-                            )
-                            .foregroundColor(message.isFromUser ? .white : .primary)
-
-                        /// Copy button.
-                        Button(action: copyMessage) {
-                            Image(systemName: showCopyConfirmation ? "checkmark" : "doc.on.doc")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .help("Copy message")
-                    .opacity(0.7)
-                }
-
-                /// Timestamp and performance info ONLY show metadata if there's actual content.
-                if !message.content.isEmpty {
-                    HStack(spacing: 8) {
-                        Text(message.timestamp, format: .dateTime.hour().minute().second())
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-
-                    /// Performance metrics for AI responses.
-                    if !message.isFromUser, let metrics = message.performanceMetrics {
-                        /// More user-friendly formatting.
-                        Text("• \(metrics.tokenCount) tokens • \(String(format: "%.1f", metrics.timeToFirstToken))s TTFT • \(String(format: "%.0f", metrics.tokensPerSecond)) tok/s")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .help("Token count • Time to First Token • Tokens per second")
-                    } else if let processingTime = message.processingTime {
-                        Text("• \(String(format: "%.1f", processingTime))s")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .help("Processing time")
-                    }
-
-                    if !message.isFromUser && message.hasReasoning {
-                        Text("• reasoning")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                            .help("This message includes reasoning")
-                    }
-                    }
-                }
-            }
-
-            if !message.isFromUser {
-                Spacer(minLength: 60)
-            }
-        }
-        .animation(enableAnimations ? .easeInOut(duration: 0.2) : nil, value: showCopyConfirmation)
-    }
-
-    private func copyMessage() {
-        var copyContent = message.content
-
-        /// Include reasoning content if available.
-        if message.hasReasoning {
-            copyContent = "Reasoning:\n\(message.reasoningContent ?? "")\n\nResponse:\n\(message.content)"
-        }
-
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(copyContent, forType: .string)
-
-        showCopyConfirmation = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            showCopyConfirmation = false
-        }
-    }
-}
-
-// MARK: - Processing Status
-
-enum ProcessingStatus: Equatable {
-    case loadingModel
-    case thinking
-    case processingTools(toolName: String)
-    case generating
-    case idle
-
-    static func == (lhs: ProcessingStatus, rhs: ProcessingStatus) -> Bool {
-        switch (lhs, rhs) {
-        case (.loadingModel, .loadingModel),
-             (.thinking, .thinking),
-             (.generating, .generating),
-             (.idle, .idle):
-            return true
-
-        case (.processingTools(let lhsName), .processingTools(let rhsName)):
-            return lhsName == rhsName
-
-        default:
-            return false
-        }
-    }
-}
-
-// MARK: - UI Setup
-
-private struct ProgressIndicatorView: View {
-    let isProcessing: Bool
-    let isAnyModelLoading: Bool
-    let loadingModelName: String?
-    private let logger = Logging.Logger(label: "com.sam.chat.indicator")
-
-    var body: some View {
-        Group {
-            /// Log whenever this View body is evaluated.
-            let _ = logger.debug("DEBUG: ProgressIndicatorView body evaluated - isAnyModelLoading=\(isAnyModelLoading), currentLoadingModelName=\(loadingModelName ?? "nil"), isProcessing=\(isProcessing)")
-
-            if isAnyModelLoading, let modelName = loadingModelName {
-                let _ = logger.debug("DEBUG: Showing ORANGE loading indicator for \(modelName)")
-                /// Model is loading (highest priority).
-                HStack(spacing: 4) {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .tint(.primary)
-                    Text("Loading \(modelName)...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .onAppear {
-                    logger.debug("MODEL_LOADING_UI: Orange loading indicator appeared for \(modelName)")
-                }
-            } else if isProcessing {
-                /// Generic processing (inference, tool execution, etc.).
-                HStack(spacing: 4) {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                    Text("Processing...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Tool Message with Nested Children
-
-/// Renders a tool message with its nested child tool messages.
-struct ToolMessageWithChildren: View {
-    let message: EnhancedMessage
-    let children: [EnhancedMessage]
-    let enableAnimations: Bool
-    let conversation: ConversationModel
-    @Binding var messageToExport: EnhancedMessage?
-    @State private var isExpanded = true
-
-    var body: some View {
-        VStack(spacing: 0) {
-            /// Parent tool card.
-            MessageView(message: message, enableAnimations: enableAnimations, conversation: conversation, messageToExport: $messageToExport)
-
-            /// Child tool cards (indented).
-            if !children.isEmpty && isExpanded {
-                VStack(spacing: 8) {
-                    ForEach(children) { child in
-                        MessageView(message: child, enableAnimations: enableAnimations, conversation: conversation, messageToExport: $messageToExport)
-                            .padding(.leading, 30)
-                    }
-                }
-                .padding(.top, 8)
-            }
-        }
-    }
-}

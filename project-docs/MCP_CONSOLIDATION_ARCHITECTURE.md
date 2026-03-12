@@ -14,7 +14,7 @@
 
 ## Overview
 
-SAM's MCP (Model Context Protocol) tools have been consolidated from ~39 individual tools into 15 tools, with the 4 major operational tools (file, memory, terminal, todo) using a unified operation-based interface. This consolidation reduces system prompt size while preserving all functionality and improving agent decision-making through clearer tool organization.
+SAM's MCP (Model Context Protocol) tools have been consolidated from ~39 individual tools into 8 tools, with the 3 major operational tools (file, memory, todo) using a unified operation-based interface. This consolidation reduces system prompt size while preserving all functionality and improving agent decision-making through clearer tool organization.
 
 **Historical Note**: This document describes the CURRENT architecture (December 2025). An intermediate consolidation occurred in October 2025 where file operations were split into 3 separate tools (FileReadOperationsTool, FileSearchOperationsTool, FileWriteOperationsTool). These have since been unified into a single FileOperationsTool.
 
@@ -27,21 +27,14 @@ SAM's MCP (Model Context Protocol) tools have been consolidated from ~39 individ
 **Consolidated Operational Tools (4 tools with multiple operations each):**
 1. `file_operations` - 16 operations (read, search, write files)
 2. `memory_operations` - 3 operations (search, store, list memories)
-3. `terminal_operations` - 11+ operations (run commands, manage sessions)
 4. `todo_operations` - 4 operations (agent task list management)
 
-**Single-Purpose Utility Tools (11 tools):**
-5. `think` - Transparent reasoning and planning
-6. `user_collaboration` - User input and approval
-7. `run_subagent` - Delegate complex tasks
-8. `increase_max_iterations` - Extend agentic loops
-9. `list_system_prompts` - Query available system prompts
-10. `list_mini_prompts` - Query available mini prompts
-11. `recall_history` - Retrieve conversation history
-12. `read_tool_result` - Read previous tool results
-13. `build_version_control` - Build and version operations
-14. `search_index` - Search workspace index
-15. `working_directory_indexer` - Index working directory
+**Additional Consolidated Tools (6):**
+5. `user_collaboration` - User input and approval
+6. `web_operations` - Web search, research, scraping
+7. `document_operations` - Import/create documents
+9. `math_operations` - Calculations, formulas, conversions
+10. `image_generation` - Remote ALICE image generation
 
 ### Directory Structure
 
@@ -50,17 +43,14 @@ Sources/MCPFramework/
 ├── Tools/                      # 15 MCP tools (what agents see)
 │   ├── FileOperationsTool.swift
 │   ├── MemoryOperationsTool.swift
-│   ├── TerminalOperationsTool.swift
 │   ├── TodoOperationsTool.swift
 │   ├── ThinkTool.swift
 │   ├── UserCollaborationTool.swift
-│   ├── RunSubagentTool.swift
 │   ├── IncreaseMaxIterationsTool.swift
 │   ├── ListSystemPromptsTool.swift
 │   ├── ListMiniPromptsTool.swift
 │   ├── RecallHistoryTool.swift
 │   ├── ReadToolResultTool.swift
-│   ├── BuildVersionControlTool.swift
 │   ├── SearchIndexTool.swift
 │   └── WorkingDirectoryIndexer.swift
 │
@@ -116,7 +106,7 @@ Consolidated tools use an **operation parameter** to route to specific functiona
 - `grep_search` - Text search with regex support
 - `semantic_search` - AI-powered code search
 - `list_usages` - Find all references to a symbol
-- `search_index` - Search indexed files by extension
+
 
 **WRITE (7 operations):**
 - `create_file` - Create new file
@@ -183,48 +173,6 @@ Consolidated tools use an **operation parameter** to route to specific functiona
 
 ---
 
-### 3. terminal_operations (11+ operations)
-
-**Purpose**: Terminal command execution and session management
-
-**Operations:**
-- `run_command` - Execute terminal command
-- `get_terminal_output` - Get output from previous command
-- `get_terminal_buffer` - Get full terminal buffer
-- `get_last_command` - Get last executed command
-- `get_terminal_selection` - Get current terminal selection
-- `create_directory` - Create directory
-- `create_session` - Create new terminal session
-- `send_input` - Send input to session
-- `get_output` - Get session output
-- `get_history` - Get session history
-- `close_session` - Close terminal session
-
-**Authorization:**
-- Commands require user approval based on risk level
-- Directory creation inside working dir: AUTO-APPROVED
-- Elevated permissions: Requires `user_collaboration`
-
-**Replaces Historical Tools:**
-- run_in_terminal
-- get_terminal_output
-- terminal_last_command
-- terminal_selection
-- create_and_run_task
-- Individual session management tools
-
-**Example:**
-```json
-{
-  "tool": "terminal_operations",
-  "operation": "run_command",
-  "command": "swift build",
-  "isBackground": false
-}
-```
-
----
-
 ### 4. todo_operations (4 operations)
 
 **Purpose**: Agent workflow tracking and task list management
@@ -267,41 +215,31 @@ These tools perform one specific function and don't use the operation parameter 
 - Critical for authorization flow
 - Enables human-in-the-loop operations
 
-**7. run_subagent**
-- Delegate complex tasks to focused sub-agents
-- Useful for large, systematic work
-- Sub-agent inherits context but works independently
+- Git operations (status, log, diff, commit, branch, tag)
+- Full repository management
 
-**8. increase_max_iterations**
-- Extend agentic loop iteration limit
-- Use when complex tasks require more steps
-- Default limit prevents infinite loops
+**8. math_operations**
+- Mathematical calculations via Python subprocess
+- Named formulas (financial, scientific, everyday)
+- Unit conversions
 
-**9. list_system_prompts**
-- Query available system prompts
-- Agents can see what prompt configurations exist
-
-**10. list_mini_prompts**
-- Query available mini prompts
-- Smaller prompt templates for specific tasks
-
-**11. recall_history**
-- Retrieve conversation history
-- Access to previous messages and context
+**9. image_generation**
+- Remote image generation via ALICE server
+- GPU-accelerated image generation via ALICE
 
 **12. read_tool_result**
 - Read results from previous tool executions
 - Useful when tool output was large/truncated
 
-**13. build_version_control**
+
 - Build and version control operations
 - Project-specific tooling
 
-**14. search_index**
+
 - Search workspace index
 - Fast file discovery
 
-**15. working_directory_indexer**
+
 - Index working directory for search
 - Maintains file index for fast lookups
 
@@ -372,7 +310,7 @@ This provides backwards compatibility and flexibility in how LLMs invoke tools.
   - FileReadOperationsTool (4 operations)
   - FileSearchOperationsTool (4 operations)
   - FileWriteOperationsTool (6 operations)
-- Memory and terminal consolidated
+- Memory consolidated
 - Todo management separated
 
 ### Phase 3: Current State (December 2025)

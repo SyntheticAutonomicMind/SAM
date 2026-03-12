@@ -4,49 +4,21 @@
 import Foundation
 import SwiftUI
 import Logging
-import Training
 
 private let logger = Logger(label: "com.sam.modellist")
 
-/// Simple structure to represent SD model info without importing StableDiffusionIntegration
-public struct SDModelInfo {
-    public let id: String
-    
-    public init(id: String) {
-        self.id = id
-    }
-}
-
-/// Protocol for SD model providers (to avoid circular dependency)
-@MainActor
-public protocol SDModelProvider {
-    func getSDModelList() -> [SDModelInfo]
-}
-
 /// Centralized manager for available models list across the application.
-/// Provides a single source of truth for model availability with automatic refresh capabilities.
 @MainActor
 public class ModelListManager: ObservableObject {
-    /// Shared singleton instance
     public static let shared = ModelListManager()
     
-    /// Published list of all available models (remote + local LLM + SD)
     @Published public private(set) var availableModels: [String] = []
-    
-    /// Loading state indicator
     @Published public private(set) var isLoading: Bool = false
-    
-    /// Last refresh timestamp
     @Published public private(set) var lastRefresh: Date?
     
-    /// Dependencies
     private var endpointManager: EndpointManager?
     
-    /// SD model provider (injected to avoid circular dependency)
-    public var sdModelProvider: SDModelProvider?
-    
-    /// Cache duration - refresh if older than this
-    private let cacheValidityDuration: TimeInterval = 30.0 // 30 seconds
+    private let cacheValidityDuration: TimeInterval = 30.0
     
     /// Private init for singleton
     private init() {
@@ -80,37 +52,6 @@ public class ModelListManager: ObservableObject {
             }
         }
         
-        NotificationCenter.default.addObserver(
-            forName: .stableDiffusionModelInstalled,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                await self?.refresh(force: true)
-            }
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: .aliceModelsLoaded,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            logger.info("ALICE models loaded, refreshing available models list")
-            Task { @MainActor in
-                await self?.refresh(force: true)
-            }
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: .loraAdaptersDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            logger.info("LoRA adapters changed, refreshing available models list")
-            Task { @MainActor in
-                await self?.refresh(force: true)
-            }
-        }
     }
     
     /// Refresh the available models list
@@ -206,36 +147,10 @@ public class ModelListManager: ObservableObject {
                 return model1.lowercased() < model2.lowercased()
             }
             
-            // Add Stable Diffusion models (local + ALICE remote)
-            var sdModelIds: [String] = []
-            
-            if let sdProvider = sdModelProvider {
-                let localSDModels = sdProvider.getSDModelList()
-                sdModelIds = localSDModels.map { "sd/\($0.id)" }
-            }
-            
-            // Add ALICE remote SD models if connected
-            if let aliceProvider = ALICEProvider.shared, aliceProvider.isHealthy {
-                let aliceSDModels = aliceProvider.availableModels.map { model -> String in
-                    let normalizedId = model.id.replacingOccurrences(of: "/", with: "-")
-                    return "alice-\(normalizedId)"
-                }
-                sdModelIds.append(contentsOf: aliceSDModels)
-            }
-            
-            // Filter out any stable-diffusion/* models from LLM list
-            let llmModelsOnly = sortedModels.filter { !$0.hasPrefix("stable-diffusion/") }
-            
-            // NOTE: LoRA adapters are already included via EndpointManager.getAvailableModels()
-            // They come from LoRA providers created during hot reload
-            // DO NOT add them separately here to avoid duplicates
-            
-            // Combine all models
-            let allModels = llmModelsOnly + sdModelIds
-            logger.info("Loaded \(allModels.count) total models (\(llmModelsOnly.count) LLM, \(sdModelIds.count) SD)")
+            logger.info("Loaded \(sortedModels.count) models")
             
             // Update published properties
-            self.availableModels = allModels
+            self.availableModels = sortedModels
             self.lastRefresh = Date()
             self.isLoading = false
             

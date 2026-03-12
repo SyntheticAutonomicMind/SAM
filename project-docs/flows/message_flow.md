@@ -565,13 +565,13 @@ enum MessageContentPart: Codable {
 sequenceDiagram
     participant UI
     participant MB as MessageBus
-    participant SD as StableDiffusion
+    participant ALICE as ALICE Server
 
     UI->>MB: User sends "generate a cat image"
     MB->>MB: addUserMessage(content, contentParts=[text])
     
-    UI->>SD: generateImage(prompt="a cat")
-    SD-->>UI: ImageURL
+    UI->>ALICE: generateImage(prompt="a cat")
+    ALICE-->>UI: ImageURL
     
     UI->>MB: addAssistantMessage(content="Generated image:", contentParts=[text, image])
     

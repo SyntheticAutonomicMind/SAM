@@ -45,7 +45,6 @@ cd tests
 
 # Run tests for specific tool only
 ./mcp_api_tests.sh --tool file_operations
-./mcp_api_tests.sh --tool terminal_operations
 ```
 
 ### Viewing Results
@@ -85,19 +84,6 @@ cat tests/test_results.txt
 - `delete_file` - Delete file ✓
 - `apply_patch` - Apply unified diff patch
 
-#### 2. **terminal_operations** (11 operations)
-- `run_command` - Execute shell command ✓
-- `get_terminal_output` - Get terminal output
-- `get_terminal_buffer` - Get terminal contents
-- `get_last_command` - Get last command
-- `get_terminal_selection` - Get selected text
-- `create_directory` - Create directory ✓
-- `create_session` - Create terminal session
-- `send_input` - Send input to session
-- `get_output` - Get session output
-- `get_history` - Get session history
-- `close_session` - Close terminal session
-
 #### 3. **memory_operations** (4 operations)
 - `search_memory` - Search stored memories ✓
 - `store_memory` - Store new memory ✓
@@ -117,13 +103,6 @@ cat tests/test_results.txt
 - `document_create` - Create new document
 - `get_doc_info` - Get document information ✓
 
-#### 6. **build_and_version_control** (5 operations)
-- `create_and_run_task` - Create and execute task ✓
-- `run_task` - Run existing task
-- `get_task_output` - Get task output
-- `git_commit` - Commit changes to git
-- `get_changed_files` - Get changed files ✓
-
 #### 7. **think** (1 operation)
 - Reasoning and analysis tool ✓
 
@@ -132,9 +111,6 @@ cat tests/test_results.txt
 
 #### 9. **read_tool_result** (1 operation)
 - Read persisted tool results (deprecated)
-
-#### 10. **run_subagent** (1 operation)
-- Spawn subagent workflows
 
 ### Test Statistics
 

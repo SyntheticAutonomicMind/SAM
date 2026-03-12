@@ -25,20 +25,17 @@ public class ConversationStateManager: ObservableObject {
         public var status: RuntimeStatus
         public var activeTools: Set<String>
         public var modelLoaded: Bool
-        public var terminalSessionId: String?
         public var activeSessionId: UUID?  // Track which session is active
 
         public init(
             status: RuntimeStatus = .idle,
             activeTools: Set<String> = [],
             modelLoaded: Bool = false,
-            terminalSessionId: String? = nil,
             activeSessionId: UUID? = nil
         ) {
             self.status = status
             self.activeTools = activeTools
             self.modelLoaded = modelLoaded
-            self.terminalSessionId = terminalSessionId
             self.activeSessionId = activeSessionId
         }
     }

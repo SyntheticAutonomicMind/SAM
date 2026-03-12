@@ -56,7 +56,7 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
             ),
             "authorize_operation": MCPToolParameter(
                 type: .string,
-                description: "Optional: The tool operation to authorize if user approves. Format: 'tool_name.operation' (e.g., 'terminal_operations.create_directory'). If user responds with approval, this operation will be temporarily authorized.",
+                description: "Optional: The tool operation to authorize if user approves. Format: 'tool_name.operation' (e.g., 'file_operations.create_directory'). If user responds with approval, this operation will be temporarily authorized.",
                 required: false
             )
         ]
@@ -91,36 +91,6 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
     }
 
     public func execute(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
-        /// AUTO-APPROVE CHECK: If auto-approve is enabled for this conversation, bypass user collaboration.
-        if let conversationId = context.conversationId,
-           AuthorizationManager.shared.isAutoApproveEnabled(conversationId: conversationId) {
-            /// If authorize_operation was specified, grant it immediately.
-            if let operation = parameters["authorize_operation"] as? String {
-                /// Get expiry duration from user preferences (default: 5 minutes).
-                let expiryDuration = DurationParser.getAuthorizationExpiryDuration()
-
-                AuthorizationManager.shared.grantAuthorization(
-                    conversationId: conversationId,
-                    operation: operation,
-                    expirySeconds: expiryDuration,
-                    oneTimeUse: false
-                )
-
-                logger.debug("Auto-approve: Authorization granted without user prompt", metadata: [
-                    "operation": .string(operation),
-                    "conversationId": .string(conversationId.uuidString)
-                ])
-            }
-
-            /// Return immediate approval without blocking.
-            let prompt = parameters["prompt"] as? String ?? "Operation requested"
-            return MCPToolResult(
-                toolName: name,
-                success: true,
-                output: MCPOutput(content: "Auto-approved: \(prompt)")
-            )
-        }
-
         /// EXTERNAL API CALL DETECTION: If this is an external API call (GitHub Copilot agent, etc.), return immediately without blocking.
         if context.isExternalAPICall {
             guard let prompt = parameters["prompt"] as? String else {

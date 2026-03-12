@@ -56,20 +56,13 @@ final class MCPFrameworkTests: XCTestCase {
         // Verify tools have required properties
         let tools: [any MCPTool] = [
             FileOperationsTool(),
-            TerminalOperationsTool(),
             MemoryOperationsTool(),
-            BuildVersionControlTool()
         ]
         
         for tool in tools {
             XCTAssertFalse(tool.name.isEmpty, "\(type(of: tool)) must have a name")
             XCTAssertNotNil(tool.parameters["operation"], "\(type(of: tool)) should have an operation parameter")
         }
-        
-        // ThinkTool doesn't have an operation parameter - it's special
-        let thinkTool = ThinkTool()
-        XCTAssertFalse(thinkTool.name.isEmpty, "ThinkTool must have a name")
-        XCTAssertNotNil(thinkTool.parameters["thoughts"], "ThinkTool should have a thoughts parameter")
     }
     
     // MARK: - FileOperationsTool Unit Tests
@@ -117,33 +110,8 @@ final class MCPFrameworkTests: XCTestCase {
         XCTAssertTrue(opParam?.required ?? false, "operation should be required")
     }
     
-    // MARK: - TerminalOperationsTool Unit Tests
     
-    func testTerminalOperationsToolInit() {
-        let tool = TerminalOperationsTool()
-        XCTAssertEqual(tool.name, "terminal_operations")
-    }
     
-    func testTerminalOperationsValidOperations() {
-        let tool = TerminalOperationsTool()
-        let validOps = [
-            "run_command", "get_terminal_output", "get_terminal_buffer",
-            "get_last_command", "get_terminal_selection", "create_directory",
-            "create_session", "send_input", "get_output", "get_history", "close_session"
-        ]
-        
-        guard let operationParam = tool.parameters["operation"] else {
-            XCTFail("Tool must have operation parameter")
-            return
-        }
-        
-        for op in validOps {
-            XCTAssertTrue(
-                operationParam.enumValues?.contains(op) ?? false,
-                "Operation '\(op)' should be valid for terminal_operations"
-            )
-        }
-    }
     
     // MARK: - MemoryOperationsTool Unit Tests
     
@@ -169,44 +137,8 @@ final class MCPFrameworkTests: XCTestCase {
         }
     }
     
-    // MARK: - BuildVersionControlTool Unit Tests
     
-    func testBuildVersionControlToolInit() {
-        let tool = BuildVersionControlTool()
-        XCTAssertEqual(tool.name, "build_and_version_control")
-    }
     
-    func testBuildVersionControlValidOperations() {
-        let tool = BuildVersionControlTool()
-        let validOps = [
-            "create_and_run_task", "run_task", "get_task_output",
-            "git_commit", "get_changed_files"
-        ]
-        
-        guard let operationParam = tool.parameters["operation"] else {
-            XCTFail("Tool must have operation parameter")
-            return
-        }
-        
-        for op in validOps {
-            XCTAssertTrue(
-                operationParam.enumValues?.contains(op) ?? false,
-                "Operation '\(op)' should be valid for build_and_version_control"
-            )
-        }
-    }
-    
-    // MARK: - ThinkTool Unit Tests
-    
-    func testThinkToolInit() {
-        let tool = ThinkTool()
-        XCTAssertEqual(tool.name, "think")
-    }
-    
-    func testThinkToolHasThoughtsParameter() {
-        let tool = ThinkTool()
-        XCTAssertNotNil(tool.parameters["thoughts"], "ThinkTool should have 'thoughts' parameter")
-    }
     
     // MARK: - MCPExecutionContext Tests
     
@@ -219,7 +151,6 @@ final class MCPFrameworkTests: XCTestCase {
             isExternalAPICall: false,
             isUserInitiated: true,
             workingDirectory: "/tmp/test",
-            terminalManager: nil,
             iterationController: nil,
             effectiveScopeId: nil
         )
@@ -326,18 +257,8 @@ final class MCPFrameworkTests: XCTestCase {
         XCTAssertNotNil(tool.parameters["length"], "Should have length parameter")
     }
     
-    // MARK: - RunSubagentTool Unit Tests
     
-    func testRunSubagentToolInit() {
-        let tool = RunSubagentTool()
-        XCTAssertEqual(tool.name, "run_subagent")
-    }
     
-    func testRunSubagentRequiredParameters() {
-        let tool = RunSubagentTool()
-        
-        XCTAssertNotNil(tool.parameters["task"], "Should have task parameter")
-    }
     
     // MARK: - UserCollaborationTool Unit Tests
     
@@ -397,12 +318,8 @@ extension MCPFrameworkTests {
     func testAllToolsHaveDescriptions() {
         let tools: [any MCPTool] = [
             FileOperationsTool(),
-            TerminalOperationsTool(),
             MemoryOperationsTool(),
-            BuildVersionControlTool(),
-            ThinkTool(),
             ReadToolResultTool(),
-            RunSubagentTool(),
             UserCollaborationTool()
         ]
         

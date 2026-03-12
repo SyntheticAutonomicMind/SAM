@@ -31,7 +31,7 @@ public class CreateDirectoryTool: MCPTool, @unchecked Sendable {
 
     public func execute(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
         /// ====================================================================== SECURITY: Path Authorization Check ====================================================================== Block operations outside working directory UNLESS user authorized.
-        let operationKey = "terminal_operations.create_directory"
+        let operationKey = "file_operations.create_directory"
         /// Use centralized authorization guard.
         let authResult = MCPAuthorizationGuard.checkPathAuthorization(
             path: parameters["dirPath"] as? String ?? "",

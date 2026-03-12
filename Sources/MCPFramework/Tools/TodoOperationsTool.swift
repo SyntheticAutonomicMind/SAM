@@ -35,21 +35,16 @@ public class TodoOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     Do NOT try to mark a todo as "in-progress" if the list doesn't exist yet!
     Always create the list FIRST with 'write', then update status with 'update'.
 
-    STEP 2 - MARK ONE TODO IN-PROGRESS:
-    After list exists, before starting work on a todo:
-    → Call: {"operation": "update", "todoUpdates": [{"id": 1, "status": "in-progress"}]}
-    → Only ONE todo can be in-progress at a time
+    STEP 2 - DELIVER CONTENT + UPDATE TODO (one response per todo):
+    For each todo, output your deliverable AND call this tool in the SAME response:
+    → Write the content (story, code, analysis, etc.) in your message text
+    → ALSO call: {"operation": "update", "todoUpdates": [{"id": 1, "status": "completed"}, {"id": 2, "status": "in-progress"}]}
+    → Content + tool call = one complete todo cycle
+    → NEVER update todos without delivering content alongside them
+    → NEVER deliver all content at the end after updating all todos
 
-    STEP 3 - DO THE WORK:
-    Execute the actual task using appropriate tools (research, files, etc.)
-
-    STEP 4 - MARK TODO COMPLETE:
-    Immediately after finishing the work:
-    → Call: {"operation": "update", "todoUpdates": [{"id": 1, "status": "completed"}]}
-    → Do this IMMEDIATELY, don't batch multiple completions
-
-    STEP 5 - REPEAT:
-    Go back to STEP 2 for next todo
+    STEP 3 - REPEAT:
+    Go back to STEP 2 for next todo until all complete
 
     ═══════════════════════════════════════════════════════════════
 
@@ -74,6 +69,7 @@ public class TodoOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     PROGRESS RULES:
     • Describing progress in your response is NOT the same as updating - you MUST call this tool
     • Before ending your turn: call update to mark any completed work
+    • ALWAYS pair content delivery with todo status updates in the same response
 
     STATUS: not-started | in-progress (max 1) | completed | blocked
     """

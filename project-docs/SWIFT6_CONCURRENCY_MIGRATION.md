@@ -29,7 +29,6 @@ curl -X POST http://127.0.0.1:8080/api/chat/completions \
 ### Major Changes
 1. **Made 25+ types Sendable** - protocols, structs, enums, classes
 2. **Fixed AgentOrchestrator** - All tool execution concurrency issues
-3. **Fixed Terminal PTY** - Async/await in sync context
 4. **Fixed Document operations** - @MainActor for NSAttributedString
 5. **Fixed Web operations** - Variable capture and actor isolation
 
@@ -49,7 +48,6 @@ See `project-docs/2025-12-12/1900/CHANGELOG.md` for complete list (local only - 
 - [ ] API endpoint responds
 - [ ] Document tools work
 - [ ] Web tools work  
-- [ ] Terminal tools work
 
 ## Documentation Location
 Full handoff documentation (local only):

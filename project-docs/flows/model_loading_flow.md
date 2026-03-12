@@ -9,7 +9,7 @@
 
 ## Overview
 
-This document describes the complete flow for loading and initializing AI models in SAM, covering both remote provider models (OpenAI, Anthropic, GitHub Copilot) and local models (GGUF, MLX, Stable Diffusion).
+This document describes the complete flow for loading and initializing AI models in SAM, covering both remote provider models (OpenAI, Anthropic, GitHub Copilot) and local models (GGUF, MLX).
 
 ---
 
@@ -139,7 +139,6 @@ flowchart TD
     F -->|openai| I[OpenAIProvider]
     F -->|deepseek| J[DeepSeekProvider]
     F -->|lmstudio-community| K[MLXProvider]
-    F -->|sd| L[StableDiffusionPipeline]
     
     G --> M[Process Request]
     GEM --> M
@@ -147,25 +146,19 @@ flowchart TD
     I --> M
     J --> M
     K --> N[Check Model Loaded]
-    L --> O[Check SD Model Ready]
     
     N -->|Loaded| M
     N -->|Not Loaded| P[Load Model to Memory]
     P --> M
     
-    O -->|Ready| Q[Generate Image]
-    O -->|Not Ready| R[Load SD Model]
-    R --> Q
     
     M --> S[Return Response]
-    Q --> S
     
     style G fill:#90EE90
     style GEM fill:#FFA07A
     style H fill:#87CEEB
     style I fill:#FFE4B5
     style K fill:#FFB6C1
-    style L fill:#DDA0DD
 ```
 
 ---
@@ -241,44 +234,6 @@ stateDiagram-v2
     
     Unloaded --> Removed: Model file deleted
     Removed --> [*]
-```
-
----
-
-## Stable Diffusion Model Loading
-
-```mermaid
-sequenceDiagram
-    participant UI
-    participant SDMM as SDModelManager
-    participant SDP as SDPipeline
-    participant CML as CoreML Framework
-    participant FS
-
-    UI->>SDMM: Select SD model (sd/stable-diffusion-v1-5)
-    SDMM->>FS: Check model path
-    FS-->>SDMM: ~/Library/Caches/sam/models/stable-diffusion/coreml-stable-diffusion-v1-5/
-    
-    SDMM->>SDMM: Validate Core ML files:<br/>- TextEncoder.mlmodelc<br/>- Unet.mlmodelc<br/>- VAEDecoder.mlmodelc
-    
-    SDMM->>SDP: loadModel(modelPath)
-    
-    SDP->>CML: Load TextEncoder.mlmodelc
-    CML-->>SDP: TextEncoder model
-    
-    SDP->>CML: Load Unet.mlmodelc
-    CML-->>SDP: Unet model
-    
-    SDP->>CML: Load VAEDecoder.mlmodelc
-    CML-->>SDP: VAEDecoder model
-    
-    SDP->>SDP: Initialize pipeline configuration
-    SDP->>SDP: Set default parameters:<br/>- Steps: 25<br/>- Guidance: 8.0<br/>- Scheduler: DPM++
-    
-    SDP-->>SDMM: Pipeline ready
-    SDMM-->>UI: Model loaded
-    
-    UI->>UI: Enable image generation
 ```
 
 ---

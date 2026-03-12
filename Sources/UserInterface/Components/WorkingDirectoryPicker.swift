@@ -72,7 +72,7 @@ struct WorkingDirectoryPicker: View {
                         .background(Color(NSColor.textBackgroundColor))
                         .cornerRadius(4)
 
-                    Text("All file operations and terminal commands will use this directory unless an absolute path is specified.")
+                    Text("All file operations will use this directory unless an absolute path is specified.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .lineLimit(2)

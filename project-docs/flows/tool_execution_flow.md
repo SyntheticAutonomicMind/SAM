@@ -477,16 +477,15 @@ flowchart TD
 | file_operations.read_file (small) | 1-5ms | Reading 100 lines |
 | file_operations.read_file (large) | 10-50ms | Reading 1000+ lines |
 | file_operations.grep_search | 50-200ms | Depends on workspace size |
-| terminal_operations.run_command | 100ms-5s | Depends on command |
 | memory_operations.search_memory | 20-100ms | Vector similarity search |
-| run_subagent | 5s-60s | Full workflow execution |
+| web_operations.research | 5s-30s | Multi-source web research |
 
 ### Optimization Strategies
 
 **1. Consistent Tool Ordering (KV Cache Hit)**
 ```swift
 // Tools always returned in same order
-let toolOrder = ["think", "user_collaboration", "file_operations", ...]
+let toolOrder = ["user_collaboration", "memory_operations", "todo_operations", ...]
 ```
 Result: 90%+ KV cache hit rate for system prompts
 

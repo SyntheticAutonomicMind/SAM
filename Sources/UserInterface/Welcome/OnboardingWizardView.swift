@@ -91,7 +91,7 @@ struct OnboardingWizardView: View {
     /// Check if configuration is complete and close wizard if so
     private func checkConfigurationAndClose() {
         /// Check for local models
-        let modelManager = LocalModelManager()
+        let modelManager = LocalModelManager.shared
         let hasLocalModels = !modelManager.getModels().isEmpty
         
         /// Check for configured providers

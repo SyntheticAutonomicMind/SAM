@@ -12,6 +12,57 @@ import UniformTypeIdentifiers
 
 // MARK: - Conversation Row Content with Hover States
 
+// MARK: - Date Grouping for Conversation Sidebar
+
+/// Date-based grouping for conversation organization.
+private enum DateGroup: Int, CaseIterable, Comparable {
+    case today = 0
+    case yesterday = 1
+    case thisWeek = 2
+    case thisMonth = 3
+    case lastMonth = 4
+    case older = 5
+
+    static func < (lhs: DateGroup, rhs: DateGroup) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    var label: String {
+        switch self {
+        case .today: return "Today"
+        case .yesterday: return "Yesterday"
+        case .thisWeek: return "This Week"
+        case .thisMonth: return "This Month"
+        case .lastMonth: return "Last Month"
+        case .older: return "Older"
+        }
+    }
+
+    /// Determine which date group a given date falls into.
+    static func group(for date: Date) -> DateGroup {
+        let calendar = Calendar.current
+        let now = Date()
+
+        if calendar.isDateInToday(date) {
+            return .today
+        } else if calendar.isDateInYesterday(date) {
+            return .yesterday
+        } else if let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start,
+                  date >= weekStart {
+            return .thisWeek
+        } else if let monthStart = calendar.dateInterval(of: .month, for: now)?.start,
+                  date >= monthStart {
+            return .thisMonth
+        } else if let lastMonthDate = calendar.date(byAdding: .month, value: -1, to: now),
+                  let lastMonthStart = calendar.dateInterval(of: .month, for: lastMonthDate)?.start,
+                  date >= lastMonthStart {
+            return .lastMonth
+        } else {
+            return .older
+        }
+    }
+}
+
 private struct ConversationRowContent: View {
     let conversation: ConversationModel
     let isActive: Bool
@@ -21,9 +72,18 @@ private struct ConversationRowContent: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(conversation.title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.primary)
+                HStack {
+                    Text(conversation.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Text(conversation.created, style: .relative)
+                        .font(.caption2)
+                        .foregroundColor(Color(nsColor: .tertiaryLabelColor))
+                }
 
                 if let lastMessage = conversation.messages.last {
                     Text(lastMessage.content)
@@ -86,6 +146,7 @@ public struct MainWindowView: View {
     @State private var showingAPIReference = false
     @AppStorage("showingSidebar") private var showingSidebar: Bool = false
     @AppStorage("showingMiniPrompts") private var showingMiniPrompts: Bool = false
+
     @State private var showingRenameDialog = false
     @State private var conversationToRename: ConversationModel?
     @State private var newConversationName = ""
@@ -124,9 +185,6 @@ public struct MainWindowView: View {
 
     // Conversation filter state
     @State private var conversationFilterText: String = ""
-
-    // Uncategorized section collapsed state
-    @AppStorage("uncategorizedCollapsed") private var uncategorizedCollapsed: Bool = false
 
     private let logger = Logger(label: "com.sam.ui.mainwindow")
 
@@ -169,15 +227,27 @@ public struct MainWindowView: View {
     // MARK: - Welcome Screen
 
     private var welcomeScreen: some View {
-        SAMEmptyStateView(
-            icon: "bubble.left.and.bubble.right",
-            title: "Welcome to SAM",
-            description: "Your intelligent AI assistant is ready to help. Start a conversation by asking a question, requesting assistance, or exploring what SAM can do for you.",
-            actionTitle: "Start New Conversation",
-            action: {
+        VStack(spacing: 24) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 8) {
+                Text("Welcome to SAM")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                Text("Your intelligent AI assistant is ready to help. Start a conversation by asking a question, requesting assistance, or exploring what SAM can do for you.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button("Start New Conversation") {
                 conversationManager.createNewConversation()
             }
-        )
+            .buttonStyle(.borderedProminent)
+        }
         .padding(.horizontal, 40)
     }
     
@@ -189,60 +259,62 @@ public struct MainWindowView: View {
             .environmentObject(conversationManager)
     }
 
+
+    /// Sidebar content with conversation list.
+    private var sidebarContent: some View {
+        VStack {
+            HStack {
+                Text("Conversations")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Button(action: {
+                    conversationManager.createNewConversation()
+                }) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(showingOnboardingWizard ? .secondary : .accentColor)
+                }
+                .buttonStyle(.plain)
+                .help("New Conversation (N)")
+                .disabled(showingOnboardingWizard)
+            }
+            .padding()
+
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                TextField("Filter conversations...", text: $conversationFilterText)
+                    .textFieldStyle(.plain)
+                if !conversationFilterText.isEmpty {
+                    Button(action: { conversationFilterText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+
+            conversationListView
+
+            Spacer()
+        }
+        .frame(minWidth: 250, idealWidth: 280, maxWidth: 350)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+    }
+
     public var body: some View {
         HSplitView {
             /// Sidebar (collapsible).
             if showingSidebar {
-                VStack {
-                    /// Conversation list header.
-                    HStack {
-                        Text("Conversations")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-
-                        Spacer()
-
-                        Button(action: {
-                            conversationManager.createNewConversation()
-                        }) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(showingOnboardingWizard ? .secondary : .accentColor)
-                        }
-                        .buttonStyle(.plain)
-                        .help("New Conversation (N)")
-                        .disabled(showingOnboardingWizard)
-                    }
-                    .padding()
-
-                    /// Filter text field
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.secondary)
-                        TextField("Filter conversations...", text: $conversationFilterText)
-                            .textFieldStyle(.plain)
-                        if !conversationFilterText.isEmpty {
-                            Button(action: { conversationFilterText = "" }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
-
-                    /// Conversation list.
-                    conversationListView
-
-                    Spacer()
-                }
-                .frame(minWidth: 250, idealWidth: 280, maxWidth: 350)
-                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                sidebarContent
             }
 
-            /// Main content with sidebar toggle and conversation switching.
+            /// Main content with toolbar and mini-prompts.
             VStack(spacing: 0) {
-                /// Toolbar with sidebar toggle and mini-prompts toggle.
                 HStack {
                     Button(action: {
                         withAnimation {
@@ -253,9 +325,8 @@ public struct MainWindowView: View {
                             .foregroundColor(showingSidebar ? .accentColor : .secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Toggle Sidebar")
+                    .help("Toggle Sidebar (\\)")
 
-                    /// New Conversation button - only visible when sidebar is hidden
                     if !showingSidebar {
                         Button(action: {
                             conversationManager.createNewConversation()
@@ -275,11 +346,11 @@ public struct MainWindowView: View {
                             showingMiniPrompts.toggle()
                         }
                     }) {
-                        Image(systemName: "text.badge.plus")
+                        Image(systemName: "sidebar.right")
                             .foregroundColor(showingMiniPrompts ? .accentColor : .secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Mini-Prompts: Show or hide prompt suggestions for this conversation")
+                    .help("Mini-Prompts (⇧\\)")
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -287,29 +358,29 @@ public struct MainWindowView: View {
 
                 Divider()
 
-                /// Main content: Onboarding wizard, Welcome screen, or ChatWidget.
-                if showingOnboardingWizard {
-                    /// Onboarding wizard when no models or providers configured (not skippable)
-                    onboardingWizardContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if conversationManager.conversations.isEmpty {
-                    /// Welcome screen when no conversations exist.
-                    welcomeScreen
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let activeConv = conversationManager.activeConversation,
-                          let messageBus = activeConv.messageBus {
-                    /// ChatWidget with conversation switching support.
-                    /// Pass MessageBus as @ObservedObject for direct observation of message changes
-                    ChatWidget(activeConversation: activeConv, messageBus: messageBus, showingMiniPrompts: $showingMiniPrompts)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .id("chatWidget-\(activeConv.id.uuidString)")
-                        .environmentObject(conversationManager)
-                }
-            }
+                HStack(spacing: 0) {
+                    if showingOnboardingWizard {
+                        onboardingWizardContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if conversationManager.conversations.isEmpty {
+                        welcomeScreen
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let activeConv = conversationManager.activeConversation,
+                              let messageBus = activeConv.messageBus {
+                        ChatWidget(activeConversation: activeConv, messageBus: messageBus, showingMiniPrompts: $showingMiniPrompts)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .environmentObject(conversationManager)
+                    }
 
-            /// Mini-prompts panel (collapsible).
-            if showingMiniPrompts, let activeConversation = conversationManager.activeConversation {
-                MiniPromptPanel(conversation: activeConversation, conversationManager: conversationManager)
+                    if showingMiniPrompts, let activeConversation = conversationManager.activeConversation {
+                        Divider()
+                        MiniPromptPanel(conversation: activeConversation, conversationManager: conversationManager)
+                            .background(.ultraThinMaterial)
+                            .frame(minWidth: 250, idealWidth: 280, maxWidth: 350)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: showingMiniPrompts)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -448,7 +519,7 @@ public struct MainWindowView: View {
             logger.debug("Main window structure loaded successfully")
 
             /// Check if onboarding is needed (no models AND no providers configured)
-            let modelManager = LocalModelManager()
+            let modelManager = LocalModelManager.shared
             let hasLocalModels = !modelManager.getModels().isEmpty
             
             /// Check for ANY provider configuration in UserDefaults (not just saved_provider_ids)
@@ -521,6 +592,12 @@ public struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showWhatsNew)) { _ in
             showingWhatsNew = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+            showingSidebar.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleMiniPrompts)) { _ in
+            showingMiniPrompts.toggle()
+        }
     }
 
     /// Folder section header with collapse toggle and context menu for deletion
@@ -577,44 +654,6 @@ public struct MainWindowView: View {
                 showingFolderDeletion = true
             }
         }
-    }
-
-    /// Uncategorized section header with collapse toggle (consistent with folder style)
-    private func uncategorizedHeader(conversationCount: Int) -> some View {
-        Button(action: {
-            uncategorizedCollapsed.toggle()
-        }) {
-            HStack(spacing: 6) {
-                Image(systemName: uncategorizedCollapsed ? "chevron.right" : "chevron.down")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-                    .frame(width: 12)
-
-                Text("Uncategorized")
-
-                Text("(\(conversationCount))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Spacer()
-            }
-        }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
-    }
-
-    /// Uncategorized label for DisclosureGroup (no chevron - DisclosureGroup provides it)
-    private func uncategorizedLabel(conversationCount: Int) -> some View {
-        HStack(spacing: 6) {
-            Text("Uncategorized")
-
-            Text("(\(conversationCount))")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            Spacer()
-        }
-        .contentShape(Rectangle())
     }
 
     private func conversationRow(_ conversation: ConversationModel) -> some View {
@@ -1522,18 +1561,26 @@ extension MainWindowView {
             let uncategorizedConversations = filterConversations(allUncategorizedSorted)
 
             if !uncategorizedConversations.isEmpty {
-                DisclosureGroup(
-                    isExpanded: Binding(
-                        get: { !uncategorizedCollapsed },
-                        set: { _ in uncategorizedCollapsed.toggle() }
-                    )
-                ) {
-                    ForEach(uncategorizedConversations, id: \.id) { conversation in
-                        conversationRow(conversation)
-                            .tag(conversation.id)
+                /// Group conversations by date (Today, Yesterday, This Week, etc.)
+                let grouped = Dictionary(grouping: uncategorizedConversations) { conversation in
+                    DateGroup.group(for: conversation.created)
+                }
+                let sortedGroups = grouped.keys.sorted()
+
+                ForEach(sortedGroups, id: \.self) { group in
+                    if let conversations = grouped[group] {
+                        Section {
+                            ForEach(conversations, id: \.id) { conversation in
+                                conversationRow(conversation)
+                                    .tag(conversation.id)
+                            }
+                        } header: {
+                            Text(group.label)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .textCase(nil)
+                        }
                     }
-                } label: {
-                    uncategorizedLabel(conversationCount: uncategorizedConversations.count)
                 }
             }
         }

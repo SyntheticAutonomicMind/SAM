@@ -33,9 +33,6 @@ public class ConversationSession {
     /// Working directory for this conversation (snapshot at session creation)
     public let workingDirectory: String
 
-    /// Terminal manager instance for this conversation (if any)
-    public let terminalManager: AnyObject?
-
     /// Timestamp when session was created
     public let createdAt: Date
 
@@ -47,15 +44,12 @@ public class ConversationSession {
     /// - Parameters:
     ///   - conversationId: UUID of the conversation
     ///   - workingDirectory: Working directory path for file operations
-    ///   - terminalManager: Terminal manager instance (optional)
     public init(
         conversationId: UUID,
-        workingDirectory: String,
-        terminalManager: AnyObject? = nil
+        workingDirectory: String
     ) {
         self.conversationId = conversationId
         self.workingDirectory = workingDirectory
-        self.terminalManager = terminalManager
         self.createdAt = Date()
     }
 
@@ -90,15 +84,11 @@ public class ConversationSession {
 public struct ConversationContext {
     public let conversationId: UUID
     public let workingDirectory: String
-    public let terminalManager: AnyObject?
-
     public init(
         conversationId: UUID,
-        workingDirectory: String,
-        terminalManager: AnyObject? = nil
+        workingDirectory: String
     ) {
         self.conversationId = conversationId
         self.workingDirectory = workingDirectory
-        self.terminalManager = terminalManager
     }
 }

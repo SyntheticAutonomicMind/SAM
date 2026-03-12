@@ -8,7 +8,7 @@ import Logging
 private let logger = Logger(label: "com.sam.ui.localmodels")
 
 /// Local Models preference pane for downloading and managing GGUF/MLX models.
-/// Uses a tabbed interface similar to StableDiffusionPreferencesPane.
+/// Uses a tabbed interface for managing local models.
 public struct LocalModelsPreferencePane: View {
     @StateObject private var downloadManager: ModelDownloadManager
     @State private var selectedTab: LMTab = .installed

@@ -213,7 +213,7 @@ public struct EnhancedMessage: Identifiable, Codable, Hashable, Sendable {
     // MARK: - User/Assistant Fields (Legacy compatibility)
     public let isFromUser: Bool
 
-    // MARK: - Tool/Subagent Fields
+    // MARK: - Tool Fields
     public let toolName: String?
     public let toolStatus: ToolStatus?
 

@@ -184,7 +184,7 @@ public struct MiniPromptPanel: View {
                 .padding()
             }
         }
-        .frame(minWidth: 300, idealWidth: 350, maxWidth: 400)
+        .frame(maxWidth: .infinity)
         .sheet(item: $editingPrompt) { prompt in
             MiniPromptEditor(manager: manager, prompt: prompt)
         }

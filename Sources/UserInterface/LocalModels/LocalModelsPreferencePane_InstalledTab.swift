@@ -32,14 +32,12 @@ struct LocalModelsPreferencePane_InstalledTab: View {
         case all = "All"
         case gguf = "GGUF"
         case mlx = "MLX"
-        case stableDiffusion = "Stable Diffusion"
 
         var icon: String {
             switch self {
             case .all: return "square.stack.3d.up"
             case .gguf: return "cube.box"
             case .mlx: return "cpu"
-            case .stableDiffusion: return "photo"
             }
         }
     }
@@ -55,8 +53,6 @@ struct LocalModelsPreferencePane_InstalledTab: View {
             models = models.filter { $0.name.lowercased().contains("gguf") || $0.quantization != nil }
         case .mlx:
             models = models.filter { $0.name.lowercased().contains("mlx") }
-        case .stableDiffusion:
-            models = models.filter { $0.provider == "stable-diffusion" }
         }
 
         /// Sort
@@ -195,58 +191,8 @@ struct InstalledModelRow: View {
         case coreML = "CoreML"
     }
 
-    private var isStableDiffusionModel: Bool {
-        model.provider == "stable-diffusion"
-    }
-
     private func checkAvailableFormats() {
-        guard isStableDiffusionModel else {
-            availableFormats = []
-            return
-        }
-
-        /// Extract model directory from path
-        let modelPath = URL(fileURLWithPath: model.path)
-        var modelDir: URL
-
-        /// Navigate up to find the model directory
-        if modelPath.path.contains("/original/compiled/") {
-            /// CoreML path - go up to model directory
-            modelDir = modelPath.deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-        } else if modelPath.pathExtension == "safetensors" {
-            /// SafeTensors path - parent is model directory
-            modelDir = modelPath.deletingLastPathComponent()
-        } else {
-            /// Unknown structure
-            availableFormats = []
-            return
-        }
-
-        var formats: [SDFormat] = []
-
-        /// Check for SafeTensors (any .safetensors file)
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(
-                at: modelDir,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
-            )
-            if contents.contains(where: { $0.path.hasSuffix(".safetensors") }) {
-                formats.append(.safeTensors)
-            }
-        } catch {
-            /// Continue checking CoreML
-        }
-
-        /// Check for CoreML
-        let coremlPath = modelDir.appendingPathComponent("original/compiled/Unet.mlmodelc")
-        if FileManager.default.fileExists(atPath: coremlPath.path) {
-            formats.append(.coreML)
-        }
-
-        availableFormats = formats
+        availableFormats = []
     }
 
     var body: some View {
@@ -271,13 +217,6 @@ struct InstalledModelRow: View {
                         Label(quant, systemImage: "cpu")
                     }
 
-                    /// Show available formats for SD models
-                    if isStableDiffusionModel && !availableFormats.isEmpty {
-                        Label(
-                            availableFormats.count == 2 ? "CoreML + SafeTensors" : availableFormats.first!.rawValue,
-                            systemImage: availableFormats.count == 2 ? "folder.badge.gearshape" : "folder"
-                        )
-                    }
                 }
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -298,31 +237,12 @@ struct InstalledModelRow: View {
                 isPresented: $showingDeleteConfirmation,
                 titleVisibility: .visible
             ) {
-                if isStableDiffusionModel && availableFormats.count == 2 {
-                    /// Both formats available - offer choice
-                    Button("Delete SafeTensors Only", role: .destructive) {
-                        deleteFormat(.safeTensors)
-                    }
-                    Button("Delete CoreML Only", role: .destructive) {
-                        deleteFormat(.coreML)
-                    }
-                    Button("Delete Both", role: .destructive) {
-                        manager.deleteModel(id: model.id)
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } else {
-                    /// Single format or non-SD model - simple delete
-                    Button("Delete", role: .destructive) {
-                        manager.deleteModel(id: model.id)
-                    }
-                    Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) {
+                    manager.deleteModel(id: model.id)
                 }
+                Button("Cancel", role: .cancel) {}
             } message: {
-                if isStableDiffusionModel && availableFormats.count == 2 {
-                    Text("This model has both SafeTensors and CoreML formats. Choose what to delete:")
-                } else {
-                    Text("This will permanently delete the model file from your computer.")
-                }
+                Text("This will permanently delete the model file from your computer.")
             }
         }
         .padding(16)
@@ -333,70 +253,8 @@ struct InstalledModelRow: View {
         }
     }
 
-    private func deleteFormat(_ format: SDFormat) {
-        guard isStableDiffusionModel else { return }
-
-        /// Extract model directory from path
-        let modelPath = URL(fileURLWithPath: model.path)
-        var modelDir: URL
-
-        if modelPath.path.contains("/original/compiled/") {
-            modelDir = modelPath.deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-        } else if modelPath.pathExtension == "safetensors" {
-            modelDir = modelPath.deletingLastPathComponent()
-        } else {
-            return
-        }
-
-        switch format {
-        case .safeTensors:
-            /// Delete any .safetensors files
-            do {
-                let contents = try FileManager.default.contentsOfDirectory(
-                    at: modelDir,
-                    includingPropertiesForKeys: nil,
-                    options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
-                )
-                for file in contents where file.path.hasSuffix(".safetensors") {
-                    try? FileManager.default.removeItem(at: file)
-                }
-            } catch {
-                /// Failed to delete
-            }
-
-        case .coreML:
-            /// Delete original/ directory (contains CoreML models)
-            let originalDir = modelDir.appendingPathComponent("original")
-            try? FileManager.default.removeItem(at: originalDir)
-        }
-
-        /// Trigger model registry update by posting notification
-        NotificationCenter.default.post(name: NSNotification.Name("RefreshStableDiffusionModels"), object: nil)
-
-        /// Check if directory is now empty (excluding metadata)
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(
-                at: modelDir,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            )
-            /// If only metadata remains, delete entire directory
-            if contents.allSatisfy({ $0.lastPathComponent.hasPrefix(".sam_") }) {
-                try? FileManager.default.removeItem(at: modelDir)
-                /// Trigger another refresh after removing directory
-                NotificationCenter.default.post(name: NSNotification.Name("RefreshStableDiffusionModels"), object: nil)
-            }
-        } catch {
-            /// Continue
-        }
-    }
-
     private var modelIcon: String {
-        if isStableDiffusionModel {
-            return "photo.fill"
-        } else if model.name.lowercased().contains("gguf") || model.quantization != nil {
+        if model.name.lowercased().contains("gguf") || model.quantization != nil {
             return "cube.box.fill"
         } else if model.name.lowercased().contains("mlx") {
             return "cpu.fill"

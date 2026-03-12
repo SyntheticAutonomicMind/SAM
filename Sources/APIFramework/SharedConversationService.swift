@@ -574,7 +574,7 @@ public class SharedConversationService: ObservableObject {
 
         logger.debug("SHARED_SERVICE: Found \(availableTools.count) available MCP tools")
 
-        /// Filter out user_collaboration tool for external API calls User collaboration requires interactive UI (SSE events, user input) which external APIs cannot provide This includes: - Any request with isExternalAPICall=true (set by caller) - Autonomous Worker mode (system prompt UUID 00000000-0000-0000-0000-000000000002) SECURITY: Filter out terminal_operations if enableTerminalAccess=false Terminal operations disabled by default for security For internal SAM usage (UI-based conversations), user_collaboration works normally.
+        /// Filter out user_collaboration tool for external API calls. User collaboration requires interactive UI (SSE events, user input) which external APIs cannot provide. This includes: - Any request with isExternalAPICall=true (set by caller) - Autonomous Worker mode (system prompt UUID 00000000-0000-0000-0000-000000000002). For internal SAM usage (UI-based conversations), user_collaboration works normally.
         let shouldFilterUserCollaboration = request.samConfig?.isExternalAPICall == true || {
             if let systemPromptId = request.samConfig?.systemPromptId {
                 let autonomousWorkerUUID = "00000000-0000-0000-0000-000000000002"
@@ -583,49 +583,15 @@ public class SharedConversationService: ObservableObject {
             return false
         }()
 
-        let shouldFilterTerminalOperations = request.samConfig?.enableTerminalAccess != true
-
-        /// Filter out run_subagent when workflow mode is disabled
-        /// Issue #3: run_subagent available even when workflow toggle is OFF
-        let shouldFilterSubagent = request.samConfig?.enableWorkflowMode != true
-
-        /// Filter out increase_max_iterations when dynamic iterations disabled
-        /// The "Extend" toggle controls whether agent can request more iterations
-        let shouldFilterDynamicIterations = request.samConfig?.enableDynamicIterations != true
-
-        logger.debug("SHARED_SERVICE: Tool filtering decision", metadata: [
-            "enableWorkflowMode": .string(String(describing: request.samConfig?.enableWorkflowMode)),
-            "shouldFilterSubagent": .stringConvertible(shouldFilterSubagent),
-            "enableDynamicIterations": .string(String(describing: request.samConfig?.enableDynamicIterations)),
-            "shouldFilterDynamicIterations": .stringConvertible(shouldFilterDynamicIterations),
-            "conversationId": .string(request.conversationId ?? "none")
-        ])
 
         var filteredTools = availableTools
 
         if shouldFilterUserCollaboration {
             logger.debug("SHARED_SERVICE: Filtering user_collaboration (isExternalAPICall=\(request.samConfig?.isExternalAPICall == true), autonomous mode)")
             filteredTools = filteredTools.filter { $0.name != "user_collaboration" }
+            logger.debug("SHARED_SERVICE: Filtered \(availableTools.count) -> \(filteredTools.count) tools")
         }
 
-        if shouldFilterTerminalOperations {
-            logger.debug("SHARED_SERVICE: Filtering terminal_operations (enableTerminalAccess=false, security default)")
-            filteredTools = filteredTools.filter { $0.name != "terminal_operations" }
-        }
-
-        if shouldFilterSubagent {
-            logger.debug("SHARED_SERVICE: Filtering run_subagent (enableWorkflowMode=false)")
-            filteredTools = filteredTools.filter { $0.name != "run_subagent" }
-        }
-
-        if shouldFilterDynamicIterations {
-            logger.debug("SHARED_SERVICE: Filtering increase_max_iterations (enableDynamicIterations=false)")
-            filteredTools = filteredTools.filter { $0.name != "increase_max_iterations" }
-        }
-
-        if shouldFilterUserCollaboration || shouldFilterTerminalOperations || shouldFilterSubagent || shouldFilterDynamicIterations {
-            logger.debug("SHARED_SERVICE: Filtered \(availableTools.count) → \(filteredTools.count) tools")
-        }
 
         /// ALWAYS INJECT ALL TOOLS - Dynamic injection causes performance issues Models need full tool context to function properly Previous experiment with dynamic injection showed: - Llama-2-7B: Completely broken (garbage output) - Qwen models: Worked but slower - GPT-4: Worked but added latency Conclusion: Always send all tools for consistent, fast behavior.
 
@@ -654,14 +620,7 @@ public class SharedConversationService: ObservableObject {
             let properties = mcpTool.parameters.reduce(into: [String: [String: Any]]()) { result, param in
                 let (paramName, paramDef) = param
 
-                /// Dynamic description injection for run_subagent model parameter.
-                var description = paramDef.description
-                if mcpTool.name == "run_subagent" && paramName == "model" {
-                    /// Inject current model into description.
-                    description = """
-                    Model to use for subagent. Uses \(request.model) unless otherwise specified.
-                    """
-                }
+                let description = paramDef.description
 
                 var paramSpec: [String: Any] = [
                     "type": paramDef.type.description,
@@ -1058,41 +1017,6 @@ public class SharedConversationService: ObservableObject {
         /// Default to 8k for unknown models (safe assumption).
         logger.debug("MODEL_CONTEXT: Unknown model \(model), defaulting to 8192 tokens")
         return knownContextSizes["default"]!
-    }
-
-    /// Parse conversation history for tool requests from think tool Looks for "TOOL_REQUEST:" markers in assistant messages Returns: Array of requested tool names.
-    private func parseToolRequestsFromHistory(_ messages: [OpenAIChatMessage]) -> [String] {
-        var requestedTools = Set<String>()
-
-        /// Parse messages in reverse (most recent first) for efficiency.
-        for message in messages.reversed() {
-            /// Only check assistant messages (where think tool results appear).
-            guard message.role == "assistant" || message.role == "tool" else {
-                continue
-            }
-
-            guard let content = message.content else {
-                continue
-            }
-
-            /// Look for TOOL_REQUEST marker from ThinkTool.
-            if content.contains("TOOL_REQUEST:") {
-                /// Extract tool names after the marker.
-                if let range = content.range(of: "TOOL_REQUEST:") {
-                    let toolsString = String(content[range.upperBound...])
-                    /// Parse comma-separated tool names.
-                    let tools = toolsString
-                        .split(separator: ",")
-                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                        .filter { !$0.isEmpty }
-
-                    requestedTools.formUnion(tools)
-                    logger.debug("TOOL_REQUEST_FOUND: \(tools.joined(separator: ", "))")
-                }
-            }
-        }
-
-        return Array(requestedTools)
     }
 }
 

@@ -72,7 +72,6 @@ enum HelpSection: String, CaseIterable, Identifiable {
     case keyboardShortcuts
     case modelProviders
     case capabilities
-    case imageGenerationGuide
     case conversationManagement
     case personalities
     case documentFormats
@@ -92,7 +91,6 @@ enum HelpSection: String, CaseIterable, Identifiable {
         case .keyboardShortcuts: return "Keyboard & Navigation"
         case .modelProviders: return "Model Providers"
         case .capabilities: return "Core Capabilities"
-        case .imageGenerationGuide: return "Image Generation Guide"
         case .conversationManagement: return "Conversation Management"
         case .personalities: return "Personalities & Traits"
         case .documentFormats: return "Document Formats"
@@ -112,7 +110,6 @@ enum HelpSection: String, CaseIterable, Identifiable {
         case .keyboardShortcuts: return "keyboard"
         case .modelProviders: return "cpu.fill"
         case .capabilities: return "brain"
-        case .imageGenerationGuide: return "photo.on.rectangle.angled"
         case .conversationManagement: return "folder.fill"
         case .personalities: return "theatermasks"
         case .documentFormats: return "doc.text"
@@ -140,9 +137,6 @@ enum HelpSection: String, CaseIterable, Identifiable {
 
         case .capabilities:
             CapabilitiesContent()
-
-        case .imageGenerationGuide:
-            ImageGenerationGuideContent()
 
         case .conversationManagement:
             ConversationManagementContent()
@@ -218,7 +212,6 @@ struct QuickStartContent: View {
                 BulletPoint(text: "**Sidebar**: Access your conversation history and create new chats")
                 BulletPoint(text: "**Pin Conversations**: Click pin icon (or right-click conversation) to keep important chats at top of sidebar")
                 BulletPoint(text: "**Global Search** (F): Search across all conversations for messages, code, and content")
-                BulletPoint(text: "**Terminal**: Click terminal button in toolbar to open a command line for each conversation")
                 BulletPoint(text: "**Working Folder**: Click folder button to set where SAM saves and reads files")
                 BulletPoint(text: "**Menu Bar**: File, Edit, Conversation, and Help menus")
                 BulletPoint(text: "**Preferences** (⌘,): Configure AI providers, system prompts, and settings")
@@ -263,11 +256,10 @@ struct QuickStartContent: View {
                 BulletPoint(text: "**Max Tokens**: Maximum length of SAM's response (1k to 32k)")
                 BulletPoint(text: "**Context**: How much conversation history SAM can see (2k to 128k tokens)")
                 BulletPoint(text: "**Tools**: Enable/disable tool usage (when ON, SAM can use web search, file operations, etc.)")
-                BulletPoint(text: "**Terminal**: Open the terminal panel to run commands and watch SAM work")
                 BulletPoint(text: "**Folder**: View or change the working folder for this conversation")
                 BulletPoint(text: "**Parameters Button (wrench/screwdriver icon)**: Opens Advanced Parameters panel for temperature, top-p, and other settings")
 
-                Text("**Tip**: Use lower temperature (0.2-0.5) for factual tasks, higher (0.7-1.0) for creative writing. Turn Tools OFF if you just want to chat. Open the terminal to see exactly what SAM is doing.")
+                Text("**Tip**: Use lower temperature (0.2-0.5) for factual tasks, higher (0.7-1.0) for creative writing. Turn Tools OFF if you just want to chat.")
                     .font(.callout)
                     .foregroundColor(.secondary)
                     .italic()
@@ -319,7 +311,6 @@ struct QuickStartContent: View {
                 BulletPoint(text: "**Topic Selector**: Choose which shared topic to use (changes working directory)")
                 BulletPoint(text: "**Workflow Mode**: Enable for multi-step autonomous tasks (agents use tools iteratively)")
                 BulletPoint(text: "**Dynamic Iterations**: Adaptive max iterations based on task complexity")
-                BulletPoint(text: "**Terminal Access**: Control whether agents can execute terminal commands")
 
                 Text("**Shared Topics Example**: Enable Shared Topics → select \"My Project\" → working directory becomes ~/SAM/My Project/ instead of conversation-specific folder")
                     .font(.callout)
@@ -334,23 +325,6 @@ struct QuickStartContent: View {
                     .padding(.top, 4)
             }
 
-            HelpSection_Group(title: "Embedded Terminal: Work Together") {
-                Text("Each conversation has a shared terminal where you and the AI can work together on command-line tasks:")
-                    .font(.body)
-                    .padding(.bottom, 8)
-
-                BulletPoint(text: "**Shared Workspace**: Both you and the AI can run commands in the same terminal")
-                BulletPoint(text: "**See Everything**: When the AI runs a command, you see it happen in real-time")
-                BulletPoint(text: "**You Can Help**: Type your own commands to check results, make changes, or guide the AI")
-                BulletPoint(text: "**Stays Organized**: Each conversation has its own terminal and working folder")
-                BulletPoint(text: "**Pick Your Folder**: Choose where files should be saved (default: ~/SAM/)")
-
-                Text("**Example**: Ask the AI to create a Python script. You can run it yourself, see errors, and work together to fix them - all in the same terminal.")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.top, 8)
-            }
 
             HelpSection_Group(title: "Keyboard Shortcuts") {
                 Text("Master these shortcuts to work faster in SAM:")
@@ -401,7 +375,7 @@ struct QuickStartContent: View {
             }
 
             HelpSection_Group(title: "Shared Topics: Collaborate Across Conversations") {
-                Text("Shared topics let multiple conversations work together in the same workspace with shared files, memory, and terminal sessions. Perfect for complex projects requiring different expertise or parallel work streams.")
+                Text("Shared topics let multiple conversations work together in the same workspace with shared files, memory, and memory. Perfect for complex projects requiring different expertise or parallel work streams.")
                     .font(.body)
                     .padding(.bottom, 8)
 
@@ -419,7 +393,6 @@ struct QuickStartContent: View {
 
                 BulletPoint(text: "**Files & Directories**: All file operations use the shared topic directory")
                 BulletPoint(text: "**Memory (VectorRAG)**: Document imports and memory storage shared across conversations")
-                BulletPoint(text: "**Terminal Directory**: All terminal commands execute in the shared workspace")
                 BulletPoint(text: "**Context**: Different conversations can build on each other's work")
 
                 Text("Use Cases:")
@@ -491,127 +464,6 @@ struct QuickStartContent: View {
                     .foregroundColor(.orange)
                     .italic()
                     .padding(.top, 4)
-            }
-
-            HelpSection_Group(title: "Subagents: Delegate Complex Tasks") {
-                Text("Subagents are specialized AI agents that SAM can create to handle complex sub-tasks independently. Each subagent works in parallel, inherits your settings, and returns results when complete. They appear as separate conversations in your sidebar with a \"Working\" indicator.")
-                    .font(.body)
-                    .padding(.bottom, 8)
-
-                Text("How It Works:")
-                    .fontWeight(.semibold)
-                    .padding(.top, 4)
-
-                BulletPoint(text: "**SAM Creates Subagent**: When you request complex or parallel work, SAM uses run_subagent tool")
-                BulletPoint(text: "**Settings Inherited**: Subagent gets same model, system prompt, tools, and context window as parent")
-                BulletPoint(text: "**Independent Work**: Subagent appears in sidebar with name and \"Working\" indicator")
-                BulletPoint(text: "**Results Returned**: When complete, subagent's final message is returned to parent conversation")
-                BulletPoint(text: "**Persistent**: Subagent conversation remains in sidebar for review and continued use")
-
-                Text("Common Use Cases:")
-                    .fontWeight(.semibold)
-                    .padding(.top, 12)
-
-                Text("**Parallel Research**")
-                    .fontWeight(.medium)
-                ExamplePrompt(
-                    title: "Example:",
-                    prompt: "Research these three topics in parallel:\n1. Machine learning frameworks\n2. Cloud providers comparison\n3. Security best practices"
-                )
-                Text("SAM creates 3 subagents, each researching one topic simultaneously, then synthesizes results")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.leading, 20)
-
-                Text("**Specialized Analysis**")
-                    .fontWeight(.medium)
-                    .padding(.top, 8)
-                ExamplePrompt(
-                    title: "Example:",
-                    prompt: "Analyze this codebase for:\n- Security vulnerabilities\n- Performance bottlenecks\n- Code quality issues"
-                )
-                Text("Subagents focus on specific aspects, providing detailed specialized reports")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.leading, 20)
-
-                Text("**Multi-Step Workflows**")
-                    .fontWeight(.medium)
-                    .padding(.top, 8)
-                ExamplePrompt(
-                    title: "Example:",
-                    prompt: "Create a web app:\n1. Design database schema\n2. Implement REST API\n3. Build frontend interface"
-                )
-                Text("Each step handled by dedicated subagent with appropriate expertise focus")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.leading, 20)
-
-                Text("**Research + Implementation**")
-                    .fontWeight(.medium)
-                    .padding(.top, 8)
-                ExamplePrompt(
-                    title: "Example:",
-                    prompt: "Research best React state management libraries, then implement a demo using the top choice"
-                )
-                Text("Subagent 1 researches, Subagent 2 implements based on research findings")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.leading, 20)
-
-                Text("Best Practices:")
-                    .fontWeight(.semibold)
-                    .padding(.top, 12)
-
-                BulletPoint(text: "**Clear naming**: Give subagents descriptive names (\"Security Analysis\", \"Backend Research\")")
-                BulletPoint(text: "**Discrete tasks**: Best for well-defined sub-tasks with clear completion criteria")
-                BulletPoint(text: "**Review results**: Check subagent conversations for detailed work and intermediate steps")
-                BulletPoint(text: "**Combine with shared topics**: Subagents can all work in same shared workspace")
-
-                Text("When to Use Subagents:")
-                    .fontWeight(.semibold)
-                    .padding(.top, 12)
-
-                BulletPoint(text: "**Parallel work**: Multiple independent tasks that can run simultaneously")
-                BulletPoint(text: "**Complex projects**: Break large requests into focused sub-tasks")
-                BulletPoint(text: "**Specialized expertise**: Different tasks need different focus/approach")
-                BulletPoint(text: "**Long-running tasks**: Delegate time-intensive work while continuing main conversation")
-
-                Text("**Pro Tip**: Combine subagents with shared topics! Create a shared topic, then let multiple subagents collaborate in the same workspace. Each focuses on different aspects while sharing files and memory.")
-                    .font(.callout)
-                    .foregroundColor(.blue)
-                    .italic()
-                    .padding(.top, 8)
-
-                Text("**Note**: Subagent conversations persist in sidebar - you can review their work, ask followup questions, or delete them when no longer needed.")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.top, 4)
-            }
-
-            HelpSection_Group(title: "AI Image Generation") {
-                Text("SAM supports diffusion models for AI image generation including Stable Diffusion, Z-Image, and others. You can generate images directly or use natural language requests with LLM assistance.")
-                    .font(.body)
-                    .padding(.bottom, 8)
-
-                BulletPoint(text: "**Install Models**: Go to Preferences → Image Generation → Model Browser")
-                BulletPoint(text: "**Browse Models**: Search HuggingFace or CivitAI for models")
-                BulletPoint(text: "**Download & Convert**: Download SafeTensors and/or convert to CoreML")
-                BulletPoint(text: "**Generate**: Select model in chat interface or ask AI to generate images")
-
-                ExamplePrompt(
-                    title: "Natural language:",
-                    prompt: "Generate an image of a serene mountain landscape at sunset"
-                )
-                ExamplePrompt(
-                    title: "Direct request:",
-                    prompt: "Create a photo of a cat sitting on a windowsill"
-                )
             }
 
             HelpSection_Group(title: "Finding Past Conversations") {
@@ -703,32 +555,6 @@ struct ModelProvidersContent: View {
                     .font(.callout).italic().foregroundColor(.secondary)
             }
 
-            HelpSection_Group(title: "Stable Diffusion (Image Generation)") {
-                Text("SAM supports Stable Diffusion models for AI image generation with two execution engines:")
-                    .font(.body)
-                    .padding(.bottom, 4)
-
-                BulletPoint(text: "**CoreML**: Apple Silicon optimized, fast inference, lower memory usage")
-                BulletPoint(text: "**Python**: Fallback using diffusers library, broader compatibility")
-
-                Text("Models can have one or both formats. SAM automatically detects available formats and enables appropriate engine options.")
-                    .font(.body)
-                    .padding(.vertical, 8)
-
-                Text("Model Sources:")
-                    .fontWeight(.semibold)
-                    .padding(.top, 4)
-
-                BulletPoint(text: "**HuggingFace**: Official Stable Diffusion models and community variants")
-                BulletPoint(text: "**CivitAI**: Community models with search, filtering, and NSFW controls")
-
-                Text("Both sources support real-time download tracking and automatic CoreML conversion.")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.top, 8)
-            }
-
             HelpSection_Group(title: "Choosing a Provider") {
                 Text("Consider these factors when selecting a provider and model:")
                     .fontWeight(.semibold)
@@ -813,33 +639,6 @@ struct CapabilitiesContent: View {
             }
 
             CapabilityCategory(
-                icon: "terminal",
-                title: "Terminal & Automation",
-                description: "Run shell commands in the built-in terminal and watch the results appear in real-time"
-            ) {
-                ExamplePrompt(prompt: "Use terminal to list all files in current directory")
-                ExamplePrompt(prompt: "Run 'cat README.md' and show me what's inside")
-                ExamplePrompt(prompt: "Check my git status using the terminal")
-                ExamplePrompt(prompt: "Create a test file and verify it worked")
-            }
-
-            CapabilityCategory(
-                icon: "photo.fill",
-                title: "Image Generation (AI Art)",
-                description: "Create images from text descriptions using Stable Diffusion models with CoreML or Python engines"
-            ) {
-                BulletPoint(text: "**Model Management**: Browse and download models from HuggingFace and CivitAI")
-                BulletPoint(text: "**Format Selection**: Use CoreML (optimized) or Python (compatible) engines")
-                BulletPoint(text: "**Real-time Tracking**: Monitor downloads and conversions with live progress")
-                BulletPoint(text: "**Direct Generation**: Type prompts directly in chat interface")
-                BulletPoint(text: "**LLM-Driven**: Ask AI assistant to generate images with natural language")
-
-                ExamplePrompt(prompt: "Generate an image of a serene mountain landscape at sunset")
-                ExamplePrompt(prompt: "Make an image of a futuristic city with flying cars at night")
-                ExamplePrompt(prompt: "Generate a photo-realistic image of a cat sitting on a windowsill")
-            }
-
-            CapabilityCategory(
                 icon: "cpu",
                 title: "Local AI Inference",
                 description: "Run AI models locally on your Mac with complete privacy and Apple Silicon optimization"
@@ -882,48 +681,18 @@ struct ToolReferenceContent: View {
                 Tool(name: "file_operations", description: "Read, write, search, and manage files. Create and edit files, rename and organize, search with glob patterns or regex, find code references, and apply patches. All file operations use your conversation's working directory.")
             }
 
-            ToolCategory(icon: "terminal", title: "Terminal & Automation", color: .gray) {
-                Tool(name: "terminal_operations", description: "Execute shell commands in your conversation's embedded terminal. Commands appear in the visible terminal panel and respect your working directory. Check command output and history.")
-            }
 
             ToolCategory(icon: "hammer", title: "Build & Version Control", color: .indigo) {
-                Tool(name: "build_and_version_control", description: "Run tests, create and execute build tasks, commit changes to git, and view file diffs. Manage your development workflow from within conversations.")
+            }
+
+            ToolCategory(icon: "function", title: "Math & Calculations", color: .pink) {
+                Tool(name: "math_operations", description: "Precise mathematical calculations, unit conversions, and everyday formulas. Tip splitting, mortgage payments, retirement projections, recipe scaling, BMI, debt payoff, and more. All calculations use exact computation - never mental math.")
             }
 
             ToolCategory(icon: "person.2", title: "User Collaboration", color: .cyan) {
                 Tool(name: "user_collaboration", description: "Request your input during complex tasks. SAM can ask for confirmation, clarification, or decisions before proceeding with important operations.")
             }
 
-            ToolCategory(icon: "lightbulb", title: "Planning", color: .yellow) {
-                Tool(name: "think", description: "Plan and organize complex multi-step tasks before execution. Helps SAM break down large requests into manageable steps and reason through problems.")
-            }
-
-            ToolCategory(icon: "photo.fill", title: "Image Generation", color: .pink) {
-                Tool(name: "image_generation", description: "Generate images from text descriptions using Stable Diffusion. Supports model selection, engine choice (CoreML/Python), and advanced parameters.")
-
-                Text("**Parameters:**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-
-                BulletPoint(text: "`prompt` (required): Text description of desired image")
-                BulletPoint(text: "`model` (optional): Model ID (e.g., 'stable-diffusion/model-name')")
-                BulletPoint(text: "`engine` (optional): 'coreml' or 'python' (auto-selected if not specified)")
-                BulletPoint(text: "`size` (optional): Image dimensions (e.g., '512x512', '1024x1024')")
-                BulletPoint(text: "`steps` (optional): Number of diffusion steps (default: 20)")
-                BulletPoint(text: "`guidance_scale` (optional): How closely to follow prompt (default: 7.5)")
-                BulletPoint(text: "`seed` (optional): Random seed for reproducibility")
-
-                Text("**Example requests:**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-
-                ExamplePrompt(prompt: "Generate an image of a serene mountain landscape at sunset")
-                ExamplePrompt(prompt: "Create a cyberpunk city scene with neon lights, 1024x1024")
-            }
-
-            ToolCategory(icon: "person.2.circle.fill", title: "Subagents & Delegation", color: .mint) {
-                Tool(name: "run_subagent", description: "Create specialized AI agents to handle complex sub-tasks. Subagents inherit your settings (model, prompts, tools) and work independently, then return results. Perfect for parallel research, specialized analysis, or delegating discrete tasks. Each subagent appears as a separate conversation in your sidebar with \"working\" indicator.")
-            }
 
             /// Note: UI operations like exporting conversations, managing system prompts, and updating preferences are available through the menu bar (File, Edit, View menus) and Preferences window (⌘,).
         }
@@ -1408,54 +1177,6 @@ struct TroubleshootingContent: View {
                 • Keep SAM running to avoid model reload penalty
                 """
             )
-
-            HelpSection_Group(title: "Stable Diffusion Issues") {
-                TroubleshootingItem(
-                    question: "Model not appearing in picker",
-                    solution: """
-                    Check these items:
-                    • Verify model directory contains .mlmodelc files (CoreML) or .safetensors files
-                    • Check Preferences → Local Models to see detected models
-                    • Restart SAM to rescan models
-                    • Check model directory structure matches expected format
-                    """
-                )
-
-                TroubleshootingItem(
-                    question: "Conversion failed",
-                    solution: """
-                    Troubleshoot conversion issues:
-                    • Check logs for specific error messages (now properly filtered)
-                    • Ensure Python environment is properly installed
-                    • Verify sufficient disk space (~5-10GB per model)
-                    • Try downloading SafeTensors only (skip conversion)
-                    • Check model compatibility (SD 1.x, 2.x, SDXL supported)
-                    """
-                )
-
-                TroubleshootingItem(
-                    question: "Engine selection disabled",
-                    solution: """
-                    This is normal behavior:
-                    • Model only has one format available
-                    • CoreML-only: Download SafeTensors to enable Python option
-                    • SafeTensors-only: Convert to CoreML to enable CoreML option
-                    • Check model info to see available formats
-                    """
-                )
-
-                TroubleshootingItem(
-                    question: "Download stuck or slow",
-                    solution: """
-                    If download appears stuck:
-                    • Check internet connection
-                    • Large models (SDXL) can take 15-30 minutes
-                    • Progress updates every few seconds (not real-time)
-                    • Cancel and retry if truly stuck
-                    • Check available disk space
-                    """
-                )
-            }
         }
     }
 }
@@ -1987,193 +1708,6 @@ struct KeyboardShortcutsContent: View {
     }
 }
 
-// MARK: - Image Generation Guide Content
-struct ImageGenerationGuideContent: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Image Generation Guide")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-
-            Text("Complete guide to creating AI-generated images with Stable Diffusion.")
-                .font(.title3)
-                .foregroundColor(.secondary)
-
-            Divider()
-
-            HelpSection_Group(title: "Quick Start") {
-                Text("Generate your first image in 3 steps:")
-                    .fontWeight(.semibold)
-                    .padding(.bottom, 8)
-
-                BulletPoint(text: "**1. Install a Model**: Go to Preferences → Image Generation → Model Browser")
-                BulletPoint(text: "**2. Download**: Find a model you like and download it (with optional CoreML conversion)")
-                BulletPoint(text: "**3. Generate**: Type your prompt in chat or ask the AI to generate an image")
-
-                ExamplePrompt(prompt: "Generate an image of a serene mountain landscape at sunset")
-                ExamplePrompt(prompt: "Create a photo-realistic image of a cat on a windowsill")
-            }
-
-            HelpSection_Group(title: "Model Selection") {
-                Text("**Where to Find Models:**")
-                    .fontWeight(.semibold)
-
-                BulletPoint(text: "**HuggingFace**: Official Stable Diffusion models and popular variants")
-                BulletPoint(text: "**CivitAI**: 100,000+ community models with search, filtering, NSFW controls")
-
-                Text("**Model Types:**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-
-                BulletPoint(text: "**SD 1.5**: 512×512 images, fast, wide variety of fine-tuned models")
-                BulletPoint(text: "**SD 2.x**: 768×768 images, improved quality")
-                BulletPoint(text: "**SDXL**: 1024×1024 images, highest quality, slower")
-
-                Text("**Recommendation**: Start with SD 1.5 models - faster and more community options.")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.top, 8)
-            }
-
-            HelpSection_Group(title: "Engine Selection") {
-                Text("SAM supports two execution engines for Stable Diffusion:")
-                    .padding(.bottom, 8)
-
-                Text("**CoreML (Recommended)**")
-                    .fontWeight(.semibold)
-                BulletPoint(text: "Apple Silicon optimized (M1/M2/M3)")
-                BulletPoint(text: "Fast inference (2-4 seconds per image)")
-                BulletPoint(text: "Lower memory usage")
-                BulletPoint(text: "Energy efficient")
-
-                Text("**Python (Fallback)**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                BulletPoint(text: "Uses diffusers library")
-                BulletPoint(text: "Broader model compatibility")
-                BulletPoint(text: "Works with any .safetensors file")
-                BulletPoint(text: "Slower but more flexible")
-
-                Text("**Auto-Selection**: SAM automatically chooses the best available engine based on what formats you have.")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.top, 8)
-            }
-
-            HelpSection_Group(title: "Workflow: Browse → Download → Convert → Generate") {
-                Text("**Step 1: Browse Models**")
-                    .fontWeight(.semibold)
-                BulletPoint(text: "Open Preferences → Image Generation")
-                BulletPoint(text: "Choose HuggingFace or CivitAI tab")
-                BulletPoint(text: "Search by name, tags, or browse popular models")
-                BulletPoint(text: "Preview images and read descriptions")
-
-                Text("**Step 2: Download**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                BulletPoint(text: "Click Download button on model card")
-                BulletPoint(text: "Watch real-time progress updates")
-                BulletPoint(text: "Large models (SDXL) may take 15-30 minutes")
-
-                Text("**Step 3: Convert to CoreML (Optional)**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                BulletPoint(text: "Click Convert button after download completes")
-                BulletPoint(text: "Conversion takes 10-20 minutes depending on model")
-                BulletPoint(text: "Watch conversion progress with model name displayed")
-                BulletPoint(text: "Requires ~5-10GB temporary disk space")
-
-                Text("**Step 4: Generate Images**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                BulletPoint(text: "Select model from picker in chat interface")
-                BulletPoint(text: "Choose engine (or let SAM auto-select)")
-                BulletPoint(text: "Type your prompt and generate")
-                BulletPoint(text: "Images saved to ~/Library/Caches/sam/images/")
-            }
-
-            HelpSection_Group(title: "Prompt Engineering Tips") {
-                Text("Write better prompts for better results:")
-                    .padding(.bottom, 8)
-
-                BulletPoint(text: "**Be Specific**: \"Serene mountain landscape at sunset\" vs \"mountains\"")
-                BulletPoint(text: "**Add Style**: \"watercolor painting of...\", \"photo-realistic...\", \"digital art of...\"")
-                BulletPoint(text: "**Include Details**: Lighting, mood, composition, colors")
-                BulletPoint(text: "**Use Quality Tags**: \"8k\", \"detailed\", \"highly detailed\", \"masterpiece\"")
-                BulletPoint(text: "**Negative Prompts**: Some models support negative prompts (what NOT to include)")
-
-                Text("**Examples:**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-
-                ExamplePrompt(prompt: "A serene mountain landscape at sunset, golden hour lighting, 8k, detailed")
-                ExamplePrompt(prompt: "Photo-realistic portrait of a cat sitting on a windowsill, natural lighting")
-                ExamplePrompt(prompt: "Futuristic city with flying cars, neon lights, cyberpunk style, digital art")
-                ExamplePrompt(prompt: "Watercolor painting of a peaceful forest stream, soft colors, artistic")
-            }
-
-            HelpSection_Group(title: "Advanced Parameters") {
-                BulletPoint(text: "**Steps**: Number of diffusion steps (default: 20). More steps = higher quality, slower generation")
-                BulletPoint(text: "**Guidance Scale**: How closely to follow prompt (default: 7.5). Higher = stricter adherence")
-                BulletPoint(text: "**Seed**: Random seed for reproducibility. Same seed + prompt = same image")
-                BulletPoint(text: "**Size**: Image dimensions. Must match model's training (512×512 for SD 1.5, 1024×1024 for SDXL)")
-                BulletPoint(text: "**Scheduler**: Sampling algorithm (DPM++, Euler, etc.). Different algorithms produce different results")
-            }
-
-            HelpSection_Group(title: "LLM-Driven Generation") {
-                Text("Ask the AI assistant to generate images using natural language:")
-                    .padding(.bottom, 8)
-
-                ExamplePrompt(prompt: "Generate an image of a serene mountain landscape")
-                ExamplePrompt(prompt: "Create a futuristic city scene for me")
-                ExamplePrompt(prompt: "Make me an image of a cat on a windowsill")
-
-                Text("The AI will:")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                BulletPoint(text: "Extract parameters from your description")
-                BulletPoint(text: "Select an appropriate installed model")
-                BulletPoint(text: "Choose optimal settings")
-                BulletPoint(text: "Generate and display the image")
-                BulletPoint(text: "All through natural conversation")
-            }
-
-            HelpSection_Group(title: "Troubleshooting") {
-                TroubleshootingItem(
-                    question: "Model not appearing in picker",
-                    solution: """
-                    • Verify model directory has .mlmodelc files (CoreML) or .safetensors
-                    • Check Preferences → Local Models to see detected models
-                    • Restart SAM to rescan models
-                    """
-                )
-
-                TroubleshootingItem(
-                    question: "Conversion failed",
-                    solution: """
-                    • Check logs for specific error messages
-                    • Ensure sufficient disk space (~5-10GB per model)
-                    • Try downloading SafeTensors only (skip conversion)
-                    • Verify model compatibility (SD 1.x, 2.x, SDXL supported)
-                    """
-                )
-
-                TroubleshootingItem(
-                    question: "Generation quality poor",
-                    solution: """
-                    • Try increasing steps (30-50 for higher quality)
-                    • Adjust guidance scale (7.5-10 for stronger prompt adherence)
-                    • Improve prompt with more specific details
-                    • Try a different model or scheduler
-                    """
-                )
-            }
-        }
-    }
-}
-
 // MARK: - Conversation Management Content
 struct ConversationManagementContent: View {
     var body: some View {
@@ -2375,14 +1909,12 @@ struct MCPToolsDeepDiveContent: View {
                 Text("**System & Development:**")
                     .fontWeight(.semibold)
                     .padding(.top, 8)
-                BulletPoint(text: "execute_terminal_command - Run shell commands")
                 BulletPoint(text: "calendar_operations - Access calendar events")
                 BulletPoint(text: "task_planning - Structured task management")
 
                 Text("**Creative:**")
                     .fontWeight(.semibold)
                     .padding(.top, 8)
-                BulletPoint(text: "image_generation - Create AI art with Stable Diffusion")
                 BulletPoint(text: "text_to_speech - Convert text to audio")
 
                 Text("**Collaboration:**")
@@ -2507,7 +2039,7 @@ struct PerformanceOptimizationContent: View {
                     .fontWeight(.semibold)
                     .padding(.top, 8)
                 BulletPoint(text: "Apple Silicon (M1/M2/M3) for Metal acceleration")
-                BulletPoint(text: "16GB+ RAM for local LLMs and image generation")
+                BulletPoint(text: "16GB+ RAM for local LLMs")
                 BulletPoint(text: "50GB+ free space for multiple models")
                 BulletPoint(text: "SSD for faster model loading")
             }
@@ -2560,32 +2092,12 @@ struct PerformanceOptimizationContent: View {
                 BulletPoint(text: "Keep frequently-used models on fast SSD")
             }
 
-            HelpSection_Group(title: "Stable Diffusion Performance") {
-                Text("**CoreML vs Python:**")
-                    .fontWeight(.semibold)
-                    .padding(.bottom, 8)
-
-                BulletPoint(text: "**CoreML**: 2-4 seconds per image on Apple Silicon")
-                BulletPoint(text: "**Python**: 10-30 seconds per image depending on hardware")
-                BulletPoint(text: "**Recommendation**: Always convert to CoreML on M1/M2/M3")
-
-                Text("**Generation Speed Tips:**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                BulletPoint(text: "Use SD 1.5 models for fastest results (512×512)")
-                BulletPoint(text: "SDXL slower but higher quality (1024×1024)")
-                BulletPoint(text: "Reduce steps (15-20) for faster preview, increase (30-50) for final")
-                BulletPoint(text: "Close other memory-intensive apps during generation")
-            }
-
-            HelpSection_Group(title: "Batch Processing") {
+            HelpSection_Group(title: "Batch Operations") {
                 Text("Optimize for multiple operations:")
                     .padding(.bottom, 8)
 
                 BulletPoint(text: "**Document Import**: Drag multiple files at once")
                 BulletPoint(text: "**File Operations**: Process files in same conversation")
-                BulletPoint(text: "**Image Generation**: Generate variations with same seed")
-                BulletPoint(text: "**Conversation Export**: Export multiple as batch (future)")
             }
 
             HelpSection_Group(title: "Network & API Performance") {
@@ -2612,10 +2124,7 @@ struct PerformanceOptimizationContent: View {
                     .padding(.bottom, 8)
 
                 BulletPoint(text: "SAM app: ~200MB")
-                BulletPoint(text: "Python environment: ~1.5GB")
                 BulletPoint(text: "Local LLM models: 4-20GB each")
-                BulletPoint(text: "SD models (CoreML): 2-6GB each")
-                BulletPoint(text: "SD models (SafeTensors): 2-6GB each")
                 BulletPoint(text: "Conversations & cache: Variable")
 
                 Text("**Cleanup Recommendations:**")
@@ -2623,7 +2132,6 @@ struct PerformanceOptimizationContent: View {
                     .padding(.top, 8)
                 BulletPoint(text: "Delete unused models from Preferences")
                 BulletPoint(text: "Clear old conversations periodically")
-                BulletPoint(text: "Delete SafeTensors after CoreML conversion")
                 BulletPoint(text: "Keep staging directory clean")
             }
 
@@ -2788,77 +2296,6 @@ struct GettingStartedExamplesContent: View {
                 BulletPoint(text: "Searches memory for specific information")
                 BulletPoint(text: "Structures data as requested")
                 BulletPoint(text: "Creates formatted output document")
-            }
-
-            HelpSection_Group(title: "Example 4: Creative Image Generation") {
-                Text("**Scenario**: Create custom artwork for a project.")
-                    .fontWeight(.semibold)
-                    .padding(.bottom, 8)
-
-                Text("**Step 1: Install Model**")
-                    .font(.callout)
-                    .fontWeight(.medium)
-                BulletPoint(text: "Preferences → Image Generation → HuggingFace")
-                BulletPoint(text: "Search for \"realistic-vision\"")
-                BulletPoint(text: "Download and convert to CoreML")
-
-                Text("**Step 2: Generate**")
-                    .font(.callout)
-                    .fontWeight(.medium)
-                    .padding(.top, 8)
-                ExamplePrompt(prompt: "Generate an image of a serene mountain landscape at sunset, 8k quality, detailed")
-
-                Text("**Step 3: Refine**")
-                    .font(.callout)
-                    .fontWeight(.medium)
-                    .padding(.top, 8)
-                ExamplePrompt(prompt: "Make it more vibrant with warmer colors")
-
-                Text("**Step 4: Variations**")
-                    .font(.callout)
-                    .fontWeight(.medium)
-                    .padding(.top, 8)
-                ExamplePrompt(prompt: "Create 3 variations with different times of day")
-
-                Text("**What SAM Does:**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                BulletPoint(text: "Uses image_generation tool")
-                BulletPoint(text: "Selects appropriate model and engine")
-                BulletPoint(text: "Adjusts parameters based on requests")
-                BulletPoint(text: "Generates variations with different seeds")
-            }
-
-            HelpSection_Group(title: "Example 5: Automated Workflow") {
-                Text("**Scenario**: Automate a multi-step process.")
-                    .fontWeight(.semibold)
-                    .padding(.bottom, 8)
-
-                Text("**Complex Request:**")
-                    .font(.callout)
-                    .fontWeight(.medium)
-                ExamplePrompt(prompt: """
-                Research Python best practices for async/await, \
-                summarize the top 5 patterns, \
-                create code examples for each, \
-                and save everything to a markdown file
-                """)
-
-                Text("**What SAM Does (Automatically):**")
-                    .fontWeight(.semibold)
-                    .padding(.top, 8)
-                BulletPoint(text: "1. web_operations: Research async/await patterns")
-                BulletPoint(text: "2. fetch_page: Get detailed documentation")
-                BulletPoint(text: "3. Analysis: Identify top 5 patterns")
-                BulletPoint(text: "4. Code Generation: Create examples for each")
-                BulletPoint(text: "5. file_operations: Save to markdown file")
-                BulletPoint(text: "6. Confirmation: Shows saved file path")
-
-                Text("**Key Point**: You make one request, SAM executes the entire workflow.")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-                    .italic()
-                    .padding(.top, 8)
             }
 
             HelpSection_Group(title: "Example 6: Using Mini-Prompts for Context") {

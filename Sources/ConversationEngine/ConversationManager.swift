@@ -53,8 +53,6 @@ public class ConversationManager: ObservableObject {
     @Published public var conversations: [ConversationModel] = []
     @Published public var activeConversation: ConversationModel?
 
-    /// Terminal managers for each conversation (stored as AnyObject to avoid module dependency) Key: Conversation UUID, Value: TerminalManager instance Persists across view recreations, maintaining terminal history per conversation.
-    private var terminalManagers: [UUID: AnyObject] = [:]
     @Published public var isReady = true
 
     private let logger = Logger(label: "com.sam.conversation.manager")
@@ -409,8 +407,6 @@ public class ConversationManager: ObservableObject {
                     conversation.workingDirectory = newWorkingDir
                     logger.debug("Renamed working directory: \(oldWorkingDir) -> \(newWorkingDir)")
 
-                    /// Reset terminal session for new directory
-                    resetTerminalForWorkingDirectoryChange(conversation: conversation, newPath: newWorkingDir)
                 } catch {
                     logger.error("Failed to rename working directory: \(error)")
                     /// Continue anyway - conversation rename should still work
@@ -430,8 +426,6 @@ public class ConversationManager: ObservableObject {
                     conversation.title = "\(newName) (\(counter))"
                     logger.debug("Renamed working directory with unique suffix: \(oldWorkingDir) -> \(uniqueWorkingDir)")
 
-                    /// Reset terminal session for new directory
-                    resetTerminalForWorkingDirectoryChange(conversation: conversation, newPath: uniqueWorkingDir)
                 } catch {
                     logger.error("Failed to rename working directory: \(error)")
                 }
@@ -477,13 +471,10 @@ public class ConversationManager: ObservableObject {
         saveConversations()
         objectWillChange.send()
 
-        /// Check if effective working directory changed and notify terminal
         let newEffectiveDir = getEffectiveWorkingDirectory(for: conversation)
         logger.debug("attachSharedTopic: new effective dir = \(newEffectiveDir)")
         
         if newEffectiveDir != oldEffectiveDir {
-            logger.info("Effective working directory changed from \(oldEffectiveDir) to \(newEffectiveDir), triggering terminal reset")
-            resetTerminalForWorkingDirectoryChange(conversation: conversation, newPath: newEffectiveDir)
         } else {
             logger.debug("Effective working directory unchanged: \(newEffectiveDir)")
         }
@@ -494,22 +485,6 @@ public class ConversationManager: ObservableObject {
         attachSharedTopic(topicId: nil)
     }
 
-    /// Restart terminal session for a conversation when working directory changes
-    /// This ensures the terminal uses the correct working directory after shared topic changes
-    public func restartTerminalSession(for conversationId: UUID) {
-        // Close existing PTY session if it exists
-        // The session ID is the conversation ID (per PTYSessionManager design)
-        let sessionId = conversationId.uuidString
-
-        do {
-            // Import PTYSessionManager to access the shared instance
-            try PTYSessionManager.shared.closeSession(sessionId: sessionId)
-            logger.debug("Closed terminal session for conversation \(conversationId) - will recreate with new working directory on next use")
-        } catch {
-            // Session might not exist, which is fine
-            logger.debug("No existing terminal session to close for conversation \(conversationId): \(error)")
-        }
-    }
 
     // MARK: - Working Directory Management
 
@@ -649,39 +624,11 @@ public class ConversationManager: ObservableObject {
             /// Scan workspace for AI instruction files (copilot-instructions.md, .cursorrules, etc.).
             SystemPromptManager.shared.scanWorkspaceForAIInstructions(at: url.path)
 
-            /// Reset terminal session if path changed
-            /// This ensures terminal starts in new directory without cd injection
-            if oldPath != url.path {
-                resetTerminalForWorkingDirectoryChange(conversation: conversation, newPath: url.path)
-            }
         } catch {
             logger.error("Failed to create security-scoped bookmark: \(error)")
         }
     }
 
-    /// Reset terminal session when working directory changes
-    /// Shared helper to avoid code duplication
-    private func resetTerminalForWorkingDirectoryChange(conversation: ConversationModel, newPath: String) {
-        /// DEADLOCK FIX: Removed synchronous performSelector call that blocked main thread.
-        /// Terminal will auto-update working directory from conversation.workingDirectory
-        /// when next accessed. PTYSessionManager already uses conversation's working directory.
-        ///
-        /// Previous implementation caused deadlock:
-        /// 1. ConversationManager (@MainActor) runs on main thread
-        /// 2. perform(selector:with:) is SYNCHRONOUS - blocks until complete
-        /// 3. resetSessionForNewDirectory is async and waits for terminal response
-        /// 4. Terminal can't respond because main thread is blocked
-        /// 5. Result: CLASSIC DEADLOCK
-        ///
-        /// NEW FIX: Post notification for terminal to observe and react to
-        logger.info("Working directory changed to: \(newPath), posting notification for conversation \(conversation.id.uuidString.prefix(8))")
-        
-        NotificationCenter.default.post(
-            name: .conversationWorkingDirectoryDidChange,
-            object: conversation.id,
-            userInfo: ["newPath": newPath]
-        )
-    }
 
     /// Start accessing security-scoped resource for conversation - Parameter conversation: The conversation (defaults to active) - Returns: True if access started successfully.
     @discardableResult
@@ -747,32 +694,9 @@ public class ConversationManager: ObservableObject {
         }
     }
 
-    // MARK: - Terminal Manager Storage
 
-    /// Get terminal manager for a conversation (creates if doesn't exist) - Parameter conversationId: The conversation UUID - Returns: Terminal manager instance (AnyObject - cast to TerminalManager in UserInterface).
-    public func getTerminalManager(for conversationId: UUID) -> AnyObject? {
-        logger.debug("TERMINAL_STORAGE: Getting manager for conversation \(conversationId)")
 
-        if let existing = terminalManagers[conversationId] {
-            logger.debug("TERMINAL_STORAGE: Found existing manager")
-            return existing
-        } else {
-            logger.debug("TERMINAL_STORAGE: No existing manager found")
-            return nil
-        }
-    }
 
-    /// Store terminal manager for a conversation - Parameters: - manager: Terminal manager instance - conversationId: The conversation UUID.
-    public func setTerminalManager(_ manager: AnyObject, for conversationId: UUID) {
-        logger.debug("TERMINAL_STORAGE: Storing manager for conversation \(conversationId)")
-        terminalManagers[conversationId] = manager
-    }
-
-    /// Remove terminal manager for a conversation (cleanup) - Parameter conversationId: The conversation UUID.
-    public func removeTerminalManager(for conversationId: UUID) {
-        logger.debug("TERMINAL_STORAGE: Removing manager for conversation \(conversationId)")
-        terminalManagers.removeValue(forKey: conversationId)
-    }
 
     // MARK: - Session Management (Task 19: Prevent State Leakage)
 
@@ -787,12 +711,10 @@ public class ConversationManager: ObservableObject {
         }
 
         let workingDirectory = getEffectiveWorkingDirectory(for: conversation)
-        let terminalManager = getTerminalManager(for: conversationId)
 
         let session = ConversationSession(
             conversationId: conversationId,
             workingDirectory: workingDirectory,
-            terminalManager: terminalManager
         )
 
         // Register session with state manager
@@ -1256,16 +1178,6 @@ public class ConversationManager: ObservableObject {
         }
     }
 
-    /// Refresh Stable Diffusion tool registration dynamically Called when a new SD model is downloaded without restart Uses closure-based injection to avoid cyclic dependencies.
-    public var stableDiffusionToolRefreshHandler: (() async -> Void)?
-
-    public func refreshStableDiffusionTool() {
-        logger.info("SD_REFRESH: Triggering Stable Diffusion tool refresh")
-        Task {
-            await stableDiffusionToolRefreshHandler?()
-        }
-    }
-
     private func storeMessageInMemory(content: String, conversationId: UUID, contentType: MemoryContentType) async {
         guard memoryInitialized else { return }
 
@@ -1459,7 +1371,7 @@ public class ConversationManager: ObservableObject {
     // MARK: - MCP Tool Methods
 
     /// Execute an MCP tool in the context of the active conversation.
-    public func executeMCPTool(name: String, parameters: [String: Any], toolCallId: String? = nil, conversationId: UUID? = nil, isExternalAPICall: Bool = false, isUserInitiated: Bool = false, terminalManager: AnyObject? = nil, iterationController: IterationController? = nil) async -> MCPToolResult? {
+    public func executeMCPTool(name: String, parameters: [String: Any], toolCallId: String? = nil, conversationId: UUID? = nil, isExternalAPICall: Bool = false, isUserInitiated: Bool = false, iterationController: IterationController? = nil) async -> MCPToolResult? {
         guard mcpInitialized else {
             logger.warning("MCP system not initialized, cannot execute tool: \(name)")
             return nil
@@ -1516,7 +1428,6 @@ public class ConversationManager: ObservableObject {
             isExternalAPICall: isExternalAPICall,
             isUserInitiated: isUserInitiated,
             workingDirectory: effectiveWorkingDir,
-            terminalManager: terminalManager,
             iterationController: iterationController,
             effectiveScopeId: effectiveScopeId
         )

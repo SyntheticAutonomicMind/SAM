@@ -12,15 +12,12 @@ public class AuthorizationManager {
     private var authorizations: [AuthorizationGrant] = []
     private let lock = NSLock()
 
-    /// Conversations with auto-approve enabled (bypasses all security).
-    private var autoApproveConversations: Set<UUID> = []
-
     /// Default expiry time for authorizations (5 minutes).
     private let defaultExpirySeconds: TimeInterval = 300
 
     private init() {}
 
-    /// Grant temporary authorization for a specific operation within a conversation - Parameters: - conversationId: The conversation where authorization was granted - operation: The operation to authorize (e.g., "terminal_operations.create_directory") - expirySeconds: How long the authorization is valid (default: 300 seconds) - oneTimeUse: If true, authorization is consumed after first use (default: true).
+    /// Grant temporary authorization for a specific operation within a conversation - Parameters: - conversationId: The conversation where authorization was granted - operation: The operation to authorize (e.g., "file_operations.create_directory") - expirySeconds: How long the authorization is valid (default: 300 seconds) - oneTimeUse: If true, authorization is consumed after first use (default: true).
     public func grantAuthorization(
         conversationId: UUID,
         operation: String,
@@ -51,19 +48,10 @@ public class AuthorizationManager {
         ])
     }
 
-    /// Check if an operation is authorized and consume the authorization if one-time use - Parameters: - conversationId: The conversation context - operation: The operation to check (e.g., "terminal_operations.create_directory") - Returns: True if authorized and not expired, false otherwise.
+    /// Check if an operation is authorized and consume the authorization if one-time use - Parameters: - conversationId: The conversation context - operation: The operation to check (e.g., "file_operations.create_directory") - Returns: True if authorized and not expired, false otherwise.
     public func isAuthorized(conversationId: UUID, operation: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-
-        /// Check auto-approve first (bypasses all security).
-        if autoApproveConversations.contains(conversationId) {
-            logger.debug("Auto-approve enabled - bypassing authorization check", metadata: [
-                "conversationId": .string(conversationId.uuidString),
-                "operation": .string(operation)
-            ])
-            return true
-        }
 
         /// Clean up expired authorizations.
         cleanupExpired()
@@ -90,31 +78,7 @@ public class AuthorizationManager {
         return true
     }
 
-    /// Enable or disable auto-approve for a conversation (bypasses all security) - Parameters: - enabled: If true, all operations are automatically authorized without prompts - conversationId: The conversation to enable/disable auto-approve for.
-    public func setAutoApprove(_ enabled: Bool, conversationId: UUID) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if enabled {
-            autoApproveConversations.insert(conversationId)
-            logger.warning("Auto-approve ENABLED - all operations authorized without user permission", metadata: [
-                "conversationId": .string(conversationId.uuidString)
-            ])
-        } else {
-            autoApproveConversations.remove(conversationId)
-            logger.debug("Auto-approve disabled - normal authorization required", metadata: [
-                "conversationId": .string(conversationId.uuidString)
-            ])
-        }
-    }
-
-    /// Check if auto-approve is enabled for a conversation - Parameter conversationId: The conversation to check - Returns: True if auto-approve is enabled.
-    public func isAutoApproveEnabled(conversationId: UUID) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-
-        return autoApproveConversations.contains(conversationId)
-    }
+    /// Revoke a specific authorization.
 
     /// Revoke a specific authorization.
     public func revokeAuthorization(conversationId: UUID, operation: String) {

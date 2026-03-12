@@ -54,14 +54,12 @@ sequenceDiagram
     MCPMgr->>Tools: setMemoryManager(memoryManager)
     Note over Tools: Inject dependencies into tools
     
-    MCPMgr->>Tools: Create RunSubagentTool()
-    Tools-->>MCPMgr: RunSubagentTool instance
     
     MCPMgr->>Tools: setWorkflowSpawner(spawner)
     Note over Tools: Inject workflow spawner
     
     MCPMgr->>MCPMgr: createAdvancedTools() via factory
-    Note over MCPMgr: FileOperationsTool, TerminalOperationsTool, etc.
+    Note over MCPMgr: FileOperationsTool, etc.
     
     loop For each tool
         MCPMgr->>Tools: tool.initialize()
@@ -262,9 +260,7 @@ graph TD
 
 **Consolidated Tools:**
 - `file_operations` - 16 operations (read, search, write)
-- `terminal_operations` - 11 operations (command, PTY session)
 - `memory_operations` - 4 operations (memory, todos)
-- `build_and_version_control` - 5 operations (tasks, git)
 
 ---
 
@@ -384,106 +380,6 @@ sequenceDiagram
 
 ## 5. PTY Session Lifecycle
 
-Shows creation, usage, and management of persistent terminal sessions.
-
-```mermaid
-stateDiagram-v2
-    [*] --> CheckExisting: create_session request
-    
-    CheckExisting --> SessionExists: Session with conversationId found
-    CheckExisting --> CreateNew: No session found
-    
-    SessionExists --> CheckWorkingDir: Compare working directories
-    CheckWorkingDir --> ReuseSession: Same working directory
-    CheckWorkingDir --> RestartSession: Working directory changed
-    
-    RestartSession --> CloseExisting: close_session
-    CloseExisting --> CreateNew: Create with new working dir
-    
-    CreateNew --> Fork: Call Darwin.forkpty()
-    Fork --> ParentProcess: pid > 0 (parent)
-    Fork --> ChildProcess: pid == 0 (child)
-    
-    ChildProcess --> SetupEnv: chdir(workingDirectory)
-    SetupEnv --> SetTermVars: TERM=xterm-256color<br/>LANG=en_US.UTF-8
-    SetTermVars --> ExecShell: execv("/bin/bash", ["-il"])
-    ExecShell --> BashRunning: Bash shell started
-    
-    ParentProcess --> SetupFD: Set master FD non-blocking
-    SetupFD --> StartReadLoop: Async read task
-    StartReadLoop --> Active: Session active
-    
-    Active --> ReadOutput: Agent sends command
-    ReadOutput --> BufferAppend: Read from master FD
-    BufferAppend --> Active: Append to outputBuffer
-    
-    Active --> SendInput: send_input("ls -la\r\n")
-    SendInput --> WriteToFD: Write to master FD
-    WriteToFD --> Active: Command sent
-    
-    Active --> GetOutput: get_output(fromIndex)
-    GetOutput --> ReturnSlice: Return outputBuffer[fromIndex...]
-    ReturnSlice --> Active: Output retrieved
-    
-    Active --> GetHistory: get_history()
-    GetHistory --> ReturnAll: Return full outputBuffer
-    ReturnAll --> Active: History retrieved
-    
-    Active --> Resize: resize_session(rows, cols)
-    Resize --> IOCTL: ioctl(TIOCSWINSZ, &windowSize)
-    IOCTL --> Active: Size updated
-    
-    Active --> Kill: killAllSessionProcesses()
-    Kill --> FindDescendants: ps -A -o pid,ppid
-    FindDescendants --> KillTree: SIGKILL descendants + shell
-    KillTree --> Closed: All processes terminated
-    
-    Active --> Close: close_session()
-    Close --> SIGTERM: Send SIGTERM to child
-    SIGTERM --> WaitExit: waitpid(childPid, WNOHANG)
-    
-    WaitExit --> Exited: Child exited
-    WaitExit --> SIGKILL: Child still running after 100ms
-    SIGKILL --> Exited: Force kill
-    
-    Exited --> CleanupFD: close(masterFd)
-    CleanupFD --> RemoveFromMap: Remove from sessions map
-    RemoveFromMap --> Closed: Session closed
-    
-    ReuseSession --> Active: Return existing session
-    
-    Closed --> [*]
-    BashRunning --> Active: Shell ready
-```
-
-**PTY Session Features:**
-
-**Session Persistence:**
-- Conversation-scoped (session ID = conversation ID)
-- Maintains shell environment across commands
-- Output buffer preserves full history
-- Reused when working directory unchanged
-
-**Output Capture:**
-- Async read loop (non-blocking)
-- Reads from master FD continuously
-- Appends to thread-safe buffer
-- Returns slices on demand (fromIndex parameter)
-
-**Shell Configuration:**
-- Bash interactive login shell (`-il`)
-- 256-color terminal support
-- UTF-8 encoding
-- Inherits user's shell environment
-
-**Cleanup:**
-- Graceful shutdown: SIGTERM → wait → SIGKILL
-- Descendant process cleanup
-- FD closure
-- Session map removal
-
----
-
 ## 6. Tool Display Information Flow
 
 Shows how tools provide UI-friendly progress information.
@@ -499,7 +395,6 @@ graph TD
     E --> F{Operation-specific<br/>logic}
     
     F -->|file_operations| G[Switch on operation]
-    F -->|terminal_operations| H[Switch on operation]
     F -->|memory_operations| I[Switch on operation]
     
     G -->|create_file| J[Creating file: filename.txt]
@@ -674,7 +569,7 @@ stateDiagram-v2
 
 **DirectExecution → Success/Failure:**
 - Actual operation execution
-- File I/O, terminal commands, etc.
+- File I/O, etc.
 - Error handling
 
 **GenerateResult → Return:**
@@ -693,7 +588,6 @@ These flows illustrate:
 2. **Tool Execution** - Authorization checks, routing, execution
 3. **ConsolidatedMCP** - Operation-based routing to internal tools
 4. **User Collaboration** - Blocking mechanism, authorization grants
-5. **PTY Sessions** - Persistent terminals, lifecycle management
 6. **Display Information** - UI-friendly progress messages
 7. **Execution States** - Complete state machine for tool execution
 

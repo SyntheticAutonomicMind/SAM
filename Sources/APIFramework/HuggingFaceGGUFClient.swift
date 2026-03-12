@@ -47,8 +47,8 @@ public class HuggingFaceGGUFClient {
                 /// MLX models don't have a direct filter, rely on model names/tags containing "mlx"
                 hfLogger.debug("Searching for MLX models (safetensors) - using query string matching")
             } else if ext == ".coreml" {
-                /// CoreML/Stable Diffusion models
-                hfLogger.debug("Using filter=coreml for SD models")
+                /// CoreML models
+                hfLogger.debug("Using filter=coreml for CoreML models")
                 queryItems.append(URLQueryItem(name: "filter", value: "coreml"))
             } else {
                 let filterValue = ext.trimmingCharacters(in: CharacterSet(charactersIn: "."))

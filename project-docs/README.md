@@ -2,55 +2,48 @@
 
 This directory contains comprehensive technical documentation for SAM developers and contributors.
 
-**Last Updated:** December 11, 2025  
+**Last Updated:** March 12, 2026
 **License:** CC-BY-NC-4.0
 
 ---
 
 ## Documentation Index
 
-### Methodology
-
-| Document | Description | Lines |
-|----------|-------------|-------|
-| [THE_UNBROKEN_METHOD.md](THE_UNBROKEN_METHOD.md) | Complete AI collaboration framework - 7 pillars for successful human-AI development | 1,001 |
-
 ### Core Architecture
 
 | Document | Description | Lines |
 |----------|-------------|-------|
-| [API_FRAMEWORK.md](API_FRAMEWORK.md) | Provider system, endpoints, authentication, OpenAI compatibility | 783 |
-| [MCP_FRAMEWORK.md](MCP_FRAMEWORK.md) | Model Context Protocol implementation, tool system, execution | 1,910 |
-| [CONVERSATION_ENGINE.md](CONVERSATION_ENGINE.md) | Chat processing, state management, persistence | 1,003 |
-| [MESSAGING_ARCHITECTURE.md](MESSAGING_ARCHITECTURE.md) | Message flow, transformations, streaming | 1,173 |
-| [STREAMING_CONVERSATIONAL_ARCHITECTURE.md](STREAMING_CONVERSATIONAL_ARCHITECTURE.md) | Real-time streaming implementation | 137 |
-| [CHAT_INTERFACE_ARCHITECTURE.md](CHAT_INTERFACE_ARCHITECTURE.md) | UI components, ChatWidget, message rendering | 208 |
+| [API_FRAMEWORK.md](API_FRAMEWORK.md) | Provider system, endpoints, authentication, OpenAI compatibility | 885 |
+| [AGENT_ORCHESTRATOR.md](AGENT_ORCHESTRATOR.md) | Agent loop, tool dispatch, streaming, auto-continue | 584 |
+| [MCP_TOOLS_SPECIFICATION.md](MCP_TOOLS_SPECIFICATION.md) | Complete tool API reference (10 tools, 60+ operations) | 208 |
+| [CONVERSATION_ENGINE.md](CONVERSATION_ENGINE.md) | Chat processing, state management, persistence | 946 |
+| [MESSAGING_ARCHITECTURE.md](MESSAGING_ARCHITECTURE.md) | Message flow, transformations, streaming | 1,018 |
+| [STREAMING_CONVERSATIONAL_ARCHITECTURE.md](STREAMING_CONVERSATIONAL_ARCHITECTURE.md) | Real-time streaming implementation | 237 |
+| [CHAT_INTERFACE_ARCHITECTURE.md](CHAT_INTERFACE_ARCHITECTURE.md) | UI components, ChatWidget, message rendering | 264 |
+| [SYSTEM_PROMPT_EVOLUTION.md](SYSTEM_PROMPT_EVOLUTION.md) | System prompt design history and current architecture | 266 |
 
 ### Subsystems
 
 | Document | Description | Lines |
 |----------|-------------|-------|
-| [STABLE_DIFFUSION.md](STABLE_DIFFUSION.md) | Image generation, model types, schedulers, MPS optimizations | 914 |
-| [MLX_INTEGRATION.md](MLX_INTEGRATION.md) | Local model support for Apple Silicon (MLX framework) | 677 |
-| [SOUND.md](SOUND.md) | Voice input/output, wake word detection, speech synthesis | 534 |
-| [MERMAID_ARCHITECTURE.md](MERMAID_ARCHITECTURE.md) | Diagram rendering (15 diagram types) | 788 |
-| [CONFIGURATION_SYSTEM.md](CONFIGURATION_SYSTEM.md) | Settings, preferences, persistence | 637 |
+| [MLX_INTEGRATION.md](MLX_INTEGRATION.md) | Local model support for Apple Silicon (MLX framework) | 670 |
+| [SOUND.md](SOUND.md) | Voice input/output, wake word detection, speech synthesis | 496 |
+| [MERMAID_ARCHITECTURE.md](MERMAID_ARCHITECTURE.md) | Diagram rendering (15 diagram types) | 679 |
+| [CONFIGURATION_SYSTEM.md](CONFIGURATION_SYSTEM.md) | Settings, preferences, persistence | 749 |
 | [SHARED_DATA.md](SHARED_DATA.md) | Cross-conversation data sharing | 424 |
-| [PYTHON_VALIDATION.md](PYTHON_VALIDATION.md) | Python bundle validation system for CI/CD builds | 244 |
-| [DOCUMENT_TRAINING_EXPORT.md](DOCUMENT_TRAINING_EXPORT.md) | Document-to-training data pipeline with chunking strategies | 342 |
+| [CLIO_INTEGRATION.md](CLIO_INTEGRATION.md) | Integration with CLIO terminal AI assistant | 219 |
 
 ### Specifications
 
 | Document | Description | Lines |
 |----------|-------------|-------|
-| [MCP_TOOLS_SPECIFICATION.md](MCP_TOOLS_SPECIFICATION.md) | Complete tool API reference (14 tools, 46+ operations) | 598 |
 | [API_INTEGRATION_SPECIFICATION.md](API_INTEGRATION_SPECIFICATION.md) | Provider integration guide, protocol requirements | 964 |
+| [API_AUTHENTICATION.md](API_AUTHENTICATION.md) | Authentication flows, Copilot token management | 118 |
 | [SECURITY_SPECIFICATION.md](SECURITY_SPECIFICATION.md) | Security model, sandboxing, authorization | 1,222 |
-| [MEMORY_AND_INTELLIGENCE_SPECIFICATION.md](MEMORY_AND_INTELLIGENCE_SPECIFICATION.md) | RAG system, vector search, document import | 358 |
-| [AUTOMATION_SPECIFICATION.md](AUTOMATION_SPECIFICATION.md) | Autonomous execution, subagents, iteration limits | 675 |
-| [WEB_RESEARCH_SPECIFICATION.md](WEB_RESEARCH_SPECIFICATION.md) | Web search, scraping, content extraction | 688 |
-| [THINK_TOOL_SPECIFICATION.md](THINK_TOOL_SPECIFICATION.md) | Internal reasoning and planning tool | 444 |
-| [TOOL_CARD_ARCHITECTURE.md](TOOL_CARD_ARCHITECTURE.md) | Tool execution UI, status display | 656 |
+| [MEMORY_AND_INTELLIGENCE_SPECIFICATION.md](MEMORY_AND_INTELLIGENCE_SPECIFICATION.md) | RAG system, vector search, document import | 424 |
+| [AUTOMATION_SPECIFICATION.md](AUTOMATION_SPECIFICATION.md) | Autonomous execution, iteration limits | 675 |
+| [WEB_RESEARCH_SPECIFICATION.md](WEB_RESEARCH_SPECIFICATION.md) | Web search, scraping, content extraction | 647 |
+| [TOOL_CARD_ARCHITECTURE.md](TOOL_CARD_ARCHITECTURE.md) | Tool execution UI, status display | 567 |
 | [PLATFORM_INTEGRATION_SPECIFICATION.md](PLATFORM_INTEGRATION_SPECIFICATION.md) | macOS integration, Sparkle updates, permissions | 385 |
 | [PROTOCOL_AND_COMMUNICATION_SPECIFICATION.md](PROTOCOL_AND_COMMUNICATION_SPECIFICATION.md) | Message protocols, SSE streaming | 491 |
 
@@ -61,17 +54,17 @@ This directory contains comprehensive technical documentation for SAM developers
 | [flows/message_flow.md](flows/message_flow.md) | End-to-end message processing from UI to AI and back | 774 |
 | [flows/tool_execution_flow.md](flows/tool_execution_flow.md) | Tool invocation, execution, and result handling | 523 |
 | [flows/TOOL_EXECUTION_FLOWS.md](flows/TOOL_EXECUTION_FLOWS.md) | Comprehensive tool system flows | 704 |
-| [flows/sd_generation_flow.md](flows/sd_generation_flow.md) | Image generation pipeline (CoreML & Python) | 525 |
-| [flows/model_loading_flow.md](flows/model_loading_flow.md) | Local model initialization (MLX & GGUF) | 386 |
+| [flows/model_loading_flow.md](flows/model_loading_flow.md) | Local model initialization (MLX and GGUF) | 461 |
 | [flows/conversation_persistence.md](flows/conversation_persistence.md) | Saving, loading, and managing conversations | 542 |
-| [flows/document_training_export_flow.md](flows/document_training_export_flow.md) | Document-to-training data pipeline with chunking and export | 620 |
 
 ### Internal/Development
 
 | Document | Description | Lines |
 |----------|-------------|-------|
-| [MCP_CONSOLIDATION_ARCHITECTURE.md](MCP_CONSOLIDATION_ARCHITECTURE.md) | MCP refactoring notes | 508 |
-| [SEQUENTIAL_THINKING_ARCHITECTURE.md](SEQUENTIAL_THINKING_ARCHITECTURE.md) | Sequential thinking implementation notes | 497 |
+| [MCP_CONSOLIDATION_ARCHITECTURE.md](MCP_CONSOLIDATION_ARCHITECTURE.md) | MCP refactoring notes | 382 |
+| [SEQUENTIAL_THINKING_ARCHITECTURE.md](SEQUENTIAL_THINKING_ARCHITECTURE.md) | Sequential thinking implementation notes | 553 |
+| [SWIFT6_CONCURRENCY_MIGRATION.md](SWIFT6_CONCURRENCY_MIGRATION.md) | Swift 6 strict concurrency migration guide | 63 |
+| [MCP_FRAMEWORK.md](MCP_FRAMEWORK.md) | MCP framework stub (minimal) | 9 |
 
 ---
 
@@ -80,32 +73,30 @@ This directory contains comprehensive technical documentation for SAM developers
 All documentation files follow these standards:
 
 1. **SPDX License Headers:** All files include `CC-BY-NC-4.0` license headers
-2. **Last Updated Dates:** Most files include "Last Updated" dates (some older files may not)
+2. **Last Updated Dates:** Most files include "Last Updated" dates
 3. **Markdown Format:** GitHub-flavored Markdown with tables, code blocks, and diagrams
-4. **No Sensitive Information:** All files audited for public release (see audit summary below)
+4. **No Sensitive Information:** All files audited for public release
 
 ## Recent Updates
 
-### January 11, 2026
-- **DOCUMENT_TRAINING_EXPORT.md (NEW):** Complete guide for document-to-training data export
-- **Training System:** Added document chunking and conversation memory export for LoRA fine-tuning
+### March 12, 2026
+- **Documentation overhaul:** Removed stale docs for deleted features (StableDiffusion, Training/LoRA, Think tool, Python validation)
+- **Deleted:** STABLE_DIFFUSION.md, LORA_TRAINING.md, DOCUMENT_TRAINING_EXPORT.md, PYTHON_VALIDATION.md, THINK_TOOL_SPECIFICATION.md
+- **Deleted flows:** sd_generation_flow.md, lora_training_flow.md, document_training_export_flow.md
+- **Deleted handoffs:** HANDOFF_2025-12-17_PDF_TABLES.md, PDF_EXPORT_SESSION_2025-12-16.md
+- **Updated all docs:** Replaced stale SD/Training/subagent/workflow-mode references with current tools (ALICE, math_operations)
+- **Added to index:** AGENT_ORCHESTRATOR.md, API_AUTHENTICATION.md, CLIO_INTEGRATION.md, SYSTEM_PROMPT_EVOLUTION.md, SWIFT6_CONCURRENCY_MIGRATION.md
 
 ### December 11, 2025
-- **STABLE_DIFFUSION.md:** Updated with SDXL float32 conversion, MPS limitations, SDE scheduler removal
-- **Session handoffs:** Moved to `.gitignore` (development-only, not for public release)
-- **Full documentation audit:** All 30 files reviewed and approved for SAM 1.0 release
+- **Full documentation audit:** All files reviewed and approved for SAM 1.0 release
 
 ## Audit Status
 
-✅ **Approved for SAM 1.0 Public Release**
+**Current:** 27 documentation files (+ this README), ~13,500 lines of technical documentation
 
-- Total files: 30 documentation files
-- Total lines: 19,845 lines of technical documentation
 - License compliance: 100% (all have SPDX headers)
 - Sensitive information: None found
-- Audit date: December 11, 2025
-
-See `scratch/AUDIT_SUMMARY.md` for detailed audit report (development directory, not in repository).
+- Last full audit: March 12, 2026
 
 ---
 
@@ -118,7 +109,6 @@ See `scratch/AUDIT_SUMMARY.md` for detailed audit report (development directory,
 - Include SPDX headers and "Last Updated" dates
 
 ### For Developers
-- Start with [THE_UNBROKEN_METHOD.md](THE_UNBROKEN_METHOD.md) to understand development philosophy
 - Read core architecture docs for system overview
 - Check flow documentation for implementation details
 - Refer to specifications for API contracts

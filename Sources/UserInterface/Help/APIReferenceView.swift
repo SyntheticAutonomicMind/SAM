@@ -273,7 +273,6 @@ struct ChatCompletionsContent: View {
             ParameterRow(name: "maxIterations", type: "number", required: false, description: "Maximum workflow iterations (default: 300)")
             ParameterRow(name: "workingDirectory", type: "string", required: false, description: "Working directory for file operations")
             ParameterRow(name: "enableReasoning", type: "boolean", required: false, description: "Enable extended reasoning for complex tasks")
-            ParameterRow(name: "enableWorkflowMode", type: "boolean", required: false, description: "Enable autonomous workflow orchestration")
 
             SectionHeader(title: "Request Example (Non-Streaming)")
             CodeBlock(code: """
@@ -580,7 +579,7 @@ struct ModelsAPIContent: View {
             SectionHeader(title: "List Installed Models")
             CodeBlock(code: "GET /api/models")
 
-            Text("Returns locally installed GGUF, MLX, and Stable Diffusion models in ~/Library/Caches/sam/models/")
+            Text("Returns locally installed GGUF and MLX models in ~/Library/Caches/sam/models/")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -807,9 +806,6 @@ struct FileToolsContent: View {
             ToolCard(name: "git_commit", description: "Stage and commit changes")
             ToolCard(name: "get_changed_files", description: "List modified files in Git")
 
-            SectionHeader(title: "Terminal")
-            ToolCard(name: "run_in_terminal", description: "Execute shell commands")
-            ToolCard(name: "get_terminal_output", description: "Retrieve terminal output")
         }
     }
 }

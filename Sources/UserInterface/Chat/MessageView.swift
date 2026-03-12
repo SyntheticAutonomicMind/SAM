@@ -33,7 +33,7 @@ private func getOperationDisplayName(from content: String, toolName: String?, di
         return display.actionDisplayName
     }
 
-    /// SECOND CHOICE: Use toolName if available (e.g., "image_generation" → "Image Generation")
+    /// SECOND CHOICE: Use toolName if available (e.g., "file_operations" → "File Operations")
     /// This prevents parsing success messages as titles
     if let toolName = toolName, !toolName.isEmpty {
         return getToolDisplayName(toolName, registry: nil)
@@ -105,11 +105,8 @@ struct MessageView: View {
             case .assistant:
                 AssistantMessageBubble(message: message, enableAnimations: enableAnimations, conversation: conversation, messageToExport: $messageToExport)
 
-            case .toolExecution:
+            case .toolExecution, .subagentExecution:
                 ToolExecutionCard(message: message, enableAnimations: enableAnimations)
-
-            case .subagentExecution:
-                SubagentExecutionCard(message: message, enableAnimations: enableAnimations)
 
             case .systemStatus:
                 SystemStatusCard(message: message, enableAnimations: enableAnimations)
@@ -752,175 +749,6 @@ struct ToolExecutionCard: View {
             String(word.prefix(1).uppercased() + word.dropFirst())
         }
         return words.joined(separator: " ")
-    }
-}
-
-// MARK: - Subagent Execution Card
-
-struct SubagentExecutionCard: View {
-    let message: EnhancedMessage
-    let enableAnimations: Bool
-    @State private var isExpanded = false
-    @State private var isHovering = false
-    @EnvironmentObject private var conversationManager: ConversationManager
-
-    /// Extract conversation ID from message content "Conversation ID: {UUID}"
-    private var subagentConversationId: UUID? {
-        guard let match = message.content.range(of: #"Conversation ID: ([A-F0-9-]+)"#, options: .regularExpression) else {
-            return nil
-        }
-        let idString = String(message.content[match]).replacingOccurrences(of: "Conversation ID: ", with: "")
-        return UUID(uuidString: idString)
-    }
-
-    /// Find subagent conversation from ID
-    private var subagentConversation: ConversationModel? {
-        guard let id = subagentConversationId else { return nil }
-        return conversationManager.conversations.first(where: { $0.id == id })
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            /// Header (clickable to expand/collapse)
-            HStack(spacing: 8) {
-                Image(systemName: "person.2.circle")
-                    .font(.body)
-                    .foregroundColor(.blue)
-
-                Text("Subagent Task")
-                    .font(.subheadline)
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                /// Status indicator
-                if let conv = subagentConversation {
-                    if conv.isWorking {
-                        HStack(spacing: 4) {
-                            ProgressView()
-                                .scaleEffect(0.6)
-                                .frame(width: 12, height: 12)
-                            Text("Working")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
-                    } else {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                            Text("Complete")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        }
-                    }
-                }
-
-                /// Expand/collapse button
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation { isExpanded.toggle() }
-            }
-            .onHover { hovering in
-                isHovering = hovering
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .background(isHovering && !isExpanded ? Color.blue.opacity(0.05) : Color.clear)
-
-            Divider()
-
-            /// Collapsed view
-            if !isExpanded {
-                HStack {
-                    if let conv = subagentConversation {
-                        if conv.isWorking {
-                            Text("Running...")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("Click to expand")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .italic()
-                        }
-                    } else {
-                        Text("Click to expand")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .italic()
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation { isExpanded.toggle() }
-                }
-            }
-
-            /// Expanded details
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 12) {
-                    /// Summary content
-                    Text(message.content)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.primary)
-                        .textSelection(.enabled)
-
-                    /// Link to subagent conversation
-                    if let conv = subagentConversation {
-                        Button(action: {
-                            conversationManager.activeConversation = conv
-                        }) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "arrow.right.circle.fill")
-                                    .font(.caption)
-                                Text("View Subagent Conversation")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text(conv.title)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(8)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { hovering in
-                            if hovering {
-                                NSCursor.pointingHand.push()
-                            } else {
-                                NSCursor.pop()
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 12)
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.blue.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 8)
     }
 }
 

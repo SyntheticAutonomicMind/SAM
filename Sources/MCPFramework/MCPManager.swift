@@ -14,6 +14,8 @@ public class MCPManager: ObservableObject {
     private var builtinTools: [any MCPTool] = []
     private var memoryManager: MemoryManagerProtocol?
     
+    private var imageGenerationService: ImageGenerationService?
+    
     /// Error guidance for providing helpful messages when tool calls fail
     private let errorGuidance = ToolErrorGuidance()
 
@@ -29,14 +31,11 @@ public class MCPManager: ObservableObject {
         logger.debug("MemoryManager injected into MCPManager")
     }
 
-    public func setWorkflowSpawner(_ spawner: WorkflowSpawner) {
-        /// Inject WorkflowSpawner into RunSubagentTool.
-        if let runSubagentTool = builtinTools.first(where: { $0.name == "run_subagent" }) as? RunSubagentTool {
-            runSubagentTool.setWorkflowSpawner(spawner)
-            logger.debug("WorkflowSpawner injected into RunSubagentTool")
-        } else {
-            logger.warning("RunSubagentTool not found in builtin tools - will inject after initialization")
-        }
+    /// Set image generation service for the image_generation tool.
+    /// Must be called before initialize() so the service is available during tool setup.
+    public func setImageGenerationService(_ service: ImageGenerationService) {
+        self.imageGenerationService = service
+        logger.debug("ImageGenerationService set on MCPManager")
     }
 
     public func setAdvancedToolsFactory(_ factory: @escaping () async -> [any MCPTool]) {
@@ -149,7 +148,7 @@ public class MCPManager: ObservableObject {
         return toolRegistry.getTool(name: name)
     }
 
-    /// Register a new tool dynamically (e.g., image_generation after SD model download) CRITICAL: After calling this, must call updateAvailableTools() to reflect in availableTools array.
+    /// Register a new tool dynamically (e.g., new tools via MCP servers) CRITICAL: After calling this, must call updateAvailableTools() to reflect in availableTools array.
     public func registerTool(_ tool: any MCPTool, name: String) {
         toolRegistry.registerTool(tool, name: name)
         availableTools.append(tool)
@@ -169,27 +168,23 @@ public class MCPManager: ObservableObject {
         }
 
         var candidateTools: [any MCPTool] = [
-            ThinkTool(),
-            RunSubagentTool(),
-            IncreaseMaxIterationsTool(),
-
-            /// Consolidated memory operations (replaces memory_search + manage_todo_list).
+            /// Consolidated memory operations (search, store, recall_history)
             memoryOperationsTool,
 
             /// Dedicated todo operations (standard tool pattern, separate from memory)
             TodoOperationsTool(),
 
-            /// Tool result retrieval (for large persisted tool outputs).
-            ReadToolResultTool(),
-
-            /// Prompt discovery tools for agent awareness.
-            ListSystemPromptsTool(),
-            ListMiniPromptsTool(),
-
-            /// History recall for archived context (long-term memory).
-            RecallHistoryTool()
-            /// terminal_session merged into terminal_operations (created via advanced tools factory).
+            /// Math operations (calculate, convert, formula)
+            MathOperationsTool()
         ]
+
+        /// Add image generation tool if service is available.
+        let imageGenTool = ImageGenerationTool()
+        if let imageService = self.imageGenerationService {
+            imageGenTool.setService(imageService)
+            logger.debug("ImageGenerationService injected into ImageGenerationTool")
+        }
+        candidateTools.append(imageGenTool)
 
         /// Add advanced tools via factory if available.
         if let createAdvancedTools = self.createAdvancedTools {
@@ -245,42 +240,26 @@ public class MCPToolRegistry {
 
     /// Explicit tool ordering for KV cache consistency Tools are returned in this exact order every time to ensure system prompts are identical This dramatically improves KV cache hit rates for MLX models.
     private let toolOrder: [String] = [
-        /// Core reasoning and collaboration (always first).
-        "think",
+        /// Core collaboration (always first)
         "user_collaboration",
 
-        /// Workflow delegation and control.
-        "run_subagent",
-        "increase_max_iterations",
-
-        /// Prompt discovery for agent awareness.
-        "list_system_prompts",
-        "list_mini_prompts",
-
-        /// Memory and task management.
+        /// Memory and task management
         "memory_operations",
         "todo_operations",
-        "read_tool_result",
 
-        /// Long-term memory recall for archived context.
-        "recall_history",
-
-        /// Web operations.
+        /// Web operations
         "web_operations",
 
-        /// Document operations.
+        /// Document operations
         "document_operations",
 
-        /// File operations.
+        /// File operations
         "file_operations",
 
-        /// Terminal operations.
-        "terminal_operations",
+        /// Math operations
+        "math_operations",
 
-        /// Build and version control.
-        "build_and_version_control",
-
-        /// Image generation (conditional - only if SD models installed).
+        /// Image generation (ALICE remote)
         "image_generation"
     ]
 

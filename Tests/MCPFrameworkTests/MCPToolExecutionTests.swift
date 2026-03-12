@@ -119,18 +119,6 @@ final class MCPToolExecutionTests: XCTestCase {
         }
     }
     
-    func testTerminalOperationsValidation() {
-        let tool = TerminalOperationsTool()
-        let validOperations = tool.parameters["operation"]?.enumValues ?? []
-        
-        let expectedOps = [
-            "run_command", "create_directory", "create_session"
-        ]
-        
-        for op in expectedOps {
-            XCTAssertTrue(validOperations.contains(op), "Missing operation: \(op)")
-        }
-    }
     
     func testMemoryOperationsValidation() {
         let tool = MemoryOperationsTool()
@@ -215,7 +203,6 @@ final class MCPToolExecutionTests: XCTestCase {
             isExternalAPICall: false,
             isUserInitiated: true,
             workingDirectory: "/Users/test/project",
-            terminalManager: nil,
             iterationController: nil,
             effectiveScopeId: nil
         )
@@ -232,7 +219,6 @@ final class MCPToolExecutionTests: XCTestCase {
             isExternalAPICall: false,
             isUserInitiated: true,
             workingDirectory: nil,
-            terminalManager: nil,
             iterationController: nil,
             effectiveScopeId: nil
         )
@@ -245,7 +231,6 @@ final class MCPToolExecutionTests: XCTestCase {
             isExternalAPICall: false,
             isUserInitiated: false,
             workingDirectory: nil,
-            terminalManager: nil,
             iterationController: nil,
             effectiveScopeId: nil
         )
@@ -295,12 +280,8 @@ final class MCPToolExecutionTests: XCTestCase {
     func testAllToolsHaveUniqueNames() {
         let tools: [any MCPTool] = [
             FileOperationsTool(),
-            TerminalOperationsTool(),
             MemoryOperationsTool(),
-            BuildVersionControlTool(),
-            ThinkTool(),
             ReadToolResultTool(),
-            RunSubagentTool(),
             UserCollaborationTool()
         ]
         
@@ -314,9 +295,7 @@ final class MCPToolExecutionTests: XCTestCase {
     func testToolParameterConsistency() {
         let operationTools: [any MCPTool] = [
             FileOperationsTool(),
-            TerminalOperationsTool(),
             MemoryOperationsTool(),
-            BuildVersionControlTool()
         ]
         
         for tool in operationTools {

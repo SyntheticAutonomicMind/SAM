@@ -236,11 +236,9 @@ while context.shouldContinue && context.iteration < context.maxIterations {
        - tool_calls → Execute tools, continue
        - stop → Check for continuation conditions
     6. Continuation logic:
-       - Explicit [WORKFLOW_COMPLETE] marker → Stop
-       - Explicit [CONTINUE] marker → Continue
-       - Incomplete todos → Auto-continue with graduated intervention
-       - Workflow mode enabled → Continue
-       - Otherwise → Natural stop
+       - Tool calls in response → Continue
+       - No tool calls → Stop
+       - Max iterations reached → Stop
 }
 ```
 
@@ -248,44 +246,12 @@ while context.shouldContinue && context.iteration < context.maxIterations {
 
 The orchestrator checks these conditions to decide whether to continue:
 
-1. **Explicit Signals** (highest priority):
-   - `[WORKFLOW_COMPLETE]` → Stop immediately
-   - `[CONTINUE]` → Continue immediately
+1. **Tool Calls Present** → Continue (agent is still working)
+2. **No Tool Calls** → Stop (agent has finished)
+3. **Max Iterations** → Stop (safety valve)
 
-2. **Todo-Based Continuation**:
-   - If incomplete todos exist → Auto-continue with intervention
-   - Uses graduated intervention system (see below)
+The continuation logic is simple: if the LLM returns tool calls, it is still working and should continue. If it returns only text with no tool calls, it has finished.
 
-3. **Workflow Mode**:
-   - If `enableWorkflowMode` is true → Continue
-   - Fallback for workflows without todos
-
-4. **Natural Stop**:
-   - No continuation conditions met → Stop
-
-### Graduated Intervention System
-
-When agent doesn't continue on incomplete todos, inject escalating reminders:
-
-**Level 1 (first attempt):**
-```
-REMINDER: You have incomplete todos.
-Execute the next todo and mark it complete.
-```
-
-**Level 2 (second attempt):**
-```
-WARNING: You're in a loop. You have incomplete todos but stopped.
-Break the loop NOW by executing work and marking todos complete.
-```
-
-**Level 3 (third+ attempt):**
-```
-FINAL WARNING: This is your last chance.
-If you don't execute and complete todos now, the workflow will fail.
-```
-
-**Location:** `Sources/APIFramework/AgentOrchestrator.swift:820-912`
 
 ---
 
@@ -506,22 +472,12 @@ hasIncompleteTodos = !currentTodoList.filter { $0.status != "completed" }.isEmpt
 2. Add todo-aware continuation guidance:
    - Variant 1 or 2 based on whether tools were called
    - Enforces: mark in-progress → do work → mark completed
-3. Proceed to Workflow Switch check
-
-**If NO (all todos complete or no todos):**
-- Proceed directly to Workflow Switch check
-
-**STEP 7: Workflow Switch Check**
-
-**If YES (enableWorkflowMode=true):**
-1. Set Continue Flag = true
-2. Add generic continuation guidance
 3. Proceed to Continue Flag check
 
-**If NO (workflow mode disabled):**
+**If NO (all todos complete or no todos):**
 - Proceed directly to Continue Flag check
 
-**STEP 8: Continue Flag Check**
+**STEP 7: Continue Flag Check**
 
 **If YES (shouldContinueAfterChecks=true):**
 1. Increment iteration counter
@@ -535,20 +491,12 @@ hasIncompleteTodos = !currentTodoList.filter { $0.status != "completed" }.isEmpt
 
 | Decision | YES Path | NO Path |
 |----------|----------|---------|
-| **Tools Called?** | Set Continue Flag + Add tool results | Set Alternation Flag + reminder |
-| **Active Todo?** | Set Continue Flag + Todo reminder | Check Workflow Switch |
-| **Workflow Switch?** | Set Continue Flag + Continue reminder | Check Continue Flag |
+| **Tools Called?** | Set Continue Flag + Add tool results | Check Continue Flag |
 | **Continue Flag?** | Increment iteration, loop | Natural Stop |
 
 ### Continuation Priority
 
-The Continue Flag can be set by multiple sources (priority order):
-
-1. **Tool Execution** (always continues)
-2. **Incomplete Todos** (auto-continues with graduated intervention)
-3. **Workflow Mode Enabled** (generic continuation)
-
-If ANY of these set the flag, workflow continues.
+The Continue Flag is set when tool calls are present in the response. If the LLM returns tool calls, the workflow continues. If it returns only text, the workflow stops.
 
 ### Fresh Todo State Reads
 

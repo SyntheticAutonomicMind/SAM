@@ -475,13 +475,7 @@ public enum BuildConfiguration {
         !isDebug
     }
     
-    public static var bundledPythonPath: String {
-        // Path to bundled Python environment
-    }
-    
-    public static var mlStableDiffusionPath: String {
-        // Path to ml-stable-diffusion tools
-    }
+
 }
 ```
 
@@ -659,11 +653,6 @@ flowchart TB
 - Stores tool configurations
 - Manages MCP server connection settings
 - Persists tool execution results via ToolResultStorage
-
-### StableDiffusion
-- Uses ApplicationPreferencesManager for default settings
-- Stores SD model preferences
-- Configures generation parameters
 
 ---
 

@@ -66,7 +66,7 @@ foundation that agents rely on. Reverted todo workflow section after user testin
 - ✅ Execution Standards (error recovery tactics, completion criteria)
 - ✅ Communication Protocol (style guide)
 - ✅ Context & Memory (memory operations, document import)
-- ✅ Data Visualization Protocol (Mermaid vs Stable Diffusion decision rules)
+- ✅ Data Visualization Protocol (Mermaid diagram rendering rules)
 - ✅ Workflow Mode (mode-specific guidance, only when enabled)
 - ✅ Dynamic Iterations (iteration monitoring, only when enabled)
 - ✅ Two-Phase Workflow (pattern recommendation)
@@ -156,7 +156,7 @@ foundation that agents rely on. Reverted todo workflow section after user testin
 - ✅ "You are SAM, an AI assistant"
 - ✅ "Available tools: file_operations, web_research, etc."
 - ✅ "For research, provide direct sources"
-- ✅ "Mermaid for charts, Stable Diffusion for images"
+- ✅ "Mermaid for diagrams and charts"
 - ✅ "Conversational mode vs Task execution mode"
 
 **Orchestrator (Dynamic, Behavioral Enforcement):**

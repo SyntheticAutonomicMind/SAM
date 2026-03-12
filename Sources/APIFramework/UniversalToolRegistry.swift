@@ -73,9 +73,7 @@ public class UniversalToolRegistry: ObservableObject, ToolRegistryProtocol {
     /// Get appropriate SF Symbol icon for a tool based on its name
     private func getIconForTool(_ toolName: String) -> String {
         switch toolName {
-        // Image & Visual
-        case "image_generation":
-            return "photo.on.rectangle.angled"
+        // Document tools
         case "document_create", "document_create_mcp":
             return "doc.badge.plus"
         case "document_import", "document_import_mcp":
@@ -134,22 +132,15 @@ public class UniversalToolRegistry: ObservableObject, ToolRegistryProtocol {
             return "play.circle"
         case "manage_todo_list":
             return "checklist"
-        case "think":
-            return "brain.head.profile"
+
+        // Math & Calculations
+        case "math_operations":
+            return "function"
 
         // User Interaction
         case "user_collaboration":
             return "person.2.badge.gearshape"
 
-        // Terminal & Execution
-        case "run_in_terminal":
-            return "terminal"
-        case "get_terminal_output":
-            return "terminal.fill"
-        case "terminal_last_command":
-            return "clock.arrow.2.circlepath"
-        case "terminal_selection":
-            return "selection.pin.in.out"
 
         // Testing
         case "run_tests":
@@ -157,11 +148,9 @@ public class UniversalToolRegistry: ObservableObject, ToolRegistryProtocol {
         case "test_failure":
             return "xmark.seal"
 
-        // Git Operations
-        case "run_subagent":
-            return "person.crop.circle.badge.plus"
-
         // Default fallback
+        case "math_operations":
+            return "function"
         default:
             return "wrench.and.screwdriver"
         }
@@ -251,120 +240,30 @@ public class UniversalToolRegistry: ObservableObject, ToolRegistryProtocol {
         }
     }
 
-    /// Get tool definitions formatted for system prompt text.
+    /// Generate dynamic tool description from registered tools.
     public nonisolated func getToolsDescription() -> String {
-        /// Since this is nonisolated, we'll use a simpler approach Main implementation will be in the MainActor version below.
         return ""
     }
 
-    /// Main actor version for actual tool description generation.
+    /// Generate dynamic tool description from registered tools.
+    /// Tool schemas are already sent via the OpenAI tools parameter.
+    /// This provides a concise summary for the system prompt text.
     @MainActor
     public func getToolsDescriptionMainActor() -> String {
-        /// HYBRID APPROACH: Return known tool description without MainActor MCP calls Tool execution will still route to MCP properly.
-        logger.debug("DEBUG_TOOLS: Returning hybrid tool description (avoids MainActor deadlock)")
+        let toolNames = registeredTools.keys.sorted()
+        if toolNames.isEmpty { return "" }
 
-        return """
+        var lines = ["Available Tools:"]
 
-        # Available Tools
-
-        ## ERROR: CRITICAL: When to Use Tools vs Natural Responses
-
-        **ONLY use tools when the user's request REQUIRES tool functionality:**
-
-        SUCCESS: **USE TOOLS when user requests:**
-        - Search/research tasks: "search my memory", "find information about X"
-        - Task management: "add todo", "show my todo list"
-        - Deep analysis: "think about the best approach for X"
-        - Document operations: "import document", "analyze file"
-        - Web operations: "search the web for X", "scrape this URL"
-
-        ERROR: **DO NOT use tools for:**
-        - Simple greetings: "Hi", "Hello", "How are you?"
-        - Basic conversation: "Tell me about yourself", "What can you do?"
-        - Questions you can answer directly: "What is Python?", "Explain REST APIs"
-        - Casual chat: "Thanks", "That's helpful", "Good morning"
-        - Requests for general knowledge or explanations
-
-        **Key Principle: Respond naturally UNLESS the user's request specifically needs a tool.**
-
-        Examples:
-        - User: "Hi" → Response: "Hello! How can I help you today?" (NO TOOLS)
-        - User: "What is Python?" → Response: "Python is a programming language..." (NO TOOLS)
-        - User: "Search my memory for Python notes" → Response: "Let me search..." + memory_operations tool
-        - User: "Add task: study Python" → Response: "I'll add that to your list..." + memory_operations tool
-
-        ## Tool Catalog
-
-        You have access to the following tools:
-
-        ```json
-        [
-          {
-            "type": "function",
-            "function": {
-              "name": "think",
-              "description": "Use this tool to think deeply about the user's request and organize your thoughts. This tool helps improve response quality by allowing you to consider the request carefully, brainstorm solutions, and plan complex tasks.",
-              "parameters": {
-                "type": "object",
-                "properties": {
-                  "thoughts": {
-                    "type": "string",
-                    "description": "Your thoughts about the current task or problem. This should be a clear, structured explanation of your reasoning, analysis, or planning process."
-                  }
-                },
-                "required": ["thoughts"]
-              }
+        for name in toolNames {
+            if let tool = registeredTools[name] {
+                let desc = tool.description.components(separatedBy: "\n").first ?? tool.description
+                lines.append("- \(name): \(desc)")
             }
-          },
-          {
-            "type": "function",
-            "function": {
-              "name": "manage_todo_list",
-              "description": "Manage a structured todo list to track progress and plan tasks throughout your coding session",
-              "parameters": {
-                "type": "object",
-                "properties": {
-                  "operation": {
-                    "type": "string",
-                    "enum": ["write", "read"],
-                    "description": "write: Replace entire todo list with new content. read: Retrieve current todo list"
-                  },
-                  "todoList": {
-                    "type": "array",
-                    "description": "Complete array of all todo items (required for write operation, ignored for read)",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "id": {"type": "number", "description": "Unique identifier for the todo"},
-                        "title": {"type": "string", "description": "Concise action-oriented todo label"},
-                        "description": {"type": "string", "description": "Detailed context and requirements"},
-                        "status": {"type": "string", "enum": ["not-started", "in-progress", "completed"], "description": "Current status"}
-                      },
-                      "required": ["id", "title", "description", "status"]
-                    }
-                  }
-                },
-                "required": ["operation"]
-              }
-            }
-          }
-        ]
-        ```
-
-        To call a tool, use this exact format in your response:
-        ```json
-        {
-          "tool_calls": [
-            {
-              "function": {
-                "name": "manage_todo_list",
-                "arguments": "{\"operation\": \"read\"}"
-              }
-            }
-          ]
         }
-        ```
-        """
+
+        lines.append("\nUse tools when the task requires action. Respond naturally for conversation.")
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Tool Execution (Clean Invocation)

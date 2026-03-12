@@ -246,7 +246,6 @@ struct ConversationSettings {
     var enableReasoning: Bool
     var enableTools: Bool
     var autoApprove: Bool
-    var enableTerminalAccess: Bool
     var scrollLockEnabled: Bool
     
     // Shared data settings
@@ -254,7 +253,7 @@ struct ConversationSettings {
     var sharedTopicId: UUID?
     var sharedTopicName: String?
     
-    // Stable Diffusion parameters
+    // Image generation parameters
     var sdNegativePrompt: String
     var sdSteps: Int
     var sdGuidanceScale: Int

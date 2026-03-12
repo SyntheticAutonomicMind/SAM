@@ -58,18 +58,15 @@ SAM's tools fall into three categories:
 ### 1. User-Facing Work Tools
 Tools that perform work on behalf of the user:
 - **file_operations** - Read, write, search files
-- **terminal_operations** - Execute commands, manage PTY sessions
 - **web_operations** - Search web, scrape content, research topics
 - **document_operations** - Import/create PDF, DOCX, PPTX
 - **memory_operations** - Store and retrieve memories (RAG)
-- **build_version_control** - Git operations, build tasks
-- **search_index** - Search codebase
-- **subagent** - Spawn subagents for complex tasks
+- **math_operations** - Calculations, formulas, conversions
+- **image_generation** - Remote ALICE image generation
 
 ### 2. Agent Planning Tools
 Tools the AI uses to manage its own workflow:
 - **todo_operations** - AI tracks its own tasks and progress
-- **think** - Extended reasoning and planning
 
 **Important:** The `todo_operations` tool is for **agent task management**, not user todo lists. The AI uses this tool to:
 - Break down complex user requests into subtasks
@@ -80,7 +77,7 @@ Tools the AI uses to manage its own workflow:
 ### 3. Meta Tools
 Tools for collaboration and session management:
 - **user_collaboration** - Pause for user input/validation
-- **increase_max_iterations** - Request more iterations for complex work
+
 - **list_system_prompts** - View available system prompts
 - **list_mini_prompts** - View available mini prompts
 - **read_tool_result** - Re-read previous tool execution results
