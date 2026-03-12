@@ -5,33 +5,6 @@
 
 import Foundation
 
-/// Represents structured thinking/reasoning captured from LLM during workflow Provides transparency and debugging capabilities for multi-step tool execution.
-public struct ThinkingStep: Codable {
-    /// The reasoning text from the LLM.
-    public let text: String
-
-    /// When this thinking occurred.
-    public let timestamp: Date
-
-    /// Token count if available.
-    public let tokens: Int?
-
-    /// Additional metadata (model, provider, etc.).
-    public let metadata: [String: String]
-
-    public init(
-        text: String,
-        timestamp: Date = Date(),
-        tokens: Int? = nil,
-        metadata: [String: String] = [:]
-    ) {
-        self.text = text
-        self.timestamp = timestamp
-        self.tokens = tokens
-        self.metadata = metadata
-    }
-}
-
 /// Represents a single iteration/round in an autonomous workflow Tracks tool calls, results, and metadata for each iteration.
 public struct WorkflowRound: Codable {
     /// Iteration number (0-based, matches billing iterationNumber).
@@ -42,12 +15,6 @@ public struct WorkflowRound: Codable {
 
     /// Results from tool executions (keyed by tool call ID).
     public let toolResults: [String: String]
-
-    /// DEPRECATED: Legacy string-based thinking steps (use structuredThinking instead) Chain-of-thought steps if captured (from think tool).
-    public let thinkingSteps: [String]?
-
-    /// Structured thinking/reasoning captured from LLM (Phase 1 enhancement) Contains timestamp, tokens, metadata for transparency and debugging.
-    public let structuredThinking: [ThinkingStep]?
 
     /// LLM response text for this round (assistant message content).
     public let llmResponseText: String?
@@ -71,8 +38,6 @@ public struct WorkflowRound: Codable {
         iterationNumber: Int,
         toolCalls: [ToolCallInfo] = [],
         toolResults: [String: String] = [:],
-        thinkingSteps: [String]? = nil,
-        structuredThinking: [ThinkingStep]? = nil,
         llmResponseText: String? = nil,
         responseStatus: String = "success",
         metadata: [String: String] = [:],
@@ -83,8 +48,6 @@ public struct WorkflowRound: Codable {
         self.iterationNumber = iterationNumber
         self.toolCalls = toolCalls
         self.toolResults = toolResults
-        self.thinkingSteps = thinkingSteps
-        self.structuredThinking = structuredThinking
         self.llmResponseText = llmResponseText
         self.responseStatus = responseStatus
         self.metadata = metadata
@@ -99,7 +62,7 @@ public struct ToolCallInfo: Codable {
     /// Unique tool call ID.
     public let id: String
 
-    /// Tool name (e.g., "file_operations", "terminal_operations").
+    /// Tool name (e.g., "file_operations", "file_operations").
     public let name: String
 
     /// Tool arguments (JSON string).

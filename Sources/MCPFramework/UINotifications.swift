@@ -90,4 +90,12 @@ public extension Notification.Name {
 
     /// Switch system prompt (includes promptName in userInfo).
     static let switchSystemPrompt = Notification.Name("SAM.UI.switchSystemPrompt")
+
+    // MARK: - Panel Toggles
+
+    /// Toggle conversation sidebar.
+    static let toggleSidebar = Notification.Name("SAM.UI.toggleSidebar")
+
+    /// Toggle mini-prompts panel.
+    static let toggleMiniPrompts = Notification.Name("SAM.UI.toggleMiniPrompts")
 }

@@ -295,15 +295,15 @@ class MarkdownViewRenderer {
     /// Render table
     @ViewBuilder
     private func renderTable(headers: [String], alignments: [MarkdownASTNode.TableAlignment], rows: [[String]]) -> some View {
-        VStack(spacing: 1) {
+        Grid(alignment: .leading, horizontalSpacing: 1, verticalSpacing: 1) {
             // Header row
-            HStack(spacing: 1) {
+            GridRow {
                 ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
                     self.renderTableCellContent(header, isBold: true)
                         .foregroundColor(.primary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: self.alignmentForTable(index: index, alignments: alignments))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: self.alignmentForTable(index: index, alignments: alignments))
                         .background(Color.secondary.opacity(0.15))
                         .overlay(
                             Rectangle()
@@ -314,13 +314,13 @@ class MarkdownViewRenderer {
 
             // Data rows
             ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
-                HStack(spacing: 1) {
+                GridRow {
                     ForEach(Array(row.enumerated()), id: \.offset) { cellIndex, cell in
                         self.renderTableCellContent(cell, isBold: false)
                             .foregroundColor(.primary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity, alignment: self.alignmentForTable(index: cellIndex, alignments: alignments))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: self.alignmentForTable(index: cellIndex, alignments: alignments))
                             .background(
                                 rowIndex % 2 == 0
                                 ? Color.clear

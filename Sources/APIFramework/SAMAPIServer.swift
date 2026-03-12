@@ -1321,8 +1321,6 @@ AVAILABLE TOOLS:
             isExternalAPICall: true
         )
 
-        /// Inject WorkflowSpawner into MCPManager for subagent support.
-        conversationManager.mcpManager.setWorkflowSpawner(orchestrator)
 
         /// Run autonomous workflow.
         logger.debug("Starting autonomous workflow execution with maxIterations=\(maxIterations)...")
@@ -1955,8 +1953,6 @@ AVAILABLE TOOLS:
                 isExternalAPICall: true
             )
 
-            /// Inject WorkflowSpawner into MCPManager for subagent support.
-            conversationManager.mcpManager.setWorkflowSpawner(orchestrator)
 
             /// Run autonomous workflow.
             logger.debug("Starting AgentOrchestrator workflow for non-streaming request...")
@@ -2254,12 +2250,6 @@ AVAILABLE TOOLS:
                         }
                     }
 
-                    /// SECURITY: Update enableTerminalAccess from samConfig if provided.
-                    if let enableTerminal = chatRequest.samConfig?.enableTerminalAccess {
-                        existing.settings.enableTerminalAccess = enableTerminal
-                        conversationManager.saveConversations()
-                        logger.debug("DEBUG_STREAMING: Updated existing conversation terminal access to: \(enableTerminal)")
-                    }
 
                     /// NOTE: Topic attachment happens in handleNonStreamingChatCompletion via attachSharedTopic()
                     /// Do NOT set folderId here - streaming uses separate conversation lookup
@@ -2300,12 +2290,6 @@ AVAILABLE TOOLS:
                         }
                     }
 
-                    /// SECURITY: Set enableTerminalAccess from samConfig if provided.
-                    logger.debug("DEBUG_STREAMING: samConfig present: \(chatRequest.samConfig != nil), enableTerminalAccess: \(chatRequest.samConfig?.enableTerminalAccess?.description ?? "nil")")
-                    if let enableTerminal = chatRequest.samConfig?.enableTerminalAccess {
-                        conversationSettings.enableTerminalAccess = enableTerminal
-                        logger.debug("DEBUG_STREAMING: Applied enableTerminalAccess=\(enableTerminal) to new conversation settings")
-                    }
 
                     let conversation = ConversationModel.withId(
                         conversationId,
@@ -2345,8 +2329,6 @@ AVAILABLE TOOLS:
                 isExternalAPICall: true
             )
 
-            /// Inject WorkflowSpawner into MCPManager for subagent support.
-            conversationManager.mcpManager.setWorkflowSpawner(orchestrator)
 
             /// Run streaming autonomous workflow.
             let streamingResponse = try await orchestrator.runStreamingAutonomousWorkflow(
@@ -2602,11 +2584,6 @@ AVAILABLE TOOLS:
                         existingConversation.settings.selectedModel = normalizedModel
                         logger.debug("Updated conversation model to: \(normalizedModel)")
                     }
-                    /// SECURITY: Update enableTerminalAccess from samConfig if provided.
-                    if let enableTerminal = request?.samConfig?.enableTerminalAccess {
-                        existingConversation.settings.enableTerminalAccess = enableTerminal
-                        logger.debug("Updated conversation terminal access to: \(enableTerminal) from samConfig")
-                    }
                     /// NOTE: Topic attachment happens in handleNonStreamingChatCompletion via attachSharedTopic()
                     /// Do NOT set folderId here - folderId is for reference folders, not shared topics
                     /// Enable mini-prompts if provided
@@ -2628,11 +2605,6 @@ AVAILABLE TOOLS:
                     existingSession.settings.selectedModel = normalizedModel
                     logger.debug("Updated conversation model to: \(normalizedModel)")
                 }
-                /// SECURITY: Update enableTerminalAccess from samConfig if provided.
-                if let enableTerminal = request?.samConfig?.enableTerminalAccess {
-                    existingSession.settings.enableTerminalAccess = enableTerminal
-                    logger.debug("Updated conversation terminal access to: \(enableTerminal) from samConfig")
-                }
                 /// NOTE: Topic attachment happens in handleNonStreamingChatCompletion via attachSharedTopic()
                 /// Do NOT set folderId here - folderId is for reference folders, not shared topics
                 /// Enable mini-prompts if provided
@@ -2652,11 +2624,6 @@ AVAILABLE TOOLS:
                 var conversationSettings = ConversationSettings()
                 if let normalizedModel = normalizedModel {
                     conversationSettings.selectedModel = normalizedModel
-                }
-                /// SECURITY: Set enableTerminalAccess from samConfig if provided.
-                if let enableTerminal = request?.samConfig?.enableTerminalAccess {
-                    conversationSettings.enableTerminalAccess = enableTerminal
-                    logger.debug("API conversation terminal access set to: \(enableTerminal) from samConfig")
                 }
 
                 /// Set system prompt: use provided systemPromptId or default to SAM Default.
@@ -2713,11 +2680,6 @@ AVAILABLE TOOLS:
             let apiConversation = ConversationModel(title: generateUniqueAPIConversationTitle(baseName: "API Session"))
             apiConversation.sessionId = sessionId
 
-            /// SECURITY: Set enableTerminalAccess from samConfig if provided.
-            if let enableTerminal = request?.samConfig?.enableTerminalAccess {
-                apiConversation.settings.enableTerminalAccess = enableTerminal
-                logger.debug("API conversation terminal access set to: \(enableTerminal) from samConfig")
-            }
 
             /// Set system prompt: use provided systemPromptId or default to SAM Default.
             if let requestedPromptId = systemPromptId {
@@ -2774,11 +2736,6 @@ AVAILABLE TOOLS:
         if shouldCreateSeparateConversations {
             let apiConversation = ConversationModel(title: generateUniqueAPIConversationTitle(baseName: "API Request"))
 
-            /// SECURITY: Set enableTerminalAccess from samConfig if provided.
-            if let enableTerminal = request?.samConfig?.enableTerminalAccess {
-                apiConversation.settings.enableTerminalAccess = enableTerminal
-                logger.debug("API conversation terminal access set to: \(enableTerminal) from samConfig")
-            }
 
             /// Set system prompt: use provided systemPromptId or default to SAM Default.
             if let requestedPromptId = systemPromptId {
@@ -3261,7 +3218,7 @@ AVAILABLE TOOLS:
 
     // MARK: - Prompt Discovery Endpoints
 
-    /// Handle GET /api/prompts/system - list all system prompts available Returns array of system prompts with id, name, and description Used by agents to discover available prompts for run_subagent tool.
+    /// Handle GET /api/prompts/system - list all system prompts available Returns array of system prompts with id, name, and description.
     private func handleListSystemPrompts(_ req: Request) async throws -> Response {
         logger.debug("Listing system prompts")
 

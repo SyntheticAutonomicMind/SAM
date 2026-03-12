@@ -29,9 +29,6 @@ public class ToolNotificationCenter {
     /// Tool error notification Posted when tool encounters non-fatal error needing user attention UserInfo keys: "toolCallId", "error", "recoverable".
     public static let toolErrorNotification = Notification.Name("com.sam.tool.error")
 
-    /// Image display notification Posted when image_generation tool completes successfully UserInfo keys: "toolCallId", "imagePaths", "prompt", "conversationId".
-    public static let imageDisplayNotification = Notification.Name("com.sam.tool.imageDisplay")
-
     // MARK: - Post Notifications
 
     /// Post user input required notification.
@@ -123,30 +120,6 @@ public class ToolNotificationCenter {
                 "error": error,
                 "recoverable": recoverable
             ]
-        )
-    }
-
-    /// Post image display notification.
-    public func postImageDisplay(
-        toolCallId: String,
-        imagePaths: [String],
-        prompt: String,
-        conversationId: UUID? = nil
-    ) {
-        var userInfo: [String: Any] = [
-            "toolCallId": toolCallId,
-            "imagePaths": imagePaths,
-            "prompt": prompt
-        ]
-
-        if let conversationId = conversationId {
-            userInfo["conversationId"] = conversationId.uuidString
-        }
-
-        notificationCenter.post(
-            name: Self.imageDisplayNotification,
-            object: nil,
-            userInfo: userInfo
         )
     }
 
@@ -242,33 +215,6 @@ public class ToolNotificationCenter {
             }
 
             block(toolCallId, error, recoverable)
-        }
-    }
-
-    /// Observe image display notifications.
-    public func observeImageDisplay(
-        using block: @escaping @Sendable (String, [String], String, UUID?) -> Void
-    ) -> NSObjectProtocol {
-        return notificationCenter.addObserver(
-            forName: Self.imageDisplayNotification,
-            object: nil,
-            queue: .main
-        ) { notification in
-            guard let userInfo = notification.userInfo,
-                  let toolCallId = userInfo["toolCallId"] as? String,
-                  let imagePaths = userInfo["imagePaths"] as? [String],
-                  let prompt = userInfo["prompt"] as? String else {
-                return
-            }
-
-            let conversationId: UUID? = {
-                if let idString = userInfo["conversationId"] as? String {
-                    return UUID(uuidString: idString)
-                }
-                return nil
-            }()
-
-            block(toolCallId, imagePaths, prompt, conversationId)
         }
     }
 

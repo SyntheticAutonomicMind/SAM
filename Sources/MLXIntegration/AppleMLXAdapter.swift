@@ -205,12 +205,12 @@ public class AppleMLXAdapter {
         You: "10"  (no tools needed)
 
         ## EXAMPLE 2 - Task requiring one tool:
-        User: "Think about why cats purr"
+        User: "What is the weather in Austin?"
         You: <tool_call>
-        {"name": "think", "arguments": {"thoughts": "Analyzing cat purring behavior..."}}
+        {"name": "web_operations", "arguments": {"operation": "search", "query": "current weather Austin TX"}}
         </tool_call>
         [System provides tool results]
-        You: "Cats purr primarily for communication and self-soothing. Studies show..."
+        You: "The current weather in Austin is 75°F and sunny."
 
         ## EXAMPLE 3 - Task requiring multiple tools:
         User: "Create a todo with 2 tasks and complete them"

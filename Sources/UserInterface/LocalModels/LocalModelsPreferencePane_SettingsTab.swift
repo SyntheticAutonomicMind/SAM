@@ -107,12 +107,6 @@ struct LocalModelsPreferencePane_SettingsTab: View {
                             path: "~/Library/Caches/sam/models/mlx/",
                             icon: "cpu"
                         )
-
-                        DirectoryInfoRow(
-                            title: "Stable Diffusion",
-                            path: "~/Library/Caches/sam/models/stable-diffusion/",
-                            icon: "photo"
-                        )
                     }
                 }
             }

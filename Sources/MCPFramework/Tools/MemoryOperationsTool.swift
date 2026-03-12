@@ -21,6 +21,7 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     OPERATIONS:
     • search_memory - Semantic search memories (query, similarity_threshold)
     • store_memory - Save to memory (content, content_type, tags)
+    • recall_history - Recall archived conversation context (query)
     • list_collections - View memory statistics
 
     SIMILARITY_THRESHOLD: 0.0-1.0 (default 0.3)
@@ -35,6 +36,7 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         return [
             "search_memory",
             "store_memory",
+            "recall_history",
             "list_collections"
         ]
     }
@@ -53,7 +55,7 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                     """,
                 required: true,
                 enumValues: [
-                    "search_memory", "store_memory", "list_collections"
+                    "search_memory", "store_memory", "recall_history", "list_collections"
                 ]
             ),
 
@@ -175,12 +177,17 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         /// Route to appropriate operation handler.
         let result: MCPToolResult
         switch operation {
-        /// Memory operations.
+        /// Memory operations
         case "search_memory":
             result = await handleSearchMemory(parameters: parameters, context: context)
 
         case "store_memory":
             result = await handleStoreMemory(parameters: parameters, context: context)
+
+        case "recall_history":
+            /// Delegate to RecallHistoryTool
+            let tool = RecallHistoryTool()
+            result = await tool.execute(parameters: parameters, context: context)
 
         case "list_collections":
             result = await handleListCollections(parameters: parameters, context: context)

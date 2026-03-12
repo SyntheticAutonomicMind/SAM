@@ -1,6 +1,88 @@
 {
   "releases": [
     {
+      "version": "20260312.1",
+      "release_date": "March 12, 2026",
+      "highlights": [
+        {
+          "id": "alice-image-generation",
+          "icon": "photo.fill",
+          "title": "Image Generation Moves to ALICE",
+          "description": "SAM's built-in Stable Diffusion has been replaced by ALICE - a dedicated image generation server that runs on your own hardware. ALICE supports any Stable Diffusion model (SD 1.5, SDXL, FLUX), runs on NVIDIA, AMD, and Apple Silicon GPUs, and includes a web gallery for managing your creations. Connect SAM to ALICE from Preferences > ALICE, or use ALICE standalone at github.com/SyntheticAutonomicMind/ALICE."
+        },
+        {
+          "id": "accurate-math",
+          "icon": "function",
+          "title": "Accurate Math & Calculations",
+          "description": "SAM now uses a dedicated calculation engine for all math - no more approximations or rounding errors. Includes 21 built-in formulas for everyday tasks: tips, mortgages, BMI, compound interest, loan payments, recipe scaling, retirement projections, and more. Unit conversions across 8 categories (temperature, weight, distance, currency, and others) are also handled automatically."
+        },
+        {
+          "id": "smarter-research",
+          "icon": "magnifyingglass",
+          "title": "Smarter Web Research",
+          "description": "When you ask SAM for recommendations - restaurants, products, hotels - it now searches domain-specific sources (Yelp, Amazon, TripAdvisor), visits individual pages for real data, and cross-references across multiple sources. You get structured comparisons with verified ratings, prices, hours, and direct links instead of summaries from memory."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "alice-preferences",
+          "icon": "paintbrush.fill",
+          "title": "ALICE Setup in Preferences",
+          "description": "New Preferences pane for connecting to ALICE. Test your connection, check server health, browse available models, and manage API keys. ALICE auto-discovers your installed models when connected."
+        },
+        {
+          "id": "redesigned-bottom-bar",
+          "icon": "rectangle.bottomhalf.filled",
+          "title": "Redesigned Bottom Bar",
+          "description": "Model picker, system prompt selector, and local model load/eject controls are now in the bottom bar for quick access. No more hunting through menus to switch models or load a local model."
+        },
+        {
+          "id": "sidebar-date-grouping",
+          "icon": "sidebar.left",
+          "title": "Date-Grouped Sidebar",
+          "description": "Conversations are organized by date - Today, Yesterday, This Week, and older groups - with relative timestamps so you can find recent chats at a glance."
+        },
+        {
+          "id": "auto-growing-input",
+          "icon": "text.alignleft",
+          "title": "Auto-Growing Text Input",
+          "description": "The message input field expands as you type multi-line messages, giving you more room for longer prompts without manual resizing."
+        },
+        {
+          "id": "smaller-faster",
+          "icon": "bolt.fill",
+          "title": "Smaller & Faster",
+          "description": "SAM's codebase has been significantly streamlined - unused modules removed, tools consolidated, and internal logic simplified. The result is faster builds, a smaller app, and a more responsive agent."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "faster-conversation-switching",
+          "icon": "bolt.horizontal.fill",
+          "title": "Faster Conversation Switching",
+          "description": "Switching between conversations is now near-instant. Previously, clicking a conversation could take 1-2 seconds due to redundant model scanning and provider rebuilds happening on every switch."
+        },
+        {
+          "id": "agent-reliability",
+          "icon": "arrow.triangle.branch",
+          "title": "More Reliable Agent Behavior",
+          "description": "Redesigned the agent's work loop for better reliability. SAM now decides naturally when a task is complete instead of relying on complex internal rules. Added detection for repetitive tool calls that could cause the agent to get stuck."
+        },
+        {
+          "id": "ci-release-uploads",
+          "icon": "arrow.up.circle.fill",
+          "title": "Fixed Release Uploads",
+          "description": "Release downloads are now uploaded reliably for large files. Development builds are now weekly instead of daily."
+        },
+        {
+          "id": "shell-injection-fix",
+          "icon": "lock.shield.fill",
+          "title": "Security Fix",
+          "description": "Fixed a potential security issue in the automated release pipeline."
+        }
+      ]
+    },
+    {
       "version": "20260303.1",
       "release_date": "March 3, 2026",
       "introduction": "This release upgrades SAM's local model support with 20+ new architectures, adds smart download management that verifies file integrity and skips already-downloaded models, and improves Shared Topics reliability.",

@@ -686,7 +686,7 @@ public class ToolCallExtractor {
             }
         }
 
-        /// Alternative format with "tool" field instead of "name" (some models use this) Pattern: {"tool": "image_generation", "prompt": "...", ...} Should become: {"name": "image_generation", "arguments": {"prompt": "...", ...}}.
+        /// Alternative format with "tool" field instead of "name" (some models use this) Pattern: {"tool": "web_operations", "query": "...", ...} Should become: {"name": "web_operations", "arguments": {"query": "...", ...}}.
         if let toolName = jsonDict["tool"] as? String {
             logger.debug("Detected alternative 'tool' field format with tool='\(toolName)' + additional fields")
             /// Extract all fields except "tool" and "id" to use as arguments.
@@ -702,7 +702,7 @@ public class ToolCallExtractor {
             }
         }
 
-        /// Alternative format with "operation" field instead of "name" (DeepSeek and other GGUF models) Pattern: {"operation": "image_generation", "prompt": "...", ...} Should become: {"name": "image_generation", "arguments": {"prompt": "...", ...}}.
+        /// Alternative format with "operation" field instead of "name" (DeepSeek and other GGUF models) Pattern: {"operation": "web_operations", "query": "...", ...} Should become: {"name": "web_operations", "arguments": {"query": "...", ...}}.
         if let toolName = jsonDict["operation"] as? String {
             logger.debug("Detected alternative 'operation' field format with operation='\(toolName)' + additional fields")
             /// Extract all fields except "operation" and "id" to use as arguments.

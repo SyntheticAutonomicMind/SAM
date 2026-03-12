@@ -116,6 +116,18 @@ struct SAMCommands: Commands {
 
         /// View Menu - Navigation shortcuts.
         CommandGroup(before: .toolbar) {
+            Button("Toggle Sidebar") {
+                NotificationCenter.default.post(name: .toggleSidebar, object: nil)
+            }
+            .keyboardShortcut("\\", modifiers: .command)
+
+            Button("Toggle Mini-Prompts") {
+                NotificationCenter.default.post(name: .toggleMiniPrompts, object: nil)
+            }
+            .keyboardShortcut("\\", modifiers: [.command, .shift])
+
+            Divider()
+
             Menu("Navigate") {
                 Button("Scroll to Top") {
                     NotificationCenter.default.post(name: .scrollToTop, object: nil)

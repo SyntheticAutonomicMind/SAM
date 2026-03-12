@@ -67,10 +67,6 @@ public struct ConversationSettings: Codable, Sendable {
     public var selectedPersonalityId: UUID?
     public var enableReasoning: Bool
     public var enableTools: Bool
-    public var autoApprove: Bool
-    public var enableTerminalAccess: Bool
-    public var enableWorkflowMode: Bool
-    public var enableDynamicIterations: Bool
     public var scrollLockEnabled: Bool
     /// Shared data settings
     public var useSharedData: Bool
@@ -78,25 +74,8 @@ public struct ConversationSettings: Codable, Sendable {
     public var sharedTopicName: String?
     /// Draft message - unsent text in input box (persisted per conversation)
     public var draftMessage: String
-    /// Stable Diffusion parameters
-    public var sdNegativePrompt: String
-    public var sdSteps: Int
-    public var sdGuidanceScale: Float
-    public var sdScheduler: String
-    public var sdSeed: Int
-    public var sdUseKarras: Bool  /// Karras sigma schedule for DPM++
-    public var sdImageCount: Int  /// Number of images to generate (1-10)
-    public var sdImageWidth: Int  /// Image width in pixels
-    public var sdImageHeight: Int  /// Image height in pixels
-    public var sdEngine: String  /// "coreml" or "python"
-    public var sdDevice: String  /// Compute device for Python engine ("auto", "mps", "cpu")
-    public var sdUpscaleModel: String  /// "none", "general", "anime", "general_x2"
-    /// Image-to-Image parameters
-    public var sdStrength: Double  /// Denoising strength (0.0-1.0): 0.0=no change, 1.0=full generation
-    public var sdInputImagePath: String?  /// Path to input image for img2img
     /// UI panel visibility states
     public var showingMemoryPanel: Bool
-    public var showingTerminalPanel: Bool
     public var showingWorkingDirectoryPanel: Bool
     public var showAdvancedParameters: Bool
     public var showingPerformanceMetrics: Bool
@@ -116,28 +95,9 @@ public struct ConversationSettings: Codable, Sendable {
         selectedPersonalityId: UUID? = nil,
         enableReasoning: Bool = true,
         enableTools: Bool = true,
-        autoApprove: Bool = false,
-        enableTerminalAccess: Bool = false,
-        enableWorkflowMode: Bool = false,
-        enableDynamicIterations: Bool = false,
         scrollLockEnabled: Bool = true,
         draftMessage: String = "",
-        sdNegativePrompt: String = "",
-        sdSteps: Int = 25,
-        sdGuidanceScale: Float = 8.0,
-        sdScheduler: String = "dpm++",
-        sdSeed: Int = -1,
-        sdUseKarras: Bool = true,
-        sdImageCount: Int = 1,
-        sdImageWidth: Int = 512,
-        sdImageHeight: Int = 512,
-        sdEngine: String = "coreml",
-        sdDevice: String = "auto",
-        sdUpscaleModel: String = "none",
-        sdStrength: Double = 0.75,
-        sdInputImagePath: String? = nil,
         showingMemoryPanel: Bool = false,
-        showingTerminalPanel: Bool = false,
         showingWorkingDirectoryPanel: Bool = false,
         showAdvancedParameters: Bool = false,
         showingPerformanceMetrics: Bool = false,
@@ -168,31 +128,12 @@ public struct ConversationSettings: Codable, Sendable {
         
         self.enableReasoning = enableReasoning
         self.enableTools = enableTools
-        self.autoApprove = autoApprove
-        self.enableTerminalAccess = enableTerminalAccess
-        self.enableWorkflowMode = enableWorkflowMode
-        self.enableDynamicIterations = enableDynamicIterations
         self.scrollLockEnabled = scrollLockEnabled
         self.useSharedData = false
         self.sharedTopicId = nil
         self.sharedTopicName = nil
         self.draftMessage = draftMessage
-        self.sdNegativePrompt = sdNegativePrompt
-        self.sdSteps = sdSteps
-        self.sdGuidanceScale = sdGuidanceScale
-        self.sdScheduler = sdScheduler
-        self.sdSeed = sdSeed
-        self.sdUseKarras = sdUseKarras
-        self.sdImageCount = sdImageCount
-        self.sdImageWidth = sdImageWidth
-        self.sdImageHeight = sdImageHeight
-        self.sdEngine = sdEngine
-        self.sdDevice = sdDevice
-        self.sdUpscaleModel = sdUpscaleModel
-        self.sdStrength = sdStrength
-        self.sdInputImagePath = sdInputImagePath
         self.showingMemoryPanel = showingMemoryPanel
-        self.showingTerminalPanel = showingTerminalPanel
         self.showingWorkingDirectoryPanel = showingWorkingDirectoryPanel
         self.showAdvancedParameters = showAdvancedParameters
         self.showingPerformanceMetrics = showingPerformanceMetrics
@@ -213,14 +154,11 @@ public struct ConversationSettings: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case selectedModel, temperature, topP, maxTokens, contextWindowSize
         case selectedSystemPromptId, workspacePromptIds, selectedPersonalityId
-        case enableReasoning, enableTools, autoApprove, enableTerminalAccess, enableWorkflowMode, enableDynamicIterations
+        case enableReasoning, enableTools
         case scrollLockEnabled
         case useSharedData, sharedTopicId, sharedTopicName
         case draftMessage
-        case sdNegativePrompt, sdSteps, sdGuidanceScale, sdScheduler, sdSeed, sdUseKarras, sdImageCount, sdImageWidth, sdImageHeight
-        case sdEngine, sdDevice, sdUpscaleModel
-        case sdStrength, sdInputImagePath
-        case showingMemoryPanel, showingTerminalPanel, showingWorkingDirectoryPanel, showAdvancedParameters, showingPerformanceMetrics, showingCostTrackingPanel
+        case showingMemoryPanel, showingWorkingDirectoryPanel, showAdvancedParameters, showingPerformanceMetrics, showingCostTrackingPanel
         case telemetry
     }
 
@@ -242,14 +180,6 @@ public struct ConversationSettings: Codable, Sendable {
 
         enableReasoning = try container.decode(Bool.self, forKey: .enableReasoning)
         enableTools = try container.decode(Bool.self, forKey: .enableTools)
-        autoApprove = try container.decode(Bool.self, forKey: .autoApprove)
-        enableTerminalAccess = try container.decode(Bool.self, forKey: .enableTerminalAccess)
-
-        /// NEW FIELD: Default to false if not present (for old conversations).
-        enableWorkflowMode = try container.decodeIfPresent(Bool.self, forKey: .enableWorkflowMode) ?? false
-
-        /// NEW FIELD: Default to false if not present (for old conversations).
-        enableDynamicIterations = try container.decodeIfPresent(Bool.self, forKey: .enableDynamicIterations) ?? false
 
         /// NEW FIELD: Default to true if not present (for old conversations).
         scrollLockEnabled = try container.decodeIfPresent(Bool.self, forKey: .scrollLockEnabled) ?? true
@@ -260,25 +190,8 @@ public struct ConversationSettings: Codable, Sendable {
         /// NEW FIELD: Default to empty string if not present (for old conversations).
         draftMessage = try container.decodeIfPresent(String.self, forKey: .draftMessage) ?? ""
 
-        /// Stable Diffusion parameters with defaults for backward compatibility.
-        sdNegativePrompt = try container.decodeIfPresent(String.self, forKey: .sdNegativePrompt) ?? ""
-        sdSteps = try container.decodeIfPresent(Int.self, forKey: .sdSteps) ?? 25
-        sdGuidanceScale = try container.decodeIfPresent(Float.self, forKey: .sdGuidanceScale) ?? 8.0
-        sdScheduler = try container.decodeIfPresent(String.self, forKey: .sdScheduler) ?? "dpm++"
-        sdSeed = try container.decodeIfPresent(Int.self, forKey: .sdSeed) ?? -1
-        sdUseKarras = try container.decodeIfPresent(Bool.self, forKey: .sdUseKarras) ?? true
-        sdImageCount = try container.decodeIfPresent(Int.self, forKey: .sdImageCount) ?? 1
-        sdImageWidth = try container.decodeIfPresent(Int.self, forKey: .sdImageWidth) ?? 512
-        sdImageHeight = try container.decodeIfPresent(Int.self, forKey: .sdImageHeight) ?? 512
-        sdEngine = try container.decodeIfPresent(String.self, forKey: .sdEngine) ?? "coreml"
-        sdDevice = try container.decodeIfPresent(String.self, forKey: .sdDevice) ?? "auto"
-        sdUpscaleModel = try container.decodeIfPresent(String.self, forKey: .sdUpscaleModel) ?? "none"
-        sdStrength = try container.decodeIfPresent(Double.self, forKey: .sdStrength) ?? 0.75
-        sdInputImagePath = try container.decodeIfPresent(String.self, forKey: .sdInputImagePath)
-
         /// UI panel visibility states with defaults for backward compatibility
         showingMemoryPanel = try container.decodeIfPresent(Bool.self, forKey: .showingMemoryPanel) ?? false
-        showingTerminalPanel = try container.decodeIfPresent(Bool.self, forKey: .showingTerminalPanel) ?? false
         showingWorkingDirectoryPanel = try container.decodeIfPresent(Bool.self, forKey: .showingWorkingDirectoryPanel) ?? false
         showAdvancedParameters = try container.decodeIfPresent(Bool.self, forKey: .showAdvancedParameters) ?? false
         showingPerformanceMetrics = try container.decodeIfPresent(Bool.self, forKey: .showingPerformanceMetrics) ?? false
@@ -306,12 +219,6 @@ public struct ConversationData: Codable, Sendable {
     public let workingDirectoryBookmark: Data?
     public let enabledMiniPromptIds: [UUID]?
 
-    /// Subagent metadata for workflow delegation.
-    public let isSubagent: Bool?
-    public let parentConversationId: UUID?
-    public let isWorking: Bool?
-    public let subagentIds: [UUID]?
-
     /// Folder organization - conversations can be grouped into folders
     public let folderId: String?
 
@@ -321,7 +228,7 @@ public struct ConversationData: Codable, Sendable {
     /// Performance metrics for this conversation (cost tracking)
     public let performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]?
 
-    public init(id: UUID, title: String, created: Date, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: [UUID]? = nil, isSubagent: Bool? = nil, parentConversationId: UUID? = nil, isWorking: Bool? = nil, subagentIds: [UUID]? = nil, folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]? = nil) {
+    public init(id: UUID, title: String, created: Date, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: [UUID]? = nil, folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]? = nil) {
         self.id = id
         self.title = title
         self.created = created
@@ -335,10 +242,6 @@ public struct ConversationData: Codable, Sendable {
         self.workingDirectory = workingDirectory
         self.workingDirectoryBookmark = workingDirectoryBookmark
         self.enabledMiniPromptIds = enabledMiniPromptIds
-        self.isSubagent = isSubagent
-        self.parentConversationId = parentConversationId
-        self.isWorking = isWorking
-        self.subagentIds = subagentIds
         self.folderId = folderId
         self.isFromAPI = isFromAPI
         self.performanceMetrics = performanceMetrics
@@ -380,12 +283,6 @@ public class ConversationModel: ObservableObject, Identifiable {
     /// Enabled mini-prompt IDs for this conversation Allows per-conversation context injection (e.g., location context only when relevant).
     @Published public var enabledMiniPromptIds: Set<UUID> = []
 
-    /// Subagent metadata for workflow delegation.
-    @Published public var isSubagent: Bool = false
-    @Published public var parentConversationId: UUID?
-    @Published public var isWorking: Bool = false
-    @Published public var subagentIds: [UUID] = []
-
     /// Folder organization - conversations can be grouped into folders
     @Published public var folderId: String?
 
@@ -396,7 +293,7 @@ public class ConversationModel: ObservableObject, Identifiable {
     /// Persisted per-conversation so cost data survives app restart/conversation switch
     @Published public var performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []
 
-    /// Working directory for terminal operations and file access Default: {basePath}/<conversation-id>/ (per-conversation isolation, App Store compliant, user can select different folder via picker).
+    /// Working directory for file access Default: {basePath}/<conversation-id>/ (per-conversation isolation, App Store compliant, user can select different folder via picker).
     public var workingDirectory: String
 
     /// Security-scoped bookmark data for working directory (when user selects custom folder).
@@ -484,7 +381,7 @@ public class ConversationModel: ObservableObject, Identifiable {
         return ConversationModel.from(data: data)
     }
 
-    private init(id: UUID, created: Date, title: String, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: Set<UUID> = [], isSubagent: Bool = false, parentConversationId: UUID? = nil, isWorking: Bool = false, subagentIds: [UUID] = [], folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []) {
+    private init(id: UUID, created: Date, title: String, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: Set<UUID> = [], folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []) {
         self.id = id
         self.created = created
         self.title = title
@@ -497,10 +394,6 @@ public class ConversationModel: ObservableObject, Identifiable {
         self.isPinned = isPinned
         self.workingDirectoryBookmark = workingDirectoryBookmark
         self.enabledMiniPromptIds = enabledMiniPromptIds
-        self.isSubagent = isSubagent
-        self.parentConversationId = parentConversationId
-        self.isWorking = isWorking
-        self.subagentIds = subagentIds
         self.folderId = folderId
         self.isFromAPI = isFromAPI
         self.performanceMetrics = performanceMetrics
@@ -536,10 +429,6 @@ public class ConversationModel: ObservableObject, Identifiable {
             workingDirectory: workingDirectory,
             workingDirectoryBookmark: workingDirectoryBookmark,
             enabledMiniPromptIds: Array(enabledMiniPromptIds),
-            isSubagent: isSubagent,
-            parentConversationId: parentConversationId,
-            isWorking: isWorking,
-            subagentIds: subagentIds,
             folderId: folderId,
             isFromAPI: isFromAPI,
             performanceMetrics: performanceMetrics
@@ -562,10 +451,6 @@ public class ConversationModel: ObservableObject, Identifiable {
             workingDirectory: data.workingDirectory,
             workingDirectoryBookmark: data.workingDirectoryBookmark,
             enabledMiniPromptIds: Set(data.enabledMiniPromptIds ?? []),
-            isSubagent: data.isSubagent ?? false,
-            parentConversationId: data.parentConversationId,
-            isWorking: data.isWorking ?? false,
-            subagentIds: data.subagentIds ?? [],
             folderId: data.folderId,
             isFromAPI: data.isFromAPI ?? false,
             performanceMetrics: data.performanceMetrics ?? []
@@ -762,8 +647,7 @@ public class ConversationModel: ObservableObject, Identifiable {
                 guard let self = self, let messageBus = self.messageBus else { return }
                 /// Sync messages from MessageBus to ConversationModel
                 self.messages = messageBus.messages
-                /// Relay change to ConversationModel's observers (ChatWidget)
-                self.objectWillChange.send()
+                /// @Published on messages already triggers objectWillChange - no explicit send needed
             }
 
         /// Final sync to ensure messages array reflects MessageBus
@@ -783,10 +667,7 @@ public class ConversationModel: ObservableObject, Identifiable {
         guard let messageBus = self.messageBus else { return }
         messages = messageBus.messages
 
-        /// PERFORMANCE: Explicitly send objectWillChange for immediate UI update
-        /// MessageBus @Published changes are observed directly by ChatWidget via @ObservedObject
-        /// No need for manager.objectWillChange.send() - ChatWidget observes MessageBus directly
-        objectWillChange.send()
+        /// @Published on messages already triggers objectWillChange - no explicit send needed
     }
 
     /// DELTA SYNC: Update single message without copying entire array
@@ -801,9 +682,6 @@ public class ConversationModel: ObservableObject, Identifiable {
         guard index >= 0 && index < messages.count else { return }
         messages[index] = message
 
-        /// PERFORMANCE: Explicitly send objectWillChange for immediate UI update
-        /// MessageBus @Published changes are observed directly by ChatWidget via @ObservedObject
-        /// No need for manager.objectWillChange.send() - ChatWidget observes MessageBus directly
-        objectWillChange.send()
+        /// @Published on messages already triggers objectWillChange - no explicit send needed
     }
 }

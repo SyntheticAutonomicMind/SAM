@@ -303,21 +303,6 @@ public struct ToolErrorGuidance: Sendable {
                 "path": "path/to/file.txt"
             }
             """,
-            "terminal_operations": """
-            
-            EXAMPLE (terminal_operations):
-            {
-                "operation": "exec",
-                "command": "ls -la"
-            }
-            """,
-            "version_control": """
-            
-            EXAMPLE (version_control):
-            {
-                "operation": "status"
-            }
-            """,
             "memory_operations": """
             
             EXAMPLE (memory_operations):

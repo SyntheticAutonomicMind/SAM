@@ -25,49 +25,128 @@ import Logging
 /// Consolidated Web Operations MCP Tool Combines web_research, web_search, and fetch_webpage into a single tool.
 public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     public let name = "web_operations"
-    public let description = """
-    Web research, search, scraping, and content retrieval.
+    public var description: String {
+        let serpAvailable = isSerpAPIAvailable()
+        var desc = """
+        Web research, search, scraping, and content retrieval.
 
-    OPERATIONS (pass via 'operation' parameter):
-    • research - Comprehensive multi-source research with synthesis (general/news/technical)
-    • retrieve - Access previously stored research from memory
-    • web_search - Quick web search for top results
-    • serpapi - Professional search via SerpAPI (Google, Bing, Amazon, etc.) [if enabled]
-    • scrape - Extract content from websites (WebKit rendering with JavaScript support)
-    • fetch - Retrieve main content from webpage (basic HTTP, faster than scrape)
+        OPERATIONS (pass via 'operation' parameter):
+        • research - Comprehensive multi-source research with synthesis
+          DEPTH: shallow (3-5 sources), standard (10-15 sources), comprehensive (20+ sources, cross-referenced)
+          TYPE: general, news, technical
+          For recommendations (restaurants, hotels, products): ALWAYS use depth=comprehensive
+          AUTO-ENRICHMENT: Automatically detects recommendation queries and includes domain-specific results (Yelp, TripAdvisor, Amazon) when SerpAPI is configured
+        • retrieve - Access previously stored research from memory
+        • web_search - Quick web search for top results
+        """
 
-    WORKFLOW:
-    1. Use research for comprehensive investigation with automatic synthesis
-    2. Use web_search to find relevant URLs for targeted content
-    3. Use fetch or scrape to extract content from specific URLs
-    4. Use retrieve to ACCESS previously stored research from memory
+        if serpAvailable {
+            desc += """
 
-    WHEN TO USE:
-    - Current events, news, live information
-    - Documentation lookup
-    - Shopping/product research (use serpapi with engine=amazon/ebay/walmart)
+            • serpapi - Professional search via SerpAPI (Google, Bing, Amazon, etc.)
+              Use serpapi FIRST for specific domains: restaurants (yelp), products (amazon/ebay/walmart), travel (tripadvisor)
+            """
+        }
 
-    WHEN NOT TO USE:
-    - Information already in context
-    - Questions answerable from conversation history
-    - Local file content (use file_operations)
+        desc += """
 
-    KEY PARAMETERS:
-    • operation: REQUIRED - operation type (see above)
-    • query: Search query (retrieve/web_search/serpapi)
-    • url: Target URL (scrape/fetch) - MUST use HTTPS protocol
-    • engine: Search engine (serpapi) - google/bing/amazon/ebay/walmart/tripadvisor/yelp
-    • location: Search location (serpapi, optional)
+        • scrape - Extract content from websites (WebKit rendering with JavaScript support)
+        • fetch - Retrieve main content from webpage (basic HTTP, faster than scrape)
 
-    IMPORTANT: All URLs must use HTTPS (not HTTP) for security. HTTP URLs will be automatically converted to HTTPS.
+        WORKFLOW:
+        """
 
-    EXAMPLES:
-    SUCCESS: {"operation": "web_search", "query": "Orlando FL news today"}
-    SUCCESS: {"operation": "fetch", "url": "https://www.orlandosentinel.com/article/12345"}
-    SUCCESS: {"operation": "retrieve", "query": "Orlando news"}
-    SUCCESS: {"operation": "serpapi", "query": "best laptops 2025", "engine": "amazon"}
-    SUCCESS: {"operation": "scrape", "url": "https://example.com"}
-    """
+        if serpAvailable {
+            desc += """
+
+        1. For recommendations/shopping: START with serpapi using the appropriate engine (yelp, amazon, tripadvisor, etc.)
+        2. Use research for comprehensive investigation with automatic synthesis
+        3. Use web_search to find relevant URLs for targeted content
+        4. Use fetch or scrape to extract content from specific URLs for verification and details
+        5. Use retrieve to ACCESS previously stored research from memory
+        """
+        } else {
+            desc += """
+
+        1. Use research for comprehensive investigation with automatic synthesis
+        2. Use web_search to find relevant URLs for targeted content
+        3. Use fetch or scrape to extract content from specific URLs
+        4. Use retrieve to ACCESS previously stored research from memory
+        """
+        }
+
+        desc += """
+
+
+        WHEN TO USE:
+        - Current events, news, live information
+        - Documentation lookup
+        """
+
+        if serpAvailable {
+            desc += """
+
+        - Shopping/product research (use serpapi with engine=amazon/ebay/walmart)
+        - Restaurant/venue recommendations (use serpapi with engine=yelp/tripadvisor)
+        """
+        }
+
+        desc += """
+
+
+        WHEN NOT TO USE:
+        - Information already in context
+        - Questions answerable from conversation history
+        - Local file content (use file_operations)
+
+        KEY PARAMETERS:
+        • operation: REQUIRED - operation type (see above)
+        • query: Search query (retrieve/web_search)
+        • url: Target URL (scrape/fetch) - MUST use HTTPS protocol
+        """
+
+        if serpAvailable {
+            desc += """
+
+        • engine: Search engine (serpapi) - google/bing/amazon/ebay/walmart/tripadvisor/yelp
+        • location: Search location (serpapi, optional)
+        """
+        }
+
+        desc += """
+
+
+        IMPORTANT: All URLs must use HTTPS (not HTTP) for security. HTTP URLs will be automatically converted to HTTPS.
+
+        EXAMPLES:
+        SUCCESS: {"operation": "research", "query": "best Italian restaurants in Austin TX", "depth": "comprehensive", "type": "general"}
+        SUCCESS: {"operation": "research", "query": "latest AI developments", "depth": "standard", "type": "news"}
+        SUCCESS: {"operation": "web_search", "query": "Orlando FL news today"}
+        SUCCESS: {"operation": "fetch", "url": "https://www.orlandosentinel.com/article/12345"}
+        SUCCESS: {"operation": "retrieve", "query": "Orlando news"}
+        """
+
+        if serpAvailable {
+            desc += """
+
+        SUCCESS: {"operation": "serpapi", "query": "best restaurants in Austin TX", "engine": "yelp"}
+        SUCCESS: {"operation": "serpapi", "query": "best laptops 2025", "engine": "amazon"}
+        """
+        }
+
+        desc += """
+
+        SUCCESS: {"operation": "scrape", "url": "https://example.com"}
+
+        RESEARCH WORKFLOW for recommendations:
+        1. Use serpapi (if available) with domain-specific engine first (yelp for restaurants, tripadvisor for hotels, etc.)
+        2. Use research with depth=comprehensive to gather broad data
+        3. Fetch individual pages to verify details (ratings, hours, prices, addresses)
+        4. Present structured comparison with verified data and source URLs
+        """
+
+        return desc
+    }
 
     public var supportedOperations: [String] {
         var operations = [
@@ -114,6 +193,20 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 type: .object(properties: [:]),
                 description: "CSS selectors for structured extraction (for scrape operation)",
                 required: false
+            ),
+
+            /// Research depth and type parameters.
+            "depth": MCPToolParameter(
+                type: .string,
+                description: "Research depth for 'research' operation: shallow (3-5 sources, quick overview), standard (10-15 sources), comprehensive (20+ sources, cross-referenced). Use comprehensive for recommendations. Default: standard",
+                required: false,
+                enumValues: ["shallow", "standard", "comprehensive"]
+            ),
+            "type": MCPToolParameter(
+                type: .string,
+                description: "Research type for 'research' operation: general (broad overview), news (current events), technical (documentation/specs). Default: general",
+                required: false,
+                enumValues: ["general", "news", "technical"]
             )
         ]
 
@@ -138,7 +231,7 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     private let logger = Logger(label: "com.sam.mcp.WebOperations")
 
     /// OPERATION DEDUPLICATION: Prevent AI from running identical operations multiple times.
-    /// Pattern copied from RunInTerminalTool to fix redundant web_operations calls.
+    /// Pattern to fix redundant web_operations calls.
     private struct OperationCacheEntry {
         let operation: String
         let parameters: String  // Serialized parameters for cache key
@@ -371,11 +464,14 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         config.urlCredentialStorage = nil
         let session = URLSession(configuration: config)
 
-        /// Create request fully before task group to avoid mutable capture
+        /// Build request with realistic browser headers to reduce 403 rejections
         var requestBuilder = URLRequest(url: url)
-        requestBuilder.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        requestBuilder.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
+        requestBuilder.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        requestBuilder.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        requestBuilder.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
         requestBuilder.timeoutInterval = timeout
-        let request = requestBuilder  /// Make immutable for capture
+        let request = requestBuilder
 
         /// Execute fetch with timeout enforcement via Task
         return try await withThrowingTaskGroup(of: (String, HTTPURLResponse).self) { group in
@@ -498,8 +594,10 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         /// Collect progress events for nested tool hierarchy.
         var progressEvents: [MCPProgressEvent] = []
 
+        let query = parameters["query"] as? String ?? ""
+
         /// Emit event when research operation starts.
-        if let query = parameters["query"] as? String {
+        if !query.isEmpty {
             progressEvents.append(MCPProgressEvent(
                 eventType: .toolStarted,
                 toolName: "research_query",
@@ -518,8 +616,68 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             ))
         }
 
+        /// AUTO-ENRICHMENT: When SerpAPI is available and query looks like a recommendation,
+        /// automatically include domain-specific SerpAPI results alongside regular research.
+        var serpAPIEnrichment: String? = nil
+        if isSerpAPIAvailable(), !query.isEmpty, !(await serpAPIService.hasReachedLimit()) {
+            let detectedEngine = detectRecommendationEngine(for: query)
+            if let engine = detectedEngine {
+                logger.info("AUTO-ENRICHMENT: Detected recommendation query, adding SerpAPI \(engine.rawValue) results")
+                
+                progressEvents.append(MCPProgressEvent(
+                    eventType: .toolStarted,
+                    toolName: "serpapi_enrichment",
+                    parentToolName: "web_operations",
+                    display: ToolDisplayData(
+                        action: "searching",
+                        actionDisplayName: "Web Search",
+                        summary: "Enriching with \(engine.displayName) results",
+                        status: .running,
+                        icon: "sparkle.magnifyingglass",
+                        metadata: ["engine": engine.displayName]
+                    ),
+                    status: "running",
+                    message: "Adding \(engine.displayName) results for better recommendations...",
+                    details: [engine.displayName]
+                ))
+
+                /// Auto-fill location from user preferences for location-based engines.
+                var location: String? = nil
+                if engine == .yelp || engine == .tripadvisor || engine == .google {
+                    location = LocationManager.shared.getEffectiveLocation()
+                }
+
+                do {
+                    let serpResult = try await serpAPIService.search(
+                        query: query,
+                        engine: engine,
+                        location: location,
+                        numResults: 10
+                    )
+                    serpAPIEnrichment = serpResult.toMarkdown()
+                    logger.info("AUTO-ENRICHMENT: Got \(serpResult.items.count) results from \(engine.displayName)")
+                } catch {
+                    logger.warning("AUTO-ENRICHMENT: SerpAPI \(engine.rawValue) failed (non-fatal): \(error)")
+                }
+            }
+        }
+
         /// Delegate to WebResearchTool implementation.
         let result = await webResearchTool.execute(parameters: parameters, context: context)
+
+        /// Combine SerpAPI enrichment with research results if available.
+        var finalContent = result.output.content
+        if let enrichment = serpAPIEnrichment {
+            finalContent = """
+            ## Domain-Specific Results (Auto-Enriched)
+            
+            \(enrichment)
+            
+            ## Comprehensive Research Results
+            
+            \(finalContent)
+            """
+        }
 
         /// PARALLEL SEARCH DETECTION: If multiple searches are running concurrently, persist to disk
         /// This prevents token overflow when agent runs many searches at once
@@ -530,9 +688,7 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             
             guard let conversationId = context.conversationId else {
                 logger.warning("PARALLEL_SEARCHES: No conversation ID, cannot persist - returning truncated result")
-                /// Without conversation ID, return truncated version to prevent 400 errors
-                let content = result.output.content
-                let truncated = TokenEstimator.truncate(content, toTokenLimit: ToolResultStorage.previewTokenLimit)
+                let truncated = TokenEstimator.truncate(finalContent, toTokenLimit: ToolResultStorage.previewTokenLimit)
                 return MCPToolResult(
                     toolName: result.toolName,
                     executionId: result.executionId,
@@ -547,11 +703,11 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             /// Persist the large search result
             let persistedOutput = storage.processToolResult(
                 toolCallId: context.toolCallId ?? UUID().uuidString,
-                content: result.output.content,
+                content: finalContent,
                 conversationId: conversationId
             )
             
-            let estimatedTokens = TokenEstimator.estimateTokens(result.output.content)
+            let estimatedTokens = TokenEstimator.estimateTokens(finalContent)
             logger.info("PARALLEL_SEARCHES: Persisted search result (\(estimatedTokens) tokens) - agent should use read_tool_result to access")
             
             return MCPToolResult(
@@ -565,17 +721,59 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             )
         }
 
-        /// Return full result inline (no persistence) for single searches
-        /// Large results are handled by provider-level context limits.
+        /// Return full result inline (no persistence) for single searches.
         return MCPToolResult(
             toolName: result.toolName,
             executionId: result.executionId,
             success: result.success,
-            output: result.output,
+            output: MCPOutput(content: finalContent, mimeType: result.output.mimeType),
             metadata: result.metadata,
             performance: result.performance,
             progressEvents: progressEvents + result.progressEvents
         )
+    }
+
+    // MARK: - Recommendation Detection
+
+    /// Detect if a query is a recommendation request and return the best SerpAPI engine for it.
+    private func detectRecommendationEngine(for query: String) -> SerpAPIService.SearchEngine? {
+        let lower = query.lowercased()
+
+        /// Restaurant/food/bar keywords -> Yelp
+        let foodKeywords = ["restaurant", "restaurants", "food", "eat", "eating", "dining",
+                            "brunch", "lunch", "dinner", "breakfast", "cafe", "coffee shop",
+                            "bar", "bars", "pub", "pubs", "brewery", "pizza", "sushi",
+                            "tacos", "burger", "bbq", "seafood", "steakhouse", "bakery",
+                            "best places to eat", "where to eat"]
+        if foodKeywords.contains(where: { lower.contains($0) }) {
+            return .yelp
+        }
+
+        /// Hotel/travel/attraction keywords -> TripAdvisor
+        let travelKeywords = ["hotel", "hotels", "motel", "resort", "resorts", "airbnb",
+                              "things to do", "attractions", "tourism", "tourist",
+                              "vacation", "travel to", "visiting", "places to visit",
+                              "sightseeing", "day trip"]
+        if travelKeywords.contains(where: { lower.contains($0) }) {
+            return .tripadvisor
+        }
+
+        /// Product/shopping keywords -> Amazon
+        let shoppingKeywords = ["buy", "purchase", "product", "products", "price",
+                                "best laptop", "best phone", "best headphone", "best camera",
+                                "best tablet", "review", "reviews", "comparison",
+                                "cheapest", "affordable", "top rated"]
+        if shoppingKeywords.contains(where: { lower.contains($0) }) {
+            return .amazon
+        }
+
+        /// Generic "best X in Y" pattern - likely restaurants/services -> Yelp
+        let bestInPattern = lower.range(of: "best .+ in ", options: .regularExpression) != nil
+        if bestInPattern {
+            return .yelp
+        }
+
+        return nil
     }
 
     // MARK: - Retrieve Operation

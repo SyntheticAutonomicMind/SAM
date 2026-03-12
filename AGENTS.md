@@ -207,21 +207,13 @@ Sources/
 │   └── ToolCallExtractor.swift
 ├── MCPFramework/               - Model Context Protocol tools
 │   ├── MCPTool.swift (protocol)
-│   ├── Tools/ (14 tools, 46+ operations)
+│   ├── Tools/ (10 tools, 60+ operations)
 │   ├── ToolRegistry.swift
 │   └── ToolResult.swift
 ├── SharedData/                 - Shared types, thread-safe storage
 │   ├── SharedTopics.swift
 │   ├── Storage.swift
 │   └── Locking/
-├── StableDiffusionIntegration/ - Local image generation
-│   ├── ImageGenerator.swift
-│   ├── ModelDownloader.swift
-│   └── StyleManager.swift
-├── Training/                   - LoRA model fine-tuning
-│   ├── LoRATrainer.swift
-│   ├── DataPreparation.swift
-│   └── TrainingConfig.swift
 └── VoiceFramework/             - Speech recognition, TTS, wake word
     ├── SpeechRecognizer.swift
     ├── TextToSpeech.swift
@@ -256,7 +248,6 @@ Tests/
 ├── ConfigurationSystemTests/   - Settings, preferences
 ├── ConversationEngineTests/    - Conversation, memory, database
 ├── MCPFrameworkTests/          - Tool registry, tool execution
-├── TrainingTests/              - LoRA training
 ├── UserInterfaceTests/         - UI components
 ├── SecurityFrameworkTests/     - Security operations
 ├── e2e/                        - End-to-end integration
@@ -366,7 +357,6 @@ All commits MUST follow Conventional Commits format:
 - `config` - Configuration system
 - `build` - Build system and dependencies
 - `voice` - Voice framework
-- `training` - Model training
 - `image` - Image generation
 - `memory` - Memory and LTM
 
@@ -376,7 +366,7 @@ All commits MUST follow Conventional Commits format:
 git commit -m "feat(mcp): Add web scraping tool with structured data extraction"
 git commit -m "fix(ui): Prevent toolbar overflow on narrow windows"
 git commit -m "refactor(api): Extract streaming logic into separate service"
-git commit -m "docs(training): Add LoRA fine-tuning guide"
+git commit -m "docs(api): Add ALICE integration guide"
 ```
 
 ---

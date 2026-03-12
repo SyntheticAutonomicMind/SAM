@@ -281,7 +281,7 @@ conversation.messageBus?.finalizeMessage(id: assistantId)
 // Tool message
 conversation.messageBus?.addToolMessage(
     id: UUID(),
-    name: "image_generation",
+    name: "file_operations",
     status: .running,
     details: [],
     toolCallId: execution.toolCallId
@@ -328,7 +328,7 @@ flowchart TD
   A[[LLM responds with tool_calls in response]]
   B[[tool_calls: [{]]
   C[[id: call_123,]]
-  D[[name: image_generation,]]
+  D[[name: file_operations,]]
   E[[arguments: { prompt: a cat }]]
   F[[}]]]
   A --> B
@@ -388,7 +388,7 @@ public struct EnhancedMessage: Identifiable, Codable, Equatable {
 public enum MessageType: String, Codable {
     case user           // User input
     case assistant      // LLM response
-    case toolExecution  // Tool call/result (includes subagent, memory ops, etc.)
+    case toolExecution  // Tool call/result (memory ops, web research, etc.)
     case thinking       // Reasoning tokens (o1 models)
     case systemStatus   // System notifications
 }
@@ -662,7 +662,7 @@ messages = messages  // Force @Published to trigger
 // Step 1: Create message with EMPTY content, running status
 let toolMessageId = messageBus.addToolMessage(
     id: UUID(),
-    name: "image_generation",
+    name: "file_operations",
     status: .running,      // CRITICAL: Start as running
     details: [],
     toolDisplayData: nil,
@@ -670,7 +670,7 @@ let toolMessageId = messageBus.addToolMessage(
 )
 
 // Step 2: Execute tool in background
-let result = await executeTool(name: "image_generation", args: args)
+let result = await executeTool(name: "file_operations", args: args)
 
 // Step 3: Update message with results
 messageBus.updateMessage(

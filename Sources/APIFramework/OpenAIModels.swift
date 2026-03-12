@@ -219,15 +219,12 @@ public struct SAMConfig: Content {
     public let workingDirectory: String?
     public let systemPromptId: String?
     public let isExternalAPICall: Bool?
-    public let enableTerminalAccess: Bool?
-    public let enableWorkflowMode: Bool?
-    public let enableDynamicIterations: Bool?
     /// Per-request proxy mode bypass (1:1 LLM passthrough without SAM processing)
     /// When true, behaves like serverProxyMode toggle but only for this request
     /// Enables external tools like CLIO to bypass SAM's tools/prompts/sessions
     public let bypassProcessing: Bool?
 
-    public init(sharedMemoryEnabled: Bool? = nil, mcpToolsEnabled: Bool? = nil, memoryCollectionId: String? = nil, conversationTitle: String? = nil, maxIterations: Int? = nil, enableReasoning: Bool? = nil, workingDirectory: String? = nil, systemPromptId: String? = nil, isExternalAPICall: Bool? = nil, enableTerminalAccess: Bool? = nil, enableWorkflowMode: Bool? = nil, enableDynamicIterations: Bool? = nil, bypassProcessing: Bool? = nil) {
+    public init(sharedMemoryEnabled: Bool? = nil, mcpToolsEnabled: Bool? = nil, memoryCollectionId: String? = nil, conversationTitle: String? = nil, maxIterations: Int? = nil, enableReasoning: Bool? = nil, workingDirectory: String? = nil, systemPromptId: String? = nil, isExternalAPICall: Bool? = nil, bypassProcessing: Bool? = nil) {
         self.sharedMemoryEnabled = sharedMemoryEnabled
         self.mcpToolsEnabled = mcpToolsEnabled
         self.memoryCollectionId = memoryCollectionId
@@ -237,9 +234,6 @@ public struct SAMConfig: Content {
         self.workingDirectory = workingDirectory
         self.systemPromptId = systemPromptId
         self.isExternalAPICall = isExternalAPICall
-        self.enableTerminalAccess = enableTerminalAccess
-        self.enableWorkflowMode = enableWorkflowMode
-        self.enableDynamicIterations = enableDynamicIterations
         self.bypassProcessing = bypassProcessing
     }
 
@@ -253,9 +247,6 @@ public struct SAMConfig: Content {
         case workingDirectory = "working_directory"
         case systemPromptId = "system_prompt_id"
         case isExternalAPICall = "is_external_api_call"
-        case enableTerminalAccess = "enable_terminal_access"
-        case enableWorkflowMode = "enable_workflow_mode"
-        case enableDynamicIterations = "enable_dynamic_iterations"
         case bypassProcessing = "bypass_processing"
     }
 }
@@ -885,7 +876,7 @@ public struct MCPExecutionRequest: Content {
     public let parametersJson: String
     /// Optional: Conversation ID to use for scoped execution
     public let conversationId: String?
-    /// Optional: Working directory to use for file/terminal operations (defaults to active conversation's working dir)
+    /// Optional: Working directory to use for file operations (defaults to active conversation's working dir)
     public let workingDirectory: String?
     /// Optional: Mark as user-initiated to bypass certain security checks
     public let isUserInitiated: Bool?

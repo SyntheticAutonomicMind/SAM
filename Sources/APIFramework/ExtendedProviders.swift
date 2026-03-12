@@ -653,7 +653,7 @@ public class GeminiProvider: AIProvider {
             /// Strip "models/" prefix from name
             let modelId = name.replacingOccurrences(of: "models/", with: "")
             
-            /// Filter out image/video generation models - these should be in Stable Diffusion UI
+            /// Filter out non-chat models (image/video generation, text-only)
             /// Imagen models: imagen-*
             /// Veo models: veo-*
             /// Gemma models: gemma-* (text-only, not chat)
@@ -673,7 +673,7 @@ public class GeminiProvider: AIProvider {
             }
         }
         
-        logger.info("Fetched capabilities for \(capabilities.count) Gemini chat models (filtered out image/video generation models)")
+        logger.info("Fetched capabilities for \(capabilities.count) Gemini chat models (filtered out non-chat models)")
         return capabilities
     }
 

@@ -84,13 +84,7 @@ struct WelcomeView: View {
                     WelcomeFeatureRow(
                         icon: "wrench.and.screwdriver.fill",
                         title: "Useful Integrated Tools",
-                        description: "File operations, web research, terminal access, document processing, and more via MCP"
-                    )
-
-                    WelcomeFeatureRow(
-                        icon: "photo.fill",
-                        title: "AI Image Generation",
-                        description: "Create images from text descriptions using Stable Diffusion models with CoreML or Python engines"
+                        description: "File operations, web research, document processing, and more via MCP"
                     )
 
                     WelcomeFeatureRow(
@@ -199,7 +193,7 @@ struct WelcomeView: View {
     private func checkIfOnboardingNeeded() {
         /// Check if user has any local models installed
         /// Use LocalModelManager to check models directory
-        let modelManager = LocalModelManager()
+        let modelManager = LocalModelManager.shared
         let models = modelManager.getModels()
         let hasLocalModels = !models.isEmpty
         

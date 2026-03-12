@@ -3,17 +3,13 @@
 
 import SwiftUI
 import APIFramework
-import StableDiffusionIntegration
-import Training
 
 /// Enhanced model picker showing provider, location, and cost inline using native Picker
 struct ModelPickerView: View {
     @Binding var selectedModel: String
     @ObservedObject var modelListManager: ModelListManager
     let endpointManager: EndpointManager
-    @StateObject private var sdModelManager = StableDiffusionModelManager()
     @State private var billingDataLoaded = false
-    @State private var adapterNames: [String: String] = [:] // Maps adapter ID to name
     
     /// Computed properties for model lists
     private var models: [String] {
@@ -88,24 +84,10 @@ struct ModelPickerView: View {
         .onAppear {
             /// Fetch GitHub Copilot billing data if not already cached
             fetchGitHubCopilotBillingIfNeeded()
-            /// Load adapter names for display
-            loadAdapterNames()
         }
     }
 
-    /// Load adapter names from AdapterManager
-    private func loadAdapterNames() {
-        Task {
-            do {
-                let adapters = try await AdapterManager.shared.listAdapters()
-                await MainActor.run {
-                    adapterNames = Dictionary(uniqueKeysWithValues: adapters.map { ($0.id, $0.metadata.adapterName) })
-                }
-            } catch {
-                // Silently fail - will fall back to showing UUID prefix
-            }
-        }
-    }
+
 
     /// Fetch GitHub Copilot billing data if needed
     private func fetchGitHubCopilotBillingIfNeeded() {
@@ -161,12 +143,6 @@ struct ModelPickerView: View {
         var premiumModels: [String] = []
 
         for model in models {
-            /// SD models are always "free" (local)
-            if model.hasPrefix("sd/") {
-                freeModels.append(model)
-                continue
-            }
-
             let baseModelId: String
             if let lastPart = model.split(separator: "/").last {
                 baseModelId = String(lastPart)
@@ -190,38 +166,6 @@ struct ModelPickerView: View {
 
     /// Format model display name with provider, location, and cost
     private func formatModelDisplayName(_ model: String) -> String {
-        /// Handle local Stable Diffusion models
-        if model.hasPrefix("sd/") {
-            let sdModelId = model.replacingOccurrences(of: "sd/", with: "")
-            let displayName = sdModelId
-                .replacingOccurrences(of: "coreml-", with: "")
-                .replacingOccurrences(of: "-", with: " ")
-                .replacingOccurrences(of: "stable diffusion", with: "SD", options: .caseInsensitive)
-                .capitalized
-
-            let paddedName = displayName.padding(toLength: 30, withPad: " ", startingAt: 0)
-            let paddedProvider = "Stable Diffusion".padding(toLength: 18, withPad: " ", startingAt: 0)
-            let paddedLocation = "Local".padding(toLength: 8, withPad: " ", startingAt: 0)
-
-            return "\(paddedName)  \(paddedProvider)  \(paddedLocation)  -"
-        }
-
-        /// Handle ALICE remote Stable Diffusion models (format: alice-sd-model-name)
-        if model.hasPrefix("alice-") {
-            let sdModelId = model
-                .replacingOccurrences(of: "alice-", with: "")
-                .replacingOccurrences(of: "sd-", with: "")
-            let displayName = sdModelId
-                .replacingOccurrences(of: "-", with: " ")
-                .capitalized
-
-            let paddedName = displayName.padding(toLength: 30, withPad: " ", startingAt: 0)
-            let paddedProvider = "Stable Diffusion".padding(toLength: 18, withPad: " ", startingAt: 0)
-            let paddedLocation = "ALICE".padding(toLength: 8, withPad: " ", startingAt: 0)
-
-            return "\(paddedName)  \(paddedProvider)  \(paddedLocation)  -"
-        }
-
         let baseModelId: String
         let provider: String
 
@@ -278,39 +222,6 @@ struct ModelPickerView: View {
 
     /// Beautify model name
     private func beautifyModelName(_ name: String) -> String {
-        /// Handle LoRA adapter IDs - model string format is full "lora/UUID"
-        if name.hasPrefix("lora/") {
-            /// Extract just the UUID part (everything after "lora/")
-            let adapterId = String(name.dropFirst(5)) // Remove "lora/" prefix
-            
-            /// Try to get friendly adapter name from cache
-            if let adapterName = adapterNames[adapterId] {
-                return "LoRA: \(adapterName)"
-            }
-            
-            /// Fallback to abbreviated UUID if name not yet loaded
-            let uuidPrefix = adapterId.prefix(13) // Show first 13 chars (e.g., "9CE3B76B-0E2C")
-            return "LoRA: \(uuidPrefix)..."
-        }
-        
-        /// Handle SD model IDs from "sd/model-id" format
-        if name.hasPrefix("sd/") || name.hasPrefix("coreml-stable") {
-            let modelId = name.replacingOccurrences(of: "sd/", with: "")
-
-            /// Try to get friendly name from metadata
-            if let friendlyName = sdModelManager.getFriendlyName(for: modelId) {
-                return friendlyName
-            }
-
-            /// Fall back to formatted directory name
-            let cleaned = name
-                .replacingOccurrences(of: "sd/", with: "")
-                .replacingOccurrences(of: "coreml-", with: "")
-                .replacingOccurrences(of: "-", with: " ")
-                .replacingOccurrences(of: "stable diffusion", with: "SD", options: .caseInsensitive)
-            return cleaned.capitalized
-        }
-
         /// Remove version dates
         var cleanId = name
         let datePattern = "-\\d{4}-\\d{2}-\\d{2}$"

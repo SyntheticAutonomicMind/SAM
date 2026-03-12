@@ -385,7 +385,7 @@ tail -f sam_server.log | grep -E "IMMEDIATE|TOOL_CARD_RENDERED|RENDER_LOOP"
 
 # Expected timing:
 # TS:XXXXX IMMEDIATE_RENDER: tool message id=ABC
-# TS:XXXXX TOOL_CARD_RENDERED: tool=image_generation id=ABC
+# TS:XXXXX TOOL_CARD_RENDERED: tool=file_operations id=ABC
 # Δt < 100ms between these logs
 ```
 
@@ -527,9 +527,9 @@ Instead of parsing "SUCCESS: ..." strings, use structured metadata:
 
 ```swift
 message.toolMetadata = [
-    "action": "image_generation",
-    "images_generated": "1",
-    "output_path": "/path/to/image.png"
+    "action": "file_operations",
+    "files_written": "1",
+    "output_path": "/path/to/output.txt"
 ]
 ```
 

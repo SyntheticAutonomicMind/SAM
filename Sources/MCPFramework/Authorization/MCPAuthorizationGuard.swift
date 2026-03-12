@@ -129,7 +129,7 @@ public struct MCPAuthorizationGuard {
         )
     }
 
-    /// Check if a command execution requires user authorization - Parameters: - command: The command to execute - workingDirectory: The conversation's working directory (safe workspace) - conversationId: The conversation context - operation: The operation key (e.g., "terminal_operations.run_command") - isUserInitiated: If true, bypass authorization (user directly initiated) - Returns: Authorization result (allowed, denied, or requires authorization).
+    /// Check if a command execution requires user authorization - Parameters: - command: The command to execute - workingDirectory: The conversation's working directory (safe workspace) - conversationId: The conversation context - operation: The operation key (e.g., "file_operations.create_directory") - isUserInitiated: If true, bypass authorization (user directly initiated) - Returns: Authorization result (allowed, denied, or requires authorization).
     public static func checkCommandAuthorization(
         command: String,
         workingDirectory: String?,

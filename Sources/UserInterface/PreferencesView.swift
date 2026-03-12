@@ -111,14 +111,11 @@ public struct PreferencesView: View {
         case .localModels:
             LocalModelsPreferencePane(endpointManager: endpointManager)
 
-        case .modelTraining:
-            TrainingPreferencesPane()
-
-        case .imageGeneration:
-            StableDiffusionPreferencesPane()
-
         case .serpAPI:
             SerpAPIPreferencesPane()
+
+        case .alice:
+            ALICEPreferencesPane()
 
         case .apiServer:
             APIServerPreferencesView()
@@ -324,9 +321,8 @@ public enum PreferencesSection: String, CaseIterable {
     case personalities = "Personalities"
     case apiEndpoints = "Remote Providers"
     case localModels = "Local Models"
-    case modelTraining = "Model Training"
-    case imageGeneration = "Image Generation"
     case serpAPI = "SerpAPI"
+    case alice = "ALICE"
     case apiServer = "API Server"
     case advanced = "Advanced"
 
@@ -341,9 +337,8 @@ public enum PreferencesSection: String, CaseIterable {
         case .personalities: return "theatermasks"
         case .apiEndpoints: return "network"
         case .localModels: return "externaldrive.fill"
-        case .modelTraining: return "graduationcap.fill"
-        case .imageGeneration: return "photo.stack.fill"
         case .serpAPI: return "magnifyingglass.circle"
+        case .alice: return "paintbrush"
         case .apiServer: return "server.rack"
         case .advanced: return "slider.horizontal.3"
         }
@@ -360,9 +355,8 @@ public enum PreferencesSection: String, CaseIterable {
         case .personalities: return .pink
         case .apiEndpoints: return .green
         case .localModels: return .indigo
-        case .modelTraining: return .orange
-        case .imageGeneration: return .blue
         case .serpAPI: return .teal
+        case .alice: return .purple
         case .apiServer: return .orange
         case .advanced: return .pink
         }
@@ -628,7 +622,7 @@ struct GeneralPreferencesView: View {
                                     sound.play()
                                 }
                             }
-                            .buttonStyle(SAMButtonStyle(variant: .secondary))
+                            .buttonStyle(.bordered)
                         }
 
                         Toggle("Speak Emojis", isOn: $speakEmojis)
@@ -871,7 +865,6 @@ struct GeneralPreferencesView: View {
 
 struct AppearancePreferencesView: View {
     @AppStorage("enableAnimations") private var enableAnimations: Bool = true
-    /// DEPRECATED: showThinkingSteps - now per-conversation via Reasoning toggle.
 
     var body: some View {
         ScrollView {
@@ -1520,7 +1513,6 @@ curl -X POST http:
 struct AdvancedPreferencesView: View {
     @AppStorage("logLevel") private var logLevel: String = "Info"
     @AppStorage("authorizationExpiryDuration") private var authorizationExpiryDuration: String = "5m"
-    @AppStorage("imageGenerationDisableSafety") private var imageGenerationDisableSafety: Bool = false
 
     @State private var validationError: String?
 
@@ -1733,7 +1725,6 @@ struct AdvancedPreferencesView: View {
         UserDefaults.standard.removeObject(forKey: "autoSaveInterval")
         UserDefaults.standard.removeObject(forKey: "logLevel")
         UserDefaults.standard.removeObject(forKey: "authorizationExpiryDuration")
-        UserDefaults.standard.removeObject(forKey: "imageGenerationDisableSafety")
     }
 }
 

@@ -27,18 +27,18 @@ fileprivate extension String {
 @MainActor
 public class AgentOrchestrator: ObservableObject, IterationController {
     internal let logger = Logging.Logger(label: "com.sam.orchestrator")
-    private let endpointManager: EndpointManager
-    private let conversationService: SharedConversationService
+    internal let endpointManager: EndpointManager
+    internal let conversationService: SharedConversationService
     internal let conversationManager: ConversationManager
     public private(set) var maxIterations: Int
-    private var onProgress: ((String) -> Void)?
-    private var currentTodoList: [TodoItem] = []
+    internal var onProgress: ((String) -> Void)?
+    internal var currentTodoList: [TodoItem] = []
 
     /// Current iteration number (exposed for IterationController protocol)
     public private(set) var currentIteration: Int = 0
 
     /// Cancellation flag for stopping autonomous workflows
-    private var isCancellationRequested = false
+    internal var isCancellationRequested = false
 
     /// Tool card readiness tracking
     /// When tool execution is about to start, toolCardsPending is set to execution IDs
@@ -47,76 +47,33 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     @Published public var toolCardsReady: Set<String> = []
 
     /// Token counter for smart context management Monitors token usage and triggers pruning at 70% threshold.
-    private let tokenCounter: TokenCounter = TokenCounter()
+    internal let tokenCounter: TokenCounter = TokenCounter()
 
     /// Tool result storage for handling large tool outputs
     /// Persists results to disk for retrieval via read_tool_result
     /// Replaces the memory-only ToolResultCache for proper persistence
-    private let toolResultStorage = ToolResultStorage()
+    internal let toolResultStorage = ToolResultStorage()
 
     /// Flag indicating if this orchestrator is being called by an external API client vs SAM's internal autonomous workflow.
-    private let isExternalAPICall: Bool
-
-    /// Terminal manager for visible terminal integration When set, terminal_operations will execute in the visible UI terminal.
-    nonisolated(unsafe) private let terminalManager: AnyObject?
+    internal let isExternalAPICall: Bool
 
     /// Performance monitor for workflow metrics (optional) When set, reports workflow, loop detection, and context filtering metrics.
     public weak var performanceMonitor: PerformanceMonitor?
 
     /// Universal tool call extractor - supports all formats (OpenAI, Ministral, Qwen, Hermes).
-    private let toolCallExtractor = ToolCallExtractor()
+    internal let toolCallExtractor = ToolCallExtractor()
 
     /// YaRN Context Processor for intelligent context management Uses mega 128M token profile supporting massive document analysis (60-100MB+ documents).
-    private var yarnProcessor: YaRNContextProcessor?
+    internal var yarnProcessor: YaRNContextProcessor?
 
     /// Tool call stack for tracking nested tool hierarchy When tool A calls tool B, A is on the stack, enabling B to know its parent Stack entries are tool names (e.g., ["researching", "web_operations"]).
-    private var toolCallStack: [String] = []
+    internal var toolCallStack: [String] = []
 
-    /// Auto-continue injection retry limit to avoid infinite loops when forcing continuation.
-    /// Maximum consecutive auto-continue attempts without tool execution.
-    /// Resets to 0 when agent executes tools (making progress).
-    /// Higher limit is safe because it resets on progress.
-    private let autoContinueRetryLimit: Int = 5
+    /// Premature stop retry limit (CLIO-style).
+    /// If model returns empty response after active tool use, nudge once.
+    internal let maxPrematureStopRetries: Int = 1
+    internal let maxTodoNudgeRetries: Int = 3
 
-    /// Tools that are ALWAYS planning tools (never produce tangible work output)
-    /// All other tools are considered WORK tools that produce real output.
-    /// This simplification works because:
-    /// - todo_operations is now a separate tool from memory_operations
-    /// - memory_operations (search/store) is actual work
-    /// - think is planning
-    /// - Everything else produces deliverables
-    private static let ALWAYS_PLANNING_TOOLS: Set<String> = [
-        "think",
-        "todo_operations"  // Todo management is workflow control, not work
-    ]
-
-    /// Check if a tool call is a WORK tool (produces tangible output)
-    /// Simplified: Everything except think and todo_operations is work.
-    /// This avoids false positives where store_memory was incorrectly flagged as "planning"
-    /// when user explicitly requested "store X as memory" (which IS the deliverable).
-    private static func isWorkToolCall(_ toolName: String, arguments: [String: Any]) -> Bool {
-        // Only think and todo_operations are planning tools
-        // Everything else (including memory_operations) produces real work output
-        return !ALWAYS_PLANNING_TOOLS.contains(toolName)
-    }
-    
-    /// Check if a todo_operations call is marking something as complete
-    /// This indicates work was done, so it shouldn't count as "planning only"
-    private static func isTodoCompletionCall(_ toolName: String, arguments: [String: Any]) -> Bool {
-        guard toolName == "todo_operations" else { return false }
-        
-        // Check if operation is "update" and any todo is being marked "completed"
-        guard let operation = arguments["operation"] as? String, operation == "update" else { return false }
-        guard let updates = arguments["todoUpdates"] as? [[String: Any]] else { return false }
-        
-        return updates.contains { update in
-            guard let status = update["status"] as? String else { return false }
-            return status.lowercased() == "completed"
-        }
-    }
-
-    /// Planning loop counter per conversation (persists across API calls) Tracks how many times [PLANNING_COMPLETE] was emitted without successful plan parsing Key: conversationId, Value: counter (resets when plan successfully parsed).
-    private var planningLoopCounters: [UUID: Int] = [:]
 
     public init(
         endpointManager: EndpointManager,
@@ -124,8 +81,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         conversationManager: ConversationManager,
         maxIterations: Int = WorkflowConfiguration.defaultMaxIterations,
         onProgress: ((String) -> Void)? = nil,
-        isExternalAPICall: Bool = false,
-        terminalManager: AnyObject? = nil
+        isExternalAPICall: Bool = false
     ) {
         self.endpointManager = endpointManager
         self.conversationService = conversationService
@@ -133,7 +89,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         self.maxIterations = maxIterations
         self.onProgress = onProgress
         self.isExternalAPICall = isExternalAPICall
-        self.terminalManager = terminalManager
 
         /// Initialize YARN processor with mega 128M token profile for massive document workflows.
         self.yarnProcessor = YaRNContextProcessor(
@@ -161,7 +116,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// GPT models often deprioritize mid-conversation "system" messages, treating them as metadata
     /// By sending as "user", the model treats it as direct instruction from the conversation flow
     /// VS CODE COPILOT PATTERN: Use XML tags for ALL models (not just Claude)
-    private func createSystemReminder(content: String, model: String) -> OpenAIChatMessage {
+    func createSystemReminder(content: String, model: String) -> OpenAIChatMessage {
         /// Use XML tags universally - VS Code uses structured tags for all models
         let wrappedContent = "<system-reminder>\n\(content)\n</system-reminder>"
         return OpenAIChatMessage(role: "user", content: wrappedContent)
@@ -170,7 +125,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// Ensure message alternation for Claude API compatibility
     /// Claude requires strict user/assistant alternation, no empty messages, and no consecutive same-role messages
     /// This function fixes message arrays to comply with Claude's requirements while preserving compatibility with other models
-    private func ensureMessageAlternation(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
+    func ensureMessageAlternation(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
         /// DIAGNOSTIC: Log input messages
         logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         logger.debug("ALTERNATION_INPUT: Received \(messages.count) messages")
@@ -289,7 +244,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// Claude Messages API requires ALL tool results from one iteration to be in a SINGLE user message
     /// This function converts: [tool1, tool2, tool3] → [user_with_batched_tools]
     /// Only used for Claude models to fix the tool result batching issue
-    private func batchToolResultsForClaude(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
+    func batchToolResultsForClaude(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
         var processed: [OpenAIChatMessage] = []
         var pendingToolResults: [(toolCallId: String, content: String)] = []
         
@@ -349,10 +304,83 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         return processed
     }
 
+
+    // MARK: - Session Auto-Naming
+
+    /// Extract session naming marker from AI response and rename the conversation
+    /// Marker format: <!--session:{"title":"3-6 word summary"}-->
+    /// Only acts when conversation title starts with "New Conversation"
+    func extractAndApplySessionName(from rawResponse: String, conversationId: UUID) {
+        guard rawResponse.contains("<!--session:") else { return }
+
+        guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }),
+              conversation.title.hasPrefix("New Conversation") else { return }
+
+        /// Extract title using regex: <!--session:{"title":"..."}-->
+        let pattern = #"<!--session:\{[^}]*"title"\s*:\s*"([^"]{3,80})"[^}]*\}-->"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: rawResponse, options: [], range: NSRange(rawResponse.startIndex..., in: rawResponse)),
+              let titleRange = Range(match.range(at: 1), in: rawResponse) else { return }
+
+        let title = String(rawResponse[titleRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard title.count >= 3 else { return }
+
+        logger.info("SESSION_NAMING: AI provided title '\(title)' for conversation \(conversationId.uuidString.prefix(8))")
+        conversationManager.renameConversation(conversation, to: title)
+    }
+
+    /// Fallback: auto-name from first user message when AI doesn't provide a marker.
+    /// Strips filler words, capitalizes, truncates to ~50 chars at word boundary.
+    func fallbackAutoName(conversationId: UUID) {
+        guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }),
+              conversation.title.hasPrefix("New Conversation") else { return }
+
+        /// Find first user message
+        guard let firstUserMessage = conversation.messages.first(where: { $0.isFromUser }),
+              !firstUserMessage.content.isEmpty else { return }
+
+        var name = firstUserMessage.content
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines).first ?? ""
+
+        /// Collapse whitespace
+        name = name.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+
+        /// Strip common filler phrases at the start
+        let fillerPrefixes = [
+            "hey ", "hi ", "hello ", "please ", "can you ", "could you ",
+            "i want to ", "i need to ", "i'd like to ", "let's ", "lets "
+        ]
+        for prefix in fillerPrefixes {
+            if name.lowercased().hasPrefix(prefix) {
+                name = String(name.dropFirst(prefix.count))
+                break
+            }
+        }
+
+        /// Capitalize first letter
+        if let first = name.first {
+            name = first.uppercased() + name.dropFirst()
+        }
+
+        /// Truncate to ~50 chars at word boundary
+        if name.count > 50 {
+            name = String(name.prefix(50))
+            if let lastSpace = name.lastIndex(of: " ") {
+                name = String(name[name.startIndex..<lastSpace])
+            }
+        }
+
+        guard name.count >= 3 else { return }
+
+        logger.info("SESSION_NAMING: Fallback auto-name '\(name)' for conversation \(conversationId.uuidString.prefix(8))")
+        conversationManager.renameConversation(conversation, to: name)
+    }
+
     /// Strip system-reminder tags from response content
     /// When Claude echoes back <system-reminder> content, we need to filter it out
     /// before showing to user or saving to conversation
-    private func stripSystemReminders(from content: String) -> String {
+    func stripSystemReminders(from content: String) -> String {
         /// Quick exit if no tags present
         if content.isEmpty || !content.contains("system-reminder") {
             return content
@@ -424,7 +452,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     private var hasAttemptedCapabilitiesFetch: [String: Bool] = [:]
 
     /// Lazy fetch model capabilities from provider API on first use This ensures the provider is fully initialized before we attempt to fetch capabilities Supports: - GitHub Copilot: /models endpoint with max_input_tokens - OpenAI: /v1/models endpoint - Gemini: models.list API with inputTokenLimit - Anthropic: Uses hardcoded values (API doesn't expose).
-    private func lazyFetchModelCapabilitiesIfNeeded(for model: String) async {
+    func lazyFetchModelCapabilitiesIfNeeded(for model: String) async {
         /// Determine provider type from model name.
         let providerType: String
         let modelLower = model.lowercased()
@@ -547,7 +575,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     }
 
     /// Manages multiple tool calls during streaming using index-based accumulation Handles partial tool call data across multiple chunks for robust streaming.
-    private class StreamingToolCalls {
+    class StreamingToolCalls {
         private var toolCalls: [StreamingToolCall] = []
 
         func update(toolCallsArray: [OpenAIToolCall]) {
@@ -586,7 +614,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
     /// Structured result from marker detection.
     private struct MarkerFlags {
-        /// REMOVED: detectedWorkflowComplete and detectedContinue (legacy markers)
         /// Only STOP marker remains for fatal error handling
         var detectedStop: Bool = false  // Agent Loop Escape
 
@@ -601,7 +628,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         let lower = rawResponse.lowercased()
 
         /// JSON FORMAT DETECTION: Only STOP marker remains (for fatal errors)
-        /// REMOVED: continue and complete markers (legacy - not in agent prompts)
         let jsonStopPattern = #"\{\s*"status"\s*:\s*"stop"\s*\}"#  // Agent Loop Escape
 
         // Agent Loop Escape - Detect stop status
@@ -628,6 +654,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         context.currentRoundLLMResponse = context.lastResponse
         if let fr = finishReason { context.lastFinishReason = fr }
 
+        /// Extract session naming marker from response and rename conversation
+        extractAndApplySessionName(from: rawResponse, conversationId: conversationId)
+
         /// Detect markers in the raw response.
         let markers = detectMarkers(in: rawResponse)
 
@@ -635,27 +664,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         context.detectedStopMarker = markers.detectedStop  // Agent Loop Escape (ONLY remaining marker)
 
         /// Check for stop status (agent is stuck and giving up).
+        /// Trust the model's decision - if it signals stop, respect it.
         if markers.detectedStop {
-            /// CRITICAL FIX: Block stop if there are incomplete todos
-            /// Agent sometimes says it will work, creates todos, then stops without executing
-            /// This prevents premature termination when work is still pending
-            let incompleteTodos = currentTodoList.filter { $0.status.lowercased() != "completed" }
-            
-            if !incompleteTodos.isEmpty {
-                logger.warning("BLOCKED_PREMATURE_STOP: Agent tried to stop with \(incompleteTodos.count) incomplete todos - converting to continue", metadata: [
-                    "conversationId": .string(conversationId.uuidString),
-                    "incompleteTodos": .stringConvertible(incompleteTodos.count),
-                    "totalTodos": .stringConvertible(currentTodoList.count)
-                ])
-                
-                /// Override stop with continue - agent must complete its work
-                context.detectedStopMarker = false
-                
-                /// Inject a strong reminder that work is incomplete
-                context.shouldContinue = true
-                return true  /// Continue workflow
-            }
-            
             logger.warning("WORKFLOW_STOPPED", metadata: [
                 "conversationId": .string(conversationId.uuidString),
                 "reason": .string("Agent signaled stop status - unable to proceed")
@@ -666,7 +676,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             return true
         }
 
-        /// REMOVED: Legacy WORKFLOW_COMPLETE marker check
         /// Workflow completion is now determined by the orchestrator flow diagram:
         /// - No tool calls + no active todos + workflow switch off = natural stop
         /// - Agent should not control completion via markers
@@ -674,257 +683,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         return false
     }
 
-    /// If the workflow naturally terminated but there are incomplete todos, inject a user message to force continuation.
-    /// Inject auto-continue directive if todos are incomplete
-    /// - Parameters:
-    ///   - context: Workflow execution context (modified in place)
-    ///   - conversationId: UUID of the conversation
-    ///   - model: Model name to determine proper message formatting (Claude vs GPT)
-    ///   - enableWorkflowMode: Whether workflow mode is enabled (only remove messages in workflow mode)
-    /// - Returns: true if directive was injected, false otherwise
-    private func injectAutoContinueIfTodosIncomplete(
-        context: inout WorkflowExecutionContext,
-        conversationId: UUID,
-        model: String,
-        enableWorkflowMode: Bool
-    ) async -> Bool {
-        /// REMOVED: Legacy workflow complete marker check (marker no longer exists)
-        
-        /// Respect retry limit to avoid infinite auto-continue loops.
-        if context.autoContinueAttempts >= autoContinueRetryLimit {
-            logger.debug("AUTO_CONTINUE: retry limit reached (", metadata: ["attempts": .stringConvertible(context.autoContinueAttempts)])
-            return false
-        }
+    // Auto-continue forcing removed (CLIO-style).
+    // The model decides when it's done by not calling tools.
+    // SAM respects that decision instead of overriding it.
 
-        /// Attempt to read the todo list via todo_operations.
-        if let readResult = await conversationManager.executeMCPTool(
-            name: "todo_operations",
-            parameters: ["operation": "read"],
-            conversationId: context.session?.conversationId,
-            isExternalAPICall: self.isExternalAPICall,
-            iterationController: self
-        ) {
-            logger.debug("AUTO_CONTINUE: Retrieved todo list for continuation check")
 
-            /// Parse todos and update currentTodoList.
-            let parsedTodos = parseTodoList(from: readResult.output.content)
-            currentTodoList = parsedTodos
 
-            let incomplete = parsedTodos.filter { $0.status.lowercased() != "completed" }
-            if !incomplete.isEmpty {
-                context.autoContinueAttempts += 1
-                logger.debug("AUTO_CONTINUE: \(incomplete.count) of \(parsedTodos.count) todos incomplete - injecting continue directive (attempt \(context.autoContinueAttempts))")
-
-                /// Include current status to help agent understand state
-                let inProgress = incomplete.filter { $0.status.lowercased() == "in-progress" }
-                let notStarted = incomplete.filter { $0.status.lowercased() == "not-started" }
-
-                /// GRADUATED AUTO-CONTINUE RESPONSES
-                /// Escalate from gentle reminder → stronger intervention → failure warning
-                /// This breaks the planning-confirmation loop where agent keeps saying "I'll start..."
-                /// 
-                /// CRITICAL: Use BOTH autoContinueAttempts AND planningOnlyIterations to determine level
-                /// If agent has been calling only planning tools (planningOnlyIterations > 0), escalate faster
-                let effectiveLevel = max(context.autoContinueAttempts, context.planningOnlyIterations)
-
-                let promptContent: String
-                
-                /// FIX #8: Check if alternation enforcement is needed
-                /// lastIterationHadToolResults = agent processed tool results last iteration
-                /// If true and agent responded without calling tools this iteration → needs alternation reminder
-                let needsAlternation = context.lastIterationHadToolResults
-
-                switch effectiveLevel {
-                case 1:
-                    /// First level: Standard reminder (current behavior)
-                    promptContent = buildAutoContinueLevel1(
-                        inProgress: inProgress,
-                        notStarted: notStarted,
-                        needsAlternation: needsAlternation
-                    )
-
-                case 2:
-                    /// Second level: Call out the pattern and demand action
-                    promptContent = buildAutoContinueLevel2(
-                        inProgress: inProgress,
-                        notStarted: notStarted,
-                        needsAlternation: needsAlternation
-                    )
-
-                default:
-                    /// Third+ level: Final warning - you're in a failure loop
-                    promptContent = buildAutoContinueLevel3(
-                        inProgress: inProgress,
-                        notStarted: notStarted,
-                        needsAlternation: needsAlternation
-                    )
-                }
-
-                logger.info("AUTO_CONTINUE: Level \(effectiveLevel) intervention injected", metadata: [
-                    "autoContinueAttempts": .stringConvertible(context.autoContinueAttempts),
-                    "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations),
-                    "effectiveLevel": .stringConvertible(effectiveLevel)
-                ])
-                
-                /// BUG FIX: Do NOT reset alternation flag here!
-                /// The flag needs to persist until the NEXT iteration reads it (line ~1583)
-                /// Resetting it here causes the flag to be false when continuation guidance is generated
-                /// Result: Wrong guidance is injected even when tools were called
-                /// The flag will be reset at the start of the next iteration after being used
-                /// context.lastIterationHadToolResults = false  // REMOVED - causes false "no tools" warnings
-
-                /// Create properly formatted message based on model type:
-                /// - Claude models: wrap in <system-reminder> tags, send as "user" role
-                /// - GPT models: no tags, send as "system" role
-                let reminderMessage = createSystemReminder(content: promptContent, model: model)
-
-                /// CRITICAL FIX: Store in pendingAutoContinueMessage instead of ephemeralMessages
-                /// The bug was: message was appended to ephemeral, then `continue` goes to next iteration,
-                /// which immediately clears ephemeral before the LLM can see it!
-                /// Now: Store in pending field, inject at START of next iteration AFTER clearing ephemeral
-                context.pendingAutoContinueMessage = reminderMessage
-                logger.info("AUTO_CONTINUE: Stored intervention in pendingAutoContinueMessage (will be injected at start of next iteration)")
-
-                /// CRITICAL FIX FOR INFINITE LOOP BUG:
-                /// When auto-continue triggers after {"status":"stop"}, the agent's PREVIOUS assistant message
-                /// is still in the conversation. When the agent sees both its own previous response AND the
-                /// auto-continue reminder, it interprets this as "continue from where I was" and REPEATS
-                /// the same message verbatim, causing an infinite loop.
-                ///
-                /// FIX: Remove the last assistant message from the conversation before continuing.
-                /// This ensures the agent only sees the reminder, not its own previous output.
-                ///
-                /// IMPORTANT: Only remove messages when workflow mode is enabled. In normal chat mode,
-                /// users expect messages to persist even with incomplete todos.
-                if enableWorkflowMode {
-                    if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }),
-                       let messageBus = conversation.messageBus {
-                        /// Find and remove the last assistant message
-                        let messages = messageBus.messages
-                        if let lastAssistant = messages.last(where: { !$0.isFromUser }) {
-                            messageBus.removeMessage(id: lastAssistant.id)
-                            logger.info("AUTO_CONTINUE: Removed last assistant message to prevent infinite loop (workflow mode)", metadata: [
-                                "messageId": .string(lastAssistant.id.uuidString),
-                                "contentPreview": .string(String(lastAssistant.content.prefix(100)))
-                            ])
-                        }
-                    }
-                } else {
-                    logger.debug("AUTO_CONTINUE: Keeping message visible (workflow mode disabled)")
-                }
-
-                return true
-            } else {
-                logger.debug("AUTO_CONTINUE: No incomplete todos found - not injecting")
-            }
-        } else {
-            logger.debug("AUTO_CONTINUE: Failed to read todo list via manage_todo_list")
-        }
-
-        return false
-    }
-
-    // MARK: - Graduated Auto-Continue Response Builders
-
-    /// Level 1: Action-forcing reminder - execute work and mark complete
-    /// Used on first auto-continue attempt
-    /// CRITICAL: Must explicitly instruct todo completion to break the loop
-    private func buildAutoContinueLevel1(inProgress: [TodoItem], notStarted: [TodoItem], needsAlternation: Bool) -> String {
-        var prompt = ""
-        
-        /// FIX #8: Alternation enforcement - remind agent to use tools when they responded with text only
-        if needsAlternation {
-            prompt += "ALTERNATION REQUIRED: Your last iteration processed tool results. This iteration you MUST call tools to continue work.\n\n"
-        }
-        
-        if let firstTask = inProgress.first ?? notStarted.first {
-            prompt += "WORKFLOW REMINDER: Execute your current task and mark it complete.\n\n"
-            prompt += "Current task: \"\(firstTask.title)\""
-            if !firstTask.description.isEmpty {
-                prompt += "\nDescription: \(firstTask.description)"
-            }
-            prompt += "\n\nYou must do 2 things:\n"
-            prompt += "1. Execute the work using appropriate tools (web research, file operations, etc.)\n"
-            prompt += "2. Mark this todo as completed using: todo_operations(operation: \"update\", todoUpdates: [{\"id\": \(firstTask.id), \"status\": \"completed\"}])\n\n"
-            prompt += "Do both steps NOW. Do not just describe what you'll do - actually do it."
-            return prompt
-        }
-
-        prompt += "WORKFLOW REMINDER: Complete your current task.\n\n"
-        prompt += "You must:\n"
-        prompt += "1. Execute the work using appropriate tools\n"
-        prompt += "2. Mark the todo as completed using todo_operations\n\n"
-        prompt += "Do both steps NOW."
-        return prompt
-    }
-
-    /// Level 2: Stronger intervention - you're in a loop, break it now
-    /// Used on second auto-continue attempt
-    private func buildAutoContinueLevel2(inProgress: [TodoItem], notStarted: [TodoItem], needsAlternation: Bool) -> String {
-        var prompt = "WARNING: Planning loop detected. You keep describing your plan without executing.\n\n"
-        
-        /// FIX #8: Alternation enforcement - remind agent to use tools when they responded with text only
-        if needsAlternation {
-            prompt += "ALTERNATION VIOLATION: Your last iteration processed tool results. You responded with text only. You MUST call tools this iteration.\n\n"
-        }
-        
-        prompt += "STOP: Outlining steps, restating plans, talking about what you'll do\n"
-        prompt += "START: Actually calling tools and completing work\n\n"
-
-        if let firstTask = inProgress.first ?? notStarted.first {
-            prompt += "Your task: \"\(firstTask.title)\"\n\n"
-            prompt += "Required actions:\n"
-            prompt += "1. Call work tool (research, file operations, etc.) - get actual results\n"
-            prompt += "2. Call todo_operations(operation: \"update\", todoUpdates: [{\"id\": \(firstTask.id), \"status\": \"completed\"}])\n\n"
-            prompt += "Your NEXT response must contain tool calls, not explanations."
-        } else {
-            prompt += "Required actions:\n"
-            prompt += "1. Call work tool - get actual results\n"
-            prompt += "2. Call todo_operations to mark complete\n\n"
-            prompt += "Your NEXT response must contain tool calls, not explanations."
-        }
-
-        return prompt
-    }
-
-    /// Level 3: Final warning - last chance before failure
-    /// Used on third+ auto-continue attempt
-    private func buildAutoContinueLevel3(inProgress: [TodoItem], notStarted: [TodoItem], needsAlternation: Bool) -> String {
-        var prompt = "CRITICAL: You are failing to make progress. This is your final warning.\n\n"
-        
-        /// FIX #8: Alternation enforcement - remind agent to use tools when they responded with text only
-        if needsAlternation {
-            prompt += "ALTERNATION FAILURE: You processed tool results, then responded with text only. You MUST alternate: tool → data → tool → data.\n\n"
-        }
-        
-        prompt += "FAILURE PATTERN DETECTED:\n"
-        prompt += "- You describe plans but don't execute\n"
-        prompt += "- You outline steps but don't call tools\n"
-        prompt += "- You talk about todos but don't mark them complete\n\n"
-        prompt += "TWO OPTIONS:\n\n"
-        prompt += "OPTION 1 - Execute now:\n"
-
-        if let firstTask = inProgress.first ?? notStarted.first {
-            prompt += "Task: \"\(firstTask.title)\"\n"
-            prompt += "Actions required:\n"
-            prompt += "  a) Call work tool (research, files, etc.)\n"
-            prompt += "  b) Call todo_operations(operation: \"update\", todoUpdates: [{\"id\": \(firstTask.id), \"status\": \"completed\"}])\n"
-            prompt += "Do this NOW. Not later. Not after explaining. NOW.\n\n"
-        } else {
-            prompt += "  a) Call work tool\n"
-            prompt += "  b) Call todo_operations to mark complete\n"
-            prompt += "Do this NOW.\n\n"
-        }
-
-        prompt += "OPTION 2 - Stop gracefully:\n"
-        prompt += "If you cannot execute, emit: {\"status\":\"stop\"}\n"
-        prompt += "This ends the workflow and explains the blocker to the user.\n\n"
-        prompt += "Choose one option NOW. This is not negotiable."
-
-        return prompt
-    }
-
-    /// Container for ALL workflow state during autonomous execution This struct provides a single source of truth for workflow state, enabling unified handling of both streaming and non-streaming paths.
     private struct WorkflowExecutionContext {
         // MARK: - Core State
 
@@ -950,12 +714,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         /// LLM response text for current iteration.
         var currentRoundLLMResponse: String?
-
-        /// DEPRECATED: Thinking steps from think tool (if any) for current iteration.
-        var currentRoundThinkingSteps: [String]?
-
-        /// Structured thinking captured from LLM (Phase 1 enhancement).
-        var currentRoundStructuredThinking: [ThinkingStep]?
 
         // MARK: - Workflow History
 
@@ -992,8 +750,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// When true: agent processed tool data last iteration and should call tools THIS iteration
         var lastIterationHadToolResults: Bool
 
-        /// Whether agent has been warned about stop status option.
-        var hasSeenStopStatusGuidance: Bool
+        /// Fingerprints of all tool calls executed in this workflow (tool_name + sorted_args hash).
+        /// Used to detect when the model calls the same tools with the same arguments repeatedly.
+        var previousToolCallSignatures: Set<String>
+
+        /// Count of consecutive iterations where ALL tool calls were duplicates.
+        var duplicateToolCallCount: Int
 
         // MARK: - Continuation Status
 
@@ -1004,7 +766,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         var continuationToolCalls: [ToolCall]?
 
         /// Detected internal markers from the raw LLM response (set BEFORE filtering).
-        /// REMOVED: Legacy workflow marker fields
         /// These markers are deprecated and no longer used
         /// Continuation is controlled by orchestrator flow diagram
         var detectedStopMarker: Bool  // Agent Loop Escape
@@ -1061,25 +822,15 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Reason for workflow completion (if shouldContinue is false).
         var completionReason: CompletionReason?
 
-    /// Number of auto-continue injections attempted for this workflow.
-    var autoContinueAttempts: Int
+    /// Number of premature stop retries (CLIO-style: nudge once on empty response after tool use).
+    var prematureStopRetries: Int
 
-    /// Number of consecutive iterations where ONLY planning tools (memory_operations, think) were called
-    /// Used to escalate intervention when agent is stuck in planning loop
-    var planningOnlyIterations: Int
+    /// Number of todo continuation nudges (when AI stops with incomplete todos).
+    var todoNudgeRetries: Int
 
-    /// Pending auto-continue message to inject at start of NEXT iteration
-    /// This solves the bug where auto-continue was injected then immediately cleared
-    /// The message is set at end of iteration N, then injected into ephemeral at start of N+1
-    var pendingAutoContinueMessage: OpenAIChatMessage?
-
-    /// Alternation violation detected (agent responded without tool calls)
-    /// Per orchestrator.txt: Set when finish_reason != "tool_calls"
-    var alternationViolationDetected: Bool
-
-    /// Pending alternation reminder to inject at start of NEXT iteration (if workflow continues)
-    /// Reminds agent that they MUST use tools, not just respond with text
-    var pendingAlternationReminder: OpenAIChatMessage?
+    /// Pending todo nudge message to inject at the start of the next iteration.
+    /// Stored here because ephemeral messages are cleared at iteration start.
+    var pendingTodoNudgeMessage: OpenAIChatMessage?
 
         // MARK: - Lifecycle
 
@@ -1101,8 +852,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             self.currentRoundToolResults = [:]
             self.currentRoundStartTime = Date()
             self.currentRoundLLMResponse = nil
-            self.currentRoundThinkingSteps = nil
-            self.currentRoundStructuredThinking = nil
 
             /// Workflow history.
             self.internalMessages = []
@@ -1116,14 +865,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// Agent Loop Escape Route.
             self.toolFailureTracking = [:]
             self.lastIterationToolNames = []
-            self.lastIterationHadToolResults = false  // FIX #8: Initialize alternation tracking
-            self.hasSeenStopStatusGuidance = false
+            self.lastIterationHadToolResults = false
+            self.previousToolCallSignatures = []
+            self.duplicateToolCallCount = 0
 
             /// Continuation status.
             self.useContinuationResponse = false
             self.continuationToolCalls = nil
 
-            /// REMOVED: Legacy workflow marker initialization
             self.detectedStopMarker = false  // Agent Loop Escape
 
             /// GitHub Copilot session state.
@@ -1147,11 +896,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// Workflow control.
             self.shouldContinue = true
             self.completionReason = nil
-            self.autoContinueAttempts = 0
-            self.planningOnlyIterations = 0
-            self.pendingAutoContinueMessage = nil
-            self.alternationViolationDetected = false
-            self.pendingAlternationReminder = nil
+            self.prematureStopRetries = 0
+            self.todoNudgeRetries = 0
+            self.pendingTodoNudgeMessage = nil
         }
     }
     /// Validates and executes a phase transition.
@@ -1172,8 +919,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             iterationNumber: context.iteration,
             toolCalls: context.currentRoundToolCalls,
             toolResults: context.currentRoundToolResults,
-            thinkingSteps: context.currentRoundThinkingSteps,
-            structuredThinking: context.currentRoundStructuredThinking,
             llmResponseText: context.currentRoundLLMResponse,
             responseStatus: responseStatus,
             metadata: metadata,
@@ -1198,8 +943,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         context.currentRoundToolResults = [:]
         context.currentRoundStartTime = Date()
         context.currentRoundLLMResponse = nil
-        context.currentRoundThinkingSteps = nil
-        context.currentRoundStructuredThinking = nil
 
         /// Agent Loop Escape - Track tools used in this iteration
         context.lastIterationToolNames = Set(round.toolCalls.map { $0.name })
@@ -1209,126 +952,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// It will be reset at START of next iteration after check completes
     }
 
-    // MARK: - Helper Methods
 
-    /// Parse thinking steps from think tool execution results Extracts structured thinking from the think tool's output, including: - Reasoning (analysis and problem understanding) - Approach (planned solution steps) - Risks (potential issues and mitigation) - Parameters: - executionResults: Array of tool execution results from current iteration - Returns: Array of thinking step strings, or nil if no think tool was executed.
-    private func parseThinkingSteps(from executionResults: [ToolExecution]) -> [String]? {
-        /// Find think tool execution.
-        guard let thinkExecution = executionResults.first(where: { $0.toolName == "think" }) else {
-            return nil
-        }
 
-        /// Extract result text.
-        let thinkResult = thinkExecution.result
-
-        /// Parse structured thinking sections if present.
-        var thinkingSteps: [String] = []
-
-        /// Look for structured sections in think tool output Common patterns from ThinkTool.swift output: - "Reasoning: ..." or "Analysis: ..." - "Approach: ..." or "Solution: ..." - "Risks: ..." or "Potential Issues: ...".
-
-        let sections = [
-            ("Reasoning", "reasoning"),
-            ("Analysis", "analysis"),
-            ("Approach", "approach"),
-            ("Solution", "solution"),
-            ("Plan", "plan"),
-            ("Risks", "risks"),
-            ("Potential Issues", "issues"),
-            ("Concerns", "concerns")
-        ]
-
-        for (sectionName, _) in sections {
-            if let sectionStart = thinkResult.range(of: "\(sectionName):", options: .caseInsensitive) {
-                let startIndex = sectionStart.upperBound
-                var sectionContent = String(thinkResult[startIndex...])
-
-                /// Find end of section (next section marker or end of string).
-                for (nextSection, _) in sections {
-                    if let nextSectionRange = sectionContent.range(of: "\n\(nextSection):", options: .caseInsensitive) {
-                        sectionContent = String(sectionContent[..<nextSectionRange.lowerBound])
-                        break
-                    }
-                }
-
-                /// Clean up and add to thinking steps.
-                let cleaned = sectionContent.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !cleaned.isEmpty {
-                    thinkingSteps.append("\(sectionName): \(cleaned)")
-                }
-            }
-        }
-
-        /// If no structured sections found, capture entire think output as single step.
-        if thinkingSteps.isEmpty {
-            let cleaned = thinkResult.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !cleaned.isEmpty {
-                thinkingSteps.append(cleaned)
-            }
-        }
-
-        return thinkingSteps.isEmpty ? nil : thinkingSteps
-    }
-
-    /// Capture structured thinking from LLM response and tool executions Creates ThinkingStep objects with metadata for transparency and debugging.
-    private func captureStructuredThinking(
-        llmResponse: String?,
-        executionResults: [ToolExecution],
-        model: String
-    ) -> [ThinkingStep]? {
-        var thinkingSteps: [ThinkingStep] = []
-
-        /// 1.
-        if let thinkExecution = executionResults.first(where: { $0.toolName == "think" }) {
-            let thinkResult = thinkExecution.result.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if !thinkResult.isEmpty {
-                let thinkingStep = ThinkingStep(
-                    text: thinkResult,
-                    timestamp: Date(),
-                    tokens: nil,
-                    metadata: [
-                        "source": "think_tool",
-                        "model": model,
-                        "toolName": "think"
-                    ]
-                )
-                thinkingSteps.append(thinkingStep)
-            }
-        }
-
-        /// 2.
-        if let response = llmResponse, !response.isEmpty {
-            /// Look for common reasoning patterns in LLM responses.
-            let reasoningPatterns = [
-                "Let me think about",
-                "I need to analyze",
-                "First, I'\''ll",
-                "My approach will be",
-                "To solve this"
-            ]
-
-            let hasReasoningPattern = reasoningPatterns.contains { pattern in
-                response.localizedCaseInsensitiveContains(pattern)
-            }
-
-            /// Only capture if response shows explicit reasoning (not just tool calls).
-            if hasReasoningPattern && response.count > 50 && response.count < 2000 {
-                let thinkingStep = ThinkingStep(
-                    text: response,
-                    timestamp: Date(),
-                    tokens: nil,
-                    metadata: [
-                        "source": "llm_reasoning",
-                        "model": model,
-                        "implicit": "true"
-                    ]
-                )
-                thinkingSteps.append(thinkingStep)
-            }
-        }
-
-        return thinkingSteps.isEmpty ? nil : thinkingSteps
-    }
 
     /// Filter internal messages based on workflow round quality to keep context clean This removes messages from failed/error rounds while preserving high-value content.
     private func filterInternalMessagesByRoundQuality(
@@ -1428,9 +1053,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             total + round.toolCalls.filter { $0.success }.count
         }
         let failedTools = totalToolCalls - successfulTools
-        let thinkingRounds = context.workflowRounds.filter { round in
-            round.thinkingSteps != nil && !(round.thinkingSteps?.isEmpty ?? true)
-        }.count
         let errorRounds = context.workflowRounds.filter { $0.responseStatus.contains("error") }.count
 
         let metrics = WorkflowMetrics(
@@ -1441,7 +1063,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             totalToolCalls: totalToolCalls,
             successfulToolCalls: successfulTools,
             failedToolCalls: failedTools,
-            thinkingRounds: thinkingRounds,
+            thinkingRounds: 0,
             errorRounds: errorRounds,
             completionReason: context.completionReason.map { "\($0)" } ?? "unknown"
         )
@@ -1623,115 +1245,47 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// Clear all ephemeral messages (no preservation needed)
             context.ephemeralMessages.removeAll()
 
-            /// CRITICAL: Inject pending auto-continue message from graduated intervention system
-            /// This message was set at the END of the previous iteration by injectAutoContinueIfTodosIncomplete()
-            /// and must be injected FIRST (before iteration status) to ensure agent sees it
-            if let pendingMessage = context.pendingAutoContinueMessage {
+            /// Inject pending todo nudge message from previous iteration.
+            /// Must happen AFTER clearing ephemeral messages so the nudge survives the clear.
+            if let pendingMessage = context.pendingTodoNudgeMessage {
                 context.ephemeralMessages.append(pendingMessage)
-                context.pendingAutoContinueMessage = nil  // Clear after injection
-                logger.info("GRADUATED_INTERVENTION: Injected pending auto-continue message from previous iteration")
+                context.pendingTodoNudgeMessage = nil
+                logger.info("TODO_NUDGE: Injected pending todo nudge message into ephemeral (survived clear)")
             }
 
-            /// UNIVERSAL CONTINUATION GUIDANCE: Help agent understand what to do next
-            /// This addresses the alternation problem more intelligently than forcing tool calls
-            /// Agent needs different guidance based on what happened in the previous iteration
-            ///
-            /// CRITICAL FIX: Skip continuation guidance on iteration 1
-            /// There IS NO previous iteration to give guidance about!
-            /// Injecting false "no tools" warning on iteration 1 confuses agent before it even starts
+            /// Active todo guard: when incomplete todos exist, inject a reminder
+            /// requiring the agent to include a todo_operations tool call in its response.
+            /// This keeps the workflow loop alive (tool_calls -> continue looping).
             if context.iteration > 0 {
-                let hadToolsLastIteration = context.lastIterationHadToolResults
-                
-                /// Check if there are incomplete todos that need workflow discipline
-                let hasIncompleteTodos = !currentTodoList.filter { $0.status.lowercased() != "completed" }.isEmpty
-                
-                let continuationGuidance: String
-            
-            if hasIncompleteTodos {
-                /// When todos exist, enforce strict todo workflow discipline
-                if hadToolsLastIteration {
-                    continuationGuidance = """
-                    WORKFLOW GUIDANCE (TODO MODE):
-                    You have incomplete todos and just executed tools.
-                    
-                    MANDATORY TODO WORKFLOW:
-                    1. Before doing work → Mark todo as "in-progress" using todo_operations
-                    2. Do the actual work (tell story, write content, etc.)
-                    3. After completing work → Mark todo as "completed" using todo_operations
-                    
-                    NEVER skip marking todos in-progress before starting work.
-                    NEVER skip marking todos completed after finishing work.
-                    Do NOT provide multiple text responses without tool calls between them.
-                    """
-                } else {
-                    continuationGuidance = """
-                    CRITICAL WORKFLOW GUIDANCE (TODO MODE):
-                    You have incomplete todos but didn't use tools in your last iteration.
-                    
-                    This is ONLY acceptable if you just answered the user's question.
-                    Otherwise, you MUST follow the todo workflow:
-                    
-                    1. Mark next todo as "in-progress" using todo_operations
-                    2. Do the work for that todo
-                    3. Mark todo as "completed" using todo_operations
-                    
-                    Text-only responses are NOT acceptable when todos remain.
-                    """
+                let todoStats = TodoManager.shared.getProgressStatistics(for: conversationId.uuidString)
+                let incompleteTodos = todoStats.notStartedTodos + todoStats.inProgressTodos
+                if incompleteTodos > 0 && todoStats.totalTodos > 0 {
+                    context.ephemeralMessages.append(createSystemReminder(
+                        content: "[SYSTEM: You have \(incompleteTodos) incomplete todo items remaining. For each todo: deliver the content (write the text, code, analysis, etc.) AND include a todo_operations tool call to mark it complete and start the next one. Both content AND tool call must be in the same response. Responding without a tool call will terminate the workflow.]",
+                        model: model
+                    ))
+                    logger.debug("TODO_GUARD: Injected active todo reminder (\(incompleteTodos) incomplete)")
                 }
-            } else if hadToolsLastIteration {
-                /// No todos - original guidance for tool-to-response flow
-                /// CRITICAL FIX: Prevent tool call loops by emphasizing result processing
-                continuationGuidance = """
-                WORKFLOW GUIDANCE:
-                Your previous iteration executed tools and received results.
-                
-                MANDATORY NEXT STEPS:
-                1. REVIEW what data the tools just gave you
-                2. ANALYZE the data to address the user's specific request
-                3. If you have enough data to COMPLETE the user's request → Process it and respond
-                4. Only if the data is incomplete → Use DIFFERENT tools to get more information
-                
-                CRITICAL RULES:
-                - Do NOT repeat a tool call that already succeeded
-                - Do NOT call the same operation on the same URL/file again
-                - Calling a tool twice with identical parameters gives identical results
-                - ALWAYS analyze and process the data you received before responding
-                - Don't just summarize - extract, organize, and present what the user asked for
-                
-                The user asked you to do something specific. Complete that task with the data you have.
-                """
-            } else {
-                /// No todos, no tools - suspicious unless answering user
-                continuationGuidance = """
-                CRITICAL WORKFLOW GUIDANCE:
-                Your previous iteration did NOT include any tool execution.
-                
-                If you already answered the user's question → Use tools for follow-up work
-                If you need to do work → You MUST use tools (don't just talk about it)
-                
-                Text-only responses are ONLY acceptable when directly answering the user.
-                """
-            }
-            
-            let guidanceMessage = createSystemReminder(content: continuationGuidance, model: model)
-            context.ephemeralMessages.append(guidanceMessage)
-            logger.debug("CONTINUATION_GUIDANCE: Injected context-aware guidance (hadTools=\(hadToolsLastIteration))")
-            logger.debug("CONTINUATION_GUIDANCE: Guidance content: \(continuationGuidance.prefix(200))...")
-            logger.debug("CONTINUATION_GUIDANCE: ephemeralMessages now has \(context.ephemeralMessages.count) messages")
-
-            /// BUG FIX: Reset alternation flag AFTER using it to generate guidance
-            /// This ensures the flag persists across iterations so continuation guidance can be accurate
-            /// Flag will be set back to true when tools are executed in this iteration (line ~2182)
-            context.lastIterationHadToolResults = false
-            } else {
-                /// ITERATION 1: No previous iteration, no continuation guidance needed
-                /// Agent is starting fresh - let the system prompt guide it
-                logger.debug("CONTINUATION_GUIDANCE: Skipped for iteration 1 (no previous iteration)")
             }
 
-            /// Add iteration status (always present)
-            let iterationContent = "ITERATION STATUS: Currently on iteration \(context.iteration + 1). Maximum iterations: \(context.maxIterations)."
-            context.ephemeralMessages.append(createSystemReminder(content: iterationContent, model: model))
+            /// Context-aware continuation for non-first iterations
+            if context.iteration > 0 {
+                let hasToolResults = context.toolsExecutedInWorkflow
+                let iterationCount = context.iteration
+                let nudge: String
+                if hasToolResults && iterationCount >= 3 {
+                    // Model has been going for several rounds with tools - nudge hard toward synthesis
+                    nudge = "You have gathered sufficient data. Present your findings to the user now."
+                } else if hasToolResults {
+                    nudge = "Continue working on the task."
+                } else {
+                    nudge = "Continue working on the task."
+                }
+                context.ephemeralMessages.append(createSystemReminder(
+                    content: nudge,
+                    model: model
+                ))
+            }
 
             do {
                 /// LLM_CALL_START - Track LLM request initiation.
@@ -1963,7 +1517,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                 /// Note: Iteration response tracked in workflowRounds via currentRoundLLMResponse.
 
-                /// REMOVED: Do NOT add assistant responses to internalMessages
                 /// This violated Claude API's rule about alternating user/assistant messages
                 /// In delta-only mode, internalMessages should ONLY contain tool calls and tool results
                 /// Assistant responses are already in conversation.messages and will be sent via statefulMarker continuation
@@ -1990,117 +1543,77 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     break
                 }
 
-                /// If no tool calls, check if we should continue or stop naturally.
+                /// If no tool calls, check for premature stop or natural completion.
+                /// CLIO-style: model decides when it's done by not calling tools.
                 if context.lastFinishReason != "tool_calls" {
-                    /// ORCHESTRATOR FLOW (from orchestrator.txt diagram):
-                    /// After "Tools Called? NO":
-                    /// 1. Check for active todos → Set continue flag + add todo reminder
-                    /// 2. Check for workflow switch enabled → Set continue flag + add continue reminder
-                    /// 3. If continue flag set → Increment iteration and loop
-                    /// 4. Otherwise → Natural stop
                     
-                    /// REMOVED: Legacy workflow complete/continue marker checks
-                    /// These markers are not provided in agent prompts and should not be used
-                    /// The diagram flow relies solely on todo state and workflow switch
+                    /// Premature stop detection (matches CLIO WorkflowOrchestrator):
+                    /// If previous iterations executed tools AND current response is empty,
+                    /// this is likely a premature API stop, not a genuine final answer.
+                    if context.toolsExecutedInWorkflow && context.prematureStopRetries < maxPrematureStopRetries {
+                        let contentLength = context.lastResponse.count
+                        
+                        if contentLength == 0 {
+                            /// Empty response after active tool calling - nudge model to continue
+                            context.prematureStopRetries += 1
+                            logger.info("PREMATURE_STOP: Empty response after tool use - nudging (attempt \(context.prematureStopRetries)/\(maxPrematureStopRetries))")
+                            
+                            context.ephemeralMessages.append(createSystemReminder(
+                                content: "[SYSTEM: Your previous response ended without content. You were actively using tools and appear to have stopped mid-workflow. Please continue where you left off - review your recent tool results and proceed.]",
+                                model: model
+                            ))
+                            
+                            completeIteration(context: &context, responseStatus: "premature_stop_nudge")
+                            context.iteration += 1
+                            self.updateCurrentIteration(context.iteration)
+                            continue
+                        }
+                    }
+                    
+                    /// Incomplete todo detection: if AI stops with unfinished todos, nudge to continue.
+                    /// This prevents the pattern where AI creates a todo list then waits for user input.
+                    /// Uses pendingTodoNudgeMessage to survive ephemeral clear at iteration start.
+                    if context.toolsExecutedInWorkflow && context.todoNudgeRetries < maxTodoNudgeRetries {
+                        let todoStats = TodoManager.shared.getProgressStatistics(for: conversationId.uuidString)
+                        let incompleteTodos = todoStats.notStartedTodos + todoStats.inProgressTodos
 
-                    /// CRITICAL: Read fresh todo list state before workflow check
-                    /// currentTodoList may be stale if agent didn't call tools this iteration
-                    if currentTodoList.count > 0 {
-                        logger.debug("WORKFLOW_CHECK: Reading fresh todo state before continuation decision")
-                        if let freshTodoResult = await conversationManager.executeMCPTool(
-                            name: "todo_operations",
-                            parameters: ["operation": "read"],
-                            conversationId: context.session?.conversationId,
-                            isExternalAPICall: self.isExternalAPICall
-                        ) {
-                            let freshTodos = parseTodoList(from: freshTodoResult.output.content)
-                            currentTodoList = freshTodos
-                            logger.debug("WORKFLOW_CHECK: Fresh todo list read", metadata: [
-                                "totalTodos": .stringConvertible(freshTodos.count),
-                                "incompleteTodos": .stringConvertible(freshTodos.filter { $0.status != "completed" }.count)
-                            ])
-                        } else {
-                            logger.warning("WORKFLOW_CHECK: Failed to read fresh todo list - using cached state")
+                        if incompleteTodos > 0 && todoStats.totalTodos > 0 {
+                            context.todoNudgeRetries += 1
+                            logger.info("TODO_NUDGE: \(incompleteTodos) incomplete todos - nudging agent to continue (attempt \(context.todoNudgeRetries)/\(maxTodoNudgeRetries))")
+
+                            /// Store in pending field so it survives the ephemeral clear at iteration start.
+                            context.pendingTodoNudgeMessage = createSystemReminder(
+                                content: "[SYSTEM: You responded without any tool calls but have \(incompleteTodos) incomplete todo items. Your workflow will terminate unless you include tool calls. You MUST: 1) Output the deliverable content for the current todo (the actual work product), 2) Call todo_operations to mark it complete and start the next one. Both content AND tool call in the same response.]",
+                                model: model
+                            )
+
+                            /// Remove the last assistant message to prevent the AI from seeing
+                            /// its own previous output and repeating it verbatim.
+                            if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }),
+                               let messageBus = conversation.messageBus {
+                                let messages = messageBus.messages
+                                if let lastAssistant = messages.last(where: { !$0.isFromUser && !$0.isToolMessage }) {
+                                    messageBus.removeMessage(id: lastAssistant.id)
+                                    logger.info("TODO_NUDGE: Removed last assistant message to prevent repetition", metadata: [
+                                        "messageId": .string(lastAssistant.id.uuidString),
+                                        "contentPreview": .string(String(lastAssistant.content.prefix(80)))
+                                    ])
+                                }
+                            }
+
+                            completeIteration(context: &context, responseStatus: "todo_nudge")
+                            context.iteration += 1
+                            self.updateCurrentIteration(context.iteration)
+                            continue
                         }
                     }
 
-                    /// Check 1: Active todos exist?
-                    /// Per diagram: "Active Todo? → YES → Set Continue Flag + Add Todo Reminder"
-                    let incompleteTodoList = currentTodoList.filter { $0.status.lowercased() != "completed" }
-                    let hasIncompleteTodos = !incompleteTodoList.isEmpty
-                    var shouldContinueAfterChecks = false  // The "Continue Flag" from diagram
-                    
-                    /// DEBUG: Log todo state before decision
-                    logger.debug("WORKFLOW_CHECK_DEBUG: Checking for incomplete todos", metadata: [
-                        "totalTodos": .stringConvertible(currentTodoList.count),
-                        "incompleteTodos": .stringConvertible(incompleteTodoList.count),
-                        "hasIncompleteTodos": .stringConvertible(hasIncompleteTodos),
-                        "iteration": .stringConvertible(context.iteration)
-                    ])
-                    
-                    if hasIncompleteTodos {
-                        logger.debug("WORKFLOW_CHECK: Active todos detected - setting continue flag", metadata: [
-                            "incompleteTodos": .stringConvertible(currentTodoList.filter { $0.status.lowercased() != "completed" }.count),
-                            "iteration": .stringConvertible(context.iteration)
-                        ])
-                        
-                        /// DIAGRAM STEP: "Set Continue Flag"
-                        shouldContinueAfterChecks = true
-                        
-                        /// DIAGRAM STEP: "Add Todo Reminder to Continuation Message"
-                        /// Use the graduated intervention system to add reminder
-                        let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                        let injected = await injectAutoContinueIfTodosIncomplete(
-                            context: &context,
-                            conversationId: conversationId,
-                            model: model,
-                            enableWorkflowMode: enableWorkflowMode
-                        )
-                        
-                        if !injected {
-                            /// Could not inject intervention (retry limit reached)
-                            /// Clear continue flag - we can't continue without guidance
-                            logger.warning("WORKFLOW_WARNING: Could not inject todo intervention - clearing continue flag", metadata: [
-                                "autoContinueAttempts": .stringConvertible(context.autoContinueAttempts)
-                            ])
-                            shouldContinueAfterChecks = false
-                        }
-                    }
-
-                    /// Check 2: Workflow switch enabled?
-                    /// Per diagram: "Workflow Switch Enabled? → YES → Set Continue Flag + Add Continue Reminder"
-                    /// This is a fallback - if no todos but workflow mode is on, set continue flag
-                    if !shouldContinueAfterChecks {
-                        let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                        
-                        if enableWorkflowMode {
-                            logger.debug("WORKFLOW_CHECK: Workflow mode enabled - setting continue flag", metadata: [
-                                "iteration": .stringConvertible(context.iteration)
-                            ])
-                            shouldContinueAfterChecks = true
-                        }
-                    }
-
-                    /// DIAGRAM DECISION: "Continue Flag?"
-                    if shouldContinueAfterChecks {
-                        /// Flag is set - continue to next iteration
-                        logger.info("WORKFLOW_CONTINUING: Continue flag set - proceeding to next iteration", metadata: [
-                            "iteration": .stringConvertible(context.iteration),
-                            "reason": .string(hasIncompleteTodos ? "incomplete_todos" : "workflow_mode")
-                        ])
-                        completeIteration(context: &context, responseStatus: hasIncompleteTodos ? "auto_continue_todos" : "auto_continue_workflow")
-                        /// DIAGRAM STEP: "Increment Iteration"
-                        context.iteration += 1
-                        self.updateCurrentIteration(context.iteration)
-                        /// DIAGRAM STEP: "LOOP" (continue)
-                        continue
-                    }
-
-                    /// No continuation conditions met - natural stop
-                    logger.info("WORKFLOW_COMPLETE: Natural termination", metadata: [
+                    /// Model returned content with no tool calls - workflow is done.
+                    /// Trust the model's judgment (CLIO principle).
+                    logger.info("WORKFLOW_COMPLETE: Natural termination - model returned content without tool calls", metadata: [
                         "iteration": .stringConvertible(context.iteration),
                         "conversationId": .string(conversationId.uuidString),
-                        "reason": .string("no_continue_flag")
+                        "responseLength": .stringConvertible(context.lastResponse.count)
                     ])
                     completeIteration(context: &context, responseStatus: "natural_completion")
                     break
@@ -2125,71 +1638,52 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     completeIteration(context: &context, responseStatus: "unexpected_empty_tools")
                     break
                 }
-                
+
+                // MARK: - Duplicate tool call detection
+                // Generate normalized fingerprints for this batch of tool calls.
+                // Normalizes JSON (sorted keys, rounded floats) so re-ordered arguments match.
+                let currentSignatures = Set(actualToolCalls.map { toolCall -> String in
+                    "\(toolCall.name):\(Self.normalizeArguments(toolCall.arguments))"
+                })
+                let allDuplicate = !currentSignatures.isEmpty && currentSignatures.isSubset(of: context.previousToolCallSignatures)
+
+                if allDuplicate {
+                    context.duplicateToolCallCount += 1
+                    logger.warning("DUPLICATE_TOOL_CALLS: iteration \(context.iteration), consecutive=\(context.duplicateToolCallCount), tools=\(actualToolCalls.map { $0.name })")
+
+                    if context.duplicateToolCallCount >= 2 {
+                        // Model has called the same tools with same args 3+ times total.
+                        // Return cached results with a strong directive to stop calling tools.
+                        logger.error("DUPLICATE_LOOP_BREAK: Forcing stop after \(context.duplicateToolCallCount + 1) identical tool call batches")
+
+                        // Build synthetic tool results pointing back to earlier results.
+                        for toolCall in actualToolCalls {
+                            let cachedMessage = "[DUPLICATE CALL BLOCKED] You already called \(toolCall.name) with these exact arguments and received the result above. DO NOT call this tool again. Use the results you already have to compose your final response to the user NOW."
+
+                            let toolResultMessage = OpenAIChatMessage(
+                                role: "tool",
+                                content: cachedMessage,
+                                toolCallId: toolCall.id
+                            )
+                            context.internalMessages.append(toolResultMessage)
+                        }
+
+                        completeIteration(context: &context, responseStatus: "duplicate_loop_broken")
+                        continue  // Go to next iteration - model will see the directive
+                    }
+                } else {
+                    // New tool calls - reset duplicate counter and record signatures.
+                    context.duplicateToolCallCount = 0
+                }
+
+                // Record all signatures for future duplicate detection.
+                context.previousToolCallSignatures.formUnion(currentSignatures)
+
                 context.toolsExecutedInWorkflow = true
 
-                /// PLANNING LOOP DETECTION: Check if ANY work tools were called
-                /// If only planning tools (think, memory_operations with manage_todos) were called, don't reset counters
-                /// EXCEPTION: Marking a todo as complete indicates work was done, so treat it as progress
-                let workToolsCalled = actualToolCalls.filter { AgentOrchestrator.isWorkToolCall($0.name, arguments: $0.arguments) }
-                let todoCompletionCalls = actualToolCalls.filter { AgentOrchestrator.isTodoCompletionCall($0.name, arguments: $0.arguments) }
-                let onlyPlanningTools = workToolsCalled.isEmpty && todoCompletionCalls.isEmpty && !actualToolCalls.isEmpty
-
-                if onlyPlanningTools {
-                    /// Agent called tools but NONE were work tools AND no todos marked complete - this is a planning loop
-                    context.planningOnlyIterations += 1
-                    let toolNames = actualToolCalls.map { $0.name }.joined(separator: ", ")
-                    logger.warning("PLANNING_LOOP_DETECTED", metadata: [
-                        "iteration": .stringConvertible(context.iteration),
-                        "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations),
-                        "toolsCalled": .string(toolNames),
-                        "message": .string("Only planning tools called (no work tools, no todo completions) - NOT resetting autoContinueAttempts")
-                    ])
-
-                    /// CRITICAL FIX: Inject planning loop intervention even without [CONTINUE] marker
-                    /// Claude models often don't emit [CONTINUE] but keep calling planning tools in a loop
-                    /// If planningOnlyIterations > 3, inject intervention to break the loop
-                    if context.planningOnlyIterations > 3 {
-                        logger.warning("PLANNING_LOOP_INTERVENTION: Agent stuck in planning loop - injecting intervention", metadata: [
-                            "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations)
-                        ])
-
-                        let enableWorkflowMode = conversation?.settings.enableWorkflowMode ?? false
-                        let injected = await injectAutoContinueIfTodosIncomplete(
-                            context: &context,
-                            conversationId: conversationId,
-                            model: model,
-                            enableWorkflowMode: enableWorkflowMode
-                        )
-
-                        if injected {
-                            logger.info("PLANNING_LOOP_INTERVENTION_INJECTED: Intervention injected to break Claude planning loop", metadata: [
-                                "planningOnlyIterations": .stringConvertible(context.planningOnlyIterations),
-                                "autoContinueAttempts": .stringConvertible(context.autoContinueAttempts)
-                            ])
-                        }
-                    }
-                    /// DO NOT reset autoContinueAttempts - let it escalate
-                } else if !workToolsCalled.isEmpty || !todoCompletionCalls.isEmpty {
-                    /// Agent called at least one WORK tool OR marked todos complete - real progress is being made
-                    context.planningOnlyIterations = 0
-                    context.autoContinueAttempts = 0
-                    
-                    var progressDetails: [String] = []
-                    if !workToolsCalled.isEmpty {
-                        let workToolNames = workToolsCalled.map { $0.name }.joined(separator: ", ")
-                        progressDetails.append("work tools: \(workToolNames)")
-                    }
-                    if !todoCompletionCalls.isEmpty {
-                        progressDetails.append("marked \(todoCompletionCalls.count) todo(s) complete")
-                    }
-                    
-                    logger.debug("WORK_PROGRESS_MADE", metadata: [
-                        "iteration": .stringConvertible(context.iteration),
-                        "progress": .string(progressDetails.joined(separator: ", ")),
-                        "message": .string("Progress made - resetting counters")
-                    ])
-                }
+                /// Tool execution resets premature stop counter (agent is making progress).
+                context.prematureStopRetries = 0
+                context.todoNudgeRetries = 0
 
                 /// Execute all tool calls for this iteration.
                 /// UNIFIED PATH: Same scheduler for streaming + non-streaming.
@@ -2262,32 +1756,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 }
 
                 /// --- MARKER DETECTION INSIDE TOOL OUTPUTS (NON-STREAMING) ---
-                /// REMOVED: Legacy marker detection in tool outputs
                 /// Only STOP marker remains, and tools should not emit workflow control markers
                 /// Workflow completion is determined by orchestrator flow diagram
-
-                /// Capture thinking steps from think tool results.
-                if let thinkingSteps = parseThinkingSteps(from: executionResults) {
-                    context.currentRoundThinkingSteps = thinkingSteps
-                    logger.debug("THINKING_CAPTURED", metadata: [
-                        "iteration": .stringConvertible(context.iteration),
-                        "stepsCount": .stringConvertible(thinkingSteps.count)
-                    ])
-                }
-
-                /// Capture structured thinking for transparency and debugging.
-                if let structuredThinking = captureStructuredThinking(
-                    llmResponse: context.currentRoundLLMResponse,
-                    executionResults: executionResults,
-                    model: context.model
-                ) {
-                    context.currentRoundStructuredThinking = structuredThinking
-                    logger.debug("STRUCTURED_THINKING_CAPTURED", metadata: [
-                        "iteration": .stringConvertible(context.iteration),
-                        "thinkingSteps": .stringConvertible(structuredThinking.count),
-                        "sources": .string(structuredThinking.map { $0.metadata["source"] ?? "unknown" }.joined(separator: ", "))
-                    ])
-                }
 
                 /// TOOL_EXECUTION_BATCH_COMPLETE - Track completion of tool execution batch CRITICAL FIX: Count successful/failed tools using actual success field.
                 let successfulTools = executionResults.filter { $0.success }.count
@@ -2304,122 +1774,50 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// Also reset the flag from previous iteration now that we're executing tools again
                 context.lastIterationHadToolResults = true
 
-                /// ERROR ADAPTATION: If tools failed, inject guidance to think and adapt approach.
-                /// Agent Loop Escape - Track failures and provide escalating guidance
+                /// ERROR ADAPTATION: If tools failed, inject concise guidance.
+                /// Two levels: normal (fix your approach) and stuck (3+ consecutive failures).
                 if failedTools > 0 {
                     let failedToolDetails = executionResults.filter { !$0.success }
                         .map { "\($0.toolName): \($0.result)" }
                         .joined(separator: "\n")
 
-                    /// Track tool failures to detect stuck loops
+                    /// Track consecutive failures per tool
                     for execution in executionResults where !execution.success {
                         let toolName = execution.toolName
-                        if let existing = context.toolFailureTracking[toolName] {
-                            /// Same tool failing in consecutive iterations
-                            if existing.iteration == context.iteration - 1 {
-                                context.toolFailureTracking[toolName] = (context.iteration, existing.failureCount + 1)
-                            } else {
-                                /// Different iteration, reset count
-                                context.toolFailureTracking[toolName] = (context.iteration, 1)
-                            }
+                        if let existing = context.toolFailureTracking[toolName],
+                           existing.iteration == context.iteration - 1 {
+                            context.toolFailureTracking[toolName] = (context.iteration, existing.failureCount + 1)
                         } else {
-                            /// First failure for this tool
                             context.toolFailureTracking[toolName] = (context.iteration, 1)
                         }
                     }
 
-                    /// Check if any tool has failed 3+ times consecutively
                     let stuckTools = context.toolFailureTracking.filter { $0.value.failureCount >= 3 }
-                    let isStuck = !stuckTools.isEmpty
 
-                    /// Determine guidance level based on failure count
                     let errorGuidanceContent: String
-                    if isStuck {
-                        /// STRONG guidance - tool has failed 3+ times
+                    if !stuckTools.isEmpty {
                         let stuckToolNames = stuckTools.map { $0.key }.joined(separator: ", ")
-                        context.hasSeenStopStatusGuidance = true
                         errorGuidanceContent = """
-                        CRITICAL: TOOL FAILURE LOOP DETECTED
-
-                        The following tool(s) have failed 3+ consecutive times:
-                        \(stuckToolNames)
-
-                        \(failedTools) tool(s) failed in this iteration:
-                        \(failedToolDetails)
-
-                        YOU MUST TAKE DIFFERENT ACTION:
-                        1. DO NOT retry the same tool with the same parameters
-                        2. DO NOT continue if you cannot fix the problem
-                        3. You have TWO options:
-
-                        OPTION A: Try a completely different approach
-                        - Use a different tool
-                        - Change your strategy entirely
-                        - Break the problem down differently
-
-                        OPTION B: If you cannot proceed, signal stop
-                        - Emit: {"status": "stop"}
-                        - I will gracefully end the workflow
-                        - Explain to the user what you tried and why you're stuck
-
-                        Use the think tool NOW to decide which option to take.
+                        TOOL FAILURE LOOP: \(stuckToolNames) failed 3+ consecutive times.
+                        Failed: \(failedToolDetails)
+                        DO NOT retry the same tool with the same parameters.
+                        Either try a completely different approach or signal {"status": "stop"} if stuck.
                         """
-                    } else if !context.hasSeenStopStatusGuidance {
-                        /// STANDARD guidance - first time seeing stop status option
-                        context.hasSeenStopStatusGuidance = true
-                        errorGuidanceContent = """
-                        TOOL ERROR - THINK AND ADAPT
-
-                        \(failedTools) tool(s) failed:
-                        \(failedToolDetails)
-
-                        STOP and THINK:
-                        1. Why did the tool fail? (Read the error message carefully)
-                        2. What parameter should you change? (e.g., add overwrite=true, fix path, change operation)
-                        3. Should you try a different tool instead?
-                        4. Is this error unrecoverable?
-
-                        DO NOT retry the same tool call without changing something.
-                        DO NOT continue if you can't fix the problem.
-
-                        If you cannot proceed after trying alternatives, emit: {"status": "stop"}
-                        This will gracefully end the workflow so you can explain the issue to the user.
-
-                        Use the think tool now to plan your adaptation, OR signal stop if truly stuck.
-                        """
-                    } else {
-                        /// BRIEF guidance - agent has already seen stop status option
-                        errorGuidanceContent = """
-                        TOOL ERROR - ADAPT YOUR APPROACH
-
-                        \(failedTools) tool(s) failed:
-                        \(failedToolDetails)
-
-                        You must either:
-                        1. Try a different approach (different tool or parameters)
-                        2. Signal {"status": "stop"} if you cannot proceed
-
-                        DO NOT retry the same failed operation.
-                        """
-                    }
-
-                    /// VS CODE COPILOT PATTERN: Use XML tags for ALL models
-                    /// Send as user message to avoid consecutive assistant messages that violate Claude API
-                    /// CRITICAL: Use ephemeralMessages, NOT internalMessages, to prevent accumulation across iterations
-                    let wrappedGuidance = "<system-reminder>\n\(errorGuidanceContent)\n</system-reminder>"
-                    let errorGuidance = OpenAIChatMessage(role: "user", content: wrappedGuidance)
-                    context.ephemeralMessages.append(errorGuidance)
-
-                    if isStuck {
-                        logger.error("TOOL_FAILURE_LOOP_DETECTED", metadata: [
-                            "stuckTools": .string(stuckTools.map { "\($0.key):\($0.value.failureCount)" }.joined(separator: ", "))
+                        logger.error("TOOL_FAILURE_LOOP", metadata: [
+                            "stuckTools": .string(stuckToolNames)
                         ])
                     } else {
-                        logger.warning("ERROR_ADAPTATION_INJECTED: Added guidance for \(failedTools) failed tools")
+                        errorGuidanceContent = """
+                        TOOL ERROR: \(failedTools) tool(s) failed:
+                        \(failedToolDetails)
+                        Read the error, fix parameters or try a different tool. Do not retry unchanged.
+                        """
+                        logger.warning("TOOL_ERROR: \(failedTools) failed tools")
                     }
-                }
 
-                /// DISABLED - Intent extraction for planning visibility only Intent extraction through think tool is preserved for workflow planning visibility BUT we no longer execute via IntentProcessor - agent executes work directly via normal loop Reasoning: IntentProcessor.executeWorkflow() was never properly implemented - stepExecutor closure only emitted progress messages, didn't do actual work - resulted in "SUCCESS: Write..." messages but no actual content generation - agent is better at autonomous execution via normal tool call loop.
+                    let wrappedGuidance = "<system-reminder>\n\(errorGuidanceContent)\n</system-reminder>"
+                    context.ephemeralMessages.append(OpenAIChatMessage(role: "user", content: wrappedGuidance))
+                }
 
                 /// Add tool execution messages to internal tracking (NOT to conversation for UI) This keeps LLM context without polluting the UI display.
 
@@ -2462,8 +1860,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                 logger.debug("SUCCESS: Added \(executionResults.count) tool result messages to internal tracking (with size optimization)")
 
-                /// 6c: Add tool execution messages to conversation for persistence (Issue #2 fix)
-                /// This ensures tool cards appear in subagent conversations and API exports
+                /// 6c: Add tool execution messages to conversation for persistence
                 /// EXCEPTION: Skip user_collaboration - its result shouldn't appear as a tool card
                 /// CRITICAL: Use MessageBus for proper message management and performance
                 /// CRITICAL FIX: Skip if streaming (streaming path already created tool messages)
@@ -2525,20 +1922,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     context.ephemeralMessages.append(createSystemReminder(content: collaborationContent, model: model))
                 }
 
-                let hasThinkTool = executionResults.contains { $0.toolName == "think" }
-                let hasManageTodos = executionResults.contains {
-                    $0.toolName == "todo_operations" || $0.toolName == "manage_todo_list" || $0.toolName == "memory_operations"
-                }
-
-                if hasThinkTool || hasManageTodos {
-                    let planningToolsUsed = executionResults.filter {
-                        $0.toolName == "think" || $0.toolName == "todo_operations" || $0.toolName == "manage_todo_list" || $0.toolName == "memory_operations"
-                    }.map { $0.toolName }.joined(separator: ", ")
-
-                    logger.debug("PLANNING_INTERVENTION: Detected planning tools (\(planningToolsUsed)) - system message injection REMOVED (was causing GitHub Copilot 400 errors)")
-
-                }
-
                 /// Check if todo_operations, manage_todo_list or memory_operations was called and update current state.
                 var hasManageTodoList = false
                 for execution in executionResults {
@@ -2587,7 +1970,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// Use completeIteration() helper for consistent round tracking.
                 completeIteration(context: &context, responseStatus: context.hadErrors ? "error" : "success")
                 context.iteration += 1
-                        self.updateCurrentIteration(context.iteration)
+                self.updateCurrentIteration(context.iteration)
 
             } catch {
                 /// Check if this is a timeout error and enhance message for agent.
@@ -2709,6 +2092,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         )
 
         /// PTY sessions persist for conversation lifetime, not workflow lifetime Cleanup happens when conversation is closed or app exits.
+
+        /// Fallback auto-naming: if conversation is still unnamed after workflow, name from first user message
+        fallbackAutoName(conversationId: conversationId)
 
         return AgentResult(
             finalResponse: context.lastResponse,
@@ -2891,56 +2277,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     ])
                 }
 
-                /// Set up observer for image display notifications.
-                let imageObserver = ToolNotificationCenter.shared.observeImageDisplay { toolCallId, imagePaths, prompt, conversationId in
-                    /// Create SSE event for image display.
-                    let imageDisplayEvent: [String: Any] = [
-                        "type": "image_display",
-                        "toolCallId": toolCallId,
-                        "imagePaths": imagePaths,
-                        "prompt": prompt,
-                        "conversationId": conversationId?.uuidString ?? ""
-                    ]
-
-                    /// Serialize event data to JSON string.
-                    let eventJSON: String
-                    do {
-                        let jsonData = try JSONSerialization.data(withJSONObject: imageDisplayEvent, options: [])
-                        eventJSON = String(data: jsonData, encoding: .utf8) ?? "{}"
-                    } catch {
-                        eventJSON = "{\"error\": \"Failed to serialize event\"}"
-                    }
-
-                    /// Create custom chunk with special marker.
-                    let customChunk = ServerOpenAIChatStreamChunk(
-                        id: UUID().uuidString,
-                        object: "chat.completion.chunk",
-                        created: Int(Date().timeIntervalSince1970),
-                        model: model,
-                        choices: [
-                            OpenAIChatStreamChoice(
-                                index: 0,
-                                delta: OpenAIChatDelta(
-                                    role: nil,
-                                    content: "[SAM_EVENT:image_display]\(eventJSON)"
-                                ),
-                                finishReason: nil
-                            )
-                        ]
-                    )
-
-                    continuation.yield(customChunk)
-                    self.logger.debug("Emitted image_display SSE event", metadata: [
-                        "toolCallId": .string(toolCallId),
-                        "imagePaths": .string(imagePaths.joined(separator: ", "))
-                    ])
-                }
-
                 defer {
                     /// Clean up observers when stream ends.
                     ToolNotificationCenter.shared.removeObserver(observer)
                     ToolNotificationCenter.shared.removeObserver(responseObserver)
-                    ToolNotificationCenter.shared.removeObserver(imageObserver)
                 }
 
                 do {
@@ -2972,9 +2312,40 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
     // MARK: - Helper Methods
 
+    /// Normalize tool call arguments for duplicate detection.
+    /// Sorts dictionary keys recursively and rounds floats to 2 decimal places
+    /// so that re-ordered JSON or floating point drift produces identical fingerprints.
+    static func normalizeArguments(_ args: [String: Any]) -> String {
+        func normalize(_ value: Any) -> Any {
+            if let dict = value as? [String: Any] {
+                return dict.mapValues { normalize($0) }
+            } else if let array = value as? [Any] {
+                return array.map { normalize($0) }
+            } else if let num = value as? Double {
+                // Round to 2 decimal places to absorb floating point drift
+                return (num * 100).rounded() / 100
+            } else if let num = value as? NSNumber {
+                let d = num.doubleValue
+                return (d * 100).rounded() / 100
+            }
+            return value
+        }
+        let normalized = normalize(args)
+        if let data = try? JSONSerialization.data(
+            withJSONObject: normalized,
+            options: [.sortedKeys]
+        ), let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        // Fallback to sorted key-value pairs
+        return args.sorted(by: { $0.key < $1.key })
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: ",")
+    }
+
     // MARK: - Universal Tool Call Parser
 
-    private func extractMLXToolCalls(from content: String) -> ([ToolCall], String) {
+    func extractMLXToolCalls(from content: String) -> ([ToolCall], String) {
         /// Use universal extractor.
         let (extractedCalls, cleanedContent, detectedFormat) = toolCallExtractor.extract(from: content)
 
@@ -3023,4138 +2394,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
     // MARK: - Context Management
 
-    /// Automatically retrieve relevant context before LLM calls Combines pinned messages + semantic memory search for comprehensive context This ensures agents never lose critical information like initial requests or key decisions.
-    @MainActor
-    private func retrieveRelevantContext(
-        conversation: ConversationModel,
-        currentUserMessage: String,
-        iteration: Int = 0,
-        caller: String = "UNKNOWN",
-        retrievedMessageIds: inout Set<UUID>
-    ) async -> String? {
-        logger.debug("AUTO_RETRIEVAL: Starting automatic context retrieval for conversation \(conversation.id) iteration \(iteration) - CALLED FROM: \(caller)")
-
-        var contextParts: [String] = []
-
-        /// Extract all pinned messages (guaranteed critical context) CRITICAL FIX Exclude messages that match the CURRENT user request ROOT CAUSE: For new conversations, current user message gets auto-pinned (first 3 messages) PROBLEM: Phase 1 retrieves current message as "past context" → LLM sees it twice → thinks already addressed SOLUTION: Only retrieve pinned messages that are NOT the current request.
-        let pinnedMessages = conversation.messages.filter {
-            $0.isPinned && $0.content != currentUserMessage
-        }
-        if !pinnedMessages.isEmpty {
-            logger.debug("AUTO_RETRIEVAL: Found \(pinnedMessages.count) pinned messages (excluding current request)")
-
-            var pinnedContext = "=== CRITICAL CONTEXT (Pinned Messages) ===\n"
-            for (index, msg) in pinnedMessages.enumerated() {
-                let role = msg.isFromUser ? "USER" : "ASSISTANT"
-                pinnedContext += "\n[\(role) Message \(index + 1) - Pinned, Importance: \(String(format: "%.2f", msg.importance))]:\n\(msg.content)\n"
-            }
-            contextParts.append(pinnedContext)
-        }
-
-        /// Semantic search for relevant memories (automatic RAG).
-        /// CRITICAL FIX: Use effectiveScopeId for shared topic support
-        /// When a conversation has a shared topic, search the TOPIC's memory pool
-        /// (not the conversation's empty per-conversation database).
-        /// This ensures new conversations attached to a shared topic can access
-        /// all previously stored memories from other conversations in that topic.
-        let memoryScopeId = conversationManager.getEffectiveScopeId(for: conversation)
-        let isSharedScope = memoryScopeId != conversation.id
-        if isSharedScope {
-            logger.debug("AUTO_RETRIEVAL: Using shared topic scope \(memoryScopeId) (topic: \(conversation.settings.sharedTopicName ?? "unknown"))")
-        }
-
-        do {
-            let memories = try await conversationManager.memoryManager.retrieveRelevantMemories(
-                for: currentUserMessage,
-                conversationId: memoryScopeId,
-                limit: 5,
-                similarityThreshold: 0.3
-            )
-
-            if !memories.isEmpty {
-                let scopeLabel = isSharedScope ? "shared topic" : "conversation"
-                logger.debug("AUTO_RETRIEVAL: Retrieved \(memories.count) relevant memories via semantic search (\(scopeLabel) scope)")
-
-                var memoryContext = "\n=== RELEVANT PRIOR CONTEXT (Semantic Search) ===\n"
-                for (index, memory) in memories.enumerated() {
-                    memoryContext += "\n[Memory \(index + 1) - Similarity: \(String(format: "%.2f", memory.similarity)), Importance: \(String(format: "%.2f", memory.importance))]:\n\(memory.content)\n"
-                }
-                contextParts.append(memoryContext)
-            } else {
-                logger.debug("AUTO_RETRIEVAL: No relevant memories found via semantic search (scope: \(memoryScopeId))")
-            }
-        } catch {
-            logger.warning("AUTO_RETRIEVAL: Memory retrieval failed: \(error), continuing without memory context")
-        }
-
-        /// PHASE 2b: Shared Topic Archive Retrieval
-        /// When a conversation is in a shared topic, automatically retrieve relevant archived
-        /// context from other conversations in the topic. This gives the agent awareness of
-        /// prior discussions, decisions, and context from the shared topic's history.
-        if isSharedScope,
-           let topicId = conversation.settings.sharedTopicId,
-           let archiveProvider = RecallHistoryTool.sharedArchiveProvider {
-            do {
-                let topicChunks = try await archiveProvider.recallTopicHistory(
-                    query: currentUserMessage,
-                    topicId: topicId,
-                    limit: 3
-                )
-
-                if !topicChunks.isEmpty {
-                    logger.debug("AUTO_RETRIEVAL: Retrieved \(topicChunks.count) relevant topic archive chunks from shared topic \(topicId.uuidString.prefix(8))")
-
-                    var topicContext = "\n=== SHARED TOPIC HISTORY (From Other Conversations) ===\n"
-                    topicContext += "The following context was found in other conversations within the shared topic:\n"
-                    for (index, chunk) in topicChunks.enumerated() {
-                        topicContext += "\n[Topic Archive \(index + 1) - \(chunk.timeRange), \(chunk.messageCount) messages]:\n"
-                        topicContext += "Summary: \(chunk.summary)\n"
-                        if !chunk.keyTopics.isEmpty {
-                            topicContext += "Topics: \(chunk.keyTopics.joined(separator: ", "))\n"
-                        }
-                        // Include a preview of the most relevant messages
-                        let previewMessages = chunk.messages.prefix(3)
-                        for msg in previewMessages {
-                            let role = msg.isFromUser ? "USER" : "ASSISTANT"
-                            let preview = String(msg.content.prefix(500))
-                            topicContext += "  [\(role)]: \(preview)\n"
-                        }
-                    }
-                    contextParts.append(topicContext)
-                } else {
-                    logger.debug("AUTO_RETRIEVAL: No relevant topic archive chunks found for shared topic \(topicId.uuidString.prefix(8))")
-                }
-            } catch {
-                logger.warning("AUTO_RETRIEVAL: Topic archive retrieval failed: \(error), continuing without topic context")
-            }
-        }
-
-        /// PHASE 2c: Direct Conversation Message Search for Shared Topics
-        /// When memories and archives are empty (common: messages aren't auto-indexed into memory DBs),
-        /// search the actual conversation messages of OTHER conversations in the shared topic.
-        /// This is the primary data source since conversation content lives in ConversationModel.messages,
-        /// not in the per-conversation memory.db (which is only populated by explicit memory_operations
-        /// tool calls or document imports).
-        if isSharedScope,
-           let topicId = conversation.settings.sharedTopicId {
-
-            /// Find all OTHER conversations in this topic (exclude current conversation)
-            let topicConversations = conversationManager.conversations.filter {
-                $0.settings.sharedTopicId == topicId && $0.id != conversation.id
-            }
-
-            if !topicConversations.isEmpty {
-                /// Extract keywords from the user's message for relevance scoring
-                let queryWords = Set(currentUserMessage.lowercased()
-                    .components(separatedBy: .whitespacesAndNewlines)
-                    .filter { $0.count > 3 }  // Skip short words
-                )
-
-                /// Score and collect relevant messages from topic conversations
-                var scoredMessages: [(message: ConfigurationSystem.EnhancedMessage, score: Double, conversationTitle: String)] = []
-
-                for topicConversation in topicConversations {
-                    let messages = topicConversation.messages.filter {
-                        !$0.isToolMessage && !$0.isSystemGenerated && !$0.content.isEmpty
-                    }
-
-                    for msg in messages {
-                        let contentLower = msg.content.lowercased()
-                        var score = 0.0
-
-                        /// Keyword match scoring
-                        for word in queryWords {
-                            if contentLower.contains(word) {
-                                score += 1.0
-                            }
-                        }
-
-                        /// Boost pinned and high-importance messages
-                        if msg.isPinned { score += 2.0 }
-                        score += msg.importance * 0.5
-
-                        /// Include if any relevance detected, or if pinned/high-importance
-                        if score > 0 {
-                            scoredMessages.append((msg, score, topicConversation.title))
-                        }
-                    }
-                }
-
-                /// Sort by score and take top results
-                scoredMessages.sort { $0.score > $1.score }
-                let topMessages = scoredMessages.prefix(8)
-
-                if !topMessages.isEmpty {
-                    logger.debug("AUTO_RETRIEVAL: Found \(topMessages.count) relevant messages from \(topicConversations.count) other topic conversation(s)")
-
-                    var topicMsgContext = "\n=== SHARED TOPIC CONVERSATION HISTORY ===\n"
-                    topicMsgContext += "The following messages were found in other conversations within the \"\(conversation.settings.sharedTopicName ?? "shared")\" topic:\n"
-
-                    for (index, item) in topMessages.enumerated() {
-                        let role = item.message.isFromUser ? "USER" : "ASSISTANT"
-                        /// Cap message preview to 800 chars to avoid overwhelming context
-                        let preview = String(item.message.content.prefix(800))
-                        topicMsgContext += "\n[Topic Message \(index + 1) from \"\(item.conversationTitle)\" - \(role), Relevance: \(String(format: "%.1f", item.score))]:\n\(preview)\n"
-                    }
-                    contextParts.append(topicMsgContext)
-                } else {
-                    logger.debug("AUTO_RETRIEVAL: No keyword-relevant messages found in \(topicConversations.count) other topic conversation(s)")
-                }
-            }
-        }
-
-        /// Include high-importance messages not yet pinned (>=0.8 threshold) CRITICAL FIX Track retrieved message IDs to prevent duplication across iterations - Problem: Phase 3 was pulling same messages on every iteration (from conversation history) - Solution: Track which message IDs already retrieved, only include NEW high-importance messages - This preserves context (unlike skipping Phase 3 entirely) while preventing exponential growth.
-        let newHighImportanceMessages = conversation.messages.filter {
-            !$0.isPinned &&
-            $0.importance >= 0.8 &&
-            !retrievedMessageIds.contains($0.id)
-        }
-
-        if !newHighImportanceMessages.isEmpty {
-            logger.debug("AUTO_RETRIEVAL: Found \(newHighImportanceMessages.count) NEW high-importance messages (iteration \(iteration), \(retrievedMessageIds.count) already retrieved)")
-
-            var importantContext = "\n=== HIGH IMPORTANCE MESSAGES (Auto-detected) ===\n"
-            for (index, msg) in newHighImportanceMessages.enumerated() {
-                let role = msg.isFromUser ? "USER" : "ASSISTANT"
-                importantContext += "\n[\(role) Message \(index + 1) - Importance: \(String(format: "%.2f", msg.importance))]:\n\(msg.content)\n"
-            }
-            contextParts.append(importantContext)
-
-            /// Track that we've retrieved these messages.
-            newHighImportanceMessages.forEach { retrievedMessageIds.insert($0.id) }
-        } else if !retrievedMessageIds.isEmpty {
-            logger.debug("AUTO_RETRIEVAL: No new high-importance messages (iteration \(iteration), \(retrievedMessageIds.count) already retrieved)")
-        }
-
-        /// Combine all context parts if any exist.
-        if contextParts.isEmpty {
-            logger.debug("AUTO_RETRIEVAL: No additional context retrieved (no pinned messages, no relevant memories, no high-importance messages)")
-            return nil
-        }
-
-        let fullContext = """
-        === AUTOMATIC CONTEXT RETRIEVAL ===
-        The following context has been automatically retrieved to help you maintain continuity:
-
-        \(contextParts.joined(separator: "\n"))
-
-        === END AUTOMATIC CONTEXT ===
-        """
-
-        logger.debug("AUTO_RETRIEVAL: Generated \(fullContext.count) chars of automatic context (\(pinnedMessages.count) pinned messages, iteration \(iteration))")
-        return fullContext
-    }
-
-    /// Prune conversation history by summarizing oldest 50% of messages Returns the summary text that can replace the old messages.
-    @MainActor
-    private func pruneConversationHistory(
-        conversation: ConversationModel,
-        model: String
-    ) async throws -> String {
-        logger.debug("CONTEXT_PRUNING: Starting conversation history pruning")
-
-        /// Initialize contextMessages from messages if not already set This ensures we start with full history on first prune.
-        if conversation.contextMessages == nil {
-            await MainActor.run {
-                conversation.contextMessages = conversation.messages
-            }
-        }
-
-        /// Get current context messages for pruning.
-        let currentContextMessages = await MainActor.run { conversation.contextMessages ?? conversation.messages }
-
-        /// Separate pinned messages from unpinned Pinned messages (first 3 user messages, constraints, etc.) NEVER pruned.
-        let pinnedMessages = currentContextMessages.filter { $0.isPinned }
-        let unpinnedMessages = currentContextMessages.filter { !$0.isPinned }
-
-        logger.debug("CONTEXT_PRUNING: Found \(pinnedMessages.count) pinned messages (will never be pruned)")
-        logger.debug("CONTEXT_PRUNING: Found \(unpinnedMessages.count) unpinned messages (candidates for pruning)")
-
-        /// Calculate how many messages to summarize (oldest 50% of UNPINNED messages).
-        let messagesToSummarize = max(1, unpinnedMessages.count / 2)
-        let oldMessages = Array(unpinnedMessages.prefix(messagesToSummarize))
-
-        logger.debug("CONTEXT_PRUNING: Summarizing \(messagesToSummarize) oldest unpinned messages (out of \(unpinnedMessages.count) total unpinned)")
-        logger.debug("CONTEXT_PRUNING: NOTE - Full message history (\(conversation.messages.count) messages) remains visible to user")
-
-        /// Build conversation text to summarize.
-        var conversationText = ""
-        for (_, message) in oldMessages.enumerated() {
-            let speaker = message.isFromUser ? "User" : "Assistant"
-            conversationText += "\(speaker): \(message.content)\n\n"
-        }
-
-        /// Build summarization request.
-        let summaryPrompt = """
-        Summarize this conversation history concisely in 200-500 tokens:
-
-        \(conversationText)
-
-        Provide a factual summary that captures:
-        - Main topics discussed
-        - Key decisions or conclusions
-        - Important context for future messages
-
-        Be concise but preserve essential information.
-        """
-
-        /// Call LLM to generate summary (without tools).
-        let summaryMessages = [
-            OpenAIChatMessage(role: "system", content: "You are a helpful assistant that creates concise conversation summaries."),
-            OpenAIChatMessage(role: "user", content: summaryPrompt)
-        ]
-
-        /// Include sessionId/conversationId for billing continuity!.
-        let summaryRequest = OpenAIChatRequest(
-            model: model,
-            messages: summaryMessages,
-            temperature: 0.3,
-            stream: false,
-            sessionId: conversation.id.uuidString
-        )
-
-        logger.debug("CONTEXT_PRUNING: Calling LLM to generate summary")
-        let response = try await endpointManager.processChatCompletion(summaryRequest)
-
-        guard let summary = response.choices.first?.message.content, !summary.isEmpty else {
-            throw NSError(domain: "AgentOrchestrator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate conversation summary"])
-        }
-
-        logger.debug("CONTEXT_PRUNING: Generated summary (\(summary.count) chars)")
-
-        /// Store summary in VectorRAG for future retrieval with ENHANCED METADATA.
-        logger.debug("CONTEXT_PRUNING: Storing summary in VectorRAG with structured metadata")
-
-        /// Extract key constraints and decisions from pinned/high importance messages for metadata.
-        let pinnedConstraints = pinnedMessages.filter { $0.isFromUser && $0.importance > 0.8 }.map { $0.content }
-
-        /// Build summary document content with STRUCTURED METADATA.
-        let summaryDocument = """
-        # Conversation Summary
-
-        **Conversation ID**: \(conversation.id.uuidString)
-        **Messages Summarized**: \(messagesToSummarize) out of \(unpinnedMessages.count) unpinned messages
-        **Pinned Messages Preserved**: \(pinnedMessages.count) critical messages
-
-        **Key Constraints/Requirements** (from pinned messages):
-        \(pinnedConstraints.isEmpty ? "None" : pinnedConstraints.map { "- \($0)" }.joined(separator: "\n"))
-
-        **Summary**:
-
-        \(summary)
-        """
-
-        /// Call document_operations tool with operation=import to store summary with importance tagging.
-        let importParameters: [String: Any] = [
-            "operation": "import",
-            "source_type": "text",
-            "content": summaryDocument,
-            "filename": "conversation_summary_\(conversation.id.uuidString).txt",
-            "importance": 0.9
-        ]
-
-        if let importResult = await conversationManager.executeMCPTool(
-            name: "document_operations",
-            parameters: importParameters,
-            conversationId: conversation.id,
-            isExternalAPICall: false
-        ) {
-            logger.debug("CONTEXT_PRUNING: Summary stored in VectorRAG: \(importResult.output.content)")
-        } else {
-            logger.warning("CONTEXT_PRUNING: Failed to store summary in VectorRAG")
-        }
-
-        /// Update contextMessages ONLY, not the main messages array This preserves full conversation history for the user while pruning LLM context.
-        await MainActor.run {
-            /// Start with ALL pinned messages (always preserved).
-            var newContextMessages = pinnedMessages
-
-            /// Preserve githubCopilotResponseId from the LAST summarized message This is essential for session continuity - without it, checkpoint slicing fails Result: Multiple premium charges per conversation
-            let lastSummarizedResponseId = oldMessages.last(where: { !$0.isFromUser })?.githubCopilotResponseId
-            if let responseId = lastSummarizedResponseId {
-                logger.debug("CONTEXT_PRUNING: Preserving GitHub Copilot response ID from summarized messages: \(responseId.prefix(20))...")
-            }
-
-            /// Add summary message (high importance for retrieval).
-            let summaryMessage = Message(
-                id: UUID(),
-                content: "**[Previous conversation summary]**\n\n\(summary)",
-                isFromUser: false,
-                timestamp: Date(),
-                githubCopilotResponseId: lastSummarizedResponseId,
-                isPinned: false,
-                importance: 0.9
-            )
-            newContextMessages.append(summaryMessage)
-
-            /// Add remaining unpinned messages (after the ones that were summarized).
-            let remainingUnpinned = Array(unpinnedMessages.dropFirst(messagesToSummarize))
-            newContextMessages.append(contentsOf: remainingUnpinned)
-
-            /// Sort by timestamp to maintain chronological order.
-            newContextMessages.sort { $0.timestamp < $1.timestamp }
-
-            /// Update contextMessages (messages array unchanged).
-            conversation.contextMessages = newContextMessages
-        }
-
-        logger.debug("CONTEXT_PRUNING: Pruning complete, context now has \(conversation.contextMessages?.count ?? 0) messages")
-        logger.debug("CONTEXT_PRUNING: - \(pinnedMessages.count) pinned (never pruned)")
-        logger.debug("CONTEXT_PRUNING: - 1 summary message")
-        logger.debug("CONTEXT_PRUNING: - \(unpinnedMessages.count - messagesToSummarize) remaining unpinned")
-        logger.debug("CONTEXT_PRUNING: User-visible history remains at \(conversation.messages.count) messages")
-
-        return summary
-    }
-
-    /// Check if context should be pruned before calling LLM Returns true if token count exceeds 70% of context size.
-    @MainActor
-    private func shouldPruneContextBeforeLLMCall(
-        conversation: ConversationModel,
-        internalMessages: [OpenAIChatMessage],
-        currentMessage: String,
-        model: String
-    ) async -> (shouldPrune: Bool, currentTokens: Int, contextSize: Int) {
-        /// Get system prompt.
-        let defaultPromptId = await MainActor.run {
-            SystemPromptManager.shared.selectedConfigurationId
-        }
-        let promptId = conversation.settings.selectedSystemPromptId ?? defaultPromptId
-        let workflowModeEnabled = conversation.settings.enableWorkflowMode
-        let dynamicIterationsEnabled = conversation.settings.enableDynamicIterations
-        let systemPrompt = await MainActor.run {
-            SystemPromptManager.shared.generateSystemPrompt(
-                for: promptId,
-                workflowModeEnabled: workflowModeEnabled,
-                dynamicIterationsEnabled: dynamicIterationsEnabled
-            )
-        }
-
-        /// Convert conversation messages to OpenAIChatMessage format for counting CRITICAL: Use contextMessages if available (after pruning), otherwise use full messages.
-        let messagesToCount = conversation.contextMessages ?? conversation.messages
-        var conversationMessages: [OpenAIChatMessage] = []
-        for historyMessage in messagesToCount {
-            let role = historyMessage.isFromUser ? "user" : "assistant"
-            conversationMessages.append(OpenAIChatMessage(role: role, content: historyMessage.content))
-        }
-        conversationMessages.append(contentsOf: internalMessages)
-
-        /// Detect if this is a local model.
-        let isLocal = model.lowercased().contains("local-llama") || model.lowercased().contains("gguf") || model.lowercased().contains("mlx")
-
-        /// Get context size for this model.
-        let contextSize = await tokenCounter.getContextSize(modelName: model)
-
-        /// Check if we should prune.
-        let (currentTokens, shouldPrune, _) = await tokenCounter.shouldPruneContext(
-            systemPrompt: systemPrompt,
-            conversationMessages: conversationMessages,
-            currentInput: currentMessage,
-            contextSize: contextSize,
-            model: nil,
-            /// WHY: llama.cpp models need model-specific tokenizer for accurate counts Current: Uses heuristic tokenization (works but less accurate) With model: Can call llama_tokenize() for exact counts Benefit: More accurate pruning decisions, better context management.
-            isLocal: isLocal
-        )
-
-        return (shouldPrune, currentTokens, contextSize)
-    }
-
-    /// Calls the LLM via EndpointManager (bypasses SAM 1.0 feedback loop).
-    @MainActor
-    private func callLLM(
-        conversationId: UUID,
-        message: String,
-        model: String,
-        internalMessages: [OpenAIChatMessage],
-        iteration: Int,
-        samConfig: SAMConfig? = nil,
-        statefulMarker: String? = nil,
-        statefulMarkerMessageCount: Int? = nil,
-        sentInternalMessagesCount: Int = 0,
-        retrievedMessageIds: inout Set<UUID>
-    ) async throws -> LLMResponse {
-        logger.debug("callLLM: Building OpenAI request for model '\(model)'")
-
-        /// LAZY FETCH: Check if this is first GitHub Copilot request, fetch model capabilities if needed.
-        await lazyFetchModelCapabilitiesIfNeeded(for: model)
-
-        /// Get conversation for user messages only (not tool results).
-        guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
-            logger.error("callLLM: Conversation not found: \(conversationId.uuidString)")
-            return LLMResponse(
-                content: "ERROR: Conversation not found",
-                finishReason: "error",
-                toolCalls: nil,
-                statefulMarker: nil
-            )
-        }
-
-        /// CONTEXT MANAGEMENT: Use YARN exclusively CRITICAL Context pruning was causing premium billing charges because it calls GitHub API to generate summaries.
-        logger.debug("CONTEXT_MANAGEMENT: Using YARN for context compression (no API calls, no premium charges)")
-
-        /// Build messages array: system prompt + conversation messages + internal tool messages.
-        var messages: [OpenAIChatMessage] = []
-
-        /// Add user-configured system prompt (includes guard rails) FIRST This was the architectural gap - API requests never included SystemPromptManager prompts.
-        let defaultPromptId = await MainActor.run {
-            SystemPromptManager.shared.selectedConfigurationId
-        }
-        let promptId = conversation.settings.selectedSystemPromptId ?? defaultPromptId
-        logger.debug("DEBUG_ORCH_CONV: callLLM using conversation \(conversation.id), selectedSystemPromptId: \(conversation.settings.selectedSystemPromptId?.uuidString ?? "nil"), promptId: \(promptId?.uuidString ?? "nil")")
-
-        let toolsEnabled = samConfig?.mcpToolsEnabled ?? true
-        let workflowModeEnabled = conversation.settings.enableWorkflowMode
-        let dynamicIterationsEnabled = conversation.settings.enableDynamicIterations
-        var userSystemPrompt = await MainActor.run {
-            SystemPromptManager.shared.generateSystemPrompt(
-                for: promptId,
-                toolsEnabled: toolsEnabled,
-                workflowModeEnabled: workflowModeEnabled,
-                dynamicIterationsEnabled: dynamicIterationsEnabled,
-                model: model
-            )
-        }
-
-        /// Merge personality if selected
-        if let personalityId = conversation.settings.selectedPersonalityId {
-            let personalityManager = PersonalityManager()
-            if let personality = personalityManager.getPersonality(id: personalityId),
-               personality.id != Personality.assistant.id {  // Skip if Assistant (default)
-                let personalityInstructions = personality.generatePromptAdditions()
-                userSystemPrompt += "\n\n" + personalityInstructions
-                logger.info("Merged personality '\(personality.name)' into system prompt (\(personalityInstructions.count) chars)")
-            }
-        }
-
-        /// Inject conversation ID and working directory for memory operations and file operations.
-        var systemPromptAdditions = """
-        \(userSystemPrompt)
-
-        CONVERSATION_ID: \(conversationId.uuidString)
-        """
-
-        /// Add working directory context when tools are enabled
-        if toolsEnabled {
-            let effectiveWorkingDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-            systemPromptAdditions += """
-
-
-            # WORKING DIRECTORY CONTEXT
-
-            Your current working directory is: `\(effectiveWorkingDir)`
-
-            All file operations and terminal commands will execute relative to this directory by default.
-            You do not need to run 'pwd' or ask about the starting directory - this IS your working directory.
-            """
-        }
-
-        /// SHARED TOPIC CONTEXT INJECTION
-        /// When a conversation is attached to a shared topic, inject topic awareness
-        /// so the agent knows about the shared context and can use recall_history with topic_id
-        if conversation.settings.useSharedData,
-           let topicId = conversation.settings.sharedTopicId,
-           let topicName = conversation.settings.sharedTopicName {
-            systemPromptAdditions += """
-
-
-            # SHARED TOPIC CONTEXT
-
-            You are working within the shared topic: "\(topicName)"
-            Topic ID: \(topicId.uuidString)
-
-            **IMPORTANT: You already have access to data from this topic.** Context from other conversations
-            in the "\(topicName)" topic is automatically retrieved and injected into your context on every request.
-            Look for the "SHARED TOPIC CONVERSATION HISTORY" and "HIGH IMPORTANCE MESSAGES" sections in your
-            system context - these contain real data from the topic that you should use to answer questions.
-
-            This conversation shares memory and working files with other conversations in this topic.
-            When answering questions, ALWAYS check the injected topic context first before claiming you
-            don't have information. The data is already in your context.
-
-            If you need MORE context beyond what was auto-injected, use the `recall_history` tool with:
-            - topic_id: "\(topicId.uuidString)" to search across ALL conversations in this topic
-            - Or omit topic_id to search only this conversation's archived history
-            """
-            logger.debug("callLLM: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
-        }
-
-        let systemPromptWithId = systemPromptAdditions
-
-        logger.debug("callLLM: Generated system prompt from ID: \(promptId?.uuidString ?? "default"), length: \(systemPromptWithId.count) chars, toolsEnabled: \(toolsEnabled), workflowMode: \(workflowModeEnabled)")
-        logger.debug("callLLM: Guard rails present: \(systemPromptWithId.contains("TOOL SCHEMA CONFIDENTIALITY"))")
-
-        if !userSystemPrompt.isEmpty {
-            messages.append(OpenAIChatMessage(role: "system", content: systemPromptWithId))
-            logger.debug("callLLM: Added user-configured system prompt to messages (with conversation ID)")
-        }
-
-        /// CLAUDE USERCONTEXT INJECTION
-        /// Per Claude Messages API best practices: Extract important context from ALL pinned messages
-        /// and inject as system message on EVERY request (context doesn't persist in conversation history)
-        /// Reference: claude-messages.txt - "Do not rely on Turn 1 staying in history forever"
-        let modelLower = model.lowercased()
-        if modelLower.contains("claude") {
-            /// Extract userContext from ALL pinned messages
-            let pinnedMessages = conversation.messages.filter { $0.isPinned }
-            var extractedContexts: [String] = []
-            
-            for pinnedMessage in pinnedMessages {
-                let content = pinnedMessage.content
-                if let userContextStart = content.range(of: "\n\n<userContext>\n"),
-                   let userContextEnd = content.range(of: "\n</userContext>", range: userContextStart.upperBound..<content.endIndex) {
-                    /// Extract userContext content (without tags)
-                    let userContextContent = String(content[userContextStart.upperBound..<userContextEnd.lowerBound])
-                    extractedContexts.append(userContextContent)
-                }
-            }
-            
-            /// If we found any userContext blocks in pinned messages, inject them
-            if !extractedContexts.isEmpty {
-                let claudeContextMessage = """
-                ## User Context (Persistent)
-                
-                This context was provided in pinned messages and applies to all turns of this conversation:
-                
-                \(extractedContexts.joined(separator: "\n\n---\n\n"))
-                """
-                
-                messages.append(OpenAIChatMessage(role: "system", content: claudeContextMessage))
-                logger.info("CLAUDE_CONTEXT: Injected userContext from \(extractedContexts.count) pinned message(s) as system content (\(claudeContextMessage.count) chars)")
-            }
-        }
-
-        /// AUTOMATIC CONTEXT RETRIEVAL Inject pinned messages + semantic search results BEFORE conversation messages This ensures critical context (initial request, key decisions) is always available CRITICAL FIX: Pass iteration number to skip Phase 3 (high-importance) for iterations > 0 - Phase 1 (pinned) and Phase 2 (semantic search) still run - they provide unique context - Phase 3 (high-importance) skipped for iterations > 0 - prevents duplicate context from internalMessages.
-        if let retrievedContext = await retrieveRelevantContext(
-            conversation: conversation,
-            currentUserMessage: message,
-            iteration: iteration,
-            caller: "callLLM_NON_STREAMING_line3189",
-            retrievedMessageIds: &retrievedMessageIds
-        ) {
-            messages.append(OpenAIChatMessage(role: "system", content: retrievedContext))
-            logger.debug("callLLM: Added automatic context retrieval (\(retrievedContext.count) chars) for iteration \(iteration)")
-        }
-
-        /// REMINDER INJECTION: Deferred to right before user message for better salience
-        /// (VS Code Copilot pattern: inject todo context immediately before user query)
-        let activeTodoCount = TodoManager.shared.getProgressStatistics(for: conversation.id.uuidString).totalTodos
-        let responseCount = conversation.messages.count
-        let todoReminderContent: String?
-
-        if TodoReminderInjector.shared.shouldInjectReminder(
-            conversationId: conversation.id,
-            currentResponseCount: responseCount,
-            activeTodoCount: activeTodoCount
-        ) {
-            todoReminderContent = TodoReminderInjector.shared.formatTodoReminder(
-                conversationId: conversation.id,
-                todoManager: TodoManager.shared
-            )
-        } else {
-            todoReminderContent = nil
-        }
-
-        /// MINI PROMPT REMINDER INJECTION: Remind agent of user's mini prompts (instructions)
-        /// This addresses agents "forgetting" user instructions during long research sessions
-        let miniPromptReminderContent: String?
-        if MiniPromptReminderInjector.shared.shouldInjectReminder(
-            conversationId: conversation.id,
-            enabledMiniPromptIds: conversation.enabledMiniPromptIds,
-            currentResponseCount: responseCount
-        ) {
-            miniPromptReminderContent = MiniPromptReminderInjector.shared.formatMiniPromptReminder(
-                conversationId: conversation.id,
-                enabledMiniPromptIds: conversation.enabledMiniPromptIds
-            )
-        } else {
-            miniPromptReminderContent = nil
-        }
-
-        /// DOCUMENT IMPORT REMINDER INJECTION Tell agent what documents are already imported so they search memory instead of re-importing
-        if DocumentImportReminderInjector.shared.shouldInjectReminder(conversationId: conversation.id) {
-            if let docReminder = DocumentImportReminderInjector.shared.formatDocumentReminder(conversationId: conversation.id) {
-                messages.append(createSystemReminder(content: docReminder, model: model))
-                logger.debug("callLLM: Injected document import reminder (\(DocumentImportReminderInjector.shared.getImportedCount(for: conversation.id)) docs)")
-            }
-        }
-
-        /// MEMORY REMINDER INJECTION: Tell agent what memories were recently stored to prevent duplicate stores
-        /// This addresses the bug where agents re-store the same content across auto-continue iterations
-        if MemoryReminderInjector.shared.shouldInjectReminder(conversationId: conversation.id) {
-            if let memoryReminder = MemoryReminderInjector.shared.formatMemoryReminder(conversationId: conversation.id) {
-                messages.append(createSystemReminder(content: memoryReminder, model: model))
-                logger.debug("callLLM: Injected memory reminder (\(MemoryReminderInjector.shared.getStoredCount(for: conversation.id)) memories)")
-            }
-        }
-
-        /// STATUS SIGNAL REMINDER INJECTION: Tell agent to emit status signals when workflow mode is enabled
-        /// This reminds the agent to emit {"status": "continue"} or {"status": "complete"} at the end of each response
-        if StatusSignalReminderInjector.shared.shouldInjectReminder(isWorkflowMode: conversation.settings.enableWorkflowMode) {
-            let statusReminder = StatusSignalReminderInjector.shared.formatStatusSignalReminder()
-            messages.append(createSystemReminder(content: statusReminder, model: model))
-            logger.debug("callLLM: Injected status signal reminder (workflow mode enabled)")
-        }
-
-        /// Add conversation messages (user requests + LLM responses only, no tool results) CRITICAL: Use contextMessages if available (after pruning), otherwise use full messages This allows context pruning to work transparently - UI shows full history, LLM gets pruned context.
-        var messagesToSend = conversation.contextMessages ?? conversation.messages
-
-        /// Check if we have tool results to determine delta-only mode
-        let hasToolResults = !internalMessages.isEmpty
-        let messagesToAppend = internalMessages[...]
-        logger.debug("INTERNAL_MESSAGES: Sending all \(internalMessages.count) internal messages (tool calls + results)")
-
-        /// Delta-only slicing when statefulMarker exists (GitHub Copilot session continuity)
-        /// CRITICAL FIX: Always slice when statefulMarker exists, not just for tool results!
-        /// Previous bug: Only sliced when hasToolResults=true, causing Claude to loop by seeing its own responses
-        ///
-        /// CORRECT BEHAVIOR:
-        /// 1. statefulMarker exists = delta-only mode - send ONLY messages after the marker
-        /// 2. NO statefulMarker = first message or fresh start - send FULL conversation history
-        ///
-        /// WHY THIS PREVENTS LOOPS:
-        /// - statefulMarker represents server's knowledge up to that point
-        /// - Sending full history + statefulMarker = model sees its own previous responses
-        /// - Claude sees "I listed directory before" → repeats same action → infinite loop!
-        /// - Slicing = model only sees NEW context since last response → continues forward
-        if let marker = statefulMarker {
-            /// Delta-only mode: Server has full history up to marker, only need to send new messages
-            /// PREFERRED: Use message count from when marker was captured (no timing dependencies)
-            if let markerMessageCount = statefulMarkerMessageCount {
-                /// Slice to only include messages AFTER the marker count
-                let sliceIndex = markerMessageCount
-                messagesToSend = Array(messagesToSend.suffix(from: min(sliceIndex, messagesToSend.count)))
-                logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(messagesToSend.count) messages after marker (delta-only mode)")
-            }
-            /// FALLBACK: Search for marker in messages (timing-dependent)
-            else if let markerIndex = messagesToSend.lastIndex(where: { $0.githubCopilotResponseId == marker }) {
-                /// Slice to only include messages AFTER the marker (marker itself is already on server)
-                messagesToSend = Array(messagesToSend.suffix(from: markerIndex + 1))
-                logger.debug("STATEFUL_MARKER_SLICING: Found marker at index \(markerIndex), sending ONLY \(messagesToSend.count) messages after marker (delta-only mode, fallback method)")
-            } else {
-                logger.warning("STATEFUL_MARKER_WARNING: Marker \(marker.prefix(20))... not found in conversation AND no message count available, sending full history (\(messagesToSend.count) messages)")
-            }
-        } else {
-            logger.debug("INFO: No statefulMarker, sending all \(messagesToSend.count) conversation messages")
-        }
-
-        logger.debug("DEBUG_DUPLICATION: Adding \(messagesToSend.count) conversation messages to request")
-
-        /// When statefulMarker exists, send delta (sliced messages + tool results)
-        /// This prevents duplicate assistant messages that cause Claude 400 errors
-        /// CRITICAL FIX: Always use delta mode when statefulMarker exists (not just when hasToolResults)
-        /// ROOT CAUSE: Sending full history + statefulMarker causes Claude to loop (sees own responses)
-        /// Our approach: Sliced messagesToSend + internalMessages IS the complete delta
-        /// Do NOT inject "Please continue" into messages array
-        /// GitHub Copilot API: "Please continue" is query param only, NOT a synthetic message
-        var currentMarker = statefulMarker  /// Make mutable copy
-        if let marker = currentMarker {
-            /// Delta-only mode: Server has full history up to marker, only send new context
-            /// The stateful marker tells the API to continue from the previous response
-            /// We send ONLY the delta: sliced conversation messages + tool results
-            
-            /// Add sliced conversation messages (already filtered by statefulMarkerMessageCount)
-            for (index, historyMessage) in messagesToSend.enumerated() {
-                let role = historyMessage.isFromUser ? "user" : "assistant"
-                var cleanContent = historyMessage.content
-
-                /// Clean tool call markers from assistant messages
-                if role == "assistant" {
-                    cleanContent = cleanToolCallMarkers(from: cleanContent)
-                }
-
-                messages.append(OpenAIChatMessage(role: role, content: cleanContent))
-                logger.debug("DELTA_MESSAGE: Message \(index): role=\(role), content=\(cleanContent.safePrefix(50))")
-            }
-            
-            /// Add internal messages (tool calls + results from current iteration)
-            messages.append(contentsOf: messagesToAppend)
-            logger.debug("STATEFUL_MARKER_DELTA_MODE: Sending \(messagesToSend.count) conversation + \(internalMessages.count) internal messages (delta-only mode)")
-
-            /// CRITICAL FIX: Ensure messages start with USER role
-            /// GitHub Copilot API requires first message to be user role
-            /// If slicing resulted in only assistant/tool messages, prepend continue message
-            if !messages.isEmpty && messages.first?.role != "user" {
-                let continueMessage = OpenAIChatMessage(role: "user", content: "<system-reminder>continue</system-reminder>")
-                messages.insert(continueMessage, at: 0)
-                logger.debug("DELTA_USER_MESSAGE: Prepended <system-reminder>continue</system-reminder> (messages started with \(messages[1].role))")
-            }
-
-            /// CRITICAL: Enforce 16KB payload limit (vscode-copilot-chat pattern)
-            /// Even with cached large tool results, accumulated deltas can exceed limit
-            /// If trimming occurs, clear marker (it may reference removed message)
-            if enforcePayloadSizeLimit(&messages, maxBytes: 16000) {
-                currentMarker = nil
-                logger.warning("PAYLOAD_SIZE: Cleared statefulMarker after trimming (marker may reference removed message)")
-            }
-        } else {
-            /// Normal flow: Add conversation messages + internal messages
-            /// CRITICAL FIX: Strip <userContext>...</userContext> blocks from OLD user messages
-            /// These blocks are injected into every user message and stored permanently,
-            /// causing context explosion (e.g., 13 messages × 9800 chars = 127,400 chars duplicated)
-            /// Keep context ONLY on the LATEST user message
-            let lastUserMessageIndex = messagesToSend.lastIndex(where: { $0.isFromUser })
-            var strippedContextChars = 0
-
-            for (index, historyMessage) in messagesToSend.enumerated() {
-                let role = historyMessage.isFromUser ? "user" : "assistant"
-                var cleanContent = historyMessage.content
-
-                /// Clean tool call markers from assistant messages
-                if role == "assistant" {
-                    cleanContent = cleanToolCallMarkers(from: cleanContent)
-                }
-
-                /// Strip <userContext>...</userContext> from OLD user messages (not the latest one)
-                /// This prevents sending the same 9800-char block 13+ times
-                /// CRITICAL: Never strip from PINNED messages - they contain critical context
-                /// (e.g., first message in conversation with copilot-instructions)
-                if role == "user" && index != lastUserMessageIndex && !historyMessage.isPinned {
-                    let originalLength = cleanContent.count
-                    cleanContent = stripUserContextBlock(from: cleanContent)
-                    let stripped = originalLength - cleanContent.count
-                    if stripped > 0 {
-                        strippedContextChars += stripped
-                        logger.debug("CONTEXT_DEDUP: Stripped \(stripped) chars from user message \(index)")
-                    }
-                } else if role == "user" && historyMessage.isPinned && index != lastUserMessageIndex {
-                    logger.debug("CONTEXT_DEDUP: Preserved <userContext> on pinned message \(index)")
-                }
-
-                messages.append(OpenAIChatMessage(role: role, content: cleanContent))
-                logger.debug("DEBUG_DUPLICATION: Message \(index): role=\(role), content=\(cleanContent.safePrefix(50))")
-            }
-
-            if strippedContextChars > 0 {
-                logger.info("CONTEXT_DEDUP: Total stripped \(strippedContextChars) chars of duplicated [User Context] blocks from \(messagesToSend.count) messages")
-            }
-
-            messages.append(contentsOf: messagesToAppend)
-        }
-
-        /// Only add new message if it's NOT already in conversation history The message might already be in conversation.messages if ChatWidget synced it, or if runAutonomousWorkflow() added it at line 193.
-        logger.debug("DEBUG_DUPLICATION: Before adding new message - iteration=\(iteration), message='\(message)', messages.count=\(messages.count)")
-
-        let newMessageNotInHistory = messagesToSend.isEmpty ||
-                                     !messagesToSend.last!.isFromUser ||
-                                     messagesToSend.last!.content != message
-
-        /// VS CODE COPILOT PATTERN: Inject reminders RIGHT BEFORE the user message
-        /// This positions them with maximum salience - the agent sees them immediately before responding
-
-        /// Mini prompt reminder - user's enabled mini prompts (instructions)
-        if let miniPromptReminder = miniPromptReminderContent {
-            messages.append(createSystemReminder(content: miniPromptReminder, model: model))
-            /// Record successful injection to prevent repeating
-            MiniPromptReminderInjector.shared.recordInjection(
-                conversationId: conversation.id,
-                enabledMiniPromptIds: conversation.enabledMiniPromptIds
-            )
-            logger.debug("callLLM: Injected mini prompt reminder RIGHT BEFORE user message")
-        }
-
-        /// Todo reminder - task progress tracking
-        if let todoReminder = todoReminderContent {
-            messages.append(createSystemReminder(content: todoReminder, model: model))
-            logger.debug("callLLM: Injected todo reminder RIGHT BEFORE user message (VS Code pattern, \(activeTodoCount) active todos)")
-        }
-
-        if message != "Please continue" && iteration == 0 && newMessageNotInHistory {
-            messages.append(OpenAIChatMessage(role: "user", content: message))
-            logger.debug("DEBUG_DUPLICATION: Added new user message (not in history), total now \(messages.count)")
-        } else {
-            logger.debug("DEBUG_DUPLICATION: Skipped adding new message - already in conversation history or continuation (iteration=\(iteration))")
-        }
-
-        logger.debug("callLLM: Request has \(messages.count) messages (\(messagesToSend.count) conversation + \(internalMessages.count) internal)")
-        logger.debug("callLLM: User sees \(conversation.messages.count) messages, LLM context uses \(messagesToSend.count) messages")
-
-        /// CRITICAL: Get model's actual context limit BEFORE YaRN processing
-        /// This ensures YaRN compresses to the correct target for this specific model
-        let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
-        logger.debug("YARN: Model '\(model)' has context limit of \(modelContextLimit) tokens")
-
-        /// Process ALL messages with YARN before sending to LLM This includes conversation messages, system prompts, AND tool execution results Tool results can be massive (web scraping, document imports) and MUST be compressed.
-        logger.debug("YARN: Processing ALL \(messages.count) messages (conversation + tool results) before LLM call")
-
-        /// Calculate fingerprint BEFORE YaRN processing to detect compression
-        let originalFingerprint = messageFingerprint(messages)
-
-        var yarnCompressed = false
-        do {
-            messages = try await processAllMessagesWithYARN(messages, conversationId: conversationId, modelContextLimit: modelContextLimit)
-
-            /// Calculate fingerprint AFTER YaRN processing
-            let compressedFingerprint = messageFingerprint(messages)
-            yarnCompressed = (originalFingerprint != compressedFingerprint)
-
-            logger.debug("YARN: Processed messages ready for LLM (\(messages.count) messages after YARN)")
-            logger.debug("YARN: Compression \(yarnCompressed ? "ACTIVE" : "NOT NEEDED") - fingerprints \(yarnCompressed ? "differ" : "match")")
-            
-            /// CRITICAL SAFETY CHECK: Validate token count after YARN processing
-            /// Even with YARN compression, we must NEVER exceed the API limit
-            /// This is a hard requirement - violating it causes session failure
-            let postYarnTokens = await tokenCounter.countTokens(messages: messages, model: nil, isLocal: false)
-            if postYarnTokens > modelContextLimit {
-                logger.error("YARN_EMERGENCY: Post-compression tokens (\(postYarnTokens)) STILL exceed limit (\(modelContextLimit))!")
-                logger.error("YARN_EMERGENCY: Applying emergency truncation to prevent API rejection")
-                
-                /// Emergency truncation: Keep only most recent messages that fit
-                /// This is a last resort - should never happen if YARN is working correctly
-                var truncatedMessages: [OpenAIChatMessage] = []
-                var tokenCount = 0
-                let safeLimit = Int(Double(modelContextLimit) * 0.85) // 85% safety margin
-                
-                /// Always keep system message if present
-                if let systemMsg = messages.first(where: { $0.role == "system" }) {
-                    let systemTokens = await tokenCounter.estimateTokensRemote(text: systemMsg.content ?? "")
-                    truncatedMessages.append(systemMsg)
-                    tokenCount += systemTokens
-                }
-                
-                /// Add messages from most recent backwards until we hit the limit
-                for message in messages.reversed() {
-                    if message.role == "system" { continue } // Already added
-                    let msgTokens = await tokenCounter.estimateTokensRemote(text: message.content ?? "")
-                    if tokenCount + msgTokens <= safeLimit {
-                        truncatedMessages.insert(message, at: truncatedMessages.count)
-                        tokenCount += msgTokens
-                    } else {
-                        break
-                    }
-                }
-                
-                messages = truncatedMessages
-                logger.warning("YARN_EMERGENCY: Truncated to \(messages.count) messages, \(tokenCount) tokens (limit: \(modelContextLimit))")
-                
-                /// Notify user about emergency truncation
-                if !isExternalAPICall {
-                    let warningMessage = """
-                    ⚠️ CONTEXT LIMIT EXCEEDED
-                    
-                    Your conversation exceeded the model's maximum context limit even after compression.
-                    SAM had to truncate older messages to continue operation.
-                    
-                    Model: \(model)
-                    Limit: \(modelContextLimit) tokens
-                    Current: \(tokenCount) tokens (after emergency truncation)
-                    
-                    Consider starting a new conversation to maintain full context.
-                    """
-                    
-                    Task { @MainActor in
-                        conversation.messageBus?.addAssistantMessage(
-                            id: UUID(),
-                            content: warningMessage,
-                            timestamp: Date()
-                        )
-                    }
-                }
-            } else {
-                logger.debug("YARN_VALIDATION: Post-compression tokens (\(postYarnTokens)) within limit (\(modelContextLimit)) ✓")
-            }
-        } catch {
-            logger.warning("YARN: Processing failed, using original messages: \(error)")
-            /// Continue with original messages if YARN fails.
-        }
-
-        /// Conditional statefulMarker based on YaRN compression + premium model status
-        /// Get model billing info to determine if model is premium
-        let modelIsPremium: Bool
-        if let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: model) {
-            modelIsPremium = billingInfo.isPremium
-            logger.debug("BILLING: Model '\(model)' premium=\(modelIsPremium), multiplier=\(billingInfo.multiplier)x")
-        } else {
-            modelIsPremium = false
-            logger.debug("BILLING: Model '\(model)' billing info unavailable, treating as free model")
-        }
-
-        /// Determine whether to use statefulMarker for billing continuity
-        /// Use currentMarker (may be cleared if trimming occurred) instead of statefulMarker
-        let checkpointMarker: String?
-        if yarnCompressed && modelIsPremium {
-            /// YaRN compressed context AND model charges premium rates
-            /// Skip statefulMarker to avoid billing mismatch (compressed context != original context)
-            checkpointMarker = nil
-            logger.warning("BILLING: Skipping statefulMarker - YaRN compression active on premium model (prevents billing mismatch)")
-
-            /// Notify user about potential premium billing due to compression
-            /// Only notify for internal calls (not external API calls which have no UI)
-            if !isExternalAPICall {
-                let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: model)
-                let multiplierText = billingInfo?.multiplier.map { "\($0)x" } ?? "premium"
-
-                let warningMessage = """
-                WARNING: Context Compression Notice
-
-                Your conversation context has grown large. SAM automatically compressed the context to prevent errors.
-
-                Because you're using a premium model (\(model) - \(multiplierText) billing multiplier), this request may incur premium API charges.
-
-                This is normal for large conversations with many document imports or tool results. The compression ensures reliable operation.
-                """
-
-                /// Add warning as assistant message in conversation
-                /// Use non-blocking approach - don't wait for user, just inform
-                Task { @MainActor in
-                    conversation.messageBus?.addAssistantMessage(
-                        id: UUID(),
-                        content: warningMessage,
-                        timestamp: Date()
-                    )
-                    /// MessageBus handles persistence automatically
-                }
-
-                logger.info("BILLING: Added compression warning to conversation for user visibility")
-            }
-        } else {
-            /// No compression OR free model - preserve statefulMarker for billing continuity
-            /// CRITICAL: Use currentMarker (may be nil if trimming cleared it) instead of statefulMarker
-            checkpointMarker = currentMarker ?? conversation.lastGitHubCopilotResponseId
-            if let marker = checkpointMarker {
-                logger.debug("BILLING: Using statefulMarker for billing continuity: \(marker.prefix(20))...")
-            } else {
-                logger.debug("BILLING: No statefulMarker available (may have been cleared by payload trimming)")
-            }
-        }
-
-        /// Inject isExternalAPICall flag into samConfig for tool filtering External API calls should never have user_collaboration tool (no UI to interact with) SECURITY: Pass enableTerminalAccess from conversation settings to filter terminal_operations.
-        let enhancedSamConfig: SAMConfig?
-        if let samConfig = samConfig {
-            enhancedSamConfig = SAMConfig(
-                sharedMemoryEnabled: samConfig.sharedMemoryEnabled,
-                mcpToolsEnabled: samConfig.mcpToolsEnabled,
-                memoryCollectionId: samConfig.memoryCollectionId,
-                conversationTitle: samConfig.conversationTitle,
-                maxIterations: samConfig.maxIterations,
-                enableReasoning: samConfig.enableReasoning,
-                workingDirectory: samConfig.workingDirectory,
-                systemPromptId: samConfig.systemPromptId,
-                isExternalAPICall: isExternalAPICall,
-                enableTerminalAccess: conversation.settings.enableTerminalAccess,
-                enableWorkflowMode: samConfig.enableWorkflowMode,
-                enableDynamicIterations: samConfig.enableDynamicIterations
-            )
-        } else if isExternalAPICall {
-            /// No samConfig provided but we're external API call - create one with just the flag.
-            enhancedSamConfig = SAMConfig(isExternalAPICall: true, enableTerminalAccess: false)
-        } else {
-            /// No samConfig, internal call - still need to pass terminal setting.
-            enhancedSamConfig = SAMConfig(enableTerminalAccess: conversation.settings.enableTerminalAccess)
-        }
-
-        /// Build OpenAI request WITHOUT tools (we'll inject them next) Use conversation's maxTokens setting (user-configured, defaults to 8192).
-        /// CRITICAL: Ensure maxTokens is at least 4096 to prevent truncated responses
-        let effectiveMaxTokens = max(conversation.settings.maxTokens ?? 8192, 4096)
-        let baseRequest = OpenAIChatRequest(
-            model: model,
-            messages: messages,
-            temperature: 0.7,
-            maxTokens: effectiveMaxTokens,
-            stream: false,
-            samConfig: enhancedSamConfig,
-            sessionId: conversationId.uuidString,
-            statefulMarker: checkpointMarker,
-            iterationNumber: iteration
-        )
-
-        /// Inject MCP tools using SharedConversationService This ensures tools are properly formatted in OpenAI format.
-        logger.debug("callLLM: Injecting MCP tools via SharedConversationService")
-        let requestWithTools = await conversationService.injectMCPToolsIntoRequest(baseRequest)
-
-        /// CRITICAL: For Claude models, batch consecutive tool results into single user messages
-        /// Claude Messages API requires ALL tool results from one iteration in ONE user message
-        /// This fixes the tool result batching issue that caused workflow loops
-        var messagesToProcess = requestWithTools.messages
-        if modelLower.contains("claude") {
-            messagesToProcess = batchToolResultsForClaude(messagesToProcess)
-            logger.debug("callLLM: Applied Claude tool result batching")
-        }
-
-        /// CRITICAL: Ensure message alternation for Claude API compatibility
-        /// Claude requires strict user/assistant alternation with no empty messages
-        /// Apply this AFTER all message construction is complete but BEFORE sending to API
-        let fixedMessages = ensureMessageAlternation(messagesToProcess)
-        let finalRequest = OpenAIChatRequest(
-            model: requestWithTools.model,
-            messages: fixedMessages,
-            temperature: requestWithTools.temperature,
-            maxTokens: requestWithTools.maxTokens,
-            stream: requestWithTools.stream,
-            tools: requestWithTools.tools,
-            samConfig: requestWithTools.samConfig,
-            sessionId: requestWithTools.sessionId,
-            statefulMarker: requestWithTools.statefulMarker,
-            iterationNumber: requestWithTools.iterationNumber
-        )
-        logger.debug("callLLM: Applied message alternation validation for Claude compatibility")
-
-        /// Validate request size before sending Most timeouts occur because agent sends too much data to API.
-        let (estimatedTokens, isSafe, contextLimit) = await validateRequestSize(
-            messages: finalRequest.messages,
-            model: model,
-            tools: finalRequest.tools
-        )
-
-        if !isSafe {
-            logger.warning("API_REQUEST_SIZE: Request exceeds safe threshold (\(estimatedTokens) tokens / \(contextLimit) limit)")
-            logger.warning("API_REQUEST_SIZE: Forcing aggressive YaRN compression to 70% target to prevent 400 errors")
-
-            /// Force aggressive compression when request too large
-            /// This prevents 400 Bad Request errors that cause infinite workflow loops
-            let targetTokens = Int(Double(contextLimit) * 0.70) // Target 70% instead of 85%
-
-            if let processor = yarnProcessor {
-                logger.debug("YARN_FORCED: Applying emergency compression from \(estimatedTokens) to target \(targetTokens) tokens")
-
-                /// Convert OpenAIChatMessage to Message format for YaRN processing
-                let conversationMessages = messages.map { chatMsg -> Message in
-                    Message(
-                        id: UUID(),
-                        content: chatMsg.content ?? "",
-                        isFromUser: chatMsg.role == "user",
-                        timestamp: Date(),
-                        performanceMetrics: nil,
-                        githubCopilotResponseId: nil,
-                        isPinned: chatMsg.role == "system",
-                        importance: chatMsg.role == "system" ? 1.0 : (chatMsg.role == "user" ? 0.9 : 0.7)
-                    )
-                }
-
-                do {
-                    /// Force aggressive compression with explicit target
-                    let processedContext = try await processor.processConversationContext(
-                        messages: conversationMessages,
-                        conversationId: conversationId,
-                        targetTokenCount: targetTokens
-                    )
-
-                    /// Convert back to OpenAIChatMessage
-                    messages = processedContext.messages.map { message -> OpenAIChatMessage in
-                        let role = message.isFromUser ? "user" : (message.isPinned ? "system" : "assistant")
-                        return OpenAIChatMessage(role: role, content: message.content)
-                    }
-
-                    logger.debug("YARN_FORCED: Successfully compressed to \(processedContext.tokenCount) tokens (target was \(targetTokens))")
-
-                    /// Update yarnCompressed flag since we just compressed again
-                    yarnCompressed = true
-                    
-                    /// Track compression telemetry
-                    await conversationManager.incrementCompressionEvent(for: conversationId)
-
-                    /// Rebuild request with compressed messages
-                    /// Need to create new baseRequest with compressed messages
-                    let compressedBaseRequest = OpenAIChatRequest(
-                        model: model,
-                        messages: messages,
-                        temperature: 0.7,
-                        maxTokens: conversation.settings.maxTokens ?? 8192,
-                        stream: false,
-                        samConfig: enhancedSamConfig,
-                        sessionId: conversationId.uuidString,
-                        statefulMarker: checkpointMarker,
-                        iterationNumber: iteration
-                    )
-
-                    /// Re-inject tools with compressed messages
-                    let compressedRequestWithTools = await conversationService.injectMCPToolsIntoRequest(compressedBaseRequest)
-
-                    /// CRITICAL: For Claude models, batch consecutive tool results into single user messages
-                    var compressedMessagesToProcess = compressedRequestWithTools.messages
-                    if modelLower.contains("claude") {
-                        compressedMessagesToProcess = batchToolResultsForClaude(compressedMessagesToProcess)
-                        logger.debug("callLLM: Applied Claude tool result batching to compressed messages")
-                    }
-
-                    /// CRITICAL: Ensure message alternation for Claude API compatibility
-                    let fixedCompressedMessages = ensureMessageAlternation(compressedMessagesToProcess)
-                    
-                    /// CRITICAL: Re-validate size after compression to prevent 400 errors
-                    /// GitHub Copilot and other providers enforce hard token limits (e.g., 64K for GitHub Copilot)
-                    /// If compression didn't bring us under limit, force aggressive message trimming
-                    var finalMessages = fixedCompressedMessages
-                    let (postCompressionTokens, postCompressionSafe, _) = await validateRequestSize(
-                        messages: finalMessages,
-                        model: model,
-                        tools: compressedRequestWithTools.tools
-                    )
-                    
-                    if !postCompressionSafe {
-                        logger.warning("POST_COMPRESSION_CHECK: Still exceeds limit (\(postCompressionTokens) tokens), forcing message trimming to prevent 400 error")
-                        
-                        /// Force trim to 70% of context limit by removing oldest messages
-                        let targetTokens = Int(Double(contextLimit) * 0.70)
-                        var currentTokens = postCompressionTokens
-                        var trimCount = 0
-                        
-                        while currentTokens > targetTokens && finalMessages.count > 2 {
-                            /// Remove oldest message (keep system prompt at index 0 if present)
-                            let startIndex = finalMessages[0].role == "system" ? 1 : 0
-                            if finalMessages.count > startIndex {
-                                let removed = finalMessages.remove(at: startIndex)
-                                let removedTokens = await tokenCounter.estimateTokensRemote(text: removed.content ?? "")
-                                currentTokens -= removedTokens
-                                trimCount += 1
-                            } else {
-                                break
-                            }
-                        }
-                        
-                        logger.warning("POST_COMPRESSION_TRIM: Removed \(trimCount) oldest messages, \(postCompressionTokens) → \(currentTokens) tokens")
-                    }
-                    
-                    let finalCompressedRequest = OpenAIChatRequest(
-                        model: compressedRequestWithTools.model,
-                        messages: finalMessages,
-                        temperature: compressedRequestWithTools.temperature,
-                        maxTokens: compressedRequestWithTools.maxTokens,
-                        stream: compressedRequestWithTools.stream,
-                        tools: compressedRequestWithTools.tools,
-                        samConfig: compressedRequestWithTools.samConfig,
-                        sessionId: compressedRequestWithTools.sessionId,
-                        statefulMarker: compressedRequestWithTools.statefulMarker,
-                        iterationNumber: compressedRequestWithTools.iterationNumber
-                    )
-                    logger.debug("callLLM: Applied message alternation validation to compressed request")
-
-                    /// Proceed with compressed request
-                    logger.debug("callLLM: Calling EndpointManager.processChatCompletion() with compressed request and retry policy")
-
-                    let retryPolicy = RetryPolicy.default
-                    let response = try await retryPolicy.execute(
-                        operation: { [self] in
-                            try await self.endpointManager.processChatCompletion(finalCompressedRequest)
-                        },
-                        onRetry: { [self] attempt, delay, error in
-                            self.logger.warning("API_RETRY: Non-streaming attempt \(attempt)/\(retryPolicy.maxRetries) after \(delay)s delay - \(errorDescription(for: error))")
-                        }
-                    )
-
-                    /// Continue with response processing (code below will handle it)
-                    guard let firstChoice = response.choices.first else {
-                        logger.error("callLLM: No choices in LLM response")
-                        return LLMResponse(
-                            content: "ERROR: No response choices from LLM",
-                            finishReason: "error",
-                            toolCalls: nil,
-                            statefulMarker: nil
-                        )
-                    }
-
-                    let choiceWithTools = response.choices.first(where: { $0.message.toolCalls != nil && !$0.message.toolCalls!.isEmpty })
-                    let contentChoice = response.choices.first(where: { $0.message.content != nil && !$0.message.content!.isEmpty }) ?? firstChoice
-
-                    var finishReason: String
-                    if let toolChoice = choiceWithTools {
-                        finishReason = toolChoice.finishReason
-                    } else {
-                        if firstChoice.finishReason == "tool_calls" && firstChoice.message.toolCalls?.isEmpty != false {
-                            logger.warning("BUG_FIX: GitHub Copilot returned finish_reason='tool_calls' with NO tool_calls array - overriding to 'stop'")
-                            finishReason = "stop"
-                        } else {
-                            finishReason = firstChoice.finishReason
-                        }
-                    }
-                    let content = contentChoice.message.content ?? ""
-
-                    logger.debug("callLLM: Response has \(response.choices.count) choices, finishReason=\(finishReason), choiceWithTools=\(choiceWithTools != nil)")
-
-                    var toolCalls: [ToolCall]?
-                    if let choice = choiceWithTools, let openAIToolCalls = choice.message.toolCalls {
-                        logger.debug("callLLM: Parsing \(openAIToolCalls.count) tool calls")
-                        toolCalls = []
-
-                        for toolCall in openAIToolCalls {
-                            let argumentsString = toolCall.function.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
-                            var arguments: [String: Any] = [:]
-                            
-                            // Handle empty arguments (some tools take no params)
-                            if !argumentsString.isEmpty && argumentsString != "{}" {
-                                let argumentsData = argumentsString.data(using: String.Encoding.utf8) ?? Data()
-                                if let parsedArgs = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
-                                    arguments = parsedArgs
-                                } else {
-                                    logger.warning("callLLM: Failed to parse arguments JSON for tool '\(toolCall.function.name)': \(argumentsString)")
-                                    // Still create the tool call with empty arguments - don't skip it!
-                                }
-                            }
-                            
-                            toolCalls?.append(ToolCall(
-                                id: toolCall.id,
-                                name: toolCall.function.name,
-                                arguments: arguments
-                            ))
-                            logger.debug("callLLM: Parsed tool call '\(toolCall.function.name)' (id: \(toolCall.id))")
-                        }
-                    }
-
-                    /// Extract statefulMarker from response
-                    let responseMarker = response.statefulMarker
-                    if let marker = responseMarker {
-                        logger.debug("callLLM: Received statefulMarker for future billing continuity: \(marker.prefix(20))...")
-                    }
-
-                    return LLMResponse(
-                        content: content,
-                        finishReason: finishReason,
-                        toolCalls: toolCalls,
-                        statefulMarker: responseMarker
-                    )
-
-                } catch {
-                    logger.error("YARN_FORCED: Emergency compression failed: \(error)")
-                    logger.warning("YARN_FORCED: Proceeding with original request - may result in 400 error")
-                    /// Fall through to normal request handling below
-                }
-            } else {
-                logger.error("YARN_FORCED: No processor available - cannot compress oversized request")
-                logger.warning("YARN_FORCED: Proceeding anyway - high risk of 400 error")
-            }
-        }
-
-        /// DIAGNOSTIC: Log full message array to understand what LLM actually sees
-        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        logger.debug("DIAGNOSTIC_MESSAGES: Full message array being sent to LLM (\(finalRequest.messages.count) messages)")
-        for (index, msg) in finalRequest.messages.enumerated() {
-            let contentPreview = msg.content?.prefix(150) ?? "nil"
-            let toolCallsInfo = msg.toolCalls.map { "toolCalls=\($0.count)" } ?? "no-tools"
-            let toolCallId = msg.toolCallId ?? "no-id"
-            logger.debug("  [\(index)] role=\(msg.role) \(toolCallsInfo) toolCallId=\(toolCallId) content=\(contentPreview)...")
-        }
-        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-        logger.debug("callLLM: Calling EndpointManager.processChatCompletion() with retry policy")
-
-        /// Wrap API call with retry policy for transient network errors Prevents conversation loss on timeout/network issues (exponential backoff: 2s/4s/6s).
-        let retryPolicy = RetryPolicy.default
-        let response = try await retryPolicy.execute(
-            operation: { [self] in
-                try await self.endpointManager.processChatCompletion(finalRequest)
-            },
-            onRetry: { [self] attempt, delay, error in
-                self.logger.warning("API_RETRY: Non-streaming attempt \(attempt)/\(retryPolicy.maxRetries) after \(delay)s delay - \(errorDescription(for: error))")
-
-                /// Log retry for debugging - do NOT modify conversation.messages (causes UI issues) Retry notifications in non-streaming mode are logged only Streaming mode sends retry notifications via stream chunks (better UX).
-            }
-        )
-
-        guard let firstChoice = response.choices.first else {
-            logger.error("callLLM: No choices in LLM response")
-            /// Return empty response instead of throwing - allows workflow to continue.
-            return LLMResponse(
-                content: "ERROR: No response choices from LLM",
-                finishReason: "error",
-                toolCalls: nil,
-                statefulMarker: nil
-            )
-        }
-
-        /// GitHub Copilot may return multiple choices Choice 0: Thinking/explanation message with no tool calls Choice 1: Actual tool call with tool_calls array We need to find the choice with tool calls, not just use the first one.
-        let choiceWithTools = response.choices.first(where: { $0.message.toolCalls != nil && !$0.message.toolCalls!.isEmpty })
-        let contentChoice = response.choices.first(where: { $0.message.content != nil && !$0.message.content!.isEmpty }) ?? firstChoice
-
-        /// If no choice has tool_calls, use firstChoice's finish_reason (NOT choiceWithTools) GitHub Copilot sometimes returns finish_reason="tool_calls" with NO actual tool_calls array This caused workflow to break thinking tools are pending when there are none.
-        var finishReason: String
-        var contentFilterResults: ContentFilterResults?
-
-        if let toolChoice = choiceWithTools {
-            /// Found a choice with actual tool_calls → use its finish_reason.
-            finishReason = toolChoice.finishReason
-            contentFilterResults = toolChoice.contentFilterResults
-        } else {
-            /// No choice has tool_calls → MUST use stop/length (NOT tool_calls from firstChoice!) CRITICAL: If firstChoice says "tool_calls" but has no toolCalls array, override to "stop".
-            if firstChoice.finishReason == "tool_calls" && firstChoice.message.toolCalls?.isEmpty != false {
-                logger.warning("BUG_FIX: GitHub Copilot returned finish_reason='tool_calls' with NO tool_calls array - overriding to 'stop'")
-                finishReason = "stop"
-            } else {
-                finishReason = firstChoice.finishReason
-            }
-            contentFilterResults = firstChoice.contentFilterResults
-        }
-        let content = contentChoice.message.content ?? ""
-
-        /// CONTENT FILTER DETECTION: Check if response was blocked and provide clear error message
-        if finishReason == "content_filter" {
-            let filterType = contentFilterResults?.getTriggeredFilters() ?? "content policy"
-            logger.error("️ CONTENT_FILTER_BLOCKED: Response blocked by \(filterType) filter")
-
-            let errorMessage = """
-            WARNING: **Content Filter Blocked Response**
-
-            The AI provider's content filter blocked this response due to: **\(filterType)** policy violation.
-
-            **Why this happens:**
-            - GitHub Copilot has strict content filtering for violence, hate speech, sexual content, and self-harm
-            - Legitimate news content (crime reports, political events) may trigger these filters
-            - This is a provider limitation, not a SAM issue
-
-            **Solutions:**
-            1. **Switch provider**: Use OpenAI or Claude models (less restrictive filtering)
-            2. **Modify request**: Ask for different topics or sections (avoid crime/violence if possible)
-            3. **Try again**: Sometimes rephrasing the request helps
-
-            **To switch provider:**
-            - Settings → API Providers → Select OpenAI or Claude
-            - Or use model picker to choose a non-GitHub model
-
-            *If you need assistance with crime/violence news content, OpenAI and Claude providers work better for this use case.*
-            """
-
-            return LLMResponse(
-                content: errorMessage,
-                finishReason: "content_filter",
-                toolCalls: nil,
-                statefulMarker: response.statefulMarker
-            )
-        }
-
-        logger.debug("callLLM: Response has \(response.choices.count) choices, finishReason=\(finishReason), choiceWithTools=\(choiceWithTools != nil)")
-
-        /// Parse tool calls if present (from the choice that actually has them).
-        var toolCalls: [ToolCall]?
-        if let choice = choiceWithTools, let openAIToolCalls = choice.message.toolCalls {
-            logger.debug("callLLM: Parsing \(openAIToolCalls.count) tool calls")
-            toolCalls = []
-
-            for toolCall in openAIToolCalls {
-                /// Parse arguments JSON string to dictionary.
-                let argumentsString = toolCall.function.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
-                var arguments: [String: Any] = [:]
-                
-                // Handle empty arguments (some tools take no params)
-                if !argumentsString.isEmpty && argumentsString != "{}" {
-                    let argumentsData = argumentsString.data(using: String.Encoding.utf8) ?? Data()
-                    if let parsedArgs = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
-                        arguments = parsedArgs
-                    } else {
-                        logger.warning("callLLM: Failed to parse arguments JSON for tool '\(toolCall.function.name)': \(argumentsString)")
-                        // Still create the tool call with empty arguments - don't skip it!
-                    }
-                }
-                
-                toolCalls?.append(ToolCall(
-                    id: toolCall.id,
-                    name: toolCall.function.name,
-                    arguments: arguments
-                ))
-                logger.debug("callLLM: Parsed tool call '\(toolCall.function.name)' (id: \(toolCall.id))")
-            }
-        }
-
-        logger.debug("callLLM: LLM response - finishReason=\(finishReason), content length=\(content.count), toolCalls=\(toolCalls?.count ?? 0)")
-
-        /// MLX Tool Call Parser - Extract tool calls from JSON code blocks MLX models don't have native tool calling support, they output JSON blocks or [TOOL_CALLS] format We need to parse these and create ToolCall objects.
-        var finalContent = content
-        var finalToolCalls = toolCalls
-
-        if finalToolCalls?.isEmpty != false {
-            /// No native tool calls found - check for MLX-style formats.
-            let (mlxToolCalls, cleanedContent) = extractMLXToolCalls(from: content)
-
-            if !mlxToolCalls.isEmpty {
-                logger.debug("callLLM: Extracted \(mlxToolCalls.count) MLX tool calls from response")
-                finalToolCalls = mlxToolCalls
-                finalContent = cleanedContent
-
-                /// Override finish_reason to tool_calls so autonomous loop continues.
-                if finishReason != "tool_calls" {
-                    logger.debug("callLLM: Overriding finish_reason to 'tool_calls' for MLX model")
-                    finishReason = "tool_calls"
-                }
-            } else {
-                logger.debug("callLLM: No MLX tool calls found in response")
-            }
-        } else if let calls = finalToolCalls {
-            logger.debug("callLLM: Using native tool calls from provider (\(calls.count) calls)")
-        }
-
-        /// CRITICAL: Strip system-reminder tags before returning/saving
-        /// Claude may echo back <system-reminder> content - must filter it out
-        finalContent = stripSystemReminders(from: finalContent)
-
-        /// Extract statefulMarker from response for GitHub Copilot session continuity This is used as previous_response_id in subsequent requests to prevent quota increments.
-        let statefulMarker = response.statefulMarker
-        if let marker = statefulMarker {
-            logger.debug("callLLM: Extracted statefulMarker from response: \(marker.prefix(20))...")
-        }
-
-        return LLMResponse(
-            content: finalContent,
-            finishReason: finishReason,
-            toolCalls: finalToolCalls,
-            statefulMarker: statefulMarker
-        )
-    }
-
-    /// Calls the LLM via EndpointManager with streaming support Yields chunks to continuation in real-time for better UX.
-    @MainActor
-    private func callLLMStreaming(
-        conversationId: UUID,
-        message: String,
-        model: String,
-        internalMessages: [OpenAIChatMessage],
-        iteration: Int,
-        continuation: AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error>.Continuation,
-        requestId: String,
-        created: Int,
-        samConfig: SAMConfig? = nil,
-        statefulMarker: String? = nil,
-        statefulMarkerMessageCount: Int? = nil,
-        sentInternalMessagesCount: Int = 0,
-        retrievedMessageIds: inout Set<UUID>
-    ) async throws -> LLMResponse {
-        logger.debug("ERROR:ERROR:ERROR: CALL_LLM_STREAMING_ENTRY_POINT_REACHED ERROR:ERROR:ERROR: - model: \(model), conversationId: \(conversationId)")
-        logger.debug("callLLMStreaming: Building OpenAI streaming request for model '\(model)'")
-
-        /// LAZY FETCH: Check if this is first GitHub Copilot request, fetch model capabilities if needed.
-        await lazyFetchModelCapabilitiesIfNeeded(for: model)
-
-        /// Get conversation for user messages only (not tool results).
-        guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
-            logger.error("callLLMStreaming: Conversation not found: \(conversationId.uuidString)")
-            return LLMResponse(
-                content: "ERROR: Conversation not found",
-                finishReason: "error",
-                toolCalls: nil,
-                statefulMarker: nil
-            )
-        }
-
-        /// CONTEXT MANAGEMENT: Use YARN exclusively CRITICAL Context pruning was causing premium billing charges because it calls GitHub API to generate summaries.
-        logger.debug("CONTEXT_MANAGEMENT: Using YARN for context compression (no API calls, no premium charges)")
-
-        /// Build messages array: system prompt + conversation messages + internal tool messages.
-        var messages: [OpenAIChatMessage] = []
-
-        /// Add user-configured system prompt (includes guard rails) FIRST This was the architectural gap - API requests never included SystemPromptManager prompts.
-        let defaultPromptId = await MainActor.run {
-            SystemPromptManager.shared.selectedConfigurationId
-        }
-        let promptId = conversation.settings.selectedSystemPromptId ?? defaultPromptId
-
-        logger.debug("DEBUG_ORCH_CONV: callLLMStreaming using conversation \(conversation.id), selectedSystemPromptId: \(conversation.settings.selectedSystemPromptId?.uuidString ?? "nil"), promptId: \(promptId?.uuidString ?? "nil")")
-
-        let toolsEnabled = samConfig?.mcpToolsEnabled ?? true
-        let workflowModeEnabled = conversation.settings.enableWorkflowMode
-        let dynamicIterationsEnabled = conversation.settings.enableDynamicIterations
-        var userSystemPrompt = await MainActor.run {
-            SystemPromptManager.shared.generateSystemPrompt(
-                for: promptId,
-                toolsEnabled: toolsEnabled,
-                workflowModeEnabled: workflowModeEnabled,
-                dynamicIterationsEnabled: dynamicIterationsEnabled,
-                model: model
-            )
-        }
-
-        /// Merge personality if selected
-        if let personalityId = conversation.settings.selectedPersonalityId {
-            let personalityManager = PersonalityManager()
-            if let personality = personalityManager.getPersonality(id: personalityId),
-               personality.id != Personality.assistant.id {  // Skip if Assistant (default)
-                let personalityInstructions = personality.generatePromptAdditions()
-                userSystemPrompt += "\n\n" + personalityInstructions
-                logger.info("Merged personality '\(personality.name)' into system prompt (\(personalityInstructions.count) chars)")
-            }
-        }
-
-        /// Inject conversation ID and working directory for memory operations and file operations.
-        var systemPromptAdditions = """
-        \(userSystemPrompt)
-
-        CONVERSATION_ID: \(conversationId.uuidString)
-        """
-
-        /// Add working directory context when tools are enabled
-        if toolsEnabled {
-            let effectiveWorkingDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-            systemPromptAdditions += """
-
-
-            # WORKING DIRECTORY CONTEXT
-
-            Your current working directory is: `\(effectiveWorkingDir)`
-
-            All file operations and terminal commands will execute relative to this directory by default.
-            You do not need to run 'pwd' or ask about the starting directory - this IS your working directory.
-            """
-        }
-
-        /// SHARED TOPIC CONTEXT INJECTION
-        /// When a conversation is attached to a shared topic, inject topic awareness
-        /// so the agent knows about the shared context and can use recall_history with topic_id
-        if conversation.settings.useSharedData,
-           let topicId = conversation.settings.sharedTopicId,
-           let topicName = conversation.settings.sharedTopicName {
-            systemPromptAdditions += """
-
-
-            # SHARED TOPIC CONTEXT
-
-            You are working within the shared topic: "\(topicName)"
-            Topic ID: \(topicId.uuidString)
-
-            **IMPORTANT: You already have access to data from this topic.** Context from other conversations
-            in the "\(topicName)" topic is automatically retrieved and injected into your context on every request.
-            Look for the "SHARED TOPIC CONVERSATION HISTORY" and "HIGH IMPORTANCE MESSAGES" sections in your
-            system context - these contain real data from the topic that you should use to answer questions.
-
-            This conversation shares memory and working files with other conversations in this topic.
-            When answering questions, ALWAYS check the injected topic context first before claiming you
-            don't have information. The data is already in your context.
-
-            If you need MORE context beyond what was auto-injected, use the `recall_history` tool with:
-            - topic_id: "\(topicId.uuidString)" to search across ALL conversations in this topic
-            - Or omit topic_id to search only this conversation's archived history
-            """
-            logger.debug("callLLMStreaming: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
-        }
-
-        let systemPromptWithId = systemPromptAdditions
-
-        logger.debug("callLLMStreaming: Generated system prompt from ID: \(promptId?.uuidString ?? "default"), length: \(systemPromptWithId.count) chars, toolsEnabled: \(toolsEnabled)")
-        logger.debug("callLLMStreaming: Guard rails present: \(systemPromptWithId.contains("TOOL SCHEMA CONFIDENTIALITY"))")
-
-        if !userSystemPrompt.isEmpty {
-            messages.append(OpenAIChatMessage(role: "system", content: systemPromptWithId))
-            logger.debug("callLLMStreaming: Added user-configured system prompt to messages (with conversation ID)")
-        }
-
-        /// CLAUDE USERCONTEXT INJECTION
-        /// Per Claude Messages API best practices: Extract important context from ALL pinned messages
-        /// and inject as system message on EVERY request (context doesn't persist in conversation history)
-        /// Reference: claude-messages.txt - "Do not rely on Turn 1 staying in history forever"
-        let modelLower = model.lowercased()
-        if modelLower.contains("claude") {
-            /// Extract userContext from ALL pinned messages
-            let pinnedMessages = conversation.messages.filter { $0.isPinned }
-            var extractedContexts: [String] = []
-            
-            for pinnedMessage in pinnedMessages {
-                let content = pinnedMessage.content
-                if let userContextStart = content.range(of: "\n\n<userContext>\n"),
-                   let userContextEnd = content.range(of: "\n</userContext>", range: userContextStart.upperBound..<content.endIndex) {
-                    /// Extract userContext content (without tags)
-                    let userContextContent = String(content[userContextStart.upperBound..<userContextEnd.lowerBound])
-                    extractedContexts.append(userContextContent)
-                }
-            }
-            
-            /// If we found any userContext blocks in pinned messages, inject them
-            if !extractedContexts.isEmpty {
-                let claudeContextMessage = """
-                ## User Context (Persistent)
-                
-                This context was provided in pinned messages and applies to all turns of this conversation:
-                
-                \(extractedContexts.joined(separator: "\n\n---\n\n"))
-                """
-                
-                messages.append(OpenAIChatMessage(role: "system", content: claudeContextMessage))
-                logger.info("CLAUDE_CONTEXT: Injected userContext from \(extractedContexts.count) pinned message(s) as system content (\(claudeContextMessage.count) chars)")
-            }
-        }
-
-        /// AUTOMATIC CONTEXT RETRIEVAL Inject pinned messages + semantic search results BEFORE conversation messages This ensures critical context (initial request, key decisions) is always available CRITICAL FIX: Use message ID tracking to prevent Phase 3 duplication across iterations - Phase 1 (pinned) always runs - core context - Phase 2 (semantic search) always runs - relevant memories - Phase 3 (high-importance) tracks retrieved IDs - prevents duplication while preserving context.
-        if let retrievedContext = await retrieveRelevantContext(
-            conversation: conversation,
-            currentUserMessage: message,
-            iteration: iteration,
-            caller: "callLLMStreaming_line3534",
-            retrievedMessageIds: &retrievedMessageIds
-        ) {
-            messages.append(OpenAIChatMessage(role: "system", content: retrievedContext))
-            logger.debug("callLLMStreaming: Added automatic context retrieval (\(retrievedContext.count) chars) for iteration \(iteration)")
-        }
-
-        /// DOCUMENT IMPORT REMINDER INJECTION Tell agent what documents are already imported so they search memory instead of re-importing
-        if DocumentImportReminderInjector.shared.shouldInjectReminder(conversationId: conversation.id) {
-            if let docReminder = DocumentImportReminderInjector.shared.formatDocumentReminder(conversationId: conversation.id) {
-                messages.append(createSystemReminder(content: docReminder, model: model))
-                logger.debug("callLLMStreaming: Injected document import reminder (\(DocumentImportReminderInjector.shared.getImportedCount(for: conversation.id)) docs)")
-            }
-        }
-
-        /// Filter out UI-only progress/status messages before sending to API These messages are only for UI display and should not be sent to LLM WHY FILTER: - Progress messages like "→ Continuing work" or "SUCCESS: User Collaboration: ..." are UI-only - They don't represent actual conversation content - Including them adds unnecessary noise to LLM context WHAT TO FILTER: - Messages starting with "→" (continuation status) - Messages starting with "SUCCESS: User Collaboration:" (collaboration prompts) - "Extended execution limit" status messages WHAT TO KEEP: - User messages (always kept) - Tool result messages (isToolMessage=true) - even if they start with "SUCCESS:" - Assistant messages with actual LLM responses.
-        var conversationMessages: [Message] = Array(conversation.messages).filter { msg in
-            /// Always keep user messages.
-            if msg.isFromUser {
-                return true
-            }
-
-            /// CRITICAL: Always keep tool messages - they contain tool execution results
-            /// These are needed for the agent to understand what work was done
-            if msg.isToolMessage {
-                return true
-            }
-
-            /// For assistant messages, check if it's a UI-only progress message.
-            let content = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            /// Filter out progress/status messages (UI-only, not real LLM responses).
-            /// Be specific - only filter known UI-only patterns, not all "SUCCESS:" messages
-            let uiOnlyPatterns = [
-                "→",
-                "SUCCESS: User Collaboration:",
-                "Extended execution limit"
-            ]
-
-            for pattern in uiOnlyPatterns {
-                if content.hasPrefix(pattern) {
-                    logger.debug("STREAMING_FILTER: Excluding UI progress message from API: \(String(content.prefix(50)))...")
-                    return false
-                }
-            }
-
-            /// Keep assistant messages (real LLM responses).
-            return true
-        }
-
-        /// Handle tool results properly We still send tool results from internalMessages to provide LLM with tool execution context.
-        let hasToolResults = !internalMessages.isEmpty
-        let checkpointSlicedAllMessages = false
-
-        let internalMessagesToSend = internalMessages[...]
-        logger.debug("INTERNAL_MESSAGES_STREAMING: Sending all \(internalMessages.count) internal messages (tool calls + results)")
-
-        /// Delta-only slicing ONLY when statefulMarker exists AND we have tool results
-        /// Previously, slicing happened whenever statefulMarker existed, even for subsequent user messages
-        /// This caused conversationMessages to be empty when user sent a follow-up message, removing all context!
-        /// /// CORRECT BEHAVIOR:
-        /// 1. statefulMarker + hasToolResults = delta-only mode (workflow iteration) - skip conversation history
-        /// 2. statefulMarker + NO tool results = subsequent user message - send FULL conversation history
-        /// 3. NO statefulMarker = first message or fresh start - send FULL conversation history
-        var useDeltaMode = false  /// Track whether we should use delta-only mode
-        
-        if let marker = statefulMarker, hasToolResults {
-            /// Delta-only mode: This is a workflow iteration with tool results
-            /// Server has full history up to marker, only need to send tool execution delta
-            /// PREFERRED: Use message count from when marker was captured (no timing dependencies)
-            if let markerMessageCount = statefulMarkerMessageCount {
-                /// Slice to only include messages AFTER the marker count
-                /// Example: If marker was captured at count=3, send messages from index 3 onwards
-                let sliceIndex = markerMessageCount
-                conversationMessages = Array(conversationMessages.suffix(from: min(sliceIndex, conversationMessages.count)))
-                useDeltaMode = true  /// Successfully sliced, use delta mode
-                logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(conversationMessages.count) messages after marker (delta-only mode with tool results)")
-            }
-            /// FALLBACK: Search for marker in messages (timing-dependent, may fail if message not persisted yet)
-            else if let markerIndex = conversationMessages.lastIndex(where: { $0.githubCopilotResponseId == marker }) {
-                /// Slice to only include messages AFTER the marker (marker itself is already on server)
-                conversationMessages = Array(conversationMessages.suffix(from: markerIndex + 1))
-                useDeltaMode = true  /// Successfully found marker, use delta mode
-                logger.debug("STATEFUL_MARKER_SLICING: Found marker at index \(markerIndex), sending ONLY \(conversationMessages.count) messages after marker (delta-only mode, fallback method)")
-            } else {
-                /// CRITICAL: Marker not found - cannot use delta mode safely!
-                /// Send FULL conversation history to prevent context loss
-                useDeltaMode = false  /// Force full history mode
-                logger.warning("STATEFUL_MARKER_WARNING: Marker \(marker.prefix(20))... not found in conversation AND no message count available, FORCING FULL HISTORY MODE (safety fallback)")
-            }
-        } else if statefulMarker != nil && !hasToolResults {
-            /// Subsequent user message scenario: statefulMarker exists but no tool results yet
-            /// Do NOT slice conversation history - user needs full context for their new message!
-            useDeltaMode = false  /// Full history needed for user message
-            logger.debug("SUBSEQUENT_USER_MESSAGE: StatefulMarker exists but no tool results - sending FULL conversation history (\(conversationMessages.count) messages) for user context")
-        } else {
-            useDeltaMode = false  /// No marker, send full history
-            logger.debug("INFO: No statefulMarker, sending all \(conversationMessages.count) conversation messages")
-        }
-
-        /// When delta mode is enabled, send ONLY internalMessages (delta-only mode)
-        /// When delta mode is disabled, send conversationMessages + internalMessages (full history)
-        /// This prevents duplicate assistant messages that cause Claude 400 errors
-        /// ROOT CAUSE: Assistant responses are in BOTH conversation.messages AND internalMessages
-        /// GitHub Copilot approach: With statefulMarker, only send NEW messages (delta)
-        /// Our approach: internalMessages IS the delta (tool calls + results from previous iteration)
-        /// Do NOT inject "Please continue" into messages array
-        /// GitHub Copilot API: "Please continue" is query param only, NOT a synthetic message
-        var currentMarker = statefulMarker  /// Make mutable copy
-        if useDeltaMode && hasToolResults {
-            /// Delta-only mode: Server has full history up to marker, only send new tool execution context
-            /// The stateful marker tells the API to continue from the previous response
-            /// We send ONLY the tool results (delta), not the full conversation history
-            messages.append(contentsOf: internalMessagesToSend)
-            logger.debug("STATEFUL_MARKER_DELTA_MODE: Sending \(internalMessagesToSend.count) internal messages (delta-only mode, no synthetic user message)")
-
-            /// CRITICAL FIX: Only enforce payload limit for Claude (Claude-specific limitation)
-            /// GitHub Copilot and other models don't have this restriction
-            /// This was causing tool results to be trimmed away → infinite loop bug
-            let modelLower = model.lowercased()
-            if modelLower.contains("claude") {
-                /// CRITICAL: Enforce 64KB payload limit for Claude (increased from 32KB to match GitHub Copilot limit)
-                /// Even with cached large tool results, accumulated deltas can exceed limit
-                /// If trimming occurs, clear marker (it may reference removed message)
-                if enforcePayloadSizeLimit(&messages, maxBytes: 64000) {
-                    currentMarker = nil
-                    logger.warning("PAYLOAD_SIZE: Cleared statefulMarker after trimming (marker may reference removed message)")
-                }
-            } else {
-                logger.debug("PAYLOAD_SIZE: Skipping payload limit for non-Claude model (\(model))")
-            }
-        } else if hasToolResults && checkpointSlicedAllMessages {
-            /// BILLING FIX: Checkpoint found AND we have tool results Send ONLY tool results, don't duplicate conversation history.
-            logger.debug("BILLING_FIX: Checkpoint slicing produced 0 conversation messages + tool results present")
-            logger.debug("BILLING_FIX: Sending ONLY \(internalMessagesToSend.count) tool results (no conversation duplication) - this prevents premium charge")
-            messages.append(contentsOf: internalMessagesToSend)
-        } else {
-            /// Normal flow: Add conversation messages + tool results (First request, or checkpoint not found, or no tool results).
-            /// CRITICAL FIX: Strip <userContext>...</userContext> blocks from OLD user messages
-            /// These blocks are injected into every user message and stored permanently,
-            /// causing context explosion (e.g., 13 messages × 9800 chars = 127,400 chars duplicated)
-            /// Keep context ONLY on the LATEST user message
-            let lastUserMessageIndex = conversationMessages.lastIndex(where: { $0.isFromUser })
-            var strippedContextChars = 0
-
-            for (index, historyMessage) in conversationMessages.enumerated() {
-                var cleanContent = historyMessage.content
-
-                /// DIAGNOSTIC: Track isToolMessage flag at conversion
-                let hasPreview = cleanContent.contains("[TOOL_RESULT_PREVIEW]") || cleanContent.contains("[TOOL_RESULT_STORED]")
-                if hasPreview {
-                    let contentPrefix = cleanContent.prefix(60).replacingOccurrences(of: "\n", with: " ")
-                    logger.debug("CONVERT_TOOL_MSG: isToolMessage=\(historyMessage.isToolMessage), type=\(historyMessage.type), contentPrefix=[\(contentPrefix)]")
-                }
-
-                // Handle tool messages with proper role and toolCallId
-                if historyMessage.isToolMessage {
-                    // Tool messages need role="tool" and toolCallId for proper API formatting
-                    let toolCallId = historyMessage.toolCallId ?? UUID().uuidString
-                    messages.append(OpenAIChatMessage(
-                        role: "tool",
-                        content: cleanContent,
-                        toolCallId: toolCallId
-                    ))
-                    logger.debug("CONTEXT_BUILD: Added tool message with id=\(toolCallId.prefix(8))...")
-                    continue
-                }
-
-                let role = historyMessage.isFromUser ? "user" : "assistant"
-
-                /// Clean tool call markers from assistant messages
-                if role == "assistant" {
-                    cleanContent = cleanToolCallMarkers(from: cleanContent)
-                }
-
-                /// Strip <userContext>...</userContext> from OLD user messages (not the latest one)
-                /// This prevents sending the same 9800-char block 13+ times
-                /// CRITICAL: Never strip from PINNED messages - they contain critical context
-                /// (e.g., first message in conversation with copilot-instructions)
-                if role == "user" && index != lastUserMessageIndex && !historyMessage.isPinned {
-                    let originalLength = cleanContent.count
-                    cleanContent = stripUserContextBlock(from: cleanContent)
-                    let stripped = originalLength - cleanContent.count
-                    if stripped > 0 {
-                        strippedContextChars += stripped
-                        logger.debug("CONTEXT_DEDUP: Stripped \(stripped) chars from user message \(index)")
-                    }
-                } else if role == "user" && historyMessage.isPinned && index != lastUserMessageIndex {
-                    logger.debug("CONTEXT_DEDUP: Preserved <userContext> on pinned message \(index)")
-                }
-
-                messages.append(OpenAIChatMessage(role: role, content: cleanContent))
-            }
-
-            if strippedContextChars > 0 {
-                logger.info("CONTEXT_DEDUP: Total stripped \(strippedContextChars) chars of duplicated [User Context] blocks from \(conversationMessages.count) messages")
-            }
-
-            /// Add tool results if present.
-            if hasToolResults {
-                messages.append(contentsOf: internalMessagesToSend)
-                logger.debug("BILLING_DEBUG: Added \(conversationMessages.count) conversation messages + \(internalMessagesToSend.count) tool messages")
-            } else {
-                logger.debug("BILLING_DEBUG: Added \(conversationMessages.count) conversation messages (no tool results)")
-            }
-        }
-
-        /// VS CODE COPILOT PATTERN: Inject reminders at the END of messages (high salience)
-        /// This is critical for multi-step workflows - agent needs to see reminders right before responding
-        let activeTodoCount = TodoManager.shared.getProgressStatistics(for: conversation.id.uuidString).totalTodos
-        let responseCount = conversation.messages.count
-
-        /// Mini prompt reminder - user's enabled mini prompts (instructions)
-        if MiniPromptReminderInjector.shared.shouldInjectReminder(
-            conversationId: conversation.id,
-            enabledMiniPromptIds: conversation.enabledMiniPromptIds,
-            currentResponseCount: responseCount
-        ) {
-            if let miniPromptReminder = MiniPromptReminderInjector.shared.formatMiniPromptReminder(
-                conversationId: conversation.id,
-                enabledMiniPromptIds: conversation.enabledMiniPromptIds
-            ) {
-                messages.append(createSystemReminder(content: miniPromptReminder, model: model))
-                /// Record successful injection to prevent repeating
-                MiniPromptReminderInjector.shared.recordInjection(
-                    conversationId: conversation.id,
-                    enabledMiniPromptIds: conversation.enabledMiniPromptIds
-                )
-                logger.debug("callLLMStreaming: Injected mini prompt reminder at END of messages")
-            }
-        }
-
-        /// Todo reminder - task progress tracking
-        if TodoReminderInjector.shared.shouldInjectReminder(
-            conversationId: conversation.id,
-            currentResponseCount: responseCount,
-            activeTodoCount: activeTodoCount
-        ) {
-            if let todoReminder = TodoReminderInjector.shared.formatTodoReminder(
-                conversationId: conversation.id,
-                todoManager: TodoManager.shared
-            ) {
-                messages.append(createSystemReminder(content: todoReminder, model: model))
-                logger.debug("callLLMStreaming: Injected todo reminder at END of messages (VS Code pattern, \(activeTodoCount) active todos)")
-            }
-        }
-
-        /// Memory reminder - prevent duplicate memory stores
-        /// CRITICAL: Inject at END of messages (high salience) so agent sees what was already stored
-        if MemoryReminderInjector.shared.shouldInjectReminder(conversationId: conversation.id) {
-            if let memoryReminder = MemoryReminderInjector.shared.formatMemoryReminder(conversationId: conversation.id) {
-                messages.append(createSystemReminder(content: memoryReminder, model: model))
-                logger.debug("callLLMStreaming: Injected memory reminder at END of messages (\(MemoryReminderInjector.shared.getStoredCount(for: conversation.id)) memories)")
-            }
-        }
-
-        /// Status signal reminder - prompt agent to emit continue/complete signals
-        /// CRITICAL: Inject at END of messages (high salience) when workflow mode is enabled
-        if StatusSignalReminderInjector.shared.shouldInjectReminder(isWorkflowMode: conversation.settings.enableWorkflowMode) {
-            let statusReminder = StatusSignalReminderInjector.shared.formatStatusSignalReminder()
-            messages.append(createSystemReminder(content: statusReminder, model: model))
-            logger.debug("callLLMStreaming: Injected status signal reminder at END of messages (workflow mode enabled)")
-        }
-
-        logger.debug("callLLMStreaming: Built complete message array with \(messages.count) messages (before alternation fix)")
-
-        /// CRITICAL: For Claude models via DIRECT Anthropic provider, batch consecutive tool results
-        /// Claude Messages API requires ALL tool results from one iteration in ONE user message
-        /// This fixes the tool result batching issue that caused workflow loops
-        /// 
-        /// IMPORTANT: Do NOT batch for GitHub Copilot + Claude!
-        /// GitHub Copilot's API handles Claude conversion internally and expects OpenAI format
-        /// Batching causes the marker to be buried in alternation merging
-        let isDirectAnthropicProvider = model.lowercased().hasPrefix("anthropic/")
-        let isClaudeModel = modelLower.contains("claude")
-        
-        if isClaudeModel && isDirectAnthropicProvider {
-            messages = batchToolResultsForClaude(messages)
-            logger.debug("callLLMStreaming: Applied Claude tool result batching for direct Anthropic provider")
-        } else if isClaudeModel {
-            logger.debug("callLLMStreaming: Skipping Claude batching (not direct Anthropic provider - proxy will handle conversion)")
-        }
-
-        /// CRITICAL: Fix message alternation BEFORE YARN compression
-        /// Claude requires strict user/assistant alternation with no empty messages
-        /// This MUST happen before YARN because YARN compresses individual messages
-        /// If we merge AFTER YARN, we concatenate compressed content and blow up token count!
-        messages = ensureMessageAlternation(messages)
-        logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
-
-        /// CRITICAL: Get model's actual context limit BEFORE YaRN processing
-        /// This ensures YaRN compresses to the correct target for this specific model
-        let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
-        logger.debug("YARN: Model '\(model)' has context limit of \(modelContextLimit) tokens")
-
-        /// Process ALL messages with YARN before sending to LLM This includes conversation messages, system prompts, AND tool execution results Tool results can be massive (web scraping, document imports) and MUST be compressed.
-        logger.debug("YARN: Processing ALL \(messages.count) messages (conversation + tool results) before LLM call")
-        do {
-            messages = try await processAllMessagesWithYARN(messages, conversationId: conversationId, modelContextLimit: modelContextLimit)
-            logger.debug("YARN: Processed messages ready for LLM (\(messages.count) messages after YARN)")
-        } catch {
-            logger.warning("YARN: Processing failed, using original messages: \(error)")
-            /// Continue with original messages if YARN fails.
-        }
-
-        logger.debug("callLLMStreaming: Request has \(messages.count) messages (after YARN)")
-
-        /// Log statefulMarker presence for debugging.
-        if let marker = statefulMarker {
-            logger.debug("callLLMStreaming: Including statefulMarker from previous iteration: \(marker.prefix(20))...")
-        }
-
-        /// Inject isExternalAPICall flag into samConfig for tool filtering External API calls should never have user_collaboration tool (no UI to interact with) SECURITY: Pass enableTerminalAccess from conversation settings to filter terminal_operations.
-        let enhancedSamConfig: SAMConfig?
-        if let samConfig = samConfig {
-            enhancedSamConfig = SAMConfig(
-                sharedMemoryEnabled: samConfig.sharedMemoryEnabled,
-                mcpToolsEnabled: samConfig.mcpToolsEnabled,
-                memoryCollectionId: samConfig.memoryCollectionId,
-                conversationTitle: samConfig.conversationTitle,
-                maxIterations: samConfig.maxIterations,
-                enableReasoning: samConfig.enableReasoning,
-                workingDirectory: samConfig.workingDirectory,
-                systemPromptId: samConfig.systemPromptId,
-                isExternalAPICall: isExternalAPICall,
-                enableTerminalAccess: conversation.settings.enableTerminalAccess,
-                enableWorkflowMode: samConfig.enableWorkflowMode,
-                enableDynamicIterations: samConfig.enableDynamicIterations
-            )
-        } else if isExternalAPICall {
-            /// No samConfig provided but we're external API call - create one with just the flag.
-            enhancedSamConfig = SAMConfig(isExternalAPICall: true, enableTerminalAccess: false)
-        } else {
-            /// No samConfig, internal call - still need to pass terminal setting.
-            enhancedSamConfig = SAMConfig(enableTerminalAccess: conversation.settings.enableTerminalAccess)
-        }
-
-        /// Build OpenAI request with statefulMarker for GitHub Copilot session continuity Use conversation's maxTokens setting (user-configured, defaults to 8192).
-        /// CRITICAL: Ensure maxTokens is at least 4096 to prevent truncated responses
-        let effectiveMaxTokensStreaming = max(conversation.settings.maxTokens ?? 8192, 4096)
-        let baseRequest = OpenAIChatRequest(
-            model: model,
-            messages: messages,
-            temperature: 0.7,
-            maxTokens: effectiveMaxTokensStreaming,
-            stream: true,
-            samConfig: enhancedSamConfig,
-            sessionId: conversationId.uuidString,
-            statefulMarker: currentMarker,
-            iterationNumber: iteration
-        )
-
-        /// Inject MCP tools.
-        logger.debug("callLLMStreaming: Injecting MCP tools")
-        let finalRequest = await conversationService.injectMCPToolsIntoRequest(baseRequest)
-
-        /// Validate request size before sending Most timeouts occur because agent sends too much data to API.
-        let (estimatedTokens, isSafe, contextLimit) = await validateRequestSize(
-            messages: finalRequest.messages,
-            model: model,
-            tools: finalRequest.tools
-        )
-
-        if !isSafe {
-            logger.warning("API_REQUEST_SIZE: Streaming request exceeds safe threshold (\(estimatedTokens) tokens / \(contextLimit) limit)")
-            logger.warning("API_REQUEST_SIZE: High risk of timeout. Consider additional YARN compression in future iterations.")
-            /// We proceed anyway (retry will handle timeout), but log warning for improvement.
-        }
-
-        /// DIAGNOSTIC: Log full message array to understand what LLM actually sees
-        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        logger.debug("DIAGNOSTIC_MESSAGES_STREAMING: Full message array being sent to LLM (\(finalRequest.messages.count) messages)")
-        for (index, msg) in finalRequest.messages.enumerated() {
-            let contentPreview = msg.content?.prefix(150) ?? "nil"
-            let toolCallsInfo = msg.toolCalls.map { "toolCalls=\($0.count)" } ?? "no-tools"
-            let toolCallId = msg.toolCallId ?? "no-id"
-            logger.debug("  [\(index)] role=\(msg.role) \(toolCallsInfo) toolCallId=\(toolCallId) content=\(contentPreview)...")
-        }
-        logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-        logger.debug("callLLMStreaming: Calling EndpointManager.processStreamingChatCompletion() with retry policy")
-
-        /// Wrap streaming call with retry policy Must retry BEFORE yielding any chunks to continuation.
-        let retryPolicy = RetryPolicy.default
-
-        let streamingResponse = try await retryPolicy.execute(
-            operation: { [self] in
-                try await self.endpointManager.processStreamingChatCompletion(finalRequest)
-            },
-            onRetry: { [self] attempt, delay, error in
-                self.logger.warning("STREAMING_RETRY: Attempt \(attempt)/\(retryPolicy.maxRetries) after \(delay)s delay - \(errorDescription(for: error))")
-
-                /// Send retry notification via streaming continuation (will appear in real-time).
-                let retryChunk = ServerOpenAIChatStreamChunk(
-                    id: requestId,
-                    object: "chat.completion.chunk",
-                    created: created,
-                    model: model,
-                    choices: [
-                        OpenAIChatStreamChoice(
-                            index: 0,
-                            delta: OpenAIChatDelta(
-                                role: nil,
-                                content: "\n\nNetwork timeout - retrying (attempt \(attempt)/\(retryPolicy.maxRetries))...\n\n",
-                                toolCalls: nil,
-                                statefulMarker: nil
-                            ),
-                            finishReason: nil
-                        )
-                    ]
-                )
-                continuation.yield(retryChunk)
-            }
-        )
-
-        /// Accumulate response while yielding chunks.
-        var accumulatedContent = ""
-        var finishReason: String?
-        var statefulMarker: String?
-        var contentFilterResults: ContentFilterResults?
-
-        /// CLAUDE FIX: Use ModelConfigurationManager to determine delta mode
-        /// Claude models send FULL message content in each chunk (cumulative deltas)
-        /// GPT models send ONLY new tokens in each chunk (incremental deltas)
-        let isCumulativeDeltaModel = ModelConfigurationManager.shared.isCumulativeDeltaModel(model)
-
-        /// Extract normalized model name for logging
-        let normalizedModel = model.contains("/") ? model.components(separatedBy: "/").last ?? model : model
-
-        logger.debug("STREAMING_MODE_DETECTION", metadata: [
-            "model": .string(model),
-            "normalizedModel": .string(normalizedModel),
-            "isCumulative": .stringConvertible(isCumulativeDeltaModel),
-            "configFound": .stringConvertible(ModelConfigurationManager.shared.getConfiguration(for: model) != nil)
-        ])
-
-        if isCumulativeDeltaModel {
-            logger.debug("STREAMING_REPLACE: Using cumulative delta mode (Claude) - will REPLACE content each chunk")
-        } else {
-            logger.debug("STREAMING_APPEND: Using incremental delta mode (GPT) - will ACCUMULATE content each chunk")
-        }
-
-        /// CRITICAL: Delay assistant message creation until first content chunk
-        /// Do NOT create message until we have actual content (not just tool calls)
-        /// This prevents empty assistant messages when LLM only returns tool calls
-        var assistantMessageId: UUID?
-
-        /// Track tool messages by execution ID to create separate cards for each tool call
-        var toolMessagesByExecutionId: [String: UUID] = [:]
-
-        /// Track accumulated content separately for each message
-        var accumulatedContentByMessageId: [UUID: String] = [:]
-
-        /// Use StreamingToolCalls for index-based accumulation.
-        let streamingToolCalls = StreamingToolCalls()
-
-        /// Track chunk count for debugging
-        var chunkCount = 0
-
-        for try await chunk in streamingResponse {
-            /// CRITICAL: Check for cancellation on each chunk to enable immediate stop
-            /// This allows the stop button to immediately halt streaming from remote APIs
-            if isCancellationRequested {
-                logger.info("STREAMING_CANCELLED: Cancellation flag set, stopping stream immediately")
-                continuation.finish()
-                return LLMResponse(
-                    content: accumulatedContent,
-                    finishReason: "cancelled",
-                    toolCalls: nil,
-                    statefulMarker: statefulMarker
-                )
-            }
-            try Task.checkCancellation()
-
-            /// CRITICAL: Determine which message this chunk belongs to
-            /// - Tool chunks (isToolMessage=true) → create/update TOOL message
-            /// - Regular chunks (isToolMessage=false) → update ASSISTANT message
-            let targetMessageId: UUID
-
-            if chunk.isToolMessage == true, let executionId = chunk.toolExecutionId {
-                /// Tool chunk: create tool message if this is first chunk for this execution
-                if let existingToolMessageId = toolMessagesByExecutionId[executionId] {
-                    /// Reuse existing tool message for this execution
-                    targetMessageId = existingToolMessageId
-                } else {
-                    /// Create new tool message for this execution
-                    /// Convert String toolStatus to ToolStatus enum
-                    let toolStatus: ToolStatus
-                    if let statusString = chunk.toolStatus {
-                        toolStatus = ToolStatus(rawValue: statusString) ?? .running
-                    } else {
-                        toolStatus = .running
-                    }
-
-                    let toolMessageId = conversation.messageBus?.addToolMessage(
-                        id: UUID(),
-                        name: chunk.toolName ?? "unknown",
-                        status: toolStatus,
-                        details: "",  /// Will be updated as chunks arrive
-                        toolDisplayData: chunk.toolDisplayData,
-                        toolCallId: executionId
-                    ) ?? UUID()
-
-                    toolMessagesByExecutionId[executionId] = toolMessageId
-                    targetMessageId = toolMessageId
-
-                    logger.debug("MESSAGEBUS_CREATE_TOOL: Created tool message id=\(toolMessageId.uuidString.prefix(8)) for execution=\(executionId.prefix(8)) tool=\(chunk.toolName ?? "unknown")")
-                }
-            } else {
-                /// Regular LLM content chunk: create assistant message on first content chunk
-                if assistantMessageId == nil {
-                    /// First content chunk - create assistant message now
-                    let newMessageId = UUID()
-                    conversation.messageBus?.addAssistantMessage(
-                        id: newMessageId,
-                        content: "",  /// Will update with content immediately after
-                        timestamp: Date(),
-                        isStreaming: true
-                    )
-                    assistantMessageId = newMessageId
-                    accumulatedContentByMessageId[newMessageId] = ""
-                    logger.debug("MESSAGEBUS_CREATE: Created assistant message id=\(newMessageId.uuidString.prefix(8)) on first content chunk")
-                }
-                targetMessageId = assistantMessageId!
-            }
-
-            /// CRITICAL: Add messageId to chunk before yielding
-            /// ChatWidget needs messageId to track which message is being updated
-            /// API chunks don't include messageId - we add it here
-            let chunkWithMessageId = ServerOpenAIChatStreamChunk(
-                id: chunk.id,
-                object: chunk.object,
-                created: chunk.created,
-                model: chunk.model,
-                choices: chunk.choices,
-                isToolMessage: chunk.isToolMessage,
-                toolName: chunk.toolName,
-                toolIcon: chunk.toolIcon,
-                toolStatus: chunk.toolStatus,
-                toolDisplayData: chunk.toolDisplayData,
-                toolDetails: chunk.toolDetails,
-                parentToolName: chunk.parentToolName,
-                toolExecutionId: chunk.toolExecutionId,
-                toolMetadata: chunk.toolMetadata,
-                messageId: targetMessageId  /// Use tool message ID or assistant message ID
-            )
-
-            /// Yield chunk with appropriate messageId to continuation for real-time UI update.
-            continuation.yield(chunkWithMessageId)
-
-            /// DEBUG: Log chunk structure
-            if let delta = chunk.choices.first?.delta {
-                logger.debug("CHUNK_DEBUG: HAS delta, content=\(delta.content ?? "nil")")
-            } else {
-                logger.debug("CHUNK_DEBUG: NO delta, choices=\(chunk.choices.count)")
-            }
-
-            /// Accumulate content.
-            if let delta = chunk.choices.first?.delta {
-                if let content = delta.content {
-                    chunkCount += 1
-
-                    /// Get current accumulated content for this message
-                    let currentAccumulated = accumulatedContentByMessageId[targetMessageId] ?? ""
-                    let prevLength = currentAccumulated.count
-
-                    /// DEBUG: Check if targetMessageId is stable
-                    logger.debug("ACCUMULATE_DEBUG: msgId=\(targetMessageId.uuidString.prefix(8)) prevAcc=\(prevLength) newChunk=\(content.count)")
-
-                    /// CRITICAL FIX: Claude sends cumulative deltas (full message so far), GPT sends incremental
-                    let newAccumulated: String
-                    let contentToSendToUI: String
-
-                    if isCumulativeDeltaModel {
-                        /// CUMULATIVE MODE (Claude): Buffer and send only NEW content
-                        /// Claude sends full message so far, we need to extract just the delta
-
-                        /// CRITICAL FIX: Unescape JSON sequences that Claude API returns
-                        /// Claude returns content with escaped slashes (\/) and quotes (\")
-                        var unescapedContent = content
-                        unescapedContent = unescapedContent.replacingOccurrences(of: "\\/", with: "/")
-                        unescapedContent = unescapedContent.replacingOccurrences(of: "\\\"", with: "\"")
-
-                        /// Store the full accumulated content
-                        newAccumulated = unescapedContent
-
-                        /// Calculate delta: extract ONLY the new content since last chunk
-                        /// This makes Claude behave like GPT - UI only sees incremental updates
-                        if newAccumulated.count > currentAccumulated.count {
-                            let deltaStartIndex = currentAccumulated.count
-                            contentToSendToUI = String(newAccumulated[newAccumulated.index(newAccumulated.startIndex, offsetBy: deltaStartIndex)...])
-                        } else {
-                            /// No new content (rare, but possible)
-                            contentToSendToUI = ""
-                        }
-
-                        if chunkCount <= 3 || chunkCount % 10 == 0 {
-                            let msgIdStr = String(targetMessageId.uuidString.prefix(8))
-                            let deltaPreview = String(contentToSendToUI.prefix(50))
-                            let hasEscapedSlash = content.contains("\\/")
-                            let hasEscapedQuote = content.contains("\\\"")
-                            logger.debug("STREAMING_CHUNK_BUFFER: num=\(chunkCount) mode=cumulative msgId=\(msgIdStr) fullLen=\(newAccumulated.count) prevLen=\(prevLength) deltaLen=\(contentToSendToUI.count) hasSlash=\(hasEscapedSlash) hasQuote=\(hasEscapedQuote) delta='\(deltaPreview)'")
-                        }
-                    } else {
-                        /// INCREMENTAL MODE (GPT): Content is already a delta, just accumulate
-                        newAccumulated = currentAccumulated + content
-                        contentToSendToUI = content  // Send the chunk as-is
-
-                        if chunkCount <= 3 || chunkCount % 10 == 0 {
-                            let msgIdStr = String(targetMessageId.uuidString.prefix(8))
-                            let previewStr = String(content.prefix(50))
-                            let suffixStr = String(newAccumulated.suffix(50))
-                            logger.debug("STREAMING_CHUNK_APPEND: num=\(chunkCount) mode=incremental msgId=\(msgIdStr) chunkLen=\(content.count) prevLen=\(prevLength) accLen=\(newAccumulated.count) preview=\(previewStr) suffix=\(suffixStr)")
-                        }
-                    }
-
-                    /// Store updated accumulated content for this message
-                    accumulatedContentByMessageId[targetMessageId] = newAccumulated
-
-                    /// DEBUG: Always log accumulation to verify it's working
-                    let msgIdStr = String(targetMessageId.uuidString.prefix(8))
-                    logger.debug("ACCUMULATE: num=\(chunkCount) msgId=\(msgIdStr) chunkLen=\(content.count) accLen=\(newAccumulated.count)")
-
-                    /// CRITICAL: Strip system-reminder tags DURING streaming (not just at end)
-                    /// Apply to FULL accumulated content, then send full cleaned version to UI
-                    let cleanedAccumulated = stripSystemReminders(from: newAccumulated)
-
-                    /// CRITICAL: Update MessageBus with FULL cleaned accumulated content
-                    /// MessageBus throttles updates internally (30 FPS) to prevent UI churn
-                    /// We send the full content here, but for cumulative models we've already
-                    /// calculated the delta above for logging purposes
-                    conversation.messageBus?.updateStreamingMessage(
-                        id: targetMessageId,
-                        content: cleanedAccumulated
-                    )
-                }
-
-                /// Accumulate tool calls using index-based tracking GitHub Copilot sends tool calls incrementally across chunks.
-                if let toolCalls = delta.toolCalls {
-                    logger.debug("callLLMStreaming: Received \(toolCalls.count) tool call delta(s) in chunk")
-                    streamingToolCalls.update(toolCallsArray: toolCalls)
-                }
-
-                /// Capture statefulMarker for GitHub Copilot session continuity Prevents multiple premium billing charges during tool calling iterations.
-                if let marker = delta.statefulMarker {
-                    statefulMarker = marker
-                    logger.debug("callLLMStreaming: Captured statefulMarker for session continuity: \(marker.prefix(20))...")
-                }
-            }
-
-            /// Check for finish reason and content filter.
-            if let choice = chunk.choices.first {
-                if let reason = choice.finishReason {
-                    finishReason = reason
-                }
-                if let filterResults = choice.contentFilterResults {
-                    contentFilterResults = filterResults
-                    logger.warning("WARNING: CONTENT_FILTER_DETECTED: Response was blocked by content filter")
-                }
-            }
-        }
-
-        /// CONTENT FILTER DETECTION: Check if response was blocked and provide clear error message
-        if finishReason == "content_filter" {
-            let filterType = contentFilterResults?.getTriggeredFilters() ?? "content policy"
-            logger.error("️ CONTENT_FILTER_BLOCKED: Response blocked by \(filterType) filter")
-
-            let errorMessage = """
-            WARNING: **Content Filter Blocked Response**
-
-            The AI provider's content filter blocked this response due to: **\(filterType)** policy violation.
-
-            **Why this happens:**
-            - GitHub Copilot has strict content filtering for violence, hate speech, sexual content, and self-harm
-            - Legitimate news content (crime reports, political events) may trigger these filters
-            - This is a provider limitation, not a SAM issue
-
-            **Solutions:**
-            1. **Switch provider**: Use OpenAI or Claude models (less restrictive filtering)
-            2. **Modify request**: Ask for different topics or sections (avoid crime/violence if possible)
-            3. **Try again**: Sometimes rephrasing the request helps
-
-            **To switch provider:**
-            - Settings → API Providers → Select OpenAI or Claude
-            - Or use model picker to choose a non-GitHub model
-
-            *If you need assistance with crime/violence news content, OpenAI and Claude providers work better for this use case.*
-            """
-
-            return LLMResponse(
-                content: errorMessage,
-                finishReason: "content_filter",
-                toolCalls: nil,
-                statefulMarker: statefulMarker
-            )
-        }
-
-        /// Log streaming completion summary
-        logger.debug("STREAMING_COMPLETE", metadata: [
-            "model": .string(model),
-            "isCumulative": .stringConvertible(isCumulativeDeltaModel),
-            "totalChunks": .stringConvertible(chunkCount),
-            "finalContentLength": .stringConvertible(accumulatedContent.count),
-            "finishReason": .string(finishReason ?? "none"),
-            "hadToolCalls": .stringConvertible(streamingToolCalls.hasToolCalls())
-        ])
-
-        /// Parse accumulated tool calls AFTER streaming completes.
-        var parsedToolCalls: [ToolCall]?
-        if streamingToolCalls.hasToolCalls() {
-            let completedToolCalls = streamingToolCalls.getCompletedToolCalls()
-            logger.debug("callLLMStreaming: Accumulated \(completedToolCalls.count) complete tool calls")
-
-            parsedToolCalls = []
-
-            for toolCall in completedToolCalls {
-                let argumentsString = toolCall.function.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
-                var arguments: [String: Any] = [:]
-                
-                // Handle empty arguments (some tools like list_system_prompts take no params)
-                // An empty string or "{}" should result in an empty dictionary
-                if !argumentsString.isEmpty && argumentsString != "{}" {
-                    let argumentsData = argumentsString.data(using: .utf8) ?? Data()
-                    if let parsedArgs = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
-                        arguments = parsedArgs
-                    } else {
-                        logger.warning("callLLMStreaming: Failed to parse arguments for tool '\(toolCall.function.name)': \(argumentsString)")
-                        // Still create the tool call with empty arguments - don't skip it!
-                    }
-                }
-                
-                parsedToolCalls?.append(ToolCall(
-                    id: toolCall.id,
-                    name: toolCall.function.name,
-                    arguments: arguments
-                ))
-                logger.debug("callLLMStreaming: Parsed tool call '\(toolCall.function.name)' with \(arguments.count) arguments")
-            }
-        } else if finishReason == "tool_calls" {
-            logger.warning("callLLMStreaming: finish_reason=tool_calls but no accumulated tool calls found")
-        }
-
-        /// MLX Tool Call Parser - Extract tool calls from JSON code blocks MLX models don't have native tool calling support, they output JSON blocks like: ```json {"name": "manage_todo_list", "arguments": {...}} ``` We need to parse these blocks and create ToolCall objects.
-
-        /// Get final content from assistant message (not tool messages)
-        /// If no assistant message was created (only tool calls), content is empty
-        var finalContent = ""
-        if let msgId = assistantMessageId {
-            finalContent = accumulatedContentByMessageId[msgId] ?? ""
-        }
-        var finalToolCalls = parsedToolCalls
-
-        /// CRITICAL: Complete streaming for all tool messages
-        /// Tool messages were created during streaming, now mark them as complete
-        for (executionId, toolMessageId) in toolMessagesByExecutionId {
-            conversation.messageBus?.completeStreamingMessage(id: toolMessageId)
-            logger.debug("TOOL_MESSAGE_COMPLETE: executionId=\(executionId.prefix(8)) messageId=\(toolMessageId.uuidString.prefix(8))")
-        }
-
-        if finalToolCalls?.isEmpty != false {
-            /// No native tool calls found - check for MLX-style JSON blocks.
-            let (mlxToolCalls, cleanedContent) = extractMLXToolCalls(from: finalContent)
-
-            if !mlxToolCalls.isEmpty {
-                logger.debug("callLLMStreaming: Extracted \(mlxToolCalls.count) MLX tool calls from JSON blocks")
-                finalToolCalls = mlxToolCalls
-                finalContent = cleanedContent
-
-                /// Override finish_reason to tool_calls so autonomous loop continues.
-                if finishReason != "tool_calls" {
-                    logger.debug("callLLMStreaming: Overriding finish_reason to 'tool_calls' for MLX model")
-                    finishReason = "tool_calls"
-                }
-            } else {
-                logger.debug("callLLMStreaming: No MLX tool calls found in JSON blocks")
-            }
-        } else if let calls = finalToolCalls {
-            logger.debug("callLLMStreaming: Using native tool calls from provider (\(calls.count) calls)")
-        }
-
-        /// CRITICAL: Strip system-reminder tags before returning/saving
-        /// Claude may echo back <system-reminder> content - must filter it out
-        finalContent = stripSystemReminders(from: finalContent)
-
-        logger.debug("callLLMStreaming: Streaming complete - finishReason=\(finishReason ?? "nil"), content length=\(finalContent.count), toolCalls=\(finalToolCalls?.count ?? 0), statefulMarker=\(statefulMarker != nil ? "present" : "nil")")
-
-        /// CRITICAL: Complete streaming message in MessageBus with final content
-        /// This marks the message as no longer streaming and ensures persistence
-        /// Content was already updated via updateStreamingMessage() calls during chunking
-        /// If no assistant message was created (only tool calls), skip completion
-        if let msgId = assistantMessageId {
-            /// CRITICAL: Add toolCalls metadata to message BEFORE completing
-            /// This fixes Gemini (and other providers) tool call message format
-            /// Without this, tool calls appear as plain text instead of proper metadata
-            if let toolCalls = finalToolCalls, !toolCalls.isEmpty {
-                /// Convert ToolCall to SimpleToolCall for message storage
-                let simpleToolCalls = toolCalls.map { toolCall -> SimpleToolCall in
-                    /// Serialize arguments dict back to JSON string for SimpleToolCall
-                    let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments)
-                    let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-                    
-                    return SimpleToolCall(
-                        id: toolCall.id,
-                        type: "function",
-                        function: SimpleFunctionCall(
-                            name: toolCall.name,
-                            arguments: argsString
-                        )
-                    )
-                }
-                
-                /// Update message with toolCalls metadata
-                conversation.messageBus?.updateMessage(
-                    id: msgId,
-                    toolCalls: simpleToolCalls
-                )
-                
-                logger.debug("MESSAGEBUS_TOOLCALLS: Added \(simpleToolCalls.count) tool calls to message id=\(msgId.uuidString.prefix(8))")
-            }
-            
-            conversation.messageBus?.completeStreamingMessage(
-                id: msgId
-            )
-            logger.debug("MESSAGEBUS_COMPLETE: Completed streaming for message id=\(msgId.uuidString.prefix(8)) with final content length=\(finalContent.count)")
-        } else {
-            logger.info("MESSAGEBUS_COMPLETE: No assistant message created (only tool calls executed)")
-        }
-
-        return LLMResponse(
-            content: finalContent,
-            finishReason: finishReason ?? "stop",
-            toolCalls: finalToolCalls,
-            statefulMarker: statefulMarker
-        )
-    }
-
-    /// Parses todo list from manage_todo_list tool result Extracts structured todo items for autonomous execution.
-    private func parseTodoList(from toolResult: String) -> [TodoItem] {
-        logger.debug("parseTodoList: Attempting to parse todo list from tool result")
-
-        var todos: [TodoItem] = []
-
-        /// The tool returns a formatted string, but we need to call manage_todo_list with operation=read to get the actual structured data.
-
-        let lines = toolResult.components(separatedBy: "\n")
-        var currentId: Int?
-        var currentTitle: String?
-        var currentDescription: String?
-        var currentStatus: String = "not-started"
-
-        for line in lines {
-            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-
-            /// Detect status sections.
-            if trimmedLine.contains("NOT STARTED:") {
-                currentStatus = "not-started"
-                continue
-            } else if trimmedLine.contains("IN PROGRESS:") {
-                currentStatus = "in-progress"
-                continue
-            } else if trimmedLine.contains("COMPLETED:") {
-                currentStatus = "completed"
-                continue
-            }
-
-            /// Parse todo items (format: " 1.
-            if let regex = try? NSRegularExpression(pattern: #"^\s*(\d+)\.\s+(.+)$"#, options: []),
-               let match = regex.firstMatch(in: line, options: [], range: NSRange(line.startIndex..., in: line)) {
-
-                /// Save previous todo if exists.
-                if let id = currentId, let title = currentTitle {
-                    todos.append(TodoItem(
-                        id: id,
-                        title: title,
-                        description: currentDescription ?? "",
-                        status: currentStatus
-                    ))
-                }
-
-                /// Extract new todo.
-                if let idRange = Range(match.range(at: 1), in: line),
-                   let titleRange = Range(match.range(at: 2), in: line) {
-                    currentId = Int(line[idRange])
-                    currentTitle = String(line[titleRange])
-                    currentDescription = nil
-                }
-            }
-            /// Parse description lines (format: " → Description").
-            else if trimmedLine.hasPrefix("→") {
-                let desc = trimmedLine.dropFirst(1).trimmingCharacters(in: .whitespaces)
-                currentDescription = (currentDescription ?? "") + desc
-            }
-        }
-
-        /// Save last todo.
-        if let id = currentId, let title = currentTitle {
-            todos.append(TodoItem(
-                id: id,
-                title: title,
-                description: currentDescription ?? "",
-                status: currentStatus
-            ))
-        }
-
-        logger.debug("parseTodoList: Parsed \(todos.count) todo items")
-        return todos
-    }
-
-    // MARK: - Properties
-
-    /// Filters internal markers but preserves surrounding whitespace/newlines.
-    private func filterInternalMarkersNoTrim(from text: String) -> String {
-        /// Prepare JSON-only-line regex (matches a line that is just the JSON status).
-        let jsonLinePattern = try? NSRegularExpression(
-            pattern: "^\\s*\\{\\s*\"status\"\\s*:\\s*\"(continue|complete)\"\\s*\\}\\s*$",
-            options: [.caseInsensitive]
-        )
-
-        var outputLines: [String] = []
-        var skipIntentBlock = false
-
-        /// Iterate lines preserving empty lines and other whitespace.
-        let lines = text.components(separatedBy: .newlines)
-        for line in lines {
-            /// If currently skipping an INTENT EXTRACTION block, look for closing brace.
-            if skipIntentBlock {
-                if line.contains("}") {
-                    skipIntentBlock = false
-                }
-                continue
-            }
-
-            /// Detect start of INTENT EXTRACTION block and skip until closing brace.
-            if line.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("INTENT EXTRACTION:") {
-                skipIntentBlock = true
-                continue
-            }
-
-            /// Match JSON-only lines like {"status": "continue"}.
-            if let regex = jsonLinePattern {
-                let nsLine = line as NSString
-                let range = NSRange(location: 0, length: nsLine.length)
-                if regex.firstMatch(in: line, options: [], range: range) != nil {
-                    /// Skip this exact JSON marker line but preserve surrounding newlines.
-                    continue
-                }
-            }
-
-            /// Legacy bracketed markers on their own lines.
-            let trimmedUpper = line.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-            if trimmedUpper == "[WORKFLOW_COMPLETE]" || trimmedUpper == "[CONTINUE]" || trimmedUpper == "WORKFLOW_COMPLETE" {
-                continue
-            }
-
-            /// Keep the line as-is.
-            outputLines.append(line)
-        }
-
-        /// Reconstruct preserving newline separators.
-        return outputLines.joined(separator: "\n")
-    }
-
-    private struct ToolStreamingContext {
-        let continuation: AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error>.Continuation
-        let requestId: String
-        let created: Int
-        let model: String
-    }
-
-    /// Executes tool calls and returns results.
-    /// UNIFIED PATH: If `streaming` is non-nil, emits tool-card chunks for the UI.
-    /// CRITICAL: Respects tool metadata for blocking/serial execution.
-    private func executeToolCalls(
-        _ toolCalls: [ToolCall],
-        iteration: Int,
-        conversationId: UUID?,
-        streaming: ToolStreamingContext? = nil
-    ) async throws -> [ToolExecution] {
-        logger.error("TOOL_EXEC_INPUT: count=\(toolCalls.count) ids=\(toolCalls.map { $0.id }.joined(separator: ",")) names=\(toolCalls.map { $0.name }.joined(separator: ","))")
-        logger.info("executeToolCalls: Executing \(toolCalls.count) tools with metadata-driven execution control")
-
-        /// Separate tools by execution requirements - Blocking tools: MUST complete before workflow continues (user_collaboration, foreground terminal) - Serial tools: Execute one-at-a-time but don't block workflow - Parallel tools: Can execute concurrently.
-
-        var blockingToolCalls: [ToolCall] = []
-        var serialToolCalls: [ToolCall] = []
-        var parallelToolCalls: [ToolCall] = []
-
-        /// Classify each tool based on metadata.
-        for toolCall in toolCalls {
-            if let tool = conversationManager.mcpManager.getToolByName(toolCall.name) {
-                /// Check tool metadata.
-                let requiresBlocking = tool.requiresBlocking
-                let requiresSerial = tool.requiresSerial
-
-                /// Special case: terminal_operations.run_command (foreground).
-                let isTerminalForeground = isTerminalForegroundCommand(toolCall)
-
-                if requiresBlocking || isTerminalForeground {
-                    blockingToolCalls.append(toolCall)
-                    logger.info("TOOL_CLASSIFICATION: \(toolCall.name) → BLOCKING (requiresBlocking=\(requiresBlocking), terminalForeground=\(isTerminalForeground))")
-                } else if requiresSerial {
-                    serialToolCalls.append(toolCall)
-                    logger.info("TOOL_CLASSIFICATION: \(toolCall.name) → SERIAL")
-                } else {
-                    parallelToolCalls.append(toolCall)
-                    logger.debug("TOOL_CLASSIFICATION: \(toolCall.name) → PARALLEL")
-                }
-            } else {
-                /// Tool not found - treat as parallel (will fail safely).
-                parallelToolCalls.append(toolCall)
-                logger.warning("TOOL_CLASSIFICATION: \(toolCall.name) → PARALLEL (tool not found in registry)")
-            }
-        }
-
-        var allExecutions: [ToolExecution] = []
-
-        logger.error("TOOL_CLASSIFICATION_RESULT: blocking=\(blockingToolCalls.count) serial=\(serialToolCalls.count) parallel=\(parallelToolCalls.count)")
-
-        /// Execute BLOCKING tools FIRST (serially, await each) These tools MUST complete before anything else runs Example: user_collaboration (wait for user), foreground ssh command.
-        if !blockingToolCalls.isEmpty {
-            logger.info("BLOCKING_PHASE_START: Executing \(blockingToolCalls.count) blocking tools serially")
-
-            for (index, toolCall) in blockingToolCalls.enumerated() {
-                logger.info("BLOCKING_TOOL_EXECUTE: [\(index + 1)/\(blockingToolCalls.count)] \(toolCall.name) - workflow BLOCKED until complete")
-
-                let execution = try await executeSingleToolWithStreaming(
-                    toolCall,
-                    iteration: iteration,
-                    streaming: streaming,
-                    conversationId: conversationId
-                )
-
-                allExecutions.append(execution)
-                logger.info("BLOCKING_TOOL_COMPLETE: \(toolCall.name) - workflow can now continue")
-            }
-
-            logger.info("BLOCKING_PHASE_COMPLETE: All blocking tools finished, workflow continues")
-        }
-
-        /// Execute SERIAL tools (one-at-a-time, but workflow continues).
-        if !serialToolCalls.isEmpty {
-            logger.info("SERIAL_PHASE_START: Executing \(serialToolCalls.count) serial tools")
-
-            for toolCall in serialToolCalls {
-                let execution = try await executeSingleToolWithStreaming(
-                    toolCall,
-                    iteration: iteration,
-                    streaming: streaming,
-                    conversationId: conversationId
-                )
-                allExecutions.append(execution)
-            }
-
-            logger.info("SERIAL_PHASE_COMPLETE: All serial tools finished")
-        }
-
-        /// Execute PARALLEL tools (concurrently for performance).
-        if !parallelToolCalls.isEmpty {
-            if let streaming {
-                logger.debug("PARALLEL_PHASE_START: Executing \(parallelToolCalls.count) parallel tools concurrently")
-
-                let parallelExecutions = try await executeParallelToolsWithStreaming(
-                    parallelToolCalls,
-                    iteration: iteration,
-                    continuation: streaming.continuation,
-                    requestId: streaming.requestId,
-                    created: streaming.created,
-                    model: streaming.model,
-                    conversationId: conversationId
-                )
-
-                allExecutions.append(contentsOf: parallelExecutions)
-                logger.debug("PARALLEL_PHASE_COMPLETE: All parallel tools finished")
-            } else {
-                logger.debug("PARALLEL_PHASE_START: Executing \(parallelToolCalls.count) parallel tools (non-streaming)")
-
-                let conversationIdForTools = conversationId
-                nonisolated(unsafe) let capturedTerminalManager = self.terminalManager
-
-                let parallelExecutions = await withTaskGroup(of: (Int, ToolExecution).self) { group in
-                    for (index, toolCall) in parallelToolCalls.enumerated() {
-                        let toolCallId = toolCall.id
-                        let toolCallName = toolCall.name
-                        let toolCallArguments = SendableArguments(value: toolCall.arguments)
-
-                        group.addTask { @Sendable in
-                            let startTime = Date()
-
-                            if let result = await self.conversationManager.executeMCPTool(
-                                name: toolCallName,
-                                parameters: toolCallArguments.value,
-                                toolCallId: toolCallId,
-                                conversationId: conversationIdForTools,
-                                isExternalAPICall: self.isExternalAPICall,
-                                terminalManager: capturedTerminalManager,
-                                iterationController: self
-                            ) {
-                                let execution = ToolExecution(
-                                    toolCallId: toolCallId,
-                                    toolName: toolCallName,
-                                    arguments: toolCallArguments.value,
-                                    result: result.output.content,
-                                    success: result.success,
-                                    timestamp: startTime,
-                                    iteration: iteration
-                                )
-                                return (index, execution)
-                            }
-
-                            let execution = ToolExecution(
-                                toolCallId: toolCallId,
-                                toolName: toolCallName,
-                                arguments: toolCallArguments.value,
-                                result: "ERROR: Tool '\(toolCallName)' not found or execution failed",
-                                success: false,
-                                timestamp: startTime,
-                                iteration: iteration
-                            )
-                            return (index, execution)
-                        }
-                    }
-
-                    var indexedExecutions: [(Int, ToolExecution)] = []
-                    for await result in group {
-                        indexedExecutions.append(result)
-                    }
-                    indexedExecutions.sort { $0.0 < $1.0 }
-                    return indexedExecutions.map { $0.1 }
-                }
-
-                allExecutions.append(contentsOf: parallelExecutions)
-                logger.debug("PARALLEL_PHASE_COMPLETE: All parallel tools finished (non-streaming)")
-            }
-        }
-
-        logger.info("TOOL_EXECUTION_COMPLETE: All \(toolCalls.count) tools finished (blocking:\(blockingToolCalls.count), serial:\(serialToolCalls.count), parallel:\(parallelToolCalls.count))")
-        return allExecutions
-    }
-
-    /// Check if a terminal_operations tool call is a foreground command (blocks execution) Check if a terminal_operations tool call is a foreground command (blocks execution) Foreground terminal commands (run_command with isBackground=false): - Execute SERIALLY (one at a time, no parallelization) - BLOCK workflow until command completes - Examples: ssh sessions, interactive commands, vim editing Background terminal commands (isBackground=true) run in parallel and don't block.
-    private func isTerminalForegroundCommand(_ toolCall: ToolCall) -> Bool {
-        guard toolCall.name == "terminal_operations" else { return false }
-
-        guard let operation = toolCall.arguments["operation"] as? String else { return false }
-
-        /// run_command with isBackground=false (or not set) is foreground → blocks AND serial.
-        if operation == "run_command" {
-            let isBackground = toolCall.arguments["isBackground"] as? Bool ?? false
-            let isForeground = !isBackground
-
-            if isForeground {
-                logger.info("TERMINAL_FOREGROUND_DETECTED: run_command with isBackground=\(isBackground) will execute SERIALLY and BLOCK workflow")
-            }
-
-            return isForeground
-        }
-
-        return false
-    }
-
-    /// Execute a single tool.
-    /// If `streaming` is non-nil, streams tool-card events; otherwise runs silently.
-    private func executeSingleToolWithStreaming(
-        _ toolCall: ToolCall,
-        iteration: Int,
-        streaming: ToolStreamingContext?,
-        conversationId: UUID?
-    ) async throws -> ToolExecution {
-        let toolPerfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("AgentOrchestrator.executeSingleToolWithStreaming",
-                                            duration: CFAbsoluteTimeGetCurrent() - toolPerfStart)
-        }
-
-        logger.error("SINGLE_TOOL_START: name=\(toolCall.name) id=\(toolCall.id)")
-        let startTime = Date()
-
-        let toolMessageId = UUID()
-          if streaming != nil,
-              let conversationId = conversationId,
-           let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-
-            guard conversation.messageBus != nil else {
-                logger.error("TOOL_EXEC_ERROR: MessageBus is nil for conversation id=\(conversation.id.uuidString.prefix(8))")
-                throw NSError(domain: "AgentOrchestrator", code: -2,
-                              userInfo: [NSLocalizedDescriptionKey: "MessageBus not initialized"])
-            }
-
-            let registry = ToolDisplayInfoRegistry.shared
-            let toolDetails = registry.getToolDetails(for: toolCall.name, arguments: toolCall.arguments)
-
-            conversation.messageBus?.addToolMessage(
-                id: toolMessageId,
-                name: toolCall.name,
-                status: .running,
-                details: "",  /// Will be updated after execution completes
-                detailsArray: toolDetails,
-                icon: getToolIcon(toolCall.name),
-                toolCallId: toolCall.id
-            )
-
-            logger.debug("MESSAGEBUS_CREATE_TOOL: Created tool message id=\(toolMessageId.uuidString.prefix(8)) for tool=\(toolCall.name) executionId=\(toolCall.id.prefix(8))")
-        } else if streaming != nil {
-            logger.warning("TOOL_EXEC_WARNING: Conversation not found for id=\(conversationId?.uuidString.prefix(8) ?? "nil"), tool message not created in MessageBus")
-        }
-
-        /// Show tool starting.
-        let toolDetail = extractToolActionDetail(toolCall)
-        let actionDescription = toolDetail.isEmpty ? getUserFriendlyActionDescription(toolCall.name, toolDetail) : toolDetail
-
-        if let streaming, !actionDescription.isEmpty {
-            let progressMessage = "SUCCESS: \(actionDescription)..."
-
-            let registry = ToolDisplayInfoRegistry.shared
-            let toolDetails = registry.getToolDetails(for: toolCall.name, arguments: toolCall.arguments)
-            let toolIcon: String? = getToolIcon(toolCall.name)
-
-            let progressChunk = ServerOpenAIChatStreamChunk(
-                id: streaming.requestId,
-                object: "chat.completion.chunk",
-                created: streaming.created,
-                model: streaming.model,
-                choices: [OpenAIChatStreamChoice(
-                    index: 0,
-                    delta: OpenAIChatDelta(content: progressMessage + "\n"),
-                    finishReason: nil
-                )],
-                isToolMessage: true,
-                toolName: toolCall.name,
-                toolIcon: toolIcon,
-                toolStatus: "running",
-                toolDetails: toolDetails,
-                toolExecutionId: toolCall.id,
-                messageId: toolMessageId  /// Pass messageId to chunk for ChatWidget correlation
-            )
-
-            logger.debug("TOOL_CHUNK_YIELD: toolName=\(toolCall.name), status=running")
-            logger.debug("TOOL_PROGRESS_MESSAGE_YIELDED: tool=\(toolCall.name) content=\(progressMessage.prefix(50)) isToolMessage=true")
-
-            if toolCall.name.lowercased() != "think" {
-                streaming.continuation.yield(progressChunk)
-            }
-        }
-
-        /// EXECUTE SYNCHRONOUSLY - THIS BLOCKS UNTIL COMPLETE.
-        logger.debug("TOOL_EXECUTION_START: \(toolCall.name) - awaiting completion")
-
-        if let result = await self.conversationManager.executeMCPTool(
-            name: toolCall.name,
-            parameters: toolCall.arguments,
-            toolCallId: toolCall.id,
-            conversationId: conversationId,
-            isExternalAPICall: self.isExternalAPICall,
-            terminalManager: self.terminalManager,
-                        iterationController: self
-        ) {
-            let duration = Date().timeIntervalSince(startTime)
-            logger.info("TOOL_EXECUTION_COMPLETE: \(toolCall.name) after \(String(format: "%.2f", duration))s")
-
-            /// Update tool status in MessageBus after execution completes
-            if streaming != nil,
-               let conversationId = conversationId,
-               let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                conversation.messageBus?.updateToolStatus(
-                    id: toolMessageId,
-                    status: result.success ? .success : .error,
-                    duration: duration,
-                    details: result.output.content
-                )
-                logger.debug("MESSAGEBUS_UPDATE_TOOL: Updated tool message id=\(toolMessageId.uuidString.prefix(8)) status=\(result.success ? "success" : "error")")
-            }
-
-            if let streaming {
-                /// Emit completion chunk with result metadata for UI display
-                let completionChunk = ServerOpenAIChatStreamChunk(
-                    id: streaming.requestId,
-                    object: "chat.completion.chunk",
-                    created: streaming.created,
-                    model: streaming.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(content: ""),
-                        finishReason: nil
-                    )],
-                    isToolMessage: true,
-                    toolName: toolCall.name,
-                    toolIcon: self.getToolIcon(toolCall.name),
-                    toolStatus: result.success ? "success" : "error",
-                    toolDetails: nil,
-                    parentToolName: nil,
-                    toolExecutionId: toolCall.id,
-                    toolMetadata: result.metadata.additionalContext,
-                    messageId: toolMessageId  /// Include messageId for completion chunk
-                )
-                streaming.continuation.yield(completionChunk)
-            }
-
-            /// Process progress events.
-            for event in result.progressEvents {
-                if event.eventType == .toolStarted, let message = event.message, let streaming {
-                    let progressChunk = ServerOpenAIChatStreamChunk(
-                        id: streaming.requestId,
-                        object: "chat.completion.chunk",
-                        created: streaming.created,
-                        model: streaming.model,
-                        choices: [OpenAIChatStreamChoice(
-                            index: 0,
-                            delta: OpenAIChatDelta(content: message + "\n"),
-                            finishReason: nil
-                        )],
-                        isToolMessage: true,
-                        toolName: event.toolName,
-                        toolIcon: self.getToolIcon(event.toolName),
-                        toolStatus: event.status ?? "running",
-                        toolDisplayData: event.display as? ToolDisplayData,
-                        toolDetails: event.details,
-                        parentToolName: event.parentToolName,
-                        toolExecutionId: toolCall.id,
-                        messageId: toolMessageId  /// Include messageId for sub-tool chunks
-                    )
-                    streaming.continuation.yield(progressChunk)
-                }
-
-                /// Stream .userMessage progressEvents (MODERN: ToolDisplayData only)
-                if event.eventType == .userMessage {
-                    guard let streaming else { continue }
-                    guard let displayData = event.display as? ToolDisplayData,
-                          let summary = displayData.summary, !summary.isEmpty else {
-                        logger.warning("PROGRESS_EVENT_SKIP: userMessage missing ToolDisplayData.summary")
-                        continue
-                    }
-
-                    let messageContent = "Thinking: \(summary)"
-                    logger.info("PROGRESS_EVENT_STREAM: eventType=userMessage toolName=\(event.toolName) content.prefix=\(messageContent.prefix(50))")
-
-                    /// CRITICAL: Create message in MessageBus BEFORE yielding chunk
-                    /// This ensures MessageBus is the single source of truth for message creation
-                    let messageId = UUID()
-                    if let conversationId = conversationId,
-                       let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                        conversation.messageBus?.addThinkingMessage(
-                            id: messageId,
-                            reasoningContent: summary,
-                            showReasoning: true
-                        )
-                        logger.debug("MESSAGEBUS_CREATE: Created thinking message id=\(messageId.uuidString.prefix(8)) in MessageBus")
-                    } else {
-                        logger.warning("MESSAGEBUS_CREATE: Could not find conversation for id=\(conversationId?.uuidString.prefix(8) ?? "nil")")
-                    }
-
-                    let userMessageChunk = ServerOpenAIChatStreamChunk(
-                        id: streaming.requestId,
-                        object: "chat.completion.chunk",
-                        created: streaming.created,
-                        model: streaming.model,
-                        choices: [OpenAIChatStreamChoice(
-                            index: 0,
-                            delta: OpenAIChatDelta(
-                                role: "assistant",
-                                content: messageContent + "\n"
-                            ),
-                            finishReason: nil
-                        )],
-                        isToolMessage: true,
-                        toolName: event.toolName,
-                        toolIcon: displayData.icon ?? self.getToolIcon(event.toolName),
-                        toolStatus: event.status ?? "success",
-                        toolDisplayData: displayData,
-                        toolDetails: event.details,
-                        parentToolName: event.parentToolName,
-                        toolExecutionId: toolCall.id,
-                        messageId: messageId  /// Pass messageId to chunk for UI correlation
-                    )
-                    logger.debug("PROGRESS_EVENT_CHUNK: chunk.toolName=\(userMessageChunk.toolName ?? "nil") chunk.isToolMessage=\(userMessageChunk.isToolMessage ?? false) messageId=\(messageId.uuidString.prefix(8))")
-                    streaming.continuation.yield(userMessageChunk)
-                    await Task.yield()
-                }
-            }
-
-            return ToolExecution(
-                toolCallId: toolCall.id,
-                toolName: toolCall.name,
-                arguments: toolCall.arguments,
-                result: result.output.content,
-                success: result.success,
-                timestamp: startTime,
-                iteration: iteration
-            )
-        } else {
-            logger.error("TOOL_EXECUTION_FAILED: Tool '\(toolCall.name)' returned nil")
-
-            return ToolExecution(
-                toolCallId: toolCall.id,
-                toolName: toolCall.name,
-                arguments: toolCall.arguments,
-                result: "Error: Tool execution failed",
-                success: false,
-                timestamp: startTime,
-                iteration: iteration
-            )
-        }
-    }
-
-    /// Execute multiple tools in parallel (existing parallel execution logic).
-    private func executeParallelToolsWithStreaming(
-        _ toolCalls: [ToolCall],
-        iteration: Int,
-        continuation: AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error>.Continuation,
-        requestId: String,
-        created: Int,
-        model: String,
-        conversationId: UUID?
-    ) async throws -> [ToolExecution] {
-        logger.error("PARALLEL_TOOLS_START: count=\(toolCalls.count) ids=\(toolCalls.map { $0.id }.joined(separator: ","))")
-
-        /// CRITICAL: Create tool messages in MessageBus for parallel execution BEFORE yielding chunks
-        /// This ensures ChatWidget can track each tool via messageId
-        /// Use executionId → toolMessageId mapping for tracking multiple tools
-        var toolMessagesByExecutionId: [String: UUID] = [:]
-
-        if let conversationId = conversationId,
-           let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-
-            for toolCall in toolCalls {
-                let toolMessageId = UUID()
-
-                let registry = ToolDisplayInfoRegistry.shared
-                let toolDetails = registry.getToolDetails(for: toolCall.name, arguments: toolCall.arguments)
-
-                conversation.messageBus?.addToolMessage(
-                    id: toolMessageId,
-                    name: toolCall.name,
-                    status: .running,
-                    details: "",  /// Will be updated after execution
-                    detailsArray: toolDetails,
-                    icon: getToolIcon(toolCall.name),
-                    toolCallId: toolCall.id
-                )
-
-                toolMessagesByExecutionId[toolCall.id] = toolMessageId
-                logger.debug("MESSAGEBUS_CREATE_TOOL: Created tool message id=\(toolMessageId.uuidString.prefix(8)) for parallel tool=\(toolCall.name) executionId=\(toolCall.id.prefix(8))")
-            }
-        } else {
-            logger.warning("PARALLEL_TOOLS_WARNING: Conversation not found for id=\(conversationId?.uuidString.prefix(8) ?? "nil"), tool messages not created in MessageBus")
-        }
-
-        /// Show all tools starting.
-        for toolCall in toolCalls {
-            let toolDetail = extractToolActionDetail(toolCall)
-            let actionDescription = toolDetail.isEmpty ? getUserFriendlyActionDescription(toolCall.name, toolDetail) : toolDetail
-
-            if !actionDescription.isEmpty {
-                let progressMessage = "SUCCESS: \(actionDescription)..."
-
-                let registry = ToolDisplayInfoRegistry.shared
-                let toolDetails = registry.getToolDetails(for: toolCall.name, arguments: toolCall.arguments)
-                let toolIcon: String? = getToolIcon(toolCall.name)
-
-                /// Get messageId for this tool execution
-                let toolMessageId = toolMessagesByExecutionId[toolCall.id]
-
-                let progressChunk = ServerOpenAIChatStreamChunk(
-                    id: requestId,
-                    object: "chat.completion.chunk",
-                    created: created,
-                    model: model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(content: progressMessage + "\n"),
-                        finishReason: nil
-                    )],
-                    isToolMessage: true,
-                    toolName: toolCall.name,
-                    toolIcon: toolIcon,
-                    toolStatus: "running",
-                    toolDetails: toolDetails,
-                    toolExecutionId: toolCall.id,
-                    messageId: toolMessageId  /// Include messageId for parallel tool tracking
-                )
-
-                let ts = Date().timeIntervalSince1970
-                let microseconds = Int(ts * 1_000_000)
-                logger.error("TS:\(microseconds) CHUNK_YIELD: toolName=\(toolCall.name), actionDesc=\(actionDescription), isToolMessage=true, toolId=\(toolCall.id)")
-
-                if toolCall.name.lowercased() != "think" {
-                    continuation.yield(progressChunk)
-
-                    /// Signal that a tool card is pending for this execution
-                    await MainActor.run {
-                        self.toolCardsPending.insert(toolCall.id)
-                        let tsPending = Date().timeIntervalSince1970
-                        let microPending = Int(tsPending * 1_000_000)
-                        self.logger.error("TS:\(microPending) PENDING: Added execution ID: \(toolCall.id)")
-                    }
-                }
-            }
-        }
-
-        /// Give the async stream time to deliver chunks to UI before waiting
-        /// Brief sleep ensures chunks reach the for-await loop in ChatWidget
-        try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
-
-        /// CRITICAL: Force MainActor to process pending UI updates BEFORE waiting
-        /// This ensures SwiftUI has a chance to render tool cards
-        /// Without this, SwiftUI won't render until we're done with the task
-        await MainActor.run { }  // Empty closure forces context switch
-        await Task.yield()  // Yield to allow SwiftUI rendering
-        await MainActor.run { }  // Second yield for safety
-        await Task.yield()
-
-        /// Wait for UI to acknowledge all tool cards are ready
-        /// This ensures cards appear before execution starts
-        /// Timeout after 3s to prevent deadlock (UI async stream can take 3s to process chunks)
-        let allToolIds = Set(toolCalls.filter { $0.name.lowercased() != "think" }.map { $0.id })
-        if !allToolIds.isEmpty {
-            logger.debug("TOOL_CARD_WAIT: Waiting for \(allToolIds.count) tool cards to be acknowledged")
-            let startTime = Date()
-            let timeout: TimeInterval = 3.0 // 3 seconds
-
-            while await MainActor.run(body: { !allToolIds.isSubset(of: self.toolCardsReady) }) {
-                /// Check timeout
-                if Date().timeIntervalSince(startTime) > timeout {
-                    let acknowledged = await MainActor.run { self.toolCardsReady }
-                    logger.warning("TOOL_CARD_TIMEOUT: UI didn't acknowledge cards within 3s (acknowledged: \(acknowledged.count)/\(allToolIds.count)), proceeding anyway")
-                    break
-                }
-
-                /// CRITICAL: Yield to MainActor frequently to allow SwiftUI rendering
-                /// This gives SwiftUI opportunities to process the render queue
-                await MainActor.run { }  /// Force context switch to MainActor
-                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
-                await Task.yield()  /// Yield to allow rendering
-            }
-
-        /// Clear pending/ready sets for next batch
-        await MainActor.run {
-            self.toolCardsPending.removeAll()
-            self.toolCardsReady.removeAll()
-        }
-
-        let tsReady = Date().timeIntervalSince1970
-        let microReady = Int(tsReady * 1_000_000)
-        logger.error("TS:\(microReady) READY: UI acknowledged \(allToolIds.count) tool cards, proceeding with execution")
-
-        /// CRITICAL: Give SwiftUI time to actually RENDER the cards after messages array is updated
-        /// ACK happens when message is added to array, but rendering is async
-        /// 200ms ensures cards are visible before execution starts
-        try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
-        logger.debug("TOOL_CARDS_RENDERED: Waited 200ms for SwiftUI rendering, starting execution now")
-    }
-
-        /// Capture conversationId and toolMessagesByExecutionId for use in task group
-        let conversationIdForTools = conversationId
-        let toolMessagesForTasks = toolMessagesByExecutionId  /// Capture as constant for Sendable safety
-        nonisolated(unsafe) let capturedTerminalManager = self.terminalManager  /// Capture nonisolated(unsafe) property before async
-
-        /// Now execute all tools in parallel using withTaskGroup (ORIGINAL LOGIC).
-        return await withTaskGroup(of: (Int, ToolExecution).self) { group in
-            var executions: [ToolExecution] = []
-
-            for (index, toolCall) in toolCalls.enumerated() {
-                let toolCallId = toolCall.id  /// Capture id before async task to avoid actor isolation issues
-                let toolCallName = toolCall.name  /// Capture name as well
-                let toolCallArguments = SendableArguments(value: toolCall.arguments)  /// Wrap in Sendable container
-                let toolCallsCount = toolCalls.count  /// Capture count for logging
-
-                group.addTask { @Sendable in
-                    let tsExecute = Date().timeIntervalSince1970
-                    let microExecute = Int(tsExecute * 1_000_000)
-                    await MainActor.run {
-                        self.logger.error("TS:\(microExecute) EXECUTE: index=\(index) name=\(toolCallName) id=\(toolCallId)")
-                    }
-                    let startTime = Date()
-                    await MainActor.run {
-                        self.logger.debug("executeToolCalls: Executing tool \(index + 1)/\(toolCallsCount) '\(toolCallName)' (id: \(toolCallId))")
-                    }
-
-                    /// Execute via ConversationManager.executeMCPTool() CRITICAL: Pass toolCall.id so tools can use LLM's tool call ID instead of generating their own CRITICAL: Pass terminalManager so terminal_operations uses visible UI terminal.
-                    /// CRITICAL (Task 19): Pass conversationId from session to prevent data leakage
-                    if let result = await self.conversationManager.executeMCPTool(
-                        name: toolCallName,
-                        parameters: toolCallArguments.value,
-                        toolCallId: toolCallId,
-                        conversationId: conversationIdForTools,
-                        isExternalAPICall: self.isExternalAPICall,
-                        terminalManager: capturedTerminalManager,
-                        iterationController: self
-                    ) {
-                        let duration = Date().timeIntervalSince(startTime)
-
-                        /// Update tool status in MessageBus after execution completes
-                        if let conversationId = conversationIdForTools,
-                           let toolMessageId = toolMessagesForTasks[toolCallId] {
-                            let conversation = await MainActor.run {
-                                self.conversationManager.conversations.first(where: { $0.id == conversationId })
-                            }
-                            if let conversation = conversation {
-                                await MainActor.run {
-                                    conversation.messageBus?.updateToolStatus(
-                                        id: toolMessageId,
-                                        status: result.success ? .success : .error,
-                                        duration: duration,
-                                        details: result.output.content
-                                    )
-                                    self.logger.debug("MESSAGEBUS_UPDATE_TOOL: Updated parallel tool message id=\(toolMessageId.uuidString.prefix(8)) status=\(result.success ? "success" : "error")")
-                                }
-                            }
-                        }
-
-                        /// Log progress events count.
-                        await MainActor.run {
-                            self.logger.debug("TOOL_RESULT_DEBUG: tool=\(toolCallName), progressEvents=\(result.progressEvents.count), success=\(result.success)")
-                        }
-
-                        /// Process progress events from tool execution Yield chunks for each sub-tool execution with parent context.
-                        for event in result.progressEvents {
-                            await MainActor.run {
-                                self.logger.debug("PROGRESS_EVENT: \(event.eventType) - tool: \(event.toolName), parent: \(event.parentToolName ?? "none")")
-                            }
-
-                            /// Yield progress chunk for sub-tool execution.
-                            if event.eventType == .toolStarted, let message = event.message {
-                                let toolMessageId = toolMessagesForTasks[toolCallId]
-                                let progressChunk = ServerOpenAIChatStreamChunk(
-                                    id: requestId,
-                                    object: "chat.completion.chunk",
-                                    created: created,
-                                    model: model,
-                                    choices: [OpenAIChatStreamChoice(
-                                        index: 0,
-                                        delta: OpenAIChatDelta(content: message + "\n"),
-                                        finishReason: nil
-                                    )],
-                                    isToolMessage: true,
-                                    toolName: event.toolName,
-                                    toolIcon: self.getToolIcon(event.toolName),
-                                    toolStatus: event.status ?? "running",
-                                    toolDetails: event.details,
-                                    parentToolName: event.parentToolName,
-                                    toolExecutionId: toolCallId,
-                                    messageId: toolMessageId  /// Include messageId for sub-tool tracking
-                                )
-                                continuation.yield(progressChunk)
-                            }
-
-                            /// Handle user-facing messages (MODERN: ToolDisplayData only)
-                            if event.eventType == .userMessage {
-                                guard let displayData = event.display as? ToolDisplayData,
-                                      let summary = displayData.summary, !summary.isEmpty else {
-                                    await MainActor.run {
-                                        self.logger.warning("PROGRESS_EVENT_SKIP_PARALLEL: userMessage missing ToolDisplayData.summary")
-                                    }
-                                    continue
-                                }
-
-                                let messageContent = "Thinking: \(summary)"
-
-                                await MainActor.run {
-                                    self.logger.info("USER_MESSAGE_CHUNK_EMIT: tool=\(event.toolName), contentLength=\(messageContent.count), first50=\"\(String(messageContent.prefix(50)))\"")
-                                }
-
-                                let userMessageChunk = ServerOpenAIChatStreamChunk(
-                                    id: requestId,
-                                    object: "chat.completion.chunk",
-                                    created: created,
-                                    model: model,
-                                    choices: [OpenAIChatStreamChoice(
-                                        index: 0,
-                                        delta: OpenAIChatDelta(
-                                            role: "assistant",
-                                            content: messageContent + "\n"
-                                        ),
-                                        finishReason: nil
-                                    )],
-                                    isToolMessage: true,
-                                    toolName: event.toolName,
-                                    toolIcon: displayData.icon ?? self.getToolIcon(event.toolName),
-                                    toolStatus: event.status ?? "success",
-                                    toolDisplayData: displayData,
-                                    toolDetails: event.details,
-                                    parentToolName: event.parentToolName,
-                                    toolExecutionId: toolCallId
-                                )
-                                continuation.yield(userMessageChunk)
-
-                                await MainActor.run {
-                                    self.logger.info("USER_MESSAGE_CHUNK_YIELDED: Successfully emitted userMessage chunk to client")
-                                }
-
-                                /// Force immediate flush for first message visibility Without this, userMessage chunks can be buffered until next yield.
-                                await Task.yield()
-                            }
-                        }
-
-                        /// Log what the tool result content is.
-                        await MainActor.run {
-                            self.logger.debug("DEBUG_TOOL_RESULT: Tool '\(toolCallName)' result type: \(type(of: result.output.content)), isEmpty: \(result.output.content.isEmpty), count: \(result.output.content.count)")
-                            self.logger.debug("DEBUG_TOOL_RESULT: Tool '\(toolCallName)' result value: '\(result.output.content)'")
-                            self.logger.debug("executeToolCalls: Tool '\(toolCallName)' succeeded in \(String(format: "%.2f", duration))s, emitted \(result.progressEvents.count) progress events")
-                        }
-
-                        let execution = ToolExecution(
-                            toolCallId: toolCallId,
-                            toolName: toolCallName,
-                            arguments: toolCallArguments.value,
-                            result: result.output.content,
-                            success: result.success,
-                            timestamp: startTime,
-                            iteration: iteration
-                        )
-
-                        return (index, execution)
-                    } else {
-                        /// Tool not found or execution failed.
-                        await MainActor.run {
-                            self.logger.error("executeToolCalls: Tool '\(toolCallName)' returned nil (not found or failed)")
-                        }
-
-                        /// Create execution with error result.
-                        let execution = ToolExecution(
-                            toolCallId: toolCallId,
-                            toolName: toolCallName,
-                            arguments: toolCallArguments.value,
-                            result: "ERROR: Tool '\(toolCallName)' not found or execution failed",
-                            success: false,
-                            timestamp: Date(),
-                            iteration: iteration
-                        )
-                        return (index, execution)
-                    }
-                }
-            }
-
-            /// Collect results in original order.
-            var indexedExecutions: [(Int, ToolExecution)] = []
-            for await result in group {
-                indexedExecutions.append(result)
-            }
-
-            /// Sort by original index to preserve tool call order.
-            indexedExecutions.sort { $0.0 < $1.0 }
-            executions = indexedExecutions.map { $0.1 }
-
-            logger.debug("executeToolCalls: Completed \(executions.count)/\(toolCalls.count) tool executions in PARALLEL")
-
-            /// Tool results are NOT sent as visible chunks They go into conversation history for the LLM but don't create UI messages The tool progress messages ("SUCCESS: Researching...") already show in tool cards Sending raw JSON results would clutter the UI with machine-readable data.
-
-            return executions
-        }
-    }
-
-
-
-    /// Format tool execution progress message with details about what each tool is doing.
-    private func formatToolExecutionProgress(_ toolCalls: [ToolCall]) -> String {
-        if toolCalls.count == 1 {
-            let tool = toolCalls[0]
-            let detail = extractToolActionDetail(tool)
-            /// If detail is empty, use user-friendly tool name.
-            let actionDescription = detail.isEmpty ? getUserFriendlyActionDescription(tool.name, detail) : detail
-            return "SUCCESS: \(actionDescription)"
-        } else {
-            /// Multiple tools - batch identical actions to avoid repetition Group by action description.
-            var actionCounts: [String: Int] = [:]
-            var actionOrder: [String] = []
-
-            for tool in toolCalls {
-                let detail = extractToolActionDetail(tool)
-                let actionDescription = detail.isEmpty ? getUserFriendlyActionDescription(tool.name, detail) : detail
-
-                /// Track first occurrence order.
-                if actionCounts[actionDescription] == nil {
-                    actionOrder.append(actionDescription)
-                }
-                actionCounts[actionDescription, default: 0] += 1
-            }
-
-            /// Format with counts for repeated actions.
-            let formattedActions = actionOrder.map { action in
-                let count = actionCounts[action]!
-                return count > 1 ? "\(action) (\(count)x)" : action
-            }.joined(separator: ", ")
-
-            return "SUCCESS: \(formattedActions)"
-        }
-    }
-
-    /// Convert technical tool names to user-friendly action descriptions.
-    private func getUserFriendlyActionDescription(_ toolName: String, _ detail: String) -> String {
-        /// If detail already contains a descriptive action, don't add tool name.
-        if !detail.isEmpty {
-            /// Detail already contains the action description (e.g., "creating todo list") Just return empty string so we use only the detail.
-            return ""
-        }
-
-        /// Map tool names to user-friendly actions Note: Consolidated tools (memory_operations, web_operations, etc.) are handled by ToolDisplayInfoRegistry.
-        switch toolName {
-        case "think":
-            return "Thinking"
-
-        case "user_collaboration":
-            /// Don't show generic message - specific collaboration message is emitted separately.
-            return ""
-
-        default:
-            /// For unknown tools, format the name nicely.
-            return toolName.replacingOccurrences(of: "_", with: " ").capitalized
-        }
-    }
-
-    /// Get SF Symbol icon for tool (used by progress event processing) Generate user-friendly message for tool execution Returns nil if no user message should be shown.
-    nonisolated private func generateUserMessageForTool(_ toolName: String, arguments: [String: Any]) -> String? {
-        /// Extract common parameters.
-        let query = arguments["query"] as? String
-        let url = arguments["url"] as? String
-        let filePath = arguments["filePath"] as? String
-        let path = arguments["path"] as? String
-        let command = arguments["command"] as? String
-        let operation = arguments["operation"] as? String
-
-        /// Generate message based on tool and operation.
-        switch toolName.lowercased() {
-        case "terminal_operations", "terminal", "run_in_terminal":
-            if let cmd = command {
-                let isBackground = arguments["isBackground"] as? Bool ?? false
-                return isBackground ? "Starting background process: `\(cmd)`" : "Running command in terminal: `\(cmd)`"
-            }
-            return "Running terminal command"
-
-        case "web_operations":
-            guard let op = operation else { return "Performing web operation" }
-            switch op {
-            case "research":
-                return query.map { "Researching the web for: \($0)" } ?? "Researching the web"
-            case "retrieve":
-                return query.map { "Retrieving stored research for: \($0)" } ?? "Retrieving research"
-            case "web_search":
-                return query.map { "Searching the web for: \($0)" } ?? "Searching the web"
-            case "serpapi":
-                let engine = arguments["engine"] as? String ?? "search engine"
-                return query.map { "Searching \(engine) for: \($0)" } ?? "Performing search"
-            case "scrape":
-                return url.map { "Scraping content from: \($0)" } ?? "Scraping webpage"
-            case "fetch":
-                return url.map { "Fetching content from: \($0)" } ?? "Fetching webpage"
-            default:
-                return nil
-            }
-
-        case "document_operations":
-            guard let op = operation else { return "Performing document operation" }
-            switch op {
-            case "document_import":
-                if let p = path {
-                    let filename = (p as NSString).lastPathComponent
-                    return "Importing document: \(filename)"
-                }
-                return "Importing document"
-            case "document_create":
-                let format = arguments["format"] as? String ?? "document"
-                if let filename = arguments["filename"] as? String {
-                    return "Creating \(format.uppercased()) document: \(filename)"
-                }
-                return "Creating new \(format.uppercased()) document"
-            case "get_doc_info":
-                return "Getting document information"
-            default:
-                return nil
-            }
-
-        case "file_operations":
-            guard let op = operation else { return "Performing file operation" }
-            switch op {
-            case "read_file":
-                if let fp = filePath {
-                    let filename = (fp as NSString).lastPathComponent
-                    return "Reading file: \(filename)"
-                }
-                return "Reading file"
-            case "create_file":
-                if let fp = filePath {
-                    let filename = (fp as NSString).lastPathComponent
-                    return "Creating file: \(filename)"
-                }
-                return "Creating new file"
-            case "replace_string", "multi_replace_string":
-                if let fp = filePath {
-                    let filename = (fp as NSString).lastPathComponent
-                    return "Editing file: \(filename)"
-                }
-                return "Editing file"
-            case "rename_file":
-                if let oldPath = arguments["oldPath"] as? String,
-                   let newPath = arguments["newPath"] as? String {
-                    let oldName = (oldPath as NSString).lastPathComponent
-                    let newName = (newPath as NSString).lastPathComponent
-                    return "Renaming: \(oldName) → \(newName)"
-                }
-                return "Renaming file"
-            case "delete_file":
-                if let fp = filePath {
-                    let filename = (fp as NSString).lastPathComponent
-                    return "Deleting file: \(filename)"
-                }
-                return "Deleting file"
-            case "list_dir":
-                if let p = path {
-                    let dirName = (p as NSString).lastPathComponent
-                    return "Listing directory: \(dirName)"
-                }
-                return "Listing directory"
-            case "file_search":
-                return query.map { "Searching for files: \($0)" } ?? "Searching for files"
-            case "grep_search":
-                return query.map { "Searching code for: \($0)" } ?? "Searching code"
-            case "semantic_search":
-                return query.map { "Semantic search: \($0)" } ?? "Performing semantic search"
-            default:
-                return nil
-            }
-
-        case "memory_operations":
-            guard let op = operation else { return "Performing memory operation" }
-            switch op {
-            case "search_memory":
-                return query.map { "Searching memory for: \($0)" } ?? "Searching memory"
-            case "store_memory":
-                if let content = arguments["content"] as? String {
-                    let preview = content.prefix(50)
-                    return "Storing in memory: \(preview)..."
-                }
-                return "Storing in memory"
-            default:
-                return nil
-            }
-
-        case "build_and_version_control":
-            guard let op = operation else { return "Performing build operation" }
-            switch op {
-            case "create_and_run_task":
-                if let task = arguments["task"] as? [String: Any],
-                   let label = task["label"] as? String {
-                    return "Running build task: \(label)"
-                }
-                return "Running build task"
-            case "run_task":
-                if let label = arguments["label"] as? String {
-                    return "Running task: \(label)"
-                }
-                return "Running task"
-            case "git_commit":
-                if let message = arguments["message"] as? String {
-                    let preview = message.prefix(50)
-                    return "Committing changes: \(preview)"
-                }
-                return "Committing changes to git"
-            case "get_changed_files":
-                return "Checking git status"
-            case "get_task_output":
-                return "Getting task output"
-            default:
-                return nil
-            }
-
-        case "run_subagent":
-            if let task = arguments["task"] as? String {
-                return "Starting subagent: \(task)"
-            }
-            return "Running subagent"
-
-        default:
-            /// No user message for other tools.
-            return nil
-        }
-    }
-
-    nonisolated private func getToolIcon(_ toolName: String) -> String {
-        switch toolName.lowercased() {
-        // Image & Visual
-        case "image_generation":
-            return "photo.on.rectangle.angled"
-        case "document_create", "document_create_mcp", "document_create_tool", "create_document":
-            return "doc.badge.plus"
-        case "document_import", "document_import_mcp":
-            return "doc.badge.arrow.up"
-        case "document_operations", "document_operations_mcp", "import_document", "search_documents":
-            return "doc.text"
-
-        // Web & Research
-        case "web_research", "web_research_mcp", "web_search", "researching", "research_query":
-            return "globe.badge.chevron.backward"
-        case "web_operations", "web_operations_mcp":
-            return "network"
-        case "fetch", "fetch_webpage":
-            return "arrow.down.doc"
-        case "scrape", "web_scraping":
-            return "doc.text.magnifyingglass"
-
-        // File Operations
-        case "read_file", "file_read", "file_operations":
-            return "doc.plaintext"
-        case "create_file", "file_write", "write_file":
-            return "doc.badge.plus"
-        case "delete_file", "file_delete":
-            return "trash"
-        case "rename_file":
-            return "pencil.and.list.clipboard"
-        case "list_dir", "list", "create_directory", "create_dir":
-            return "folder"
-        case "get_changed_files", "build_and_version_control", "git_commit":
-            return "arrow.triangle.2.circlepath"
-
-        // Code Operations
-        case "replace_string_in_file", "multi_replace_string_in_file", "edit_file":
-            return "arrow.left.arrow.right"
-        case "insert_edit":
-            return "text.insert"
-        case "apply_patch":
-            return "bandage"
-        case "grep_search", "file_search":
-            return "magnifyingglass.circle"
-        case "semantic_search":
-            return "brain"
-        case "list_code_usages":
-            return "list.bullet.indent"
-
-        // Memory & Data
-        case "vectorrag_add_document":
-            return "doc.badge.arrow.up"
-        case "vectorrag_query", "memory", "memory_operations", "search_memory":
-            return "doc.text.magnifyingglass"
-        case "vectorrag_list_documents":
-            return "list.bullet.rectangle"
-        case "vectorrag_delete_document":
-            return "trash.circle"
-
-        // Tasks & Management
-        case "create_and_run_task", "run_task":
-            return "play.circle"
-        case "manage_todo_list", "manage_todos", "todo_operations":
-            return "list.clipboard"
-        case "think", "thinking":
-            return "brain.head.profile"
-
-        // User Interaction
-        case "user_collaboration", "collaborate":
-            return "person.2.badge.gearshape"
-
-        // Terminal & Execution
-        case "run_in_terminal", "terminal", "terminal_operations", "execute_command", "run_command":
-            return "terminal"
-        case "get_terminal_output":
-            return "terminal.fill"
-        case "terminal_last_command":
-            return "clock.arrow.2.circlepath"
-        case "terminal_selection":
-            return "selection.pin.in.out"
-
-        // Testing
-        case "run_tests", "runtests":
-            return "checkmark.seal"
-        case "test_failure":
-            return "xmark.seal"
-
-        // MCP Server & Advanced
-        case "run_subagent":
-            return "person.crop.circle.badge.plus"
-        case "mcp_server_operations", "list_mcp_servers", "start_mcp_server":
-            return "server.rack"
-        case "ui_operations", "open_simple_browser":
-            return "safari"
-        case "run_sam_command":
-            return "command"
-
-        // Default fallback
-        default:
-            return "wrench.and.screwdriver"
-        }
-    }
-
-    /// Extract action detail from tool call arguments Extract action detail from tool call arguments Returns a human-readable description of what the tool is doing.
-    private func extractToolActionDetail(_ toolCall: ToolCall) -> String {
-        /// PROTOCOL-BASED: Check if tool has registered display info provider.
-        let registry = ToolDisplayInfoRegistry.shared
-        if let displayInfo = registry.getDisplayInfo(for: toolCall.name, arguments: toolCall.arguments) {
-            return displayInfo
-        }
-
-        /// SMART FALLBACK: Extract details from common argument patterns.
-        let args = toolCall.arguments
-
-        /// Check for query/search arguments.
-        if let query = args["query"] as? String {
-            return query.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        /// Check for file-related arguments.
-        if let filePath = args["filePath"] as? String {
-            let filename = (filePath as NSString).lastPathComponent
-            return filename
-        }
-
-        if let filename = args["filename"] as? String {
-            if let format = args["format"] as? String {
-                return "\(format.uppercased()): \(filename)"
-            }
-            return filename
-        }
-
-        if let path = args["path"] as? String {
-            let filename = (path as NSString).lastPathComponent
-            return filename
-        }
-
-        if let output_path = args["output_path"] as? String {
-            let filename = (output_path as NSString).lastPathComponent
-            return filename
-        }
-
-        /// Check for URL arguments.
-        if let url = args["url"] as? String {
-            if let host = URL(string: url)?.host {
-                return host
-            }
-            return url
-        }
-
-        if let urls = args["urls"] as? [String], !urls.isEmpty {
-            if urls.count == 1, let url = urls.first {
-                if let host = URL(string: url)?.host {
-                    return host
-                }
-                return url
-            }
-            let hosts = urls.prefix(2).compactMap { URL(string: $0)?.host }
-            if !hosts.isEmpty {
-                let hostsText = hosts.joined(separator: ", ")
-                return urls.count > 2 ? "\(hostsText), +\(urls.count - 2) more" : hostsText
-            }
-        }
-
-        /// Check for command arguments.
-        if let command = args["command"] as? String {
-            let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.count > 60 ? String(trimmed.prefix(57)) + "..." : trimmed
-        }
-
-        /// Check for content arguments.
-        if let content = args["content"] as? String {
-            if let format = args["format"] as? String {
-                let preview = content.prefix(40).trimmingCharacters(in: .whitespacesAndNewlines)
-                return "\(format.uppercased()): \(preview)..."
-            }
-            let preview = content.prefix(50).trimmingCharacters(in: .whitespacesAndNewlines)
-            return content.count > 50 ? preview + "..." : preview
-        }
-
-        /// Check for operation-specific patterns.
-        if let operation = args["operation"] as? String {
-            /// Format operation name nicely.
-            let formatted = operation
-                .replacingOccurrences(of: "_", with: " ")
-                .capitalized
-            return formatted
-        }
-
-        /// No useful details found.
-        return ""
-    }
-
-    /// Adds tool execution results to conversation history.
-    @MainActor
-    private func addToolResultsToConversation(
-        conversationId: UUID,
-        toolResults: [ToolExecution]
-    ) async throws {
-        logger.debug("addToolResultsToConversation: Formatting \(toolResults.count) tool results")
-
-        /// Format tool results as a summary message In future: Should use OpenAI's role="tool" format with tool_call_id For now: Format as clear user message summarizing tool results.
-        var summary = "Tool execution results:\n\n"
-
-        for (index, execution) in toolResults.enumerated() {
-            summary += "\(index + 1). Tool: \(execution.toolName)\n"
-            summary += "   Result: \(execution.result)\n\n"
-        }
-
-        logger.debug("addToolResultsToConversation: Formatted summary (\(summary.count) chars)")
-
-        /// Add to conversation via ConversationManager Find conversation by ID in conversations array.
-        if let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-            conversation.messageBus?.addAssistantMessage(
-                id: UUID(),
-                content: summary,
-                timestamp: Date()
-            )
-            /// MessageBus handles persistence automatically
-            logger.debug("addToolResultsToConversation: Successfully added tool results to conversation")
-        } else {
-            logger.error("addToolResultsToConversation: ERROR - Conversation \(conversationId.uuidString) not found")
-            /// Don't throw - continue workflow even if we couldn't persist.
-        }
-    }
-
-    /// Detect if agent is mid-workflow (needs continuation) or completing simple task CONTEXT-AWARE DETECTION: - Checks if agent used multi-step planning tools (think) - Analyzes message content for continuation signals - Detects if agent explicitly stated work is complete - Parameters: - response: The agent's response message - internalMessages: Conversation history - toolsExecuted: Whether tools were executed in this workflow - Returns: true if agent appears to be mid-workflow, false if completing simple task.
-    private func detectMidWorkflowState(
-        response: String,
-        internalMessages: [OpenAIChatMessage],
-        toolsExecuted: Bool
-    ) -> Bool {
-        let lowercasedResponse = response.lowercased()
-
-        /// HEURISTIC 1: Check if agent used think tool (indicates multi-step planning).
-        let usedThinkTool = internalMessages.contains { message in
-            let content = message.content ?? ""
-            return content.lowercased().contains("SUCCESS: thinking:") ||
-                content.lowercased().contains("tool: think")
-        }
-
-        /// HEURISTIC 2: Check for continuation signals in response.
-        let continuationSignals = [
-            "next i will", "then i will", "i will now",
-            "step 1", "step 2", "first,", "second,",
-            "now that i", "after", "once",
-            "moving forward", "next step"
-        ]
-        let hasContinuationSignal = continuationSignals.contains { signal in
-            lowercasedResponse.contains(signal)
-        }
-
-        /// HEURISTIC 3: Check if agent explicitly said work is complete.
-        let completionSignals = [
-            "work complete", "task complete", "finished",
-            "completed", "done", "all set",
-            "successfully created", "successfully completed"
-        ]
-        let hasCompletionSignal = completionSignals.contains { signal in
-            lowercasedResponse.contains(signal)
-        }
-
-        /// HEURISTIC 4: Check user's request for multi-step indicators.
-        let userRequest = (internalMessages.first { $0.role == "user" }?.content ?? "").lowercased()
-        let multiStepKeywords = [
-            " and ", " then ", "first", "after that",
-            "research", "analyze", "create", "generate"
-        ]
-        let isMultiStepRequest = multiStepKeywords.filter { keyword in
-            userRequest.contains(keyword)
-        }.count >= 2
-
-        /// DECISION LOGIC: - If agent used think tool → probably mid-workflow - If has continuation signals and no completion signals → mid-workflow - If multi-step request and tools executed but no completion → mid-workflow - If has completion signals → NOT mid-workflow.
-
-        if hasCompletionSignal {
-            return false
-        }
-
-        if usedThinkTool {
-            return true
-        }
-
-        if hasContinuationSignal {
-            return true
-        }
-
-        if isMultiStepRequest && toolsExecuted {
-            return true
-        }
-
-        return false
-    }
-
-    // MARK: - YARN Context Management
-
-    /// Calculate hash of message array content for compression detection
-    private func messageFingerprint(_ messages: [OpenAIChatMessage]) -> String {
-        let combined = messages.map { msg in
-            "\(msg.role):\(msg.content ?? "")"
-        }.joined(separator: "|")
-
-        var hasher = Hasher()
-        hasher.combine(combined)
-        return String(hasher.finalize())
-    }
-
-    /// Process ALL messages (conversation + tool results) with YARN for intelligent context management This prevents HTTP 400 payload size errors from GitHub Copilot and other providers **CRITICAL**: This must be called on the COMPLETE message array (conversation + system + tools) BEFORE sending to LLM.
-    /// - Parameters:
-    ///   - allMessages: Complete message array (conversation + system + tools)
-    ///   - conversationId: The conversation UUID
-    ///   - modelContextLimit: The model's actual context limit (from TokenCounter)
-    private func processAllMessagesWithYARN(
-        _ allMessages: [OpenAIChatMessage],
-        conversationId: UUID,
-        modelContextLimit: Int? = nil
-    ) async throws -> [OpenAIChatMessage] {
-
-        /// Initialize YARN processor if needed (lazy initialization).
-        if yarnProcessor == nil || !yarnProcessor!.isInitialized {
-            logger.debug("YARN: Initializing YaRNContextProcessor with mega 128M token profile")
-            try await yarnProcessor?.initialize()
-        }
-
-        guard let processor = yarnProcessor else {
-            logger.warning("YARN: Processor not available - returning original messages")
-            return allMessages
-        }
-
-        /// CRITICAL FIX: Use model's actual context limit, not universal 524K
-        /// This prevents 400 errors when using smaller models like GPT-4 (8K)
-        let effectiveTarget: Int
-        if let limit = modelContextLimit {
-            /// Target 70% of model's context to leave room for response
-            effectiveTarget = Int(Double(limit) * 0.70)
-            logger.debug("YARN: Using model-specific target: \(effectiveTarget) tokens (70% of \(limit) limit)")
-        } else {
-            /// Fallback to YaRN's default (for local models or when limit unknown)
-            effectiveTarget = Int(Double(processor.contextWindowSize) * 0.70)
-            logger.debug("YARN: Using default target: \(effectiveTarget) tokens (70% of \(processor.contextWindowSize))")
-        }
-
-        /// Convert OpenAIChatMessage to Message format for YARN processing.
-        let conversationMessages = allMessages.map { chatMsg -> Message in
-            Message(
-                id: UUID(),
-                content: chatMsg.content ?? "",
-                isFromUser: chatMsg.role == "user",
-                timestamp: Date(),
-                performanceMetrics: nil,
-                githubCopilotResponseId: nil,
-                isPinned: chatMsg.role == "system",
-                importance: chatMsg.role == "system" ? 1.0 : (chatMsg.role == "user" ? 0.9 : 0.7)
-            )
-        }
-
-        /// Process complete message context with YARN using model-specific target.
-        let processedContext = try await processor.processConversationContext(
-            messages: conversationMessages,
-            conversationId: conversationId,
-            targetTokenCount: effectiveTarget
-        )
-
-        /// Convert back to OpenAIChatMessage format.
-        let processedMessages = processedContext.messages.map { message -> OpenAIChatMessage in
-            let role = message.isFromUser ? "user" : (message.isPinned ? "system" : "assistant")
-            return OpenAIChatMessage(role: role, content: message.content)
-        }
-
-        /// Log compression statistics.
-        let stats = processor.getContextStatistics()
-        let originalTokens = stats.compressionRatio > 0 ? Int(Double(processedContext.tokenCount) / stats.compressionRatio) : processedContext.tokenCount
-        logger.debug("YARN: Processed \(allMessages.count) → \(processedMessages.count) messages", metadata: [
-            "original_tokens": "\(originalTokens)",
-            "compressed_tokens": "\(processedContext.tokenCount)",
-            "compression_ratio": "\(String(format: "%.2f", stats.compressionRatio))",
-            "compression_active": "\(stats.isCompressionActive)",
-            "method": "\(processedContext.processingMethod)"
-        ])
-        
-        /// Track compression telemetry if compression was applied
-        if processedContext.compressionApplied {
-            await conversationManager.incrementCompressionEvent(for: conversationId)
-        }
-
-        return processedMessages
-    }
-
-    /// Validate API request size before sending CRITICAL: Most timeouts occur because agent sends more data than API can handle This pre-flight check estimates request size and triggers compression if oversized Returns (estimatedTokens, isSafe, contextLimit).
-    private func validateRequestSize(
-        messages: [OpenAIChatMessage],
-        model: String,
-        tools: [OpenAITool]? = nil
-    ) async -> (estimatedTokens: Int, isSafe: Bool, contextLimit: Int) {
-        /// Get model's known context limit.
-        let contextLimit = await tokenCounter.getContextSize(modelName: model)
-
-        /// Estimate total tokens in request.
-        var totalTokens = 0
-        for message in messages {
-            let content = message.content ?? ""
-            totalTokens += await tokenCounter.estimateTokensRemote(text: content)
-        }
-
-        /// Include tool schema/token cost in estimation (tools can be large).
-        if let tools = tools, !tools.isEmpty {
-            let toolTokens = await tokenCounter.calculateToolTokens(tools: tools, model: nil, isLocal: false)
-            totalTokens += toolTokens
-            logger.debug("REQUEST_SIZE_VALIDATION: Added tool token estimate: \(toolTokens) tokens for \(tools.count) tools")
-        }
-
-        /// SAFETY THRESHOLD: 85% of context limit Why 85%?.
-        let safetyThreshold = Int(Float(contextLimit) * 0.85)
-        let isSafe = totalTokens <= safetyThreshold
-
-        if !isSafe {
-            logger.warning("REQUEST_SIZE_VALIDATION: Request too large - \(totalTokens) tokens exceeds 85% threshold (\(safetyThreshold)/\(contextLimit))")
-            logger.warning("REQUEST_SIZE_VALIDATION: This will likely cause timeout. Recommend triggering additional YARN compression.")
-        } else {
-            logger.debug("REQUEST_SIZE_VALIDATION: Request size OK - \(totalTokens) tokens / \(contextLimit) limit (\(Int(Float(totalTokens)/Float(contextLimit)*100))%)")
-        }
-
-        return (totalTokens, isSafe, contextLimit)
-    }
-
-    /// Calculate total payload size in bytes for a message array
-    /// Used to enforce API payload limits (typically 16KB for GitHub Copilot)
-    private func calculatePayloadSize(_ messages: [OpenAIChatMessage]) -> Int {
-        var totalBytes = 0
-        for message in messages {
-            if let content = message.content {
-                totalBytes += content.utf8.count
-            }
-            if let toolCalls = message.toolCalls {
-                for toolCall in toolCalls {
-                    let args = toolCall.function.arguments  // Not optional
-                    totalBytes += args.utf8.count
-                    totalBytes += toolCall.function.name.utf8.count
-                }
-            }
-        }
-        return totalBytes
-    }
-
-    /// Enforce payload size limit by removing oldest messages
-    /// Based on vscode-copilot-chat pattern to stay under API limits
-    /// Returns true if trimming occurred, false otherwise
-    private func enforcePayloadSizeLimit(_ messages: inout [OpenAIChatMessage], maxBytes: Int = 16000) -> Bool {
-        let initialSize = calculatePayloadSize(messages)
-
-        if initialSize <= maxBytes {
-            self.logger.debug("PAYLOAD_SIZE: \(initialSize) bytes (under \(maxBytes) limit)")
-            return false  /// No trimming needed
-        }
-
-        self.logger.warning("PAYLOAD_SIZE: \(initialSize) bytes exceeds limit (\(maxBytes)), trimming oldest message pairs")
-
-        var currentSize = initialSize
-        var removedCount = 0
-
-        /// CRITICAL FIX: Remove oldest message PAIRS to avoid orphaning tool results
-        /// Tool messages must stay paired with their corresponding assistant+toolcalls message
-        /// Otherwise the LLM sees tool results without context → loops
-        while currentSize > maxBytes && messages.count > 2 {
-            /// Check if first message is assistant with tool calls
-            if messages[0].role == "assistant" && (messages[0].toolCalls?.isEmpty == false) {
-                /// Find the matching tool result(s) after this assistant message
-                var pairEnd = 1
-                while pairEnd < messages.count && messages[pairEnd].role == "tool" {
-                    pairEnd += 1
-                }
-                
-                /// Remove the entire pair (assistant+toolcalls + all tool results)
-                let pairSize = (0..<pairEnd).reduce(0) { size, idx in
-                    var msgSize = messages[idx].content?.utf8.count ?? 0
-                    if let toolCalls = messages[idx].toolCalls {
-                        for toolCall in toolCalls {
-                            msgSize += toolCall.function.arguments.utf8.count
-                            msgSize += toolCall.function.name.utf8.count
-                        }
-                    }
-                    return size + msgSize
-                }
-                
-                /// Remove all messages in the pair
-                for _ in 0..<pairEnd {
-                    let removed = messages.removeFirst()
-                    removedCount += 1
-                    logger.debug("PAYLOAD_SIZE: Removed message (role=\(removed.role), part of pair)")
-                }
-                
-                currentSize -= pairSize
-            } else {
-                /// Not a tool call pair, just remove the single message
-                let removed = messages.removeFirst()
-                removedCount += 1
-
-                if let content = removed.content {
-                    currentSize -= content.utf8.count
-                }
-                if let toolCalls = removed.toolCalls {
-                    for toolCall in toolCalls {
-                        let args = toolCall.function.arguments
-                        currentSize -= args.utf8.count
-                        currentSize -= toolCall.function.name.utf8.count
-                    }
-                }
-            }
-        }
-
-        self.logger.info("PAYLOAD_SIZE: Removed \(removedCount) oldest messages (kept pairs together), reduced from \(initialSize) to \(currentSize) bytes")
-        return true  /// Trimming occurred
-    }
 }
 
 // MARK: - Timeout Error Enhancement
 
 /// Enhance timeout errors with helpful guidance for agents GitHub API timeouts often occur when agents send too much data (large tool responses, verbose context).
-private func enhanceTimeoutError(_ error: Error) -> Error {
+func enhanceTimeoutError(_ error: Error) -> Error {
     /// Check if this is a timeout error.
     let nsError = error as NSError
     let isTimeout = (nsError.domain == NSURLErrorDomain && nsError.code == -1001) ||
@@ -7201,7 +2446,7 @@ private func enhanceTimeoutError(_ error: Error) -> Error {
 /// For context management: Keep ONLY on the LATEST user message, strip from all older messages
 /// This prevents context explosion (e.g., 13x9800 chars = 127,400 chars of duplicated content)
 /// Also handles legacy [User Context: ...] format for backwards compatibility
-private func stripUserContextBlock(from content: String) -> String {
+func stripUserContextBlock(from content: String) -> String {
     var result = content
 
     /// Try XML format first: <userContext>...</userContext>
@@ -7220,7 +2465,7 @@ private func stripUserContextBlock(from content: String) -> String {
 }
 
 /// Clean tool call markers from content Removes <function_call>, <tool_call>, [TOOL_CALLS] blocks that pollute conversation history These markers are used for tool extraction but should not be shown to LLM in subsequent turns.
-private func cleanToolCallMarkers(from content: String) -> String {
+func cleanToolCallMarkers(from content: String) -> String {
     var cleaned = content
 
     /// Remove <function_call>...</function_call> blocks (Qwen, Ministral).
@@ -7257,7 +2502,7 @@ private func cleanToolCallMarkers(from content: String) -> String {
 // MARK: - Supporting Types
 
 /// Response from LLM call.
-private struct LLMResponse {
+struct LLMResponse {
     let content: String
     let finishReason: String
     let toolCalls: [ToolCall]?
@@ -7265,7 +2510,7 @@ private struct LLMResponse {
 }
 
 /// Tool call information from LLM response.
-private struct ToolCall: @unchecked Sendable {
+struct ToolCall: @unchecked Sendable {
     let id: String
     let name: String
     let arguments: [String: Any]
@@ -7276,12 +2521,12 @@ private struct ToolCall: @unchecked Sendable {
 /// 1. Dictionary only contains JSON-serializable types (String, Int, Bool, Array, Dictionary)
 /// 2. These types are all value types or immutable references
 /// 3. Dictionary is captured as immutable `let` binding before crossing actor boundaries
-private struct SendableArguments: @unchecked Sendable {
+struct SendableArguments: @unchecked Sendable {
     let value: [String: Any]
 }
 
 /// Todo item structure for autonomous execution.
-private struct TodoItem {
+struct TodoItem {
     let id: Int
     let title: String
     let description: String

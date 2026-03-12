@@ -65,7 +65,7 @@ struct LocalModelsPreferencePane_DownloadTab: View {
                             Button(action: {
                                 selectedFilter = filter
                                 /// Auto-search when SD filter selected
-                                if filter == .stableDiffusion {
+                                if false {
                                     Task {
                                         searchQuery = ""
                                         await performSearch()
@@ -103,7 +103,7 @@ struct LocalModelsPreferencePane_DownloadTab: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled((searchQuery.isEmpty && selectedFilter != .stableDiffusion) || downloadManager.isSearching)
+                    .disabled((searchQuery.isEmpty && false) || downloadManager.isSearching)
                 }
             }
             .padding(.horizontal, 24)
@@ -150,7 +150,7 @@ struct LocalModelsPreferencePane_DownloadTab: View {
                                 ModelCard(model: model, manager: downloadManager)
                             }
                         }
-                    } else if !searchQuery.isEmpty || selectedFilter == .stableDiffusion {
+                    } else if !searchQuery.isEmpty || false {
                         /// Empty results
                         VStack(spacing: 12) {
                             Image(systemName: "magnifyingglass")
@@ -214,11 +214,6 @@ struct LocalModelsPreferencePane_DownloadTab: View {
                 adjustedQuery = "\(searchQuery) mlx"
             }
             fileExtension = ".safetensors"
-        case .stableDiffusion:
-            /// SD models: Use CoreML filter to find ALL CoreML SD models
-            logger.debug("SD search filter selected, searchQuery='\(searchQuery)'")
-            fileExtension = ".coreml"
-            logger.debug("Setting fileExtension=.coreml for filter=coreml")
         }
 
         await downloadManager.searchModels(query: adjustedQuery, fileExtension: fileExtension)
@@ -237,10 +232,6 @@ struct LocalModelsPreferencePane_DownloadTab: View {
 
         case .mlx:
             return models.filter { $0.hasMLX }
-
-        case .stableDiffusion:
-            /// API already filtered with filter=coreml, return all results
-            return models
 
         case .q4:
             /// Filter to models with Q4 quantization
@@ -266,72 +257,6 @@ struct ModelCard: View {
 
     var displayModel: HFModel {
         fullModel ?? model
-    }
-
-    /// Detect if this is a Stable Diffusion model (any author)
-    private var isStableDiffusionModel: Bool {
-        let modelId = model.id.lowercased()
-        let hasSD = modelId.contains("stable-diffusion") ||
-                   modelId.contains("stable_diffusion") ||
-                   modelId.contains("stablediffusion")
-        let hasCoreML = modelId.contains("coreml") || modelId.contains("core-ml")
-        let hasDiffusion = modelId.contains("diffusion")
-
-        /// Check tags for SD indicators
-        let hasSDTag = model.tags?.contains { tag in
-            let t = tag.lowercased()
-            return t.contains("stable-diffusion") || t.contains("text-to-image")
-        } ?? false
-
-        /// Accept if clearly a SD model by ID or tags
-        return hasSD || (hasCoreML && hasDiffusion) || hasSDTag
-    }
-
-    /// Check if this SD model is already installed locally (with valid required files)
-    private var isSDModelInstalled: Bool {
-        guard isStableDiffusionModel else { return false }
-
-        let modelName = model.id.components(separatedBy: "/").last ?? model.id
-        let sdModelsDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("sam/models/stable-diffusion")
-        let modelDir = sdModelsDir.appendingPathComponent(modelName)
-
-        /// Directory must exist first
-        guard FileManager.default.fileExists(atPath: modelDir.path) else {
-            return false
-        }
-
-        /// Check for required files (same logic as StableDiffusionModelManager.isValidModelDirectory)
-        let possiblePaths = [
-            modelDir.appendingPathComponent("original/compiled"),
-            modelDir.appendingPathComponent("split_einsum/compiled"),
-            modelDir
-        ]
-
-        let requiredFiles = [
-            "TextEncoder.mlmodelc",
-            "Unet.mlmodelc",
-            "VAEDecoder.mlmodelc",
-            "vocab.json",
-            "merges.txt"
-        ]
-
-        for basePath in possiblePaths {
-            var allFilesExist = true
-            for file in requiredFiles {
-                let filePath = basePath.appendingPathComponent(file)
-                if !FileManager.default.fileExists(atPath: filePath.path) {
-                    allFilesExist = false
-                    break
-                }
-            }
-
-            if allFilesExist {
-                return true
-            }
-        }
-
-        return false
     }
 
     var body: some View {
@@ -409,67 +334,6 @@ struct ModelCard: View {
                         Spacer()
                         ProgressView("Loading model files...")
                         Spacer()
-                    }
-                    .padding()
-                } else if isStableDiffusionModel {
-                    /// Stable Diffusion model - show status or download button
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Stable Diffusion CoreML Model")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-
-                        Text("This model contains multiple CoreML files and will be downloaded as a complete package.")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-
-                        /// Check download progress first (takes precedence over installation check)
-                        if let progress = manager.downloadProgress[model.id] {
-                            HStack(spacing: 12) {
-                                ProgressView(value: progress)
-                                    .frame(maxWidth: 200)
-
-                                Text("\(Int(progress * 100))%")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .monospacedDigit()
-
-                                Button("Cancel") {
-                                    manager.cancelDownload(modelId: model.id)
-                                }
-                                .font(.caption)
-                                .buttonStyle(.borderless)
-                            }
-                        } else if isSDModelInstalled {
-                            /// Model is fully installed (all required files present)
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("Installed")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.green)
-                                Spacer()
-                            }
-                            .padding()
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(8)
-                        } else {
-                            Button(action: {
-                                Task {
-                                    /// Ensure model details (siblings) are loaded before downloading
-                                    if fullModel == nil {
-                                        await fetchModelDetails()
-                                    }
-                                    /// Use displayModel (which now has siblings from fetchModelDetails)
-                                    await manager.downloadStableDiffusionModel(model: displayModel)
-                                }
-                            }) {
-                                Label("Download Complete Model", systemImage: "arrow.down.circle.fill")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
                     }
                     .padding()
                 } else {
@@ -627,7 +491,6 @@ enum ModelFilter: String, CaseIterable {
     case all = "All"
     case gguf = "GGUF"
     case mlx = "MLX"
-    case stableDiffusion = "Stable Diffusion"
     case q4 = "Q4"
     case q5 = "Q5"
     case q8 = "Q8"
@@ -637,7 +500,6 @@ enum ModelFilter: String, CaseIterable {
         case .all: return "All Models"
         case .gguf: return "GGUF Only"
         case .mlx: return "MLX Only"
-        case .stableDiffusion: return "Stable Diffusion"
         case .q4: return "Q4 (Fast)"
         case .q5: return "Q5 (Balanced)"
         case .q8: return "Q8 (Quality)"

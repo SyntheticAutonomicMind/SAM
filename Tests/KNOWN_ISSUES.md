@@ -16,26 +16,17 @@ cd tests && ./mcp_api_tests.sh
 - file_operations.grep_search
 - file_operations.file_search
 - file_operations.create_file (all levels)
-- terminal_operations.create_directory
 
 **Fix Required:**
 - API should accept `workingDirectory` parameter
 - File operations should respect working directory from API
 - Or: Run tests from SAM repo root with absolute paths
 
-### 2. Terminal Operations Disabled by Default
-**Problem:** Terminal operations fail for new conversations.  
-**Expected:** Terminal tools should work when explicitly enabled.  
 **Status:** By design - security feature.
 
 **Error Pattern:**
-- terminal_operations.create_directory: fails
-- terminal_operations.run_command: fails for some operations
 
 **Fix Required:**
-- Add `enableTerminal: true` parameter to API requests for terminal tests
-- Or: Document that terminal operations require explicit enablement
-- Or: Pre-configure test conversation to allow terminal operations
 
 ### 3. Authorization Issues for Write Operations
 **Problem:** File write/modify/delete operations failing.  
@@ -77,9 +68,6 @@ cd tests && ./mcp_api_tests.sh
    - Already using absolute paths for most operations
    - Ensure search patterns include full paths
 
-3. **Enable terminal operations:**
-   - Add to API requests: `"enableTerminal": true`
-   - Or document terminal requirement
 
 ### Proper Fix (Long Term)
 1. **Add working directory support to API:**
@@ -96,12 +84,10 @@ cd tests && ./mcp_api_tests.sh
    - Or: Return authorization prompt to user
    - Or: Add to authorized paths list
 
-3. **Terminal enablement via API:**
    ```json
    {
      "model": "gpt-4",
      "messages": [...],
-     "enabledTools": ["terminal_operations"]
    }
    ```
 
@@ -135,11 +121,8 @@ cd /Users/andrew/repositories/SyntheticAutonomicMind/SAM
 ./tests/mcp_api_tests.sh
 ```
 
-### For Terminal Operations
 ```bash
-# Enable terminal in SAM UI first, or add to API:
 {
-  "enabledTools": ["terminal_operations"]
 }
 ```
 
@@ -160,7 +143,6 @@ cd /Users/andrew/repositories/SyntheticAutonomicMind/SAM
 **Target Status (After Fixes):**
 - 40+/49 tests passing (80%+)
 - All file operations working
-- Terminal operations working (when enabled)
 - Full directory hierarchy validated
 
 ## Next Steps

@@ -6,13 +6,6 @@ import Logging
 
 // MARK: - Protocol Conformance
 
-/// Protocol for terminal command execution in UI This protocol allows MCP tools to execute commands in the visible embedded terminal without creating a module dependency on UserInterface.
-@MainActor
-public protocol TerminalCommandExecutor: AnyObject {
-    /// Execute a command in the terminal and display output in UI - Parameter command: The shell command to execute - Returns: Command output (stdout + stderr combined).
-    func executeCommand(_ command: String) async -> String
-}
-
 /// Protocol for accessing orchestrator iteration control from tools.
 @MainActor
 public protocol IterationController: AnyObject {
@@ -51,11 +44,8 @@ public struct MCPExecutionContext: @unchecked Sendable {
     /// Original user request text for security audit logging Captures what the user actually asked for to validate tool appropriateness.
     public let userRequestText: String?
 
-    /// Working directory for this conversation All file operations should resolve relative paths against this directory Terminal commands should execute in this directory by default.
+    /// Working directory for this conversation All file operations should resolve relative paths against this directory.
     public let workingDirectory: String?
-
-    /// Terminal manager for this conversation (if UI terminal is available) When set, terminal operations will execute in the visible terminal When nil, terminal operations use invisible Process instances.
-    public let terminalManager: AnyObject?
 
     /// Orchestrator for iteration control (allows tools to increase maxIterations dynamically).
     public let iterationController: IterationController?
@@ -77,7 +67,6 @@ public struct MCPExecutionContext: @unchecked Sendable {
         isUserInitiated: Bool = false,
         userRequestText: String? = nil,
         workingDirectory: String? = nil,
-        terminalManager: AnyObject? = nil,
         iterationController: IterationController? = nil,
         effectiveScopeId: UUID? = nil
     ) {
@@ -91,7 +80,6 @@ public struct MCPExecutionContext: @unchecked Sendable {
         self.isUserInitiated = isUserInitiated
         self.userRequestText = userRequestText
         self.workingDirectory = workingDirectory
-        self.terminalManager = terminalManager
         self.iterationController = iterationController
         self.effectiveScopeId = effectiveScopeId ?? conversationId  // Default to conversationId if not specified
     }
@@ -121,7 +109,7 @@ public protocol MCPTool: Sendable {
 
     // MARK: - Execution Control Properties
 
-    /// Whether this tool execution blocks the workflow (must complete before workflow continues) Examples: user_collaboration (waits for user), foreground terminal commands Default: false (non-blocking, can run in parallel).
+    /// Whether this tool execution blocks the workflow (must complete before workflow continues) Examples: user_collaboration (waits for user), tools requiring user input Default: false (non-blocking, can run in parallel).
     var requiresBlocking: Bool { get }
 
     /// Whether this tool must execute serially (one at a time, no parallelization) Examples: file operations to prevent race conditions Default: false (can run in parallel with other tools).

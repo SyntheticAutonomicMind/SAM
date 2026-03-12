@@ -7,7 +7,6 @@ import APIFramework
 import ConversationEngine
 import MCPFramework
 import ConfigurationSystem
-import StableDiffusionIntegration
 import Logging
 import AppKit
 
@@ -48,15 +47,6 @@ struct SAMRewrittenApp: App {
 
         /// Create and inject advanced tools factory for MCP system.
         self.createAndInjectAdvancedToolsFactory(into: sharedConversationManager, endpointManager: endpointMgr)
-
-        /// Inject Stable Diffusion tool refresh handler.
-        self.injectStableDiffusionRefreshHandler(into: sharedConversationManager)
-
-        /// Initialize ALICE provider from saved settings (must be done early for tool registration).
-        /// This is done in a task because it's async, but on MainActor.
-        Task { @MainActor in
-            ALICEProvider.initializeFromDefaults()
-        }
 
         /// Log build configuration for verification (Priority 3 - verify Release mode flags).
         BuildConfiguration.logBuildMode()
@@ -124,59 +114,20 @@ struct SAMRewrittenApp: App {
                 /// File operations (14→1): Consolidated file_read + file_search + file_write Read (4): read_file + list_dir + get_errors + get_search_results Search (4): file_search + grep_search + semantic_search + list_usages Write (6): create_file + replace_string + multi_replace_string + insert_edit + rename_file + apply_patch.
                 tools.append(FileOperationsTool())
 
-                /// Terminal operations (5→1): run_in_terminal + get_output + last_command + selection + create_directory.
-                tools.append(TerminalOperationsTool())
 
-                /// Build & version control (6→1): create_and_run_task + run_task + get_task_output + git_commit + get_changed_files + run_sam_command.
-                let buildVCTool = BuildVersionControlTool()
-                tools.append(buildVCTool)
-
-                /// Image generation: Stable Diffusion (conditionally registered if models available).
-                let sdModelManager = StableDiffusionModelManager()
-                let installedSDModels = sdModelManager.listInstalledModels()
-
-                /// Check for ALICE remote models too.
-                let hasAliceModels = ALICEProvider.shared?.isHealthy == true && ALICEProvider.shared?.availableModels.isEmpty == false
-
-                if !installedSDModels.isEmpty || hasAliceModels {
-                    let sdService = StableDiffusionService()
-                    let pythonService = PythonDiffusersService()
-                    let upscalingService = UpscalingService()
-                    let orchestrator = StableDiffusionOrchestrator(
-                        coreMLService: sdService,
-                        pythonService: pythonService,
-                        upscalingService: upscalingService
-                    )
-                    let loraManager = LoRAManager()
-                    let imageGenTool = ImageGenerationTool(orchestrator: orchestrator, modelManager: sdModelManager, loraManager: loraManager)
-                    tools.append(imageGenTool)
-                    #if DEBUG
-                    let aliceModelCount = ALICEProvider.shared?.availableModels.count ?? 0
-                    logger.debug("FACTORY: image_generation tool registered (\(installedSDModels.count) local + \(aliceModelCount) ALICE models)")
-                    #endif
-                } else {
-                    #if DEBUG
-                    logger.debug("FACTORY: image_generation tool SKIPPED (no Stable Diffusion models installed)")
-                    #endif
-                }
-
-                /// User Collaboration Protocol - enables mid-stream user interaction.
+                /// User Collaboration Protocol
                 tools.append(UserCollaborationTool())
 
-                /// Register ToolDisplayInfoProviders for all consolidated tools This enables protocol-based display info extraction (replacing hardcoded switch in AgentOrchestrator).
+                /// Register ToolDisplayInfoProviders
                 let registry = ToolDisplayInfoRegistry.shared
                 registry.register("memory_operations", provider: MemoryOperationsTool.self)
                 registry.register("web_operations", provider: WebOperationsTool.self)
                 registry.register("document_operations", provider: DocumentOperationsTool.self)
                 registry.register("file_operations", provider: FileOperationsTool.self)
-                registry.register("terminal_operations", provider: TerminalOperationsTool.self)
-                registry.register("build_and_version_control", provider: BuildVersionControlTool.self)
 
                 #if DEBUG
                 let toolNames = tools.map { $0.name }.joined(separator: ", ")
-                logger.debug("FACTORY: Returning \(tools.count) CONSOLIDATED tools: \(toolNames)")
-                logger.debug("CONSOLIDATION COMPLETE: 39 tools → \(tools.count) tools (token reduction: ~71%)")
-                logger.debug("DISPLAY INFO: Registered \(6) display info providers for protocol-based extraction")
+                logger.debug("FACTORY: Returning \(tools.count) tools: \(toolNames)")
                 #endif
 
                 return tools
@@ -188,56 +139,16 @@ struct SAMRewrittenApp: App {
         /// Inject the factory into the MCP manager.
         conversationManager.mcpManager.setAdvancedToolsFactory(advancedToolsFactory)
 
+        /// Inject ALICE image generation service if configured.
+        let aliceService = ALICEImageGenerationService()
+        conversationManager.mcpManager.setImageGenerationService(aliceService)
+
         #if DEBUG
         logger.debug("Advanced tools factory injected into MCP system")
         #endif
     }
 
-    /// Inject Stable Diffusion tool refresh handler into ConversationManager Separate method to avoid self-capture issues in init().
-    private func injectStableDiffusionRefreshHandler(into conversationManager: ConversationManager) {
-        conversationManager.stableDiffusionToolRefreshHandler = { [weak conversationManager] in
-            await MainActor.run {
-                guard let conversationManager = conversationManager else { return }
-
-                /// Check if tool already registered.
-                if conversationManager.mcpManager.getToolByName("image_generation") != nil {
-                    logger.debug("SD_REFRESH: image_generation tool already registered")
-                    return
-                }
-
-                /// Check for installed SD models (local or ALICE remote).
-                let sdModelManager = StableDiffusionModelManager()
-                let installedModels = sdModelManager.listInstalledModels()
-                let hasAliceModels = ALICEProvider.shared?.isHealthy == true && ALICEProvider.shared?.availableModels.isEmpty == false
-
-                guard !installedModels.isEmpty || hasAliceModels else {
-                    logger.info("SD_REFRESH: No Stable Diffusion models installed yet")
-                    return
-                }
-
-                let aliceModelCount = ALICEProvider.shared?.availableModels.count ?? 0
-                logger.info("SD_REFRESH: Found \(installedModels.count) local + \(aliceModelCount) ALICE model(s), registering image_generation tool")
-
-                /// Create services and tool.
-                let sdService = StableDiffusionService()
-                let pythonService = PythonDiffusersService()
-                let upscalingService = UpscalingService()
-                let orchestrator = StableDiffusionOrchestrator(
-                    coreMLService: sdService,
-                    pythonService: pythonService,
-                    upscalingService: upscalingService
-                )
-                let loraManager = LoRAManager()
-                let imageGenTool = ImageGenerationTool(orchestrator: orchestrator, modelManager: sdModelManager, loraManager: loraManager)
-
-                /// Register tool with MCPManager.
-                conversationManager.mcpManager.registerTool(imageGenTool, name: "image_generation")
-                logger.info("SD_REFRESH: Successfully registered image_generation tool - now available without restart!")
-            }
-        }
-    }
-
-    var body: some Scene {
+        var body: some Scene {
         WindowGroup("Synthetic Autonomic Mind") {
             MainWindowView()
                 .environmentObject(conversationManager)
@@ -249,17 +160,6 @@ struct SAMRewrittenApp: App {
                     logger.debug("Main window appeared")
                     logger.debug("Main window: Interface loaded successfully")
                     #endif
-
-                    /// Register notification observer for SD model installation.
-                    NotificationCenter.default.addObserver(
-                        forName: .stableDiffusionModelInstalled,
-                        object: nil,
-                        queue: .main
-                    ) { [weak conversationManager] _ in
-                        Task { @MainActor in
-                            conversationManager?.refreshStableDiffusionTool()
-                        }
-                    }
 
                     /// Initialize API server if enabled in preferences.
                     if UserDefaults.standard.bool(forKey: "enableAPIServer") {

@@ -16,7 +16,7 @@ APP_BUNDLE_DEBUG = .build/Build/Products/Debug/SAM.app
 APP_BUNDLE_RELEASE = .build/Build/Products/Release/SAM.app
 
 # Build targets
-.PHONY: all build clean test test-unit test-e2e test-all test-quick run help metallib llamacpp build-debug build-release bundle-python
+.PHONY: all build clean test test-unit test-e2e test-all test-quick run help metallib llamacpp build-debug build-release
 .PHONY: sign sign-debug sign-release verify-signature notarize staple distribute production
 .PHONY: dist
 .PHONY: build-dev release-dev appcast-dev
@@ -41,8 +41,8 @@ llamacpp:
 	@echo "SUCCESS: llama.cpp framework built successfully"
 	@echo "Framework: external/llama.cpp/build-apple/llama.xcframework"
 
-# Build debug version (no Python bundling)
-build-debug-no-python: llamacpp
+# Build debug version
+build-debug: llamacpp
 	@echo "Setting build version from git commit..."
 	@./scripts/set-build-version.sh Debug
 	@echo "Building SAM [Debug]..."
@@ -86,34 +86,8 @@ build-debug-no-python: llamacpp
 	@echo "�Debug executable: .build/Build/Products/Debug/SAM"
 	@echo "App bundle: .build/Build/Products/Debug/SAM.app"
 
-# Bundle Python framework for model conversion (optional, adds ~250MB)
-bundle-python:
-	@echo "Bundling Python framework into SAM.app (Debug)..."
-	@./scripts/bundle_python_standalone.sh Debug
-	@echo "SUCCESS: Python framework bundled"
-	@echo "Conversion scripts can now use bundled Python"
-
-# Bundle Python for release builds
-bundle-python-release:
-	@echo "Bundling Python framework into SAM.app (Release)..."
-	@./scripts/bundle_python_standalone.sh Release
-	@echo "SUCCESS: Python framework bundled (Release)"
-	@echo "Conversion scripts can now use bundled Python"
-
-# Build debug version (WITH Python and ml-stable-diffusion - DEFAULT)
-build-debug: build-debug-no-python bundle-python
-	@echo "SUCCESS: Debug build with Python and ml-stable-diffusion complete"
-	@echo ""
-	@echo "Python environment: .build/Build/Products/Debug/SAM.app/Contents/Resources/python_env/"
-	@echo "Conversion script: scripts/convert_sd_to_coreml.py"
-	@echo "ml-stable-diffusion: external/ml-stable-diffusion/"
-
-# Build debug with Python bundled (DEPRECATED - use build-debug instead)
-build-debug-python: build-debug
-	@echo "Note: build-debug-python is deprecated. Use 'make build-debug' (Python now included by default)"
-
-# Build release version (no Python bundling)
-build-release-no-python: llamacpp
+# Build release version
+build-release: llamacpp
 	@echo "Setting build version from git commit..."
 	@./scripts/set-build-version.sh Release
 	@echo "Building SAM [Release]..."
@@ -153,21 +127,9 @@ build-release-no-python: llamacpp
 	@echo "Fixing framework rpath in executable..."
 	@install_name_tool -add_rpath @executable_path/../Frameworks .build/Build/Products/Release/SAM.app/Contents/MacOS/SAM 2>/dev/null || true
 	@echo "SUCCESS: App bundle created with embedded Info.plist, app icon, and frameworks"
-	@echo "SUCCESS: Release build complete (no Python)"
+	@echo "SUCCESS: Release build complete"
 	@echo "Release executable: .build/Build/Products/Release/SAM"
 	@echo "App bundle: .build/Build/Products/Release/SAM.app"
-
-# Build release version (WITH Python and ml-stable-diffusion - DEFAULT)
-build-release: build-release-no-python bundle-python-release
-	@echo "SUCCESS: Release build with Python and ml-stable-diffusion complete"
-	@echo ""
-	@echo "Python environment: .build/Build/Products/Release/SAM.app/Contents/Resources/python_env/"
-	@echo "Conversion script: scripts/convert_sd_to_coreml.py"
-	@echo "ml-stable-diffusion: external/ml-stable-diffusion/"
-
-# Build release version with Python bundled (DEPRECATED - use build-release instead)
-build-release-python: build-release
-	@echo "Note: build-release-python is deprecated. Use 'make build-release' (Python now included by default)"
 
 # Development Channel Build Targets
 
@@ -231,7 +193,6 @@ clean:
 	rm -rf $(BUILD_DIR)
 	@echo "Cleaning dependencies and caches..."
 	rm -rf .dependencies/
-	rm -rf .python_cache/
 	rm -f .last_version 2>/dev/null || true
 	rm -f Tests/*.txt Tests/*.log 2>/dev/null || true
 	@echo "SUCCESS: Clean complete - all build artifacts, dependencies, and temporary files removed"
@@ -318,23 +279,18 @@ help:
 	@echo ""
 	@echo "Build Commands:"
 	@echo "  build               - Build the project (release mode)"
-	@echo "  build-debug         - Build in debug mode WITH Python (~250MB)"
-	@echo "  build-release       - Build in release mode (no Python)"
-	@echo "  build-release-python - Build in release mode WITH Python (~250MB)"
+	@echo "  build-debug         - Build in debug mode"
+	@echo "  build-release       - Build in release mode"
 	@echo "  clean               - Clean build artifacts"
 	@echo ""
 	@echo "Testing Commands:"
 	@echo "  test                - Run all tests (unit + E2E)"
 	@echo "  test-unit           - Run Swift unit tests only"
-	@echo "  test-e2e            - Run Python E2E tests (requires running SAM)"
+	@echo "  test-e2e            - Run E2E tests (requires running SAM)"
 	@echo "  test-quick          - Run quick tests (unit only, faster)"
 	@echo "  test-ci             - CI mode: build, start SAM, run all tests"
 	@echo "  run-background      - Start SAM in background for E2E testing"
 	@echo "  stop-background     - Stop background SAM instance"
-	@echo ""
-	@echo "Python Bundling:"
-	@echo "  bundle-python         - Bundle Python into Debug build"
-	@echo "  bundle-python-release - Bundle Python into Release build"
 	@echo ""
 	@echo "MLX Commands:"
 	@echo "  metallib       - Verify MLX Metal library bundle"
@@ -500,7 +456,7 @@ create-dmg:
 	echo "DMG size: $$(du -h $$DMG_PATH | cut -f1)"
 
 # Create complete distribution package (build, sign, notarize, DMG)
-distribute: build-release-python notarize create-dmg
+distribute: build-release notarize create-dmg
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "SAM Distribution Ready!"
@@ -569,8 +525,8 @@ production:
 	@echo "Checking if version bump is needed..."
 	@./scripts/check-version.sh
 	@echo ""
-	@echo "Building release with Python bundling..."
-	@$(MAKE) build-release-python
+	@echo "Building release..."
+	@$(MAKE) build-release
 	@echo ""
 	@echo "Creating distribution..."
 	@$(MAKE) notarize

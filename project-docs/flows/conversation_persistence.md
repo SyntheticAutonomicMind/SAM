@@ -171,7 +171,6 @@ flowchart TD
     "enableReasoning": false,
     "enableTools": true,
     "autoApprove": false,
-    "enableTerminalAccess": false,
     "scrollLockEnabled": true,
     "useSharedData": false,
     "sharedTopicId": null,

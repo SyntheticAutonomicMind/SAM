@@ -61,6 +61,11 @@ public class LocalModelManager {
     public static let modelsDirectory = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Caches/sam/models")
 
+    /// Shared singleton instance to avoid expensive re-initialization.
+    /// nonisolated(unsafe) is acceptable here: LocalModelManager is only accessed from MainActor
+    /// (UI views) or background tasks that don't mutate shared state concurrently.
+    nonisolated(unsafe) public static let shared = LocalModelManager()
+
     /// Registry file location.
     private static let registryPath = modelsDirectory.appendingPathComponent(".managed/model_registry.json")
 
@@ -196,11 +201,6 @@ public class LocalModelManager {
                 if providerURL.hasDirectoryPath {
                     let provider = providerURL.lastPathComponent
 
-                    /// Skip stable-diffusion directory (handled separately by scanForStableDiffusionModels)
-                    if provider == "stable-diffusion" {
-                        continue
-                    }
-
                     /// Skip loras directory (not a model provider)
                     if provider.lowercased() == "loras" {
                         modelLogger.debug("Skipping LoRAs directory in model scan")
@@ -230,9 +230,6 @@ public class LocalModelManager {
                 modelLogger.debug("  - \(model.provider ?? "?")/\(model.name) (\(model.quantization ?? "unknown quant"))")
             }
 
-            /// Also scan for Stable Diffusion models
-            scanForStableDiffusionModels()
-
             /// Sync with registry: register any new models found during scan.
             let registryChanges = syncWithRegistry()
 
@@ -258,197 +255,6 @@ public class LocalModelManager {
         }
     }
 
-    /// Scan for Stable Diffusion models in stable-diffusion directory
-    private func scanForStableDiffusionModels() {
-        let sdModelsDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("sam/models/stable-diffusion")
-
-        guard FileManager.default.fileExists(atPath: sdModelsDir.path) else {
-            modelLogger.debug("No stable-diffusion directory found")
-            return
-        }
-
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(
-                at: sdModelsDir,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
-
-            for modelDir in contents {
-                guard let isDirectory = try? modelDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory,
-                      isDirectory else { continue }
-
-                /// Skip the downloads directory (used for temporary .safetensors files)
-                if modelDir.lastPathComponent == "downloads" {
-                    continue
-                }
-
-                /// Skip LoRAs directory (not a Stable Diffusion model)
-                if modelDir.lastPathComponent.lowercased() == "loras" {
-                    modelLogger.debug("Skipping LoRAs directory in SD model scan")
-                    continue
-                }
-
-                /// Check if this is a valid SD model directory
-                if isValidSDModelDirectory(modelDir) {
-                    let modelId = modelDir.lastPathComponent
-
-                    /// Read friendly name from metadata, fall back to formatted directory name
-                    var displayName = modelId
-                    let metadataPath = modelDir.appendingPathComponent(".sam_metadata.json")
-                    if FileManager.default.fileExists(atPath: metadataPath.path),
-                       let data = try? Data(contentsOf: metadataPath),
-                       let json = try? JSONDecoder().decode([String: String].self, from: data),
-                       let originalName = json["originalName"] {
-                        displayName = originalName
-                    } else {
-                        /// Format the directory name for display
-                        displayName = modelId
-                            .replacingOccurrences(of: "-", with: " ")
-                            .replacingOccurrences(of: "coreml ", with: "")
-                            .split(separator: " ")
-                            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-                            .joined(separator: " ")
-                    }
-
-                    /// Check what files exist - find actual safetensors file
-                    var safetensorsPath: URL?
-
-                    /// First check for model_index.json (diffusers format)
-                    let modelIndexPath = modelDir.appendingPathComponent("model_index.json")
-                    let hasDiffusersStructure = FileManager.default.fileExists(atPath: modelIndexPath.path)
-
-                    if hasDiffusersStructure {
-                        /// Diffusers format - check in subdirectories
-                        /// Priority: transformer/ (FLUX, Z-Image), unet/ (SD 1.5, SDXL)
-                        let possibleSubdirs = ["transformer", "unet"]
-                        for subdir in possibleSubdirs {
-                            let subdirPath = modelDir.appendingPathComponent(subdir)
-                            if FileManager.default.fileExists(atPath: subdirPath.path) {
-                                do {
-                                    let contents = try FileManager.default.contentsOfDirectory(
-                                        at: subdirPath,
-                                        includingPropertiesForKeys: nil,
-                                        options: [.skipsHiddenFiles]
-                                    )
-                                    /// Look for any .safetensors or .bin file
-                                    if let foundFile = contents.first(where: {
-                                        $0.path.hasSuffix(".safetensors") || $0.path.hasSuffix(".bin")
-                                    }) {
-                                        safetensorsPath = foundFile
-                                        break
-                                    }
-                                } catch {
-                                    /// Continue to next subdirectory
-                                }
-                            }
-                        }
-                    } else {
-                        /// Traditional format - check root directory
-                        do {
-                            let contents = try FileManager.default.contentsOfDirectory(
-                                at: modelDir,
-                                includingPropertiesForKeys: nil,
-                                options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
-                            )
-                            safetensorsPath = contents.first(where: { $0.path.hasSuffix(".safetensors") })
-                        } catch {
-                            /// Continue without safetensors
-                        }
-                    }
-
-                    /// Check for CoreML in all possible locations
-                    var coremlPath: URL?
-                    let possiblePaths = [
-                        modelDir.appendingPathComponent("original/compiled"),
-                        modelDir.appendingPathComponent("split_einsum/compiled"),
-                        modelDir
-                    ]
-
-                    for basePath in possiblePaths {
-                        let unetPath = basePath.appendingPathComponent("Unet.mlmodelc")
-                        if FileManager.default.fileExists(atPath: unetPath.path) {
-                            coremlPath = unetPath
-                            break
-                        }
-                    }
-
-                    let hasSafeTensors = safetensorsPath != nil
-                    let hasCoreML = coremlPath != nil
-
-                    /// Create ONE entry per model
-                    /// Prefer CoreML path if available, otherwise use SafeTensors/diffusers
-                    /// The generation code will check both paths and use based on CoreML/Python switch
-                    if hasCoreML || hasSafeTensors || hasDiffusersStructure {
-                        let modelPath: String
-                        let modelQuantization: String
-                        let modelSize: Int64
-
-                        if let coremlPath = coremlPath {
-                            /// Prefer CoreML when available
-                            modelPath = coremlPath.path
-                            modelQuantization = "coreml"
-                            /// Calculate size of parent directory (contains all CoreML files)
-                            let coremlDir = coremlPath.deletingLastPathComponent()
-                            modelSize = calculateDirectorySize(coremlDir)
-                        } else if hasDiffusersStructure {
-                            /// Diffusers format - use model directory path
-                            modelPath = modelDir.path
-                            modelQuantization = "diffusers"
-                            modelSize = calculateDirectorySize(modelDir)
-                        } else if let safetensorsPath = safetensorsPath {
-                            /// Fall back to SafeTensors
-                            modelPath = safetensorsPath.path
-                            modelQuantization = "safetensors"
-                            modelSize = calculateFileSize(safetensorsPath)
-                        } else {
-                            /// Should never reach here
-                            continue
-                        }
-
-                        let model = LocalModel(
-                            id: "stable-diffusion/\(modelId)",
-                            name: displayName,
-                            path: modelPath,
-                            provider: "stable-diffusion",
-                            quantization: modelQuantization,
-                            sizeBytes: modelSize
-                        )
-                        cachedModels.append(model)
-
-                        /// Also register in registry for EndpointManager to discover
-                        /// Uses format: provider=stable-diffusion, modelName=displayName
-                        let entry = ModelRegistryEntry(
-                            provider: "stable-diffusion",
-                            modelName: displayName,
-                            path: modelPath,
-                            installedDate: Date(),
-                            sizeBytes: modelSize,
-                            quantization: modelQuantization
-                        )
-                        registry.registerModel(entry)
-
-                        /// Log what was detected
-                        if hasCoreML && hasDiffusersStructure {
-                            modelLogger.info("Found SD model: \(displayName) (CoreML + Diffusers)")
-                        } else if hasCoreML && hasSafeTensors {
-                            modelLogger.info("Found SD model: \(displayName) (CoreML + SafeTensors)")
-                        } else if hasCoreML {
-                            modelLogger.info("Found SD model: \(displayName) (CoreML)")
-                        } else if hasDiffusersStructure {
-                            modelLogger.info("Found SD model: \(displayName) (Diffusers)")
-                        } else if hasSafeTensors {
-                            modelLogger.info("Found SD model: \(displayName) (SafeTensors)")
-                        }
-                    }
-                }
-            }
-        } catch {
-            modelLogger.error("Failed to scan stable-diffusion directory: \(error.localizedDescription)")
-        }
-    }
-
     /// Calculate file size
     private func calculateFileSize(_ fileURL: URL) -> Int64 {
         if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
@@ -457,54 +263,6 @@ public class LocalModelManager {
         return 0
     }
 
-    /// Check if directory contains a valid SD model structure
-    private func isValidSDModelDirectory(_ directory: URL) -> Bool {
-        /// Check for diffusers format (model_index.json)
-        let modelIndexPath = directory.appendingPathComponent("model_index.json")
-        if FileManager.default.fileExists(atPath: modelIndexPath.path) {
-            return true
-        }
-
-        /// Check for SafeTensors file (any .safetensors file, not just "model.safetensors")
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
-            )
-
-            /// Check if any .safetensors file exists
-            if contents.contains(where: { $0.path.hasSuffix(".safetensors") }) {
-                return true
-            }
-        } catch {
-            /// If we can't read directory, continue to check for CoreML
-        }
-
-        /// Check for CoreML models
-        let possiblePaths = [
-            directory.appendingPathComponent("original/compiled"),
-            directory.appendingPathComponent("split_einsum/compiled"),
-            directory
-        ]
-
-        let requiredFiles = ["TextEncoder.mlmodelc", "Unet.mlmodelc", "VAEDecoder.mlmodelc"]
-
-        for basePath in possiblePaths {
-            var allExist = true
-            for file in requiredFiles {
-                if !FileManager.default.fileExists(atPath: basePath.appendingPathComponent(file).path) {
-                    allExist = false
-                    break
-                }
-            }
-            if allExist {
-                return true
-            }
-        }
-
-        return false
-    }
 
     /// Calculate total size of directory
     private func calculateDirectorySize(_ directory: URL) -> Int64 {
@@ -524,6 +282,7 @@ public class LocalModelManager {
     private func syncWithRegistry() -> Bool {
         var registryUpdated = false
 
+        /// Add newly discovered models to registry.
         for model in cachedModels {
             let provider = model.provider ?? "unknown"
             let modelName = model.name
@@ -543,8 +302,30 @@ public class LocalModelManager {
             }
         }
 
+        /// Remove registry entries for models that no longer exist on disk.
+        let scannedKeys = Set(cachedModels.map { ($0.provider ?? "unknown") + "/" + $0.name })
+        let registryKeys = Array(registry.models.keys)
+        for key in registryKeys {
+            if !scannedKeys.contains(key) {
+                /// Verify the path no longer exists before removing.
+                if let entry = registry.models[key] {
+                    let modelDir = URL(fileURLWithPath: entry.path).deletingLastPathComponent()
+                    let configExists = FileManager.default.fileExists(atPath: modelDir.appendingPathComponent("config.json").path)
+                    let hasGGUF = (try? FileManager.default.contentsOfDirectory(at: modelDir, includingPropertiesForKeys: nil))?
+                        .contains(where: { $0.pathExtension.lowercased() == "gguf" }) ?? false
+
+                    if !configExists && !hasGGUF {
+                        registry.models.removeValue(forKey: key)
+                        registryUpdated = true
+                        modelLogger.info("Pruned stale registry entry: \(key) (model files not found)")
+                    }
+                }
+            }
+        }
+
         if registryUpdated {
             modelLogger.info("Registry updated with newly discovered models")
+            saveRegistry()
         }
 
         return registryUpdated

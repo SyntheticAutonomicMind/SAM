@@ -16,52 +16,50 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     • Relative paths: Auto-resolve to working directory
 
     === READ (4 ops) ===
-    • read_file - Read file with optional line range
-    • list_dir - List directory contents
-    • get_errors - Get compilation/lint errors
-    • get_search_results - Get workspace search results
+    • read_file - Read file with optional line range (filePath, offset, limit)
+    • list_dir - List directory contents (path)
+    • get_file_info - Get file metadata, size, type (filePath)
+    • get_errors - Get compilation/lint errors (filePaths)
 
-    === SEARCH (5 ops) ===
-    • file_search - Find files by glob (e.g., '**/*.swift')
-    • grep_search - Text search with regex (use includePattern for performance)
-    • semantic_search - AI-powered code search
-    • list_usages - Find all references to symbol
-    • search_index - Search indexed files by extension
+    === SEARCH (4 ops) ===
+    • file_search - Find files by glob pattern (query, e.g., '**/*.swift')
+    • grep_search - Text search with regex (query, isRegexp, includePattern)
+    • semantic_search - AI-powered code search (query)
+    • list_usages - Find all references to symbol (symbolName)
 
-    === WRITE (7 ops, auto-approved inside working dir) ===
-    • create_file - Create new file
-    • replace_string - Replace text in file
-    • multi_replace_string - Multiple replacements
-    • insert_edit - Insert/replace at line number
-    • rename_file - Rename or move file
-    • delete_file - Delete file
-    • apply_patch - Apply patch file
+    === WRITE (6 ops, auto-approved inside working dir) ===
+    • create_file - Create new file (filePath, content)
+    • replace_string - Replace text in file (filePath, oldString, newString)
+    • multi_replace_string - Multiple replacements (filePath, replacements)
+    • insert_edit - Insert/replace at line number (filePath, lineNumber, newText)
+    • rename_file - Rename or move file (oldPath, newPath)
+    • delete_file - Delete file (filePath)
 
     WHEN TO USE:
     - Reading/editing code files
     - Searching codebase for patterns
     - Creating/modifying workspace files
+    - Getting file metadata and document info
 
     WHEN NOT TO USE:
-    - Document processing (use document_operations)
     - Web content (use web_operations)
-    - Terminal commands for file ops (use this tool instead)
 
     EXAMPLES:
     SUCCESS: {"operation": "read_file", "filePath": "/path/to/file.swift"}
     SUCCESS: {"operation": "grep_search", "query": "func.*test", "isRegexp": true, "includePattern": "**/*.swift"}
     SUCCESS: {"operation": "create_file", "filePath": "test.txt", "content": "Hello"}
+    SUCCESS: {"operation": "get_file_info", "filePath": "document.pdf"}
     """
 
     public var supportedOperations: [String] {
         return [
-            /// Read operations (4).
-            "read_file", "list_dir", "get_errors", "get_search_results",
-            /// Search operations (5).
-            "file_search", "grep_search", "semantic_search", "list_usages", "search_index",
-            /// Write operations (7).
+            /// Read operations (4)
+            "read_file", "list_dir", "get_file_info", "get_errors", "read_tool_result",
+            /// Search operations (4)
+            "file_search", "grep_search", "semantic_search", "list_usages",
+            /// Write operations (6)
             "create_file", "replace_string", "multi_replace_string",
-            "insert_edit", "rename_file", "delete_file", "apply_patch"
+            "insert_edit", "rename_file", "delete_file"
         ]
     }
 
@@ -72,13 +70,13 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 description: "File operation to perform (read/search/write category)",
                 required: true,
                 enumValues: [
-                    "read_file", "list_dir", "get_errors", "get_search_results",
-                    "file_search", "grep_search", "semantic_search", "list_usages", "search_index",
+                    "read_file", "list_dir", "get_file_info", "get_errors", "read_tool_result",
+                    "file_search", "grep_search", "semantic_search", "list_usages",
                     "create_file", "replace_string", "multi_replace_string",
-                    "insert_edit", "rename_file", "delete_file", "apply_patch"
+                    "insert_edit", "rename_file", "delete_file"
                 ]
             ),
-            /// Common parameters.
+            /// Common parameters
             "filePath": MCPToolParameter(
                 type: .string,
                 description: "File path for read/write operations",
@@ -95,7 +93,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 description: "Directory path (for list_dir)",
                 required: false
             ),
-            /// Read parameters.
+            /// Read parameters
             "offset": MCPToolParameter(
                 type: .integer,
                 description: "Line offset to start reading from (for read_file)",
@@ -106,7 +104,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 description: "Maximum lines to read (for read_file)",
                 required: false
             ),
-            /// Search parameters.
+            /// Search parameters
             "query": MCPToolParameter(
                 type: .string,
                 description: "Search query or glob pattern (for search operations)",
@@ -132,12 +130,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 description: "Maximum results to return (for search operations)",
                 required: false
             ),
-            "extension": MCPToolParameter(
-                type: .string,
-                description: "File extension filter (for search_index), e.g., 'swift', 'md'",
-                required: false
-            ),
-            /// Write parameters.
+            /// Write parameters
             "content": MCPToolParameter(
                 type: .string,
                 description: "File content (for create_file)",
@@ -178,11 +171,6 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             "newPath": MCPToolParameter(
                 type: .string,
                 description: "New file path (for rename_file)",
-                required: false
-            ),
-            "patchContent": MCPToolParameter(
-                type: .string,
-                description: "Patch content to apply (for apply_patch)",
                 required: false
             ),
             "oldPath": MCPToolParameter(
@@ -233,7 +221,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         }
 
         /// AUTHORIZATION CHECK using centralized guard Check authorization for all write operations based on path location.
-        let writeOperations = ["create_file", "replace_string", "multi_replace_string", "insert_edit", "rename_file", "delete_file", "apply_patch"]
+        let writeOperations = ["create_file", "replace_string", "multi_replace_string", "insert_edit", "rename_file", "delete_file"]
         var isAuthorized = false
 
         if writeOperations.contains(operation) {
@@ -333,11 +321,16 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             let tool = GetErrorsTool()
             return await tool.execute(parameters: resolvedParams, context: context)
 
-        case "get_search_results":
-            let tool = GetSearchViewResultsTool()
+        case "get_file_info":
+            let tool = GetDocInfoTool()
             return await tool.execute(parameters: resolvedParams, context: context)
 
-        /// SEARCH OPERATIONS (5).
+        case "read_tool_result":
+            /// Delegate to ReadToolResultTool for chunked reading of large tool outputs
+            let tool = ReadToolResultTool()
+            return await tool.execute(parameters: parameters, context: context)
+
+        /// SEARCH OPERATIONS (4)
         case "file_search":
             let tool = FileSearchTool()
             return await tool.execute(parameters: resolvedParams, context: context)
@@ -354,15 +347,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             let tool = ListCodeUsagesTool()
             return await tool.execute(parameters: resolvedParams, context: context)
 
-        case "search_index":
-            /// Remove "operation" key to avoid conflict with SearchIndexTool's operation parameter.
-            var indexParams = resolvedParams
-            indexParams.removeValue(forKey: "operation")
-
-            let tool = SearchIndexTool()
-            return await tool.execute(parameters: indexParams, context: context)
-
-        /// WRITE OPERATIONS (7) - All include confirm=true when authorized.
+        /// WRITE OPERATIONS (6) - All include confirm=true when authorized.
         case "create_file":
             var createParams = resolvedParams
 
@@ -449,23 +434,6 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             let tool = DeleteFileTool()
             return await tool.execute(parameters: deleteParams, context: context)
 
-        case "apply_patch":
-            /// Transform parameters: patchContent → patch_content.
-            var patchParams = resolvedParams
-            if let patchContent = resolvedParams["patchContent"] as? String {
-                patchParams["patch_content"] = patchContent
-                patchParams.removeValue(forKey: "patchContent")
-            }
-
-            /// Use stored authorization result (already consumed above).
-            if isAuthorized || context.isUserInitiated {
-                patchParams["confirm"] = true
-                logger.debug("Adding confirm=true to apply_patch (authorized=\(isAuthorized), userInitiated=\(context.isUserInitiated))")
-            }
-
-            let tool = ApplyPatchTool()
-            return await tool.execute(parameters: patchParams, context: context)
-
         default:
             return operationError(operation, message: "Unknown file operation")
         }
@@ -495,8 +463,12 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             }
             return "Checking workspace errors"
 
-        case "get_search_results":
-            return "Getting search results"
+        case "get_file_info":
+            if let filePath = parameters["filePath"] as? String {
+                let fileName = (filePath as NSString).lastPathComponent
+                return "Getting info: \(fileName)"
+            }
+            return "Getting file info"
 
         /// Search operations.
         case "file_search":
@@ -569,13 +541,6 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             }
             return "Deleting file"
 
-        case "apply_patch":
-            if let filePath = parameters["filePath"] as? String {
-                let fileName = (filePath as NSString).lastPathComponent
-                return "Applying patch to: \(fileName)"
-            }
-            return "Applying patch"
-
         default:
             return "File operation: \(operation)"
         }
@@ -595,12 +560,13 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             break
 
         case "get_errors":
-            /// filePaths is optional (all files if not specified).
+            /// filePaths is optional (all files if not specified)
             break
 
-        case "get_search_results":
-            /// No required parameters.
-            break
+        case "get_file_info":
+            guard parameters["filePath"] is String else {
+                return operationError(operation, message: "Missing required parameter: filePath")
+            }
 
         /// Search operations.
         case "file_search", "grep_search", "semantic_search":
@@ -618,8 +584,6 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 return operationError(operation, message: "Missing required parameter: symbolName")
             }
 
-        case "search_index":
-            /// All parameters optional (query, extension, operation) Defaults to listing all files if no parameters provided.
             break
 
         /// Write operations.
@@ -677,14 +641,6 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 return operationError(operation, message: "Missing required parameter: filePath")
             }
 
-        case "apply_patch":
-            guard parameters["filePath"] is String else {
-                return operationError(operation, message: "Missing required parameter: filePath")
-            }
-            guard parameters["patchContent"] is String else {
-                return operationError(operation, message: "Missing required parameter: patchContent")
-            }
-
         default:
             return operationError(operation, message: "Unknown operation")
         }
@@ -720,8 +676,12 @@ extension FileOperationsTool: ToolDisplayInfoProvider {
         case "get_errors":
             return "Checking errors"
 
-        case "get_search_results":
-            return "Getting search results"
+        case "get_file_info":
+            if let filePath = arguments["filePath"] as? String {
+                let filename = (filePath as NSString).lastPathComponent
+                return "Info: \(filename)"
+            }
+            return "Getting file info"
 
         /// Search operations.
         case "file_search":
@@ -747,18 +707,6 @@ extension FileOperationsTool: ToolDisplayInfoProvider {
                 return "Finding usages: \(symbolName)"
             }
             return "Finding usages"
-
-        case "search_index":
-            if let query = arguments["query"] as? String {
-                return "Searching index: \(query)"
-            }
-            if let ext = arguments["extension"] as? String {
-                return "Finding .\(ext) files"
-            }
-            if let op = arguments["operation"] as? String {
-                return "Index: \(op)"
-            }
-            return "Searching files"
 
         /// Write operations.
         case "create_file":
@@ -803,13 +751,6 @@ extension FileOperationsTool: ToolDisplayInfoProvider {
             }
             return "Deleting file"
 
-        case "apply_patch":
-            if let filePath = arguments["filePath"] as? String {
-                let filename = (filePath as NSString).lastPathComponent
-                return "Patching: \(filename)"
-            }
-            return "Applying patch"
-
         default:
             return nil
         }
@@ -850,9 +791,11 @@ extension FileOperationsTool: ToolDisplayInfoProvider {
             }
             return details
 
-        case "get_search_results":
-            details.append("Getting search results from active search view")
-            return details
+        case "get_file_info":
+            if let filePath = arguments["filePath"] as? String {
+                details.append("File: \((filePath as NSString).lastPathComponent)")
+            }
+            return details.isEmpty ? nil : details
 
         /// Search operations.
         case "file_search":
@@ -890,18 +833,6 @@ extension FileOperationsTool: ToolDisplayInfoProvider {
             }
             if let filePaths = arguments["filePaths"] as? [String] {
                 details.append("Files: \(filePaths.count) specified")
-            }
-            return details.isEmpty ? nil : details
-
-        case "search_index":
-            if let query = arguments["query"] as? String {
-                details.append("Query: \(query)")
-            }
-            if let ext = arguments["extension"] as? String {
-                details.append("Extension: .\(ext)")
-            }
-            if let op = arguments["operation"] as? String {
-                details.append("Operation: \(op)")
             }
             return details.isEmpty ? nil : details
 
@@ -955,16 +886,6 @@ extension FileOperationsTool: ToolDisplayInfoProvider {
         case "delete_file":
             if let filePath = arguments["filePath"] as? String {
                 details.append("File: \((filePath as NSString).lastPathComponent)")
-            }
-            return details.isEmpty ? nil : details
-
-        case "apply_patch":
-            if let filePath = arguments["filePath"] as? String {
-                details.append("File: \((filePath as NSString).lastPathComponent)")
-            }
-            if let patch = arguments["patch"] as? String {
-                let lines = patch.components(separatedBy: .newlines).count
-                details.append("Patch size: \(lines) lines")
             }
             return details.isEmpty ? nil : details
 

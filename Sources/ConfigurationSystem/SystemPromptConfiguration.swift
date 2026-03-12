@@ -53,8 +53,6 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     /// Auto-enable settings when this prompt is selected
     public var autoEnableWorkflowMode: Bool
     public var autoEnableTools: Bool
-    public var autoEnableTerminal: Bool
-    public var autoEnableDynamicIterations: Bool
 
     /// Current version of the prompt system (increment when making breaking changes).
     /// Version 16: Simplified verbose sections (tool responsibility, think tool, multi-step handling).
@@ -71,8 +69,6 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         version: Int? = nil,
         autoEnableWorkflowMode: Bool = false,
         autoEnableTools: Bool = false,
-        autoEnableTerminal: Bool = false,
-        autoEnableDynamicIterations: Bool = false,
         components: [SystemPromptComponent] = []
     ) {
         self.id = id
@@ -86,12 +82,10 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         self.source = source
         self.autoEnableWorkflowMode = autoEnableWorkflowMode
         self.autoEnableTools = autoEnableTools
-        self.autoEnableTerminal = autoEnableTerminal
-        self.autoEnableDynamicIterations = autoEnableDynamicIterations
     }
 
-    /// Generates the final system prompt by combining enabled components Dynamically regenerates user-specific components to reflect current preferences - Parameter toolsEnabled: Whether MCP tools are enabled for this request (filters tool-specific guidance) - Parameter workflowModeEnabled: Whether workflow mode is enabled (includes workflow execution guidance) - Parameter dynamicIterationsEnabled: Whether dynamic iterations is enabled (includes iteration increase guidance).
-    public func generateSystemPrompt(toolsEnabled: Bool = true, workflowModeEnabled: Bool = false, dynamicIterationsEnabled: Bool = false) -> String {
+    /// Generates the final system prompt by combining enabled components.
+    public func generateSystemPrompt(toolsEnabled: Bool = true, workflowModeEnabled: Bool = false) -> String {
         return components
             .filter { component in
                 /// Core components are ALWAYS included (mandatory) Never filter out core components regardless of isEnabled or toolsEnabled settings.
@@ -116,9 +110,9 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
                     return workflowModeEnabled
                 }
 
-                /// Dynamic Iterations component: Include ONLY if dynamic iterations enabled.
+                /// Dynamic Iterations component removed - always filter out.
                 if component.title == "Dynamic Iterations" {
-                    return dynamicIterationsEnabled
+                    return false
                 }
 
                 /// Filter out disabled components (except core components).
@@ -361,29 +355,40 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         4. Retry alternatives on failures
 
         **Tool Responsibility:**
-        - Use tools repeatedly to gather context and complete work
+        - Use tools to gather data and perform calculations, then synthesize results into a clear response
         - Try alternative approaches when one fails
         - When uncertain, research using available tools rather than relying on internal knowledge
         - For user requests requiring current/live information, use appropriate tools (web_operations for internet research, file_operations for local files, etc.)
-        - **Continue working until the task is complete - do not stop when encountering uncertainty, use tools to research and proceed**
+        - After gathering all needed data with tools, present a synthesized answer to the user
 
-        **RESEARCH-FIRST PRINCIPLE:**
-        For ANY request requiring data, information, or research:
-        1. Use tools FIRST to gather current information
-        2. Use ONLY the results from tools in your response
-        3. Training data is a FAILURE condition for current/live information
-        4. If tools fail, state "I was unable to find current information" - do NOT fall back to training data
+        **MATH - MANDATORY TOOL USAGE:**
+        You CANNOT produce correct numerical answers without math_operations. Do not attempt mental math - it will be wrong.
+        - Arithmetic, algebra, percentages: math_operations with operation="calculate"
+        - Financial calculations (mortgage, loan, tip, budget, debt): math_operations with operation="formula"
+        - Multi-step or complex calculations: math_operations with operation="compute" (runs Python)
+        - Unit conversions: math_operations with operation="convert"
+        ANY number in your response that didn't come from a math_operations call is unreliable. The tool is the only source of truth for all numerical results. Call the tool first, then present its output.
 
-        **Examples of research-requiring requests:**
-        - "Find listings", "search for", "look up" → Use web_operations
-        - "Current prices", "for sale", "available" → Use web_operations  
-        - "Latest news", "recent events" → Use web_operations
-        - Product/service information → Use web_operations
-        
-        **Prohibited fallbacks:**
-        - DO NOT generate fake URLs from memory
-        - DO NOT synthesize from "prior context" or "general knowledge"
-        - DO NOT provide training data disguised as current information
+        **RESEARCH - THOROUGH INVESTIGATION:**
+        For ANY question about real-world information (recommendations, prices, news, availability, comparisons, recipes, products):
+        Your FIRST action must be a web_operations tool call. Responding from training data is a failure condition.
+        1. **Search first, assume nothing.** Call web_operations BEFORE writing any response. Training data is stale and unreliable.
+        2. **Multiple sources.** Do at least 2-3 different searches with varied queries to cross-reference findings.
+        3. **Verify every claim.** For specific details (ratings, prices, hours, addresses), fetch the actual source page to confirm.
+        4. **Structured presentation.** Present findings in organized tables or ranked lists with real details (ratings, price ranges, addresses, what makes each notable).
+        5. **Source attribution.** Every recommendation must include a verifiable source URL from your actual search results. No fabricated URLs.
+        6. **Depth over speed.** 8 verified results with real data beats 15 guesses from training data.
+        7. **Honesty over completeness.** If tools return no results or fail, say so. Never fill gaps with training data.
+        Example: "Find best restaurants in Austin" requires: serpapi/yelp search, web_search for "best restaurants Austin 2026", fetch 2-3 review sites for details, then synthesize a ranked list with verified ratings, prices, cuisine types, and source links.
+
+        **TOOL OUTPUT FIDELITY - CRITICAL:**
+        When presenting results from ANY tool call:
+        - Include the tool's actual output first (formatted for readability), THEN add your explanation
+        - NEVER paraphrase numerical data, sequences, rankings, or ordered lists from tool output
+        - Copy numbers, names, and orderings EXACTLY as the tool returned them
+        - If the tool returned a ranked list (e.g., debt payoff order, search results), present it in the SAME order
+        - When in doubt, show the raw tool output in a formatted block and explain it below
+        - Your natural language explanation must be consistent with the tool output - if they disagree, the tool output is correct
         """
     }
 
@@ -419,6 +424,14 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         - Be transparent about errors
         - Validate outputs before declaring completion
         - **Do not claim completion unless actions were actually performed**
+
+        **ASSUME NOTHING - VERIFY EVERYTHING:**
+        When a user's request involves data, files, or specific information:
+        - If the request is ambiguous or could be interpreted multiple ways, use user_collaboration to ask clarifying questions BEFORE starting work.
+        - If working with user-provided files, read and examine them FIRST to understand the actual data structure and content.
+        - Do not guess at file formats, data structures, or intent - inspect the actual data.
+        - If you make an assumption that turns out wrong, you've wasted the user's time. Ask first.
+        - After completing work, verify the output matches what was requested. Double-check your results.
 
         ## Multi-Step Request Handling
         **For multi-step requests:**
@@ -546,22 +559,32 @@ private static func buildSAMSpecificPatterns() -> String {
        - Set remaining todos: "not-started"
     2. Then proceed with workflow below
 
-    **Working with existing todos:**
-    1. Do the work for current in-progress todo
-    2. Mark it completed: todo_operations(operation: "update", todoUpdates: [{"id": X, "status": "completed"}])
-    3. Mark next todo in-progress: todo_operations(operation: "update", todoUpdates: [{"id": Y, "status": "in-progress"}])
-    4. Repeat until all complete
+    **Working with existing todos - ONE TODO PER RESPONSE:**
+    Each response should complete exactly ONE todo item:
+    1. Output the deliverable content for the current in-progress todo (write the text, code, analysis, etc.)
+    2. In the SAME response, call todo_operations to mark it completed AND mark next todo in-progress
+    3. The content you output IS the work product - do not separate todo management from content delivery
+
+    Example flow for "tell me 3 stories":
+    - Response 1: [Story 1 text] + tool_call: todo_operations(update: [{id:1, status:completed}, {id:2, status:in-progress}])
+    - Response 2: [Story 2 text] + tool_call: todo_operations(update: [{id:2, status:completed}, {id:3, status:in-progress}])
+    - Response 3: [Story 3 text] + tool_call: todo_operations(update: [{id:3, status:completed}])
+
+    **CRITICAL - EVERY RESPONSE MUST INCLUDE A TOOL CALL:**
+    When you have an active todo list with incomplete items, EVERY response MUST include at least one tool call (usually todo_operations update). This keeps the workflow loop alive. If you respond with only text and no tool calls, the workflow terminates and you cannot continue.
 
     **CRITICAL RULES:**
     - ALWAYS create todos FIRST before trying to update them (NEVER call update when no todos exist)
     - You MUST call todo_operations(update) to change todo status - the system cannot infer status from your text
-    - When completing a todo: Mark it done with the tool, then move to next todo - do NOT repeat the work in your response
-    - Each todo gets ONE completion response - mark done and move forward
+    - Deliver the content AND update the todo in the SAME response - do not separate them
+    - Each todo gets ONE response with both content and status update, then move forward
+    - NEVER output content without an accompanying tool call when todos are incomplete
+    - NEVER update todos without delivering content - status updates without output are empty progress
 
     **Anti-duplication:**
     - After completing Todo 1: Mark complete, start Todo 2, work on Todo 2
     - Do NOT: Complete Todo 1, mark done, then re-summarize Todo 1's results again
-    - Tool call = progress indicator, not invitation to repeat output
+    - Do NOT: Update all todos mechanically first, then dump all content at the end
 
     **Before Complete:** Verify ALL requested items delivered. If user asked for N things, confirm N things done.
 
@@ -1178,7 +1201,7 @@ public class SystemPromptManager: ObservableObject {
 
     // MARK: - System Prompt Generation
 
-    public func generateSystemPrompt(for configurationId: UUID? = nil, toolsEnabled: Bool = true, workflowModeEnabled: Bool = false, dynamicIterationsEnabled: Bool = false, model: String? = nil, workingDirectory: String? = nil) -> String {
+    public func generateSystemPrompt(for configurationId: UUID? = nil, toolsEnabled: Bool = true, workflowModeEnabled: Bool = false, model: String? = nil, workingDirectory: String? = nil) -> String {
         /// Search in allConfigurations (defaults + user configs), not just user configs.
         let configuration = if let configurationId = configurationId {
             allConfigurations.first { $0.id == configurationId }
@@ -1192,7 +1215,7 @@ public class SystemPromptManager: ObservableObject {
         let samMinimalId = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
         if configuration?.id == samMinimalId {
             configLogger.info("Using SAM Minimal - bypassing verbose system prompt wrapper for local model efficiency")
-            let minimalPrompt = configuration?.generateSystemPrompt(toolsEnabled: toolsEnabled, workflowModeEnabled: workflowModeEnabled, dynamicIterationsEnabled: dynamicIterationsEnabled) ?? ""
+            let minimalPrompt = configuration?.generateSystemPrompt(toolsEnabled: toolsEnabled, workflowModeEnabled: workflowModeEnabled) ?? ""
             configLogger.debug("SAM Minimal prompt length: \(minimalPrompt.count) characters")
             return minimalPrompt
         }
@@ -1200,8 +1223,8 @@ public class SystemPromptManager: ObservableObject {
         /// VS CODE COPILOT PATTERN: Use XML tags for ALL models
         /// Previously this was conditional on usesXMLTags, but VS Code applies universally
 
-        /// Get user-configured system prompt components (pass toolsEnabled, workflowModeEnabled, and dynamicIterationsEnabled).
-        let componentPrompt = configuration?.generateSystemPrompt(toolsEnabled: toolsEnabled, workflowModeEnabled: workflowModeEnabled, dynamicIterationsEnabled: dynamicIterationsEnabled) ?? ""
+        /// Get user-configured system prompt components.
+        let componentPrompt = configuration?.generateSystemPrompt(toolsEnabled: toolsEnabled, workflowModeEnabled: workflowModeEnabled) ?? ""
 
         /// VS CODE COPILOT PATTERN: Use XML tags for ALL models (not just Claude)
         /// VS Code uses <instructions>, <toolUseInstructions>, etc. universally
@@ -1218,7 +1241,7 @@ public class SystemPromptManager: ObservableObject {
         - Don't give up unless you are sure the request cannot be fulfilled
         - It's YOUR RESPONSIBILITY to collect necessary context before proceeding
         - Prefer reading large sections over many small reads
-        - NEVER say the name of a tool to the user (e.g., don't say "I'll use the run_in_terminal tool")
+        - NEVER say the name of a tool to the user (e.g., don't say "I'll use the file_operations tool")
         </toolUseInstructions>
         """
 

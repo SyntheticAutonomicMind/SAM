@@ -178,7 +178,7 @@ func getProviderTypeForModel(_ modelId: String) -> String?
 **Model Identifier Format:**
 - Remote: `provider/model` (e.g., `github_copilot/gpt-4.1`, `gemini/gemini-2.5-pro`)
 - Local: `provider/model` (e.g., `lmstudio-community/Llama-3.2-3B-Instruct-GGUF`)
-- Stable Diffusion: `sd/model` (e.g., `sd/coreml-stable-diffusion-v1-5`)
+- ALICE: Remote image generation server (connected via Settings)
 
 **Notification Events:**
 
@@ -191,9 +191,6 @@ extension Notification.Name {
     
     /// Posted when local models are scanned
     static let endpointManagerDidUpdateModels
-    
-    /// Posted when Stable Diffusion model installed
-    static let stableDiffusionModelInstalled
     
     /// Posted when ALICE remote models loaded
     static let aliceModelsLoaded
@@ -212,13 +209,13 @@ extension Notification.Name {
 
 **Location:** `Sources/APIFramework/LocalModelManager.swift`
 
-**Purpose:** Discover, register, and manage locally installed AI models (GGUF, MLX, Stable Diffusion).
+**Purpose:** Discover, register, and manage locally installed AI models (GGUF, MLX).
 
 **Key Features:**
 - **Automatic Discovery**: File system watching for hot reload
 - **Registry Persistence**: JSON-based model metadata cache
 - **Memory Validation**: Pre-flight checks for model loading safety
-- **Stable Diffusion Support**: Core ML model detection
+
 
 **Directory Structure:**
 ```
@@ -226,12 +223,7 @@ extension Notification.Name {
 ├── lmstudio-community/          # MLX models
 │   └── Llama-3.2-3B-Instruct-GGUF/
 │       └── model.gguf
-├── stable-diffusion/            # Core ML SD models
-│   ├── coreml-stable-diffusion-v1-5/
-│   │   ├── TextEncoder.mlmodelc
-│   │   ├── Unet.mlmodelc
-│   │   └── VAEDecoder.mlmodelc
-│   └── loras/                   # LoRA files
+├── 
 └── .managed/
     └── model_registry.json      # Model registry
 ```
@@ -362,12 +354,12 @@ flowchart TD
     D -->|github_copilot/gpt-4.1| E[GitHubCopilotProvider]
     D -->|anthropic/claude-3-opus| F[AnthropicProvider]
     D -->|lmstudio-community/llama| G[MLXProvider]
-    D -->|sd/stable-diffusion| H[StableDiffusionPipeline]
+    D -->|alice/server| H[ALICEProvider]
     
     E --> I[Provider API Call]
     F --> I
     G --> J[Local Model Load Check]
-    H --> K[CoreML Generation]
+    H --> K[Remote Image Generation]
     
     J --> L{Model Loaded?}
     L -->|Yes| M[Inference]
@@ -842,7 +834,7 @@ The provider automatically filters out non-chat models:
 - Video generation: `veo-*` models  
 - Text-only (non-chat): `gemma-*` models
 
-These models are excluded from the chat interface but may be integrated with Stable Diffusion UI in future updates.
+These models are excluded from the chat interface as they are not conversational models.
 
 **Configuration Example:**
 

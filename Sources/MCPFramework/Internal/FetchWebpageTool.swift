@@ -106,73 +106,91 @@ public class FetchWebpageTool: MCPTool, @unchecked Sendable {
         logger.debug("Fetching webpage: \(urlString)")
 
         do {
-            /// Fetch the webpage using ephemeral session (no credential prompts).
+            /// Fetch the webpage with retry for rate-limiting (403/429).
             var request = URLRequest(url: url)
-            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", forHTTPHeaderField: "User-Agent")
+            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
+            request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+            request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+            request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
             request.timeoutInterval = 30.0
 
-            let (data, response) = try await session.data(for: request)
+            var lastStatusCode = 0
+            let maxRetries = 2
+            for attempt in 0...maxRetries {
+                if attempt > 0 {
+                    /// Backoff delay: 1s, then 3s
+                    let delay = attempt == 1 ? 1_000_000_000 : 3_000_000_000
+                    try await Task.sleep(nanoseconds: UInt64(delay))
+                    logger.debug("Retrying fetch (attempt \(attempt + 1)/\(maxRetries + 1)) for \(urlString)")
+                }
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  200...299 ~= httpResponse.statusCode else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                return MCPToolResult(
-                    toolName: name,
-                    success: false,
-                    output: MCPOutput(content: "HTTP error: \(statusCode)")
-                )
+                let (data, response) = try await session.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse else { continue }
+                lastStatusCode = httpResponse.statusCode
+
+                if 200...299 ~= httpResponse.statusCode {
+                    guard let html = String(data: data, encoding: .utf8) else {
+                        return MCPToolResult(
+                            toolName: name,
+                            success: false,
+                            output: MCPOutput(content: "Failed to decode webpage content")
+                        )
+                    }
+
+                    let title = extractTitle(from: html)
+
+                    /// Simple HTML stripping (remove tags).
+                    let content = stripHTMLTags(from: html)
+
+                    /// Trim whitespace and limit length.
+                    let trimmedContent = content
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .components(separatedBy: .whitespacesAndNewlines)
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " ")
+
+                    /// Limit content length to avoid overwhelming output.
+                    let maxLength = 10000
+                    let finalContent = String(trimmedContent.prefix(maxLength))
+
+                    let result: [String: Any] = [
+                        "success": true,
+                        "url": urlString,
+                        "title": title,
+                        "content": finalContent,
+                        "length": finalContent.count,
+                        "query": query
+                    ]
+
+                    guard let jsonData = try? JSONSerialization.data(withJSONObject: result, options: .prettyPrinted),
+                          let jsonString = String(data: jsonData, encoding: .utf8) else {
+                        return MCPToolResult(
+                            toolName: name,
+                            success: false,
+                            output: MCPOutput(content: "Failed to encode result")
+                        )
+                    }
+
+                    logger.debug("Successfully fetched webpage: \(urlString) (\(finalContent.count) chars)")
+
+                    return MCPToolResult(
+                        toolName: name,
+                        success: true,
+                        output: MCPOutput(content: jsonString, mimeType: "application/json")
+                    )
+                }
+
+                /// Only retry on 403 (forbidden/rate-limited) or 429 (too many requests)
+                if lastStatusCode != 403 && lastStatusCode != 429 {
+                    break
+                }
             }
 
-            /// Convert to string.
-            guard let html = String(data: data, encoding: .utf8) else {
-                return MCPToolResult(
-                    toolName: name,
-                    success: false,
-                    output: MCPOutput(content: "Failed to decode webpage content")
-                )
-            }
-
-            /// Extract title (simple regex approach).
-            let title = extractTitle(from: html)
-
-            /// Simple HTML stripping (remove tags).
-            let content = stripHTMLTags(from: html)
-
-            /// Trim whitespace and limit length.
-            let trimmedContent = content
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: .whitespacesAndNewlines)
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-
-            /// Limit content length to avoid overwhelming output.
-            let maxLength = 10000
-            let finalContent = String(trimmedContent.prefix(maxLength))
-
-            let result: [String: Any] = [
-                "success": true,
-                "url": urlString,
-                "title": title,
-                "content": finalContent,
-                "length": finalContent.count,
-                "query": query
-            ]
-
-            guard let jsonData = try? JSONSerialization.data(withJSONObject: result, options: .prettyPrinted),
-                  let jsonString = String(data: jsonData, encoding: .utf8) else {
-                return MCPToolResult(
-                    toolName: name,
-                    success: false,
-                    output: MCPOutput(content: "Failed to encode result")
-                )
-            }
-
-            logger.debug("Successfully fetched webpage: \(urlString) (\(finalContent.count) chars)")
-
+            /// All retries exhausted or non-retryable error
             return MCPToolResult(
                 toolName: name,
-                success: true,
-                output: MCPOutput(content: jsonString, mimeType: "application/json")
+                success: false,
+                output: MCPOutput(content: "HTTP error: \(lastStatusCode)")
             )
 
         } catch {

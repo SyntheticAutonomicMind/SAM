@@ -53,13 +53,13 @@ Create "Shared Topics" to connect chats around the same project, and find anythi
 Full voice control lets you keep your hands free.  
 Ask questions, give commands, or have a conversation - all without touching the keyboard.
 
-### ️ **Create Images in Seconds**
-Generate beautiful images locally with Stable Diffusion.  
-No subscriptions, no cloud uploads - just your imagination and SAM's creativity.
+### ️ **Create Images with ALICE**
+Connect SAM to an [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server on your network for GPU-accelerated image generation.  
+Automatic model discovery, multiple Stable Diffusion models, no cloud uploads.
 
-###  **Train Models on Your Own Knowledge**
-Teach SAM about your specific domain with custom training.  
-Create specialized AI models trained on your documents, conversations, or expertise - perfect for professional workflows.
+###  **Math Without Guessing**
+SAM uses real computation for math - not AI reasoning.  
+Mortgages, tips, unit conversions, compound interest, ROI - all calculated with Python, not hallucinated.
 
 ###  **Access from Anywhere**
 Use SAM from your iPad, iPhone, or any device with a browser.  
@@ -102,11 +102,11 @@ SAM's clean interface and natural interactions make powerful AI accessible to ev
 - Automate repetitive computer tasks
 - Access SAM remotely from your iPad or phone
 
-### **For Custom AI Models**
-- Train models on your own documents and conversations
-- Create specialized assistants for your work domain
-- Fine-tune AI to understand your industry jargon
-- Build knowledge bases from your expertise
+### **For Math & Calculations**
+- Calculate mortgages, tips, compound interest, and ROI
+- Convert units (temperature, length, weight, volume, speed, data)
+- Run financial formulas with exact results
+- Get real computed answers, not AI approximations
 
 ### **For Learning & Curiosity**
 - Ask questions about any topic
@@ -120,8 +120,8 @@ SAM's clean interface and natural interactions make powerful AI accessible to ev
 
 - **Multi‑AI support**: Choose from OpenAI, Anthropic (Claude), GitHub Copilot, DeepSeek, or run models locally (MLX, llama.cpp)
 - **Voice in & out**: "Hey SAM" wake word, speech recognition, and natural text‑to‑speech
-- **Local image generation**: Create images with Stable Diffusion - no internet needed
-- **Train custom models**: Fine-tune AI on your own data with LoRA training
+- **Image generation**: Create images via [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server with automatic model discovery
+- **Math tools**: Real computation for calculations, conversions, and financial formulas
 - **Remote access**: Chat with SAM from iPad, iPhone, or browser via SAM-Web
 - **Document intelligence**: Upload and chat with PDFs, Word docs, Excel files, text files, and more
 - **Semantic memory**: Find past conversations and documents by meaning, not just keywords
@@ -181,15 +181,7 @@ Get a glimpse of SAM's native macOS interface in action:
   </tr>
 </table>
 
-<table>
-  <tr>
-    <td width="50%">
-      <h3>Model Training Settings</h3>
-      <img src=".images/sam-image-6.png"/>
-      <em>Configure custom model training with LoRA fine-tuning to specialize SAM for your domain</em>
-    </td>
-  </tr>
-</table>
+
 
 ---
 
@@ -215,22 +207,22 @@ Get a glimpse of SAM's native macOS interface in action:
 
 ️ **Powerful Tools**
 - Read, edit, and search files
-- Run terminal commands
 - Research and browse the web
 - Work with Git repositories
-- Generate images with Stable Diffusion
+- Generate images via ALICE server
+- Compute math with real Python calculations
 
- **Image Generation**
-- Multiple Stable Diffusion models supported
-- Browse and download from HuggingFace and CivitAI
-- LoRA support for style customization
-- Optimized for Apple Silicon
+ **Image Generation (ALICE)**
+- Connect to remote GPU-accelerated Stable Diffusion server
+- Automatic model discovery and selection
+- No local GPU required - offload to dedicated hardware
+- Multiple model support (SD 1.5, SDXL, and more)
 
- **Train Your Own Models**
-- Fine-tune local AI models with LoRA (Low-Rank Adaptation)
-- Train on your conversations or documents
-- Custom adapters for specialized knowledge domains
-- Real-time training progress with loss visualization
+ **Math & Calculations**
+- Real computation via Python - not AI guessing
+- Financial formulas (mortgage, compound interest, ROI, budgets)
+- Unit conversions (temperature, length, weight, volume, speed)
+- Percentage calculations, tips, BMI, and more
 
  **Access Anywhere**
 - Use SAM from your iPad, iPhone, or any device with a browser
@@ -392,8 +384,6 @@ Your feedback helps make SAM better for everyone!
 - Get file information
 
 **Execute Commands**
-- Run terminal commands
-- Manage persistent terminal sessions
 - Execute shell scripts
 
 **Research & Web**
@@ -409,26 +399,21 @@ Your feedback helps make SAM better for everyone!
 **Documents & Images**
 - Import and analyze PDF, Word, Excel, and text files
 - Create formatted documents (PDF, Word, PowerPoint)
-- Generate images with Stable Diffusion
+- Generate images via ALICE server
 
-### Image Generation
+**Math & Calculations**
+- Mortgages, compound interest, tips, ROI, budgets
+- Unit conversions (temperature, length, weight, volume, speed, data)
+- Real Python computation - no hallucinated math
 
-- Multiple Stable Diffusion models (SD 1.5, SDXL, and more)
-- Browse and download models from HuggingFace and CivitAI
-- LoRA support for custom styles
-- Optimized for Apple Silicon Macs
+### Image Generation (ALICE)
 
-### LoRA Training
+Connect to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for GPU-accelerated image generation:
 
-Train custom AI models on your own data:
-
-- **Fine-Tune Local Models**: Specialize MLX models on specific knowledge domains
-- **Training Data Export**: Export conversations or documents as training data
-- **Flexible Configuration**: Customize rank, learning rate, epochs, and more
-- **Real-Time Progress**: Watch training progress with loss visualization
-- **Automatic Integration**: Trained adapters appear immediately in model picker
-- **Document Chunking**: Multiple strategies for processing long documents
-- **PII Protection**: Optional detection and redaction of sensitive information
+- **Automatic Model Discovery**: SAM detects available models on your ALICE server
+- **Multiple Models**: SD 1.5, SDXL, and any model loaded on your server
+- **Health Monitoring**: Connection status and server health displayed in preferences
+- **No Local GPU Required**: Offload generation to dedicated hardware on your network
 
 ### SAM-Web: Remote Access
 
@@ -487,7 +472,7 @@ When you use cloud AI providers (OpenAI, Claude, etc.), only the messages you se
 
 ### Security Features
 
-- Authorization system for file and terminal operations
+- Authorization system for file operations
 - Per-conversation memory isolation prevents data leakage
 - Optional auto-approve for operations you trust
 - Full audit trail of all actions
@@ -509,8 +494,7 @@ When you use cloud AI providers (OpenAI, Claude, etc.), only the messages you se
 ```
 ~/Library/Caches/sam/models/
 ├── mlx/                       # MLX models (Apple Silicon)
-├── gguf/                      # llama.cpp models
-└── stable-diffusion/          # Stable Diffusion models and LoRAs
+└── gguf/                      # llama.cpp models
 ```
 
 ### Working Files
@@ -522,7 +506,7 @@ When you use cloud AI providers (OpenAI, Claude, etc.), only the messages you se
 
 ### Generated Images
 ```
-~/Library/Caches/sam/images/   # Images created by Stable Diffusion
+~/Library/Caches/sam/images/   # Images downloaded from ALICE server
 ```
 
 ---
@@ -532,7 +516,7 @@ When you use cloud AI providers (OpenAI, Claude, etc.), only the messages you se
 SAM is part of [Synthetic Autonomic Mind](https://github.com/SyntheticAutonomicMind) - a family of open source AI tools that work together:
 
 - **[CLIO](https://github.com/SyntheticAutonomicMind/CLIO)** - AI code assistant for the terminal. Runs on macOS and Linux.
-- **[ALICE](https://github.com/SyntheticAutonomicMind/ALICE)** - Local Stable Diffusion server. Offload image generation to dedicated hardware.
+- **[ALICE](https://github.com/SyntheticAutonomicMind/ALICE)** - GPU-accelerated image generation server. Offload Stable Diffusion to dedicated hardware.
 - **[SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web)** - Access SAM from your iPad, iPhone, or any browser.
 
 SAM can use ALICE for image generation and CLIO can use SAM as an AI provider. All three share the same providers and the same commitment to privacy.
@@ -596,7 +580,7 @@ SAM is built with:
 - **SQLite** for conversation and memory storage
 - **MLX** for Apple Silicon AI models
 - **llama.cpp** for cross-platform AI models
-- **Stable Diffusion** (CoreML + Python) for image generation
+- **Python** for math computation and tool execution
 
 For developers interested in the technical architecture, see [project-docs/](project-docs/).
 
@@ -631,7 +615,6 @@ Complete documentation is available:
 - [Vapor](https://vapor.codes) - Web framework
 - [MLX](https://github.com/ml-explore/mlx-swift) - Apple machine learning
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) - LLM inference
-- [Stable Diffusion](https://github.com/apple/ml-stable-diffusion) - Image generation
 - [Sparkle](https://sparkle-project.org) - App updates
 
 Special thanks to contributors and the Swift/AI communities.
