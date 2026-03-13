@@ -2189,58 +2189,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 }
 
                 /// Set up observer for user collaboration notifications.
+                /// Only emit the SSE event - ChatWidget's parseSSEEvent handler
+                /// adds the prompt as a single assistant message via MessageBus.
                 let observer = ToolNotificationCenter.shared.observeUserInputRequired { toolCallId, prompt, context, conversationId in
-                    /// FIRST: Emit visible assistant message showing the collaboration request
-                    let collaborationMessage = "SUCCESS: User Collaboration: \(prompt)"
-
-                    /// PERSIST MESSAGE: Add to conversation so it doesn't disappear after UI refresh.
-                    if let convId = conversationId {
-                        Task { @MainActor in
-                            if let conversation = self.conversationManager.conversations.first(where: { $0.id == convId }) {
-                                let isDuplicate = conversation.messages.contains(where: {
-                                    !$0.isFromUser && $0.content == collaborationMessage
-                                })
-
-                                if !isDuplicate {
-                                    conversation.messageBus?.addAssistantMessage(
-                                        id: UUID(),
-                                        content: collaborationMessage,
-                                        timestamp: Date(),
-                                        isPinned: true
-                                    )
-                                    self.logger.debug("Persisted collaboration message to conversation (PINNED)", metadata: [
-                                        "toolCallId": .string(toolCallId),
-                                        "conversationId": .string(convId.uuidString)
-                                    ])
-                                }
-                            }
-                        }
-                    }
-
-                    let messageChunk = ServerOpenAIChatStreamChunk(
-                        id: UUID().uuidString,
-                        object: "chat.completion.chunk",
-                        created: Int(Date().timeIntervalSince1970),
-                        model: model,
-                        choices: [
-                            OpenAIChatStreamChoice(
-                                index: 0,
-                                delta: OpenAIChatDelta(
-                                    role: "assistant",
-                                    content: collaborationMessage
-                                ),
-                                finishReason: nil
-                            )
-                        ]
-                    )
-                    continuation.yield(messageChunk)
-
-                    self.logger.debug("Emitted collaboration message to UI", metadata: [
-                        "toolCallId": .string(toolCallId),
-                        "message": .string(collaborationMessage)
-                    ])
-
-                    /// THEN: Emit custom SSE event for user input required
+                    /// Emit SSE event for user input required
                     let userInputEvent: [String: Any] = [
                         "type": "user_input_required",
                         "toolCallId": toolCallId,
