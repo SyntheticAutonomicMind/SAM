@@ -2401,6 +2401,11 @@ public struct ChatWidget: View {
         // Initialize ModelListManager with dependencies
         modelListManager.initialize(endpointManager: endpointManager)
         
+        // Initialize DocumentImportSystem for file attachments
+        if documentImportSystem == nil {
+            documentImportSystem = DocumentImportSystem(conversationManager: conversationManager)
+        }
+        
         // ModelListManager handles model loading automatically
         loadSystemPrompts()
         loadRecentChatSession()
