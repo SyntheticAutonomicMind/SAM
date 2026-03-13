@@ -1,8 +1,8 @@
 {
   "releases": [
     {
-      "version": "20260312.1",
-      "release_date": "March 12, 2026",
+      "version": "20260313.1",
+      "release_date": "March 13, 2026",
       "highlights": [
         {
           "id": "alice-image-generation",

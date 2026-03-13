@@ -31,6 +31,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+          clean: true
       
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -115,10 +116,13 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           
-          # Fetch latest main and switch to it
+          # Stash local changes (e.g. appcast.xml from update step)
+          # so we can cleanly switch to main
+          git stash --include-untracked || true
           git fetch origin main
           git checkout main
           git pull origin main
+          git stash pop || true
           
           git add appcast.xml
           if git diff --staged --quiet; then
