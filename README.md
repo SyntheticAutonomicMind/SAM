@@ -30,7 +30,7 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 In July 2025, I set out to build the AI assistant my wife actually wanted: one that adapted to *her* workflow instead of forcing her to adapt. SAM was made for her - and dedicated to her. It has since grown into a native macOS assistant that anyone can use to get real work done.
 
 A native macOS app designed for **non‑developers** who want powerful tools in their everyday life.  
-Review documents, create images, write content, plan projects, or just have a conversation.  
+Review documents, create images with [ALICE](https://github.com/SyntheticAutonomicMind/ALICE), write content, plan projects, or just have a conversation.  
 Say **"Hey SAM"** to go hands‑free, or type naturally.  
 You're always in control.
 
@@ -43,7 +43,7 @@ You're always in control.
 
 ###  **Real Assistance, Not Just Answers**
 SAM helps you finish things.  
-Whether it's organizing files, helping you draft documents, creating images, or researching a topic - SAM acts on your ideas.
+Whether it's organizing files, helping you draft documents, or researching a topic - SAM acts on your ideas.
 
 ### **Smart Memory**
 SAM remembers what matters across conversations.  
@@ -145,23 +145,8 @@ Get a glimpse of SAM's native macOS interface in action:
     </td>
     <td width="50%">
       <h3>Flexible AI Provider Selection</h3>
-      <img src=".images/sam-image-7.png"/>
-      <em>Choose from local models (MLX, llama.cpp), cloud providers (OpenAI, Anthropic, DeepSeek), or image generation models</em>
-    </td>
-  </tr>
-</table>
-
-<table>
-  <tr>
-    <td width="50%">
-      <h3>Local Image Generation</h3>
       <img src=".images/sam-image-2.png"/>
-      <em>User asks SAM to generate an image of a cruise ship sailing in the ocean - created locally without any cloud services</em>
-    </td>
-    <td width="50%">
-      <h3>Image Analysis</h3>
-      <img src=".images/sam-image-3.png"/>
-      <em>SAM provides a detailed description of the cruise ship image it just created</em>
+      <em>Choose from local models (MLX, llama.cpp), or cloud providers (OpenAI, Anthropic, DeepSeek, OpenRouter)</em>
     </td>
   </tr>
 </table>
@@ -170,13 +155,14 @@ Get a glimpse of SAM's native macOS interface in action:
   <tr>
     <td width="50%">
       <h3>Travel Research</h3>
-      <img src=".images/sam-image-4.png"/>
+      <img src=".images/sam-image-3.png"/>
       <em>User asks about restaurants in a town they'll be visiting - SAM helps with travel planning and local recommendations</em>
     </td>
     <td width="50%">
       <h3>Shopping Assistance</h3>
+      <img src=".images/sam-image-4.png"/>
       <img src=".images/sam-image-5.png"/>
-      <em>User inquires about availability and pricing of two items on Amazon - SAM helps with product research</em>
+      <em>User inquires about a needed product - SAM helps with product research</em>
     </td>
   </tr>
 </table>
@@ -231,7 +217,7 @@ Get a glimpse of SAM's native macOS interface in action:
 - Secure API authentication
 
  **Flexible AI Provider Support**
-- **Cloud AI**: OpenAI, Anthropic (Claude), GitHub Copilot, DeepSeek
+- **Cloud AI**: OpenAI, Anthropic (Claude), GitHub Copilot, DeepSeek, OpenRouter
 - **Local Models**: Run AI completely on your Mac with MLX or llama.cpp
 - Switch models mid-conversation
 - Use custom OpenAI-compatible endpoints
