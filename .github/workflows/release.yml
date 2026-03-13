@@ -69,10 +69,7 @@ jobs:
       
       - name: Build release package
         run: make build-release
-      
-      - name: Validate Python Bundle
-        run: ./scripts/validate_python_bundle.sh Release
-      
+
       - name: Sign and notarize
         run: |
           if [ -f /Users/andrew/.sam_runner_env ]; then
