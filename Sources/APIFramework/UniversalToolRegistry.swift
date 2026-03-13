@@ -149,8 +149,6 @@ public class UniversalToolRegistry: ObservableObject, ToolRegistryProtocol {
             return "xmark.seal"
 
         // Default fallback
-        case "math_operations":
-            return "function"
         default:
             return "wrench.and.screwdriver"
         }

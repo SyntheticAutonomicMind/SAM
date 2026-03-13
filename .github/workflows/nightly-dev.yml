@@ -22,12 +22,12 @@ permissions:
 jobs:
   check-changes:
     name: Check for Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_build: ${{ steps.check.outputs.has_changes }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       
@@ -64,7 +64,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           submodules: recursive
@@ -178,10 +178,10 @@ jobs:
   cleanup-old-releases:
     name: Cleanup Old Development Releases
     needs: build-and-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Delete old development releases
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const KEEP_COUNT = 7; // Keep last 7 development releases

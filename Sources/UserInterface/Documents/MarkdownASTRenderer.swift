@@ -170,7 +170,7 @@ public class MarkdownASTRenderer {
         case let listItem as ListItem:
             processListItem(listItem, entering: true)
 
-        case let codeBlock as CodeBlock:
+        case let codeBlock as Markdown.CodeBlock:
             processCodeBlock(codeBlock)
 
         case let blockQuote as BlockQuote:
@@ -185,7 +185,7 @@ public class MarkdownASTRenderer {
         }
 
         /// Recursively walk children CRITICAL: Skip walking children for nodes that process their own children internally - Table: Extracts and renders its own rows/cells in processTable() - CodeBlock: Renders its own content in processCodeBlock().
-        let shouldWalkChildren = !(markup is Table || markup is CodeBlock)
+        let shouldWalkChildren = !(markup is Table || markup is Markdown.CodeBlock)
 
         if shouldWalkChildren {
             if let container = markup as? BlockMarkup {
@@ -380,14 +380,14 @@ public class MarkdownASTRenderer {
         }
     }
 
-    private func processCodeBlock(_ codeBlock: CodeBlock) {
+    private func processCodeBlock(_ codeBlock: Markdown.CodeBlock) {
         /// Log that we're processing a code block.
         logger.critical("DEBUG_CODEBLOCK: Processing code block, code length: \(codeBlock.code.count)")
         logger.critical("DEBUG_CODEBLOCK: Code content: \(codeBlock.code.prefix(100))")
 
         /// Add background rectangle for code block.
         let codeStyle = TextStyle.codeBlock
-        var codeString = codeBlock.code
+        let codeString = codeBlock.code
 
         /// Render code block with gray background.
         let formattedCode = NSAttributedString(
@@ -529,10 +529,10 @@ public class MarkdownASTRenderer {
             case let inlineCode as InlineCode:
                 result.append(NSAttributedString(string: inlineCode.code, attributes: TextStyle.code.attributes))
 
-            case let softBreak as SoftBreak:
+            case _ as SoftBreak:
                 result.append(NSAttributedString(string: " ", attributes: style.attributes))
 
-            case let lineBreak as LineBreak:
+            case _ as LineBreak:
                 result.append(NSAttributedString(string: "\n", attributes: style.attributes))
 
             default:
@@ -757,7 +757,7 @@ struct TextStyle: @unchecked Sendable {
     }
 
     /// Predefined styles.
-    nonisolated(unsafe) static let body = TextStyle(
+    static let body = TextStyle(
         font: NSFont(name: "Helvetica", size: 12) ?? .systemFont(ofSize: 12),
         size: 12,
         textColor: .black,
@@ -765,7 +765,7 @@ struct TextStyle: @unchecked Sendable {
         traits: []
     )
 
-    nonisolated(unsafe) static let title = TextStyle(
+    static let title = TextStyle(
         font: NSFont(name: "Helvetica-Bold", size: 24) ?? .boldSystemFont(ofSize: 24),
         size: 24,
         textColor: .black,
@@ -773,7 +773,7 @@ struct TextStyle: @unchecked Sendable {
         traits: [.boldFontMask]
     )
 
-    nonisolated(unsafe) static let metadata = TextStyle(
+    static let metadata = TextStyle(
         font: NSFont(name: "Helvetica", size: 11) ?? .systemFont(ofSize: 11),
         size: 11,
         textColor: .darkGray,
@@ -781,7 +781,7 @@ struct TextStyle: @unchecked Sendable {
         traits: []
     )
 
-    nonisolated(unsafe) static let heading1 = TextStyle(
+    static let heading1 = TextStyle(
         font: NSFont(name: "Helvetica-Bold", size: 24) ?? .boldSystemFont(ofSize: 24),
         size: 24,
         textColor: .black,
@@ -789,7 +789,7 @@ struct TextStyle: @unchecked Sendable {
         traits: [.boldFontMask]
     )
 
-    nonisolated(unsafe) static let heading2 = TextStyle(
+    static let heading2 = TextStyle(
         font: NSFont(name: "Helvetica-Bold", size: 18) ?? .boldSystemFont(ofSize: 18),
         size: 18,
         textColor: .black,
@@ -797,7 +797,7 @@ struct TextStyle: @unchecked Sendable {
         traits: [.boldFontMask]
     )
 
-    nonisolated(unsafe) static let heading3 = TextStyle(
+    static let heading3 = TextStyle(
         font: .boldSystemFont(ofSize: 14),
         size: 14,
         textColor: .black,
@@ -805,7 +805,7 @@ struct TextStyle: @unchecked Sendable {
         traits: [.boldFontMask]
     )
 
-    nonisolated(unsafe) static let heading4 = TextStyle(
+    static let heading4 = TextStyle(
         font: .boldSystemFont(ofSize: 12),
         size: 12,
         textColor: .black,
@@ -813,7 +813,7 @@ struct TextStyle: @unchecked Sendable {
         traits: [.boldFontMask]
     )
 
-    nonisolated(unsafe) static let heading5 = TextStyle(
+    static let heading5 = TextStyle(
         font: .boldSystemFont(ofSize: 11),
         size: 11,
         textColor: .black,
@@ -821,7 +821,7 @@ struct TextStyle: @unchecked Sendable {
         traits: [.boldFontMask]
     )
 
-    nonisolated(unsafe) static let heading6 = TextStyle(
+    static let heading6 = TextStyle(
         font: .boldSystemFont(ofSize: 10),
         size: 10,
         textColor: .black,
@@ -829,7 +829,7 @@ struct TextStyle: @unchecked Sendable {
         traits: [.boldFontMask]
     )
 
-    nonisolated(unsafe) static let code = TextStyle(
+    static let code = TextStyle(
         font: .monospacedSystemFont(ofSize: 11, weight: .regular),
         size: 11,
         textColor: .darkGray,
@@ -837,7 +837,7 @@ struct TextStyle: @unchecked Sendable {
         traits: []
     )
 
-    nonisolated(unsafe) static let codeBlock = TextStyle(
+    static let codeBlock = TextStyle(
         font: .monospacedSystemFont(ofSize: 10, weight: .regular),
         size: 10,
         textColor: .black,
