@@ -73,8 +73,30 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
     private let logger = Logger(label: "com.sam.mcp.UserCollaborationTool")
 
     /// Shared state for pending user responses Key: toolCallId (UUID string), Value: PendingResponse.
-    nonisolated(unsafe) private static var pendingResponses: [String: PendingResponse] = [:]
+    /// Thread-safe access: ALL reads/writes MUST go through lockedRead/lockedWrite helpers.
+    nonisolated(unsafe) private static var _pendingResponses: [String: PendingResponse] = [:]
     private static let responseLock = NSLock()
+
+    /// Thread-safe read from pendingResponses.
+    private static func lockedRead<T>(_ body: ([String: PendingResponse]) -> T) -> T {
+        responseLock.lock()
+        defer { responseLock.unlock() }
+        return body(_pendingResponses)
+    }
+
+    /// Thread-safe write to pendingResponses.
+    private static func lockedWrite(_ body: (inout [String: PendingResponse]) -> Void) {
+        responseLock.lock()
+        defer { responseLock.unlock() }
+        body(&_pendingResponses)
+    }
+
+    /// Thread-safe write with return value.
+    private static func lockedWrite<T>(_ body: (inout [String: PendingResponse]) -> T) -> T {
+        responseLock.lock()
+        defer { responseLock.unlock() }
+        return body(&_pendingResponses)
+    }
 
     public init() {}
 
@@ -153,7 +175,7 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
             requestedAt: Date()
         )
 
-        Self.pendingResponses[toolCallId] = pending
+        Self.lockedWrite { $0[toolCallId] = pending }
 
         /// Send SSE event to notify UI NOTE: This will be handled by the streaming handler in APIHandler The event format: { type: "user_input_required", toolCallId, prompt, context?.
         await notifyUIForInput(toolCallId: toolCallId, prompt: prompt, context: userContext, conversationId: context.conversationId)
@@ -170,7 +192,7 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
         )
 
         /// Clean up pending response.
-        Self.pendingResponses.removeValue(forKey: toolCallId)
+        Self.lockedWrite { $0.removeValue(forKey: toolCallId) }
 
         return result
     }
@@ -189,18 +211,25 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
             
             /// Log every 10 polls (every second) to track that we're still waiting
             if pollCount % 10 == 0 {
-                let elapsed = Date().timeIntervalSince(startTime)
+               let elapsed = Date().timeIntervalSince(startTime)
+                let (hasPending, hasResponse) = Self.lockedRead { dict in
+                    (dict[toolCallId] != nil, dict[toolCallId]?.userResponse != nil)
+                }
                 logger.debug("COLLAB_DEBUG: Still waiting for user response", metadata: [
                     "toolCallId": .string(toolCallId),
                     "pollCount": .stringConvertible(pollCount),
                     "elapsedSeconds": .stringConvertible(elapsed),
-                    "hasPending": .stringConvertible(Self.pendingResponses[toolCallId] != nil),
-                    "hasResponse": .stringConvertible(Self.pendingResponses[toolCallId]?.userResponse != nil)
+                    "hasPending": .stringConvertible(hasPending),
+                    "hasResponse": .stringConvertible(hasResponse)
                 ])
             }
-            
-            /// Check if response received.
-            if let pending = Self.pendingResponses[toolCallId], let response = pending.userResponse {
+
+            /// Check if response received (thread-safe read).
+            let maybeResponse = Self.lockedRead { dict -> String? in
+                dict[toolCallId]?.userResponse
+            }
+
+            if let response = maybeResponse {
 
                 let waitTime = Date().timeIntervalSince(startTime)
                 logger.info("USER_RESPONDED: User response received after \(String(format: "%.2f", waitTime))s", metadata: [
@@ -283,37 +312,42 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
     /// Submit user response for a pending tool call (called from API endpoint).
     public static func submitUserResponse(toolCallId: String, userInput: String) -> Bool {
         let logger = Logger(label: "com.sam.mcp.UserCollaborationTool.submitResponse")
+        let pendingCount = lockedRead { $0.count }
+        let hasPending = lockedRead { $0[toolCallId] != nil }
         logger.info("COLLAB_DEBUG: submitUserResponse called", metadata: [
             "toolCallId": .string(toolCallId),
             "userInputLength": .stringConvertible(userInput.count),
-            "pendingCount": .stringConvertible(pendingResponses.count),
-            "hasPending": .stringConvertible(pendingResponses[toolCallId] != nil)
+            "pendingCount": .stringConvertible(pendingCount),
+            "hasPending": .stringConvertible(hasPending)
         ])
 
-        guard var pending = pendingResponses[toolCallId] else {
+        /// Thread-safe update: read, modify, write back under lock.
+        let result: (found: Bool, conversationId: UUID?) = lockedWrite { dict in
+            guard var pending = dict[toolCallId] else {
+                return (false, nil)
+            }
+            pending.userResponse = userInput
+            pending.respondedAt = Date()
+            dict[toolCallId] = pending
+            return (true, pending.conversationId)
+        }
+
+        guard result.found else {
+            let availableIds = lockedRead { Array($0.keys).joined(separator: ", ") }
             logger.error("COLLAB_DEBUG: No pending response found for toolCallId", metadata: [
                 "toolCallId": .string(toolCallId),
-                "availableToolCallIds": .string(Array(pendingResponses.keys).joined(separator: ", "))
+                "availableToolCallIds": .string(availableIds)
             ])
             return false
         }
 
-        logger.debug("COLLAB_DEBUG: Updating pending response", metadata: [
-            "toolCallId": .string(toolCallId),
-            "waitTimeSeconds": .stringConvertible(Date().timeIntervalSince(pending.requestedAt))
-        ])
-
-        pending.userResponse = userInput
-        pending.respondedAt = Date()
-        pendingResponses[toolCallId] = pending
-
-        logger.debug("COLLAB_DEBUG: Pending response updated, posting notification")
+        logger.debug("COLLAB_DEBUG: Pending response updated under lock, posting notification")
 
         /// Notify that user response was received so AgentOrchestrator can emit it as streaming chunk
         ToolNotificationCenter.shared.postUserResponseReceived(
             toolCallId: toolCallId,
             userInput: userInput,
-            conversationId: pending.conversationId
+            conversationId: result.conversationId
         )
 
         logger.info("COLLAB_DEBUG: Notification posted successfully", metadata: [
@@ -325,12 +359,12 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
 
     /// Get pending response info (for debugging/monitoring).
     public static func getPendingResponse(toolCallId: String) -> PendingResponse? {
-        return pendingResponses[toolCallId]
+        return lockedRead { $0[toolCallId] }
     }
 
     /// Get all pending responses (for debugging/monitoring).
     public static func getAllPendingResponses() -> [PendingResponse] {
-        return Array(pendingResponses.values)
+        return lockedRead { Array($0.values) }
     }
 }
 
