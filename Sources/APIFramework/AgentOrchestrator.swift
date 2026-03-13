@@ -2134,12 +2134,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     ])
 
                     /// PERSIST MESSAGE: Add user's response to conversation (PINNED for context preservation)
+                    /// Must use Task @MainActor for Swift 6 concurrency compliance.
                     if let convId = conversationId {
                         Task { @MainActor in
                             if let conversation = self.conversationManager.conversations.first(where: { $0.id == convId }) {
-                                let isDuplicate = conversation.messages.contains(where: {
+                                /// Check MessageBus messages (source of truth) not conversation.messages
+                                let isDuplicate = conversation.messageBus?.messages.contains(where: {
                                     $0.isFromUser && $0.content == userInput
-                                })
+                                }) ?? false
 
                                 if !isDuplicate {
                                     let messageId = conversation.messageBus?.addUserMessage(
@@ -2151,6 +2153,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                         "toolCallId": .string(toolCallId),
                                         "messageId": .string(messageId?.uuidString ?? "unknown"),
                                         "conversationId": .string(convId.uuidString)
+                                    ])
+                                } else {
+                                    self.logger.debug("USER_COLLAB: Skipping duplicate user response persistence", metadata: [
+                                        "toolCallId": .string(toolCallId)
                                     ])
                                 }
                             }

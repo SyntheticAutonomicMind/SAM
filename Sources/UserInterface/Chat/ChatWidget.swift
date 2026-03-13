@@ -3352,13 +3352,10 @@ public struct ChatWidget: View {
 
         logger.info("USER_COLLAB: Submitting user response for collaboration tool call: \(toolCallId)")
 
-        /// Clear message text and reset collaboration state immediately
-        /// The user's response will appear via streaming from AgentOrchestrator
+        /// Clear message text immediately for UX responsiveness, but keep collaboration
+        /// state until HTTP succeeds so we can retry or restore on failure.
+        let savedInput = messageText
         messageText = ""
-        isAwaitingUserInput = false
-        userCollaborationPrompt = ""
-        userCollaborationContext = nil
-        userCollaborationToolCallId = nil
 
         /// Submit response to API endpoint
         /// API will add to MessageBus and AgentOrchestrator will emit as streaming chunk
@@ -3381,14 +3378,29 @@ public struct ChatWidget: View {
                 let (_, response) = try await URLSession.shared.data(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                    logger.error("USER_COLLAB: Failed to submit user response - HTTP error")
+                    logger.error("USER_COLLAB: Failed to submit user response - HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                    /// Restore input so user can retry
+                    await MainActor.run {
+                        self.messageText = savedInput
+                    }
                     return
                 }
 
-                logger.debug("User response submitted successfully")
-                /// Streaming will automatically resume after tool unblocks.
+                logger.debug("User response submitted successfully - clearing collaboration state")
+
+                /// Clear collaboration state only after successful submission
+                await MainActor.run {
+                    self.isAwaitingUserInput = false
+                    self.userCollaborationPrompt = ""
+                    self.userCollaborationContext = nil
+                    self.userCollaborationToolCallId = nil
+                }
             } catch {
                 logger.error("Failed to submit user response: \(error)")
+                /// Restore input so user can retry
+                await MainActor.run {
+                    self.messageText = savedInput
+                }
             }
         }
     }
