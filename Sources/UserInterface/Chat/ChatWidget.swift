@@ -2021,7 +2021,7 @@ public struct ChatWidget: View {
                 .buttonStyle(.borderless)
                 .disabled(
                     (!isAwaitingUserInput && !isSending && messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ||
-                    shouldDisableInput
+                    (!isAwaitingUserInput && shouldDisableInput)
                 )
                 .help(
                     isAwaitingUserInput ? "Submit response" :
@@ -3174,8 +3174,14 @@ public struct ChatWidget: View {
             }
             logger.info("Created placeholder message + \(toolCardIds.count) tool cards for immediate feedback")
             
+            /// Update StateManager for the attachment flow
+            conversationManager.stateManager.updateState(conversationId: conversation.id) { state in
+                state.status = .processing(toolName: "Document Import")
+            }
+            
             /// Import files with tool card updates
-            Task { @MainActor in
+            /// CRITICAL: Assign to streamingTask so the stop button can cancel it
+            streamingTask = Task { @MainActor in
                 var importedDocs: [(filename: String, id: String, size: Int)] = []
                 
                 for (index, fileURL) in filesToImport.enumerated() {
@@ -3265,6 +3271,17 @@ public struct ChatWidget: View {
                 await MainActor.run {
                     isSending = false
                     isActivelyStreaming = false
+                    streamingTask = nil
+                    currentOrchestrator = nil
+                    
+                    /// Update StateManager: Mark as idle
+                    if let conv = activeConversation {
+                        conv.isProcessing = false
+                        conversationManager.stateManager.updateState(conversationId: conv.id) { state in
+                            state.status = .idle
+                            state.activeTools.removeAll()
+                        }
+                    }
                 }
             }
             
@@ -3348,7 +3365,7 @@ public struct ChatWidget: View {
     private func submitUserResponse() {
         guard let toolCallId = userCollaborationToolCallId,
               let conversationId = activeConversation?.id else {
-            logger.error("Cannot submit user response - missing toolCallId or conversationId")
+            logger.error("Cannot submit user response - missing toolCallId=\(userCollaborationToolCallId ?? "nil") conversationId=\(activeConversation?.id.uuidString ?? "nil")")
             return
         }
 
@@ -3357,56 +3374,29 @@ public struct ChatWidget: View {
 
         logger.info("USER_COLLAB: Submitting user response for collaboration tool call: \(toolCallId)")
 
-        /// Clear message text immediately for UX responsiveness, but keep collaboration
-        /// state until HTTP succeeds so we can retry or restore on failure.
-        let savedInput = messageText
+        /// Clear message text immediately for UX responsiveness.
         messageText = ""
 
-        /// Submit response to API endpoint
-        /// API will add to MessageBus and AgentOrchestrator will emit as streaming chunk
-        Task {
-            do {
-                let url = URL(string: "http://127.0.0.1:8080/api/chat/tool-response")!
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.setValue("SAM-Internal-Communication", forHTTPHeaderField: "X-SAM-Internal")
+        /// Direct call - tool runs in-process, no HTTP roundtrip needed.
+        /// This eliminates network failures, @MainActor contention with Vapor,
+        /// and auth middleware as potential failure points.
+        let success = UserCollaborationTool.submitUserResponse(
+            toolCallId: toolCallId,
+            userInput: userInput
+        )
 
-                let requestBody: [String: String] = [
-                    "conversationId": conversationId.uuidString,
-                    "toolCallId": toolCallId,
-                    "userInput": userInput
-                ]
+        if success {
+            logger.info("USER_COLLAB: Response submitted directly to tool")
 
-                request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-
-                let (_, response) = try await URLSession.shared.data(for: request)
-
-                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                    logger.error("USER_COLLAB: Failed to submit user response - HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
-                    /// Restore input so user can retry
-                    await MainActor.run {
-                        self.messageText = savedInput
-                    }
-                    return
-                }
-
-                logger.debug("User response submitted successfully - clearing collaboration state")
-
-                /// Clear collaboration state only after successful submission
-                await MainActor.run {
-                    self.isAwaitingUserInput = false
-                    self.userCollaborationPrompt = ""
-                    self.userCollaborationContext = nil
-                    self.userCollaborationToolCallId = nil
-                }
-            } catch {
-                logger.error("Failed to submit user response: \(error)")
-                /// Restore input so user can retry
-                await MainActor.run {
-                    self.messageText = savedInput
-                }
-            }
+            /// Clear collaboration state
+            isAwaitingUserInput = false
+            userCollaborationPrompt = ""
+            userCollaborationContext = nil
+            userCollaborationToolCallId = nil
+        } else {
+            logger.error("USER_COLLAB: Direct submission failed - toolCallId not found in pending responses")
+            /// Restore input so user can retry
+            messageText = userInput
         }
     }
 
@@ -3480,19 +3470,7 @@ public struct ChatWidget: View {
 
         /// Update UI state to show collaboration prompt.
         DispatchQueue.main.async {
-            /// Add agent's collaboration prompt as a visible message in the chat This ensures users see what the agent is asking in the conversation history.
-            /// FEATURE: Pin collaboration prompts for context persistence
-            let collaborationMessage = EnhancedMessage(
-                id: UUID(),
-                content: prompt,
-                isFromUser: false,
-                timestamp: Date(),
-                processingTime: nil,
-                performanceMetrics: nil,
-                isToolMessage: false,
-                isPinned: true,
-                importance: 1.0
-            )
+            /// Add agent's collaboration prompt as a visible message in the chat
             /// FIXED: Use MessageBus for collaboration prompt with pinning
             activeConversation?.messageBus?.addAssistantMessage(
                 content: prompt,
