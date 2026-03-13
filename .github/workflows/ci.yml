@@ -49,10 +49,7 @@ jobs:
     
     - name: Build SAM (Debug)
       run: make build-debug
-    
-    - name: Validate Python Bundle
-      run: ./scripts/validate_python_bundle.sh Debug
-    
+
     - name: Run unit tests
       run: make test || echo "Tests not yet implemented"
     

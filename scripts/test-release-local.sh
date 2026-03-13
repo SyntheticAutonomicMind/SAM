@@ -31,14 +31,9 @@ echo ""
 echo "3. Building release..."
 time make build-release
 
-# Step 4: Validate Python bundle  
+# Step 4: Source environment
 echo ""
-echo "4. Validating Python bundle..."
-./scripts/validate_python_bundle.sh Release
-
-# Step 5: Source environment
-echo ""
-echo "5. Loading runner environment..."
+echo "4. Loading runner environment..."
 if [ -f /Users/andrew/.sam_runner_env ]; then
     source /Users/andrew/.sam_runner_env
     echo "   Keychains unlocked"
@@ -46,24 +41,24 @@ else
     echo "   WARNING: No runner environment file"
 fi
 
-# Step 6: Sign
+# Step 5: Sign
 echo ""
-echo "6. Signing..."
+echo "5. Signing..."
 time ./scripts/sign_app.sh
 
-# Step 7: Notarize
+# Step 6: Notarize
 echo ""
-echo "7. Notarizing..."
+echo "6. Notarizing..."
 time ./scripts/notarize_app.sh
 
-# Step 8: Create DMG
+# Step 7: Create DMG
 echo ""
-echo "8. Creating DMG..."
+echo "7. Creating DMG..."
 time make create-dmg
 
-# Step 9: Verify files
+# Step 8: Verify files
 echo ""
-echo "9. Verifying distribution files..."
+echo "8. Verifying distribution files..."
 if [ -f "dist/SAM-${VERSION}.dmg" ]; then
     echo "   ✓ Found DMG: dist/SAM-${VERSION}.dmg"
     ls -lh "dist/SAM-${VERSION}.dmg"

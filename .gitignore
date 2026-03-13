@@ -65,3 +65,4 @@ scratch/
 # CLIO (managed automatically)
 .clio/*
 !.clio/instructions.md
+dist/
