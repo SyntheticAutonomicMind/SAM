@@ -365,16 +365,9 @@ extension AgentOrchestrator {
             
             /// Add sliced conversation messages (already filtered by statefulMarkerMessageCount)
             for (index, historyMessage) in messagesToSend.enumerated() {
-                let role = historyMessage.isFromUser ? "user" : "assistant"
-                var cleanContent = historyMessage.content
-
-                /// Clean tool call markers from assistant messages
-                if role == "assistant" {
-                    cleanContent = cleanToolCallMarkers(from: cleanContent)
-                }
-
-                messages.append(OpenAIChatMessage(role: role, content: cleanContent))
-                logger.debug("DELTA_MESSAGE: Message \(index): role=\(role), content=\(cleanContent.safePrefix(50))")
+                let apiMessage = convertEnhancedToAPIMessage(historyMessage)
+                messages.append(apiMessage)
+                logger.debug("DELTA_MESSAGE: Message \(index): role=\(apiMessage.role), content=\(apiMessage.content?.safePrefix(50) ?? "(nil)")")
             }
             
             /// Add internal messages (tool calls + results from current iteration)
@@ -407,32 +400,29 @@ extension AgentOrchestrator {
             var strippedContextChars = 0
 
             for (index, historyMessage) in messagesToSend.enumerated() {
-                let role = historyMessage.isFromUser ? "user" : "assistant"
-                var cleanContent = historyMessage.content
-
-                /// Clean tool call markers from assistant messages
-                if role == "assistant" {
-                    cleanContent = cleanToolCallMarkers(from: cleanContent)
-                }
+                var apiMessage = convertEnhancedToAPIMessage(historyMessage)
 
                 /// Strip <userContext>...</userContext> from OLD user messages (not the latest one)
                 /// This prevents sending the same 9800-char block 13+ times
                 /// CRITICAL: Never strip from PINNED messages - they contain critical context
                 /// (e.g., first message in conversation with copilot-instructions)
-                if role == "user" && index != lastUserMessageIndex && !historyMessage.isPinned {
-                    let originalLength = cleanContent.count
-                    cleanContent = stripUserContextBlock(from: cleanContent)
-                    let stripped = originalLength - cleanContent.count
-                    if stripped > 0 {
-                        strippedContextChars += stripped
-                        logger.debug("CONTEXT_DEDUP: Stripped \(stripped) chars from user message \(index)")
+                if apiMessage.role == "user" && index != lastUserMessageIndex && !historyMessage.isPinned {
+                    if let content = apiMessage.content {
+                        let originalLength = content.count
+                        let cleanContent = stripUserContextBlock(from: content)
+                        let stripped = originalLength - cleanContent.count
+                        if stripped > 0 {
+                            strippedContextChars += stripped
+                            apiMessage = OpenAIChatMessage(role: apiMessage.role, content: cleanContent)
+                            logger.debug("CONTEXT_DEDUP: Stripped \(stripped) chars from user message \(index)")
+                        }
                     }
-                } else if role == "user" && historyMessage.isPinned && index != lastUserMessageIndex {
+                } else if apiMessage.role == "user" && historyMessage.isPinned && index != lastUserMessageIndex {
                     logger.debug("CONTEXT_DEDUP: Preserved <userContext> on pinned message \(index)")
                 }
 
-                messages.append(OpenAIChatMessage(role: role, content: cleanContent))
-                logger.debug("DEBUG_DUPLICATION: Message \(index): role=\(role), content=\(cleanContent.safePrefix(50))")
+                messages.append(apiMessage)
+                logger.debug("DEBUG_DUPLICATION: Message \(index): role=\(apiMessage.role), toolCalls=\(apiMessage.toolCalls?.count ?? 0), content=\(apiMessage.content?.safePrefix(50) ?? "(nil)")")
             }
 
             if strippedContextChars > 0 {
@@ -1421,52 +1411,30 @@ extension AgentOrchestrator {
             var strippedContextChars = 0
 
             for (index, historyMessage) in conversationMessages.enumerated() {
-                var cleanContent = historyMessage.content
-
-                /// DIAGNOSTIC: Track isToolMessage flag at conversion
-                let hasPreview = cleanContent.contains("[TOOL_RESULT_PREVIEW]") || cleanContent.contains("[TOOL_RESULT_STORED]")
-                if hasPreview {
-                    let contentPrefix = cleanContent.prefix(60).replacingOccurrences(of: "\n", with: " ")
-                    logger.debug("CONVERT_TOOL_MSG: isToolMessage=\(historyMessage.isToolMessage), type=\(historyMessage.type), contentPrefix=[\(contentPrefix)]")
-                }
-
-                // Handle tool messages with proper role and toolCallId
-                if historyMessage.isToolMessage {
-                    // Tool messages need role="tool" and toolCallId for proper API formatting
-                    let toolCallId = historyMessage.toolCallId ?? UUID().uuidString
-                    messages.append(OpenAIChatMessage(
-                        role: "tool",
-                        content: cleanContent,
-                        toolCallId: toolCallId
-                    ))
-                    logger.debug("CONTEXT_BUILD: Added tool message with id=\(toolCallId.prefix(8))...")
-                    continue
-                }
-
-                let role = historyMessage.isFromUser ? "user" : "assistant"
-
-                /// Clean tool call markers from assistant messages
-                if role == "assistant" {
-                    cleanContent = cleanToolCallMarkers(from: cleanContent)
-                }
+                // Use unified converter that preserves tool calls and tool result structure
+                var apiMessage = convertEnhancedToAPIMessage(historyMessage)
 
                 /// Strip <userContext>...</userContext> from OLD user messages (not the latest one)
                 /// This prevents sending the same 9800-char block 13+ times
                 /// CRITICAL: Never strip from PINNED messages - they contain critical context
                 /// (e.g., first message in conversation with copilot-instructions)
-                if role == "user" && index != lastUserMessageIndex && !historyMessage.isPinned {
-                    let originalLength = cleanContent.count
-                    cleanContent = stripUserContextBlock(from: cleanContent)
-                    let stripped = originalLength - cleanContent.count
-                    if stripped > 0 {
-                        strippedContextChars += stripped
-                        logger.debug("CONTEXT_DEDUP: Stripped \(stripped) chars from user message \(index)")
+                if apiMessage.role == "user" && index != lastUserMessageIndex && !historyMessage.isPinned {
+                    if let content = apiMessage.content {
+                        let originalLength = content.count
+                        let cleanContent = stripUserContextBlock(from: content)
+                        let stripped = originalLength - cleanContent.count
+                        if stripped > 0 {
+                            strippedContextChars += stripped
+                            apiMessage = OpenAIChatMessage(role: apiMessage.role, content: cleanContent)
+                            logger.debug("CONTEXT_DEDUP: Stripped \(stripped) chars from user message \(index)")
+                        }
                     }
-                } else if role == "user" && historyMessage.isPinned && index != lastUserMessageIndex {
+                } else if apiMessage.role == "user" && historyMessage.isPinned && index != lastUserMessageIndex {
                     logger.debug("CONTEXT_DEDUP: Preserved <userContext> on pinned message \(index)")
                 }
 
-                messages.append(OpenAIChatMessage(role: role, content: cleanContent))
+                messages.append(apiMessage)
+                logger.debug("CONTEXT_BUILD: Message \(index): role=\(apiMessage.role), toolCalls=\(apiMessage.toolCalls?.count ?? 0), content=\(apiMessage.content?.safePrefix(50) ?? "(nil)")")
             }
 
             if strippedContextChars > 0 {
