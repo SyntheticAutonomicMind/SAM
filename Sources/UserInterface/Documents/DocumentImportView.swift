@@ -185,6 +185,8 @@ struct DocumentImportView: View {
             .png,
             .jpeg,
             .tiff,
+            .commaSeparatedText,
+            UTType("public.tab-separated-values-text")!,
             UTType("com.microsoft.word.doc")!,
             UTType("org.openxmlformats.wordprocessingml.document")!,
             UTType("com.microsoft.excel.xls")!,

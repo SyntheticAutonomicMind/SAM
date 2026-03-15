@@ -27,6 +27,7 @@ public class DocumentImportSystem: ObservableObject {
     private let officeProcessor = OfficeDocumentProcessor()
     private let textProcessor = TextDocumentProcessor()
     private let imageProcessor = ImageDocumentProcessor()
+    private let csvProcessor = CSVDocumentProcessor()
 
     public init(conversationManager: ConversationManager) {
         self.conversationManager = conversationManager
@@ -127,6 +128,10 @@ public class DocumentImportSystem: ObservableObject {
             UTType("com.microsoft.excel.xls") ?? .data,
             UTType("org.openxmlformats.spreadsheetml.sheet") ?? .data,
 
+            /// CSV/TSV Spreadsheets.
+            .commaSeparatedText,
+            UTType("public.tab-separated-values-text") ?? .data,
+
             /// Text Documents.
             .plainText,
             .utf8PlainText,
@@ -166,6 +171,9 @@ public class DocumentImportSystem: ObservableObject {
 
         case _ where contentType.conforms(to: .image):
             processor = imageProcessor
+
+        case _ where isCSVDocument(contentType):
+            processor = csvProcessor
 
         case _ where isOfficeDocument(contentType):
             processor = officeProcessor
@@ -243,6 +251,12 @@ public class DocumentImportSystem: ObservableObject {
 
         logger.debug("SUCCESS: Document integrated with Vector RAG: \(result.chunksCreated) chunks created for conversationId: \(conversationId?.uuidString ?? "nil")")
         logger.debug("SUCCESS: Document \(document.filename) (ID: \(document.id)) is now searchable via semantic memory in conversation: \(conversationId?.uuidString ?? "global")")
+    }
+
+    private func isCSVDocument(_ contentType: UTType) -> Bool {
+        return contentType.conforms(to: .commaSeparatedText) ||
+               contentType.identifier == "public.tab-separated-values-text" ||
+               contentType.identifier == "public.comma-separated-values-text"
     }
 
     private func isOfficeDocument(_ contentType: UTType) -> Bool {

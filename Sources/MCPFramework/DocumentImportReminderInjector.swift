@@ -90,6 +90,12 @@ public class DocumentImportReminderInjector {
             return nil
         }
 
+        /// Detect if any imported documents contain tabular/financial data
+        let hasTabularData = docs.contains { doc in
+            let ext = (doc.filename as NSString).pathExtension.lowercased()
+            return ext == "csv" || ext == "tsv" || ext == "xlsx" || ext == "xls"
+        }
+
         var reminder = """
         IMPORTED DOCUMENTS IN THIS CONVERSATION:
         The following documents have already been imported into memory. DO NOT re-import them.
@@ -107,6 +113,18 @@ public class DocumentImportReminderInjector {
         To search these documents, use:
         memory_operations(operation: "search_memory", query: "your search query", similarity_threshold: "0.2")
         """
+
+        if hasTabularData {
+            reminder += """
+
+            ⚠️ SPREADSHEET DATA IMPORTED - DATA INTEGRITY RULES APPLY:
+            This conversation contains imported spreadsheet/tabular data.
+            You MUST use search_memory to look up ANY numbers, values, or data points.
+            NEVER guess, estimate, or fabricate values from these documents.
+            If search_memory doesn't return the data you need, tell the user and ask.
+            Use math_operations for any calculations on retrieved data.
+            """
+        }
 
         return reminder
     }

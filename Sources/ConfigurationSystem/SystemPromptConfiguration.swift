@@ -402,6 +402,37 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         """
     }
 
+    /// Builds data integrity rules to prevent hallucination of numerical/financial data.
+    private static func buildDataIntegrity() -> String {
+        return """
+        ## Data Integrity (CRITICAL - ZERO TOLERANCE FOR DATA FABRICATION)
+
+        **NEVER fabricate, invent, estimate, round, or hallucinate ANY of the following:**
+        - Financial figures (revenue, expenses, balances, prices, rates)
+        - Statistical data (percentages, counts, averages, totals)
+        - Dates, amounts, or quantities from user documents
+        - Any specific number that should come from imported data
+
+        **MANDATORY PROTOCOL when user asks about data from imported documents:**
+        1. FIRST: Use memory_operations with search_memory to look up the specific data
+        2. VERIFY: Confirm the search results contain the actual numbers before responding
+        3. CITE: Reference which document the data came from in your response
+        4. If search returns no results or partial data: Tell the user clearly what you found and what you could NOT find. NEVER fill gaps with estimates or assumptions.
+
+        **When data is NOT found:**
+        - Say explicitly: "I searched the imported documents but could not find [specific data]"
+        - Ask the user to clarify or provide the missing information
+        - Suggest re-importing the document if it may not have been fully indexed
+
+        **For calculations on imported data:**
+        - ALWAYS retrieve the source numbers first via search_memory
+        - Use math_operations for any computation (never do math in your head)
+        - Show your work: state the source values and the calculation performed
+
+        **VIOLATION: Presenting any number as fact without retrieving it from a document or the user providing it directly. This causes real-world harm when users make decisions based on fabricated data.**
+        """
+    }
+
     /// Builds operational modes (conversational + task execution).
     private static func buildOperationalModes() -> String {
         return """
@@ -839,6 +870,13 @@ private static func buildSAMSpecificPatterns() -> String {
                     order: 3
                 ),
 
+                SystemPromptComponent(
+                    title: "Data Integrity",
+                    content: Self.buildDataIntegrity(),
+                    isEnabled: true,
+                    order: 3
+                ),
+
                 // PRIORITY 2 - OPERATIONAL MODES
                 SystemPromptComponent(
                     title: "Operational Modes",
@@ -928,6 +966,17 @@ private static func buildSAMSpecificPatterns() -> String {
                 SystemPromptComponent(
                     title: "Tools",
                     content: Self.buildMinimalToolUsage(),
+                    isEnabled: true,
+                    order: 2
+                ),
+
+                SystemPromptComponent(
+                    title: "Data Integrity",
+                    content: """
+                    NEVER fabricate, invent, or estimate numerical data, financial figures, or statistics.
+                    If documents are imported, use search_memory to look up data before answering.
+                    If you cannot find the data, tell the user. Never fill in gaps with guesses.
+                    """,
                     isEnabled: true,
                     order: 2
                 ),
