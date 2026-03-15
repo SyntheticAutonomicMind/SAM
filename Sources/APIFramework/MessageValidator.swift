@@ -256,20 +256,26 @@ public struct MessageValidator {
             }
         }
 
-        // Find orphaned tool_results (no matching call)
+        // Find orphaned tool_results (no matching call) OR out-of-order results
         var orphanedResultIndices = Set<Int>()
-        for (trId, idx) in trIdToResultIdx {
-            if tcIdToAssistantIdx[trId] == nil {
-                orphanedResultIndices.insert(idx)
+        for (trId, resultIdx) in trIdToResultIdx {
+            if let assistantIdx = tcIdToAssistantIdx[trId] {
+                // Tool result must come AFTER the assistant message with tool_calls
+                if resultIdx < assistantIdx {
+                    logger.debug("Tool result at index \(resultIdx) precedes its tool_calls at index \(assistantIdx) - removing")
+                    orphanedResultIndices.insert(resultIdx)
+                }
+            } else {
+                orphanedResultIndices.insert(resultIdx)
             }
         }
 
         // Build validated array
         var validated: [OpenAIChatMessage] = []
         for (i, msg) in messages.enumerated() {
-            // Skip orphaned tool results
+            // Skip orphaned or misordered tool results
             if orphanedResultIndices.contains(i) {
-                logger.debug("Removing orphaned tool_result at index \(i)")
+                logger.debug("Removing orphaned/misordered tool_result at index \(i)")
                 continue
             }
 
