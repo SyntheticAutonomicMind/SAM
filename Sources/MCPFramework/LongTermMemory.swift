@@ -579,6 +579,7 @@ public class LongTermMemory: ObservableObject {
         }
 
         section += "_These patterns are conversation-specific and should inform your approach to similar tasks._\n"
+        section += "\n_After context trimming, use these patterns plus `memory_operations(operation: \"recall_history\")` to recover context instead of repeating work._\n"
 
         return section
     }

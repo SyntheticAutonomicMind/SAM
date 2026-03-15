@@ -29,6 +29,18 @@ public struct MessageValidator {
         var orphanToolId: String?
     }
 
+    // MARK: - Result Type
+
+    /// Result of validation/truncation including dropped messages for archival.
+    public struct TruncationResult {
+        /// Messages to send to the LLM.
+        public let messages: [OpenAIChatMessage]
+        /// Messages that were dropped (for archival).
+        public let droppedMessages: [OpenAIChatMessage]
+        /// Whether any trimming occurred.
+        public var wasTrimmed: Bool { !droppedMessages.isEmpty }
+    }
+
     // MARK: - Public API
 
     /// Validate and truncate messages to fit within model context budget.
@@ -173,6 +185,45 @@ public struct MessageValidator {
         logger.info("Truncated: \(messages.count) -> \(truncated.count) messages, \(finalTokens) tokens")
 
         return truncated
+    }
+
+    /// Validate and truncate, returning both kept and dropped messages.
+    /// Use this when you need to archive dropped messages.
+    public static func validateAndTruncateWithDropped(
+        messages: [OpenAIChatMessage],
+        maxPromptTokens: Int,
+        toolTokens: Int = 0
+    ) -> TruncationResult {
+        let kept = validateAndTruncate(
+            messages: messages,
+            maxPromptTokens: maxPromptTokens,
+            toolTokens: toolTokens
+        )
+
+        // If no trimming occurred, nothing was dropped
+        if kept.count >= messages.count {
+            return TruncationResult(messages: kept, droppedMessages: [])
+        }
+
+        // Build a set of kept message identifiers (content+role hashes)
+        // to identify which original messages were dropped
+        var keptFingerprints = Set<String>()
+        for msg in kept {
+            let fp = "\(msg.role)|\(msg.content?.prefix(200) ?? "nil")|\(msg.toolCallId ?? "")"
+            keptFingerprints.insert(fp)
+        }
+
+        var dropped: [OpenAIChatMessage] = []
+        for msg in messages {
+            // Skip system messages (they're compressed into summary, not "dropped")
+            if msg.role == "system" { continue }
+            let fp = "\(msg.role)|\(msg.content?.prefix(200) ?? "nil")|\(msg.toolCallId ?? "")"
+            if !keptFingerprints.contains(fp) {
+                dropped.append(msg)
+            }
+        }
+
+        return TruncationResult(messages: kept, droppedMessages: dropped)
     }
 
     // MARK: - Tool Message Pair Validation
