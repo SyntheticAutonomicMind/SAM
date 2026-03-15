@@ -2457,6 +2457,41 @@ func cleanToolCallMarkers(from content: String) -> String {
     return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+/// Convert an EnhancedMessage to an OpenAIChatMessage, preserving tool call structure.
+/// This ensures assistant messages with tool_calls and tool result messages retain
+/// their proper API format when replayed in conversation history.
+func convertEnhancedToAPIMessage(_ message: ConfigurationSystem.EnhancedMessage) -> OpenAIChatMessage {
+    // Tool result messages (from tool execution)
+    if message.isToolMessage, let toolCallId = message.toolCallId {
+        return OpenAIChatMessage(role: "tool", content: message.content, toolCallId: toolCallId)
+    }
+
+    let isAssistant = !message.isFromUser
+    let role = message.isFromUser ? "user" : "assistant"
+    var content = message.content
+
+    // Clean tool call markers from assistant messages
+    if isAssistant {
+        content = cleanToolCallMarkers(from: content)
+    }
+
+    // Convert tool calls if present (assistant messages with tool_calls)
+    if isAssistant, let simpleToolCalls = message.toolCalls, !simpleToolCalls.isEmpty {
+        let openAIToolCalls = simpleToolCalls.map { simple in
+            OpenAIToolCall(
+                id: simple.id,
+                type: simple.type,
+                function: OpenAIFunctionCall(name: simple.function.name, arguments: simple.function.arguments)
+            )
+        }
+        // Content may be empty when assistant only makes tool calls
+        let messageContent = content.isEmpty ? nil : content
+        return OpenAIChatMessage(role: role, content: messageContent, toolCalls: openAIToolCalls)
+    }
+
+    return OpenAIChatMessage(role: role, content: content)
+}
+
 // MARK: - Supporting Types
 
 /// Response from LLM call.
