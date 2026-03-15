@@ -638,7 +638,9 @@ extension AgentOrchestrator {
         /// CRITICAL: Ensure message alternation for Claude API compatibility
         /// Claude requires strict user/assistant alternation with no empty messages
         /// Apply this AFTER all message construction is complete but BEFORE sending to API
-        let fixedMessages = ensureMessageAlternation(messagesToProcess)
+        var fixedMessages = ensureMessageAlternation(messagesToProcess)
+        /// Safety net: validate tool message pairs after alternation
+        fixedMessages = MessageValidator.validateToolMessagePairs(fixedMessages)
         let finalRequest = OpenAIChatRequest(
             model: requestWithTools.model,
             messages: fixedMessages,
@@ -1551,6 +1553,12 @@ extension AgentOrchestrator {
         /// If we merge AFTER YARN, we concatenate compressed content and blow up token count!
         messages = ensureMessageAlternation(messages)
         logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
+
+        /// Safety net: validate tool message pairs after alternation merging.
+        /// The alternation function can create orphaned tool results if it merges
+        /// assistant messages incorrectly. This catches any issues before the API call.
+        messages = MessageValidator.validateToolMessagePairs(messages)
+        logger.debug("callLLMStreaming: Validated tool message pairs - \(messages.count) messages after validation")
 
         /// Get model context limit for MessageValidator budget calculation
         let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
