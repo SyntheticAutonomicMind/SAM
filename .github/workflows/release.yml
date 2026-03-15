@@ -121,7 +121,8 @@ jobs:
             echo "No changes to appcast.xml"
           else
             git commit -m "chore(release): update appcast.xml for v${VERSION}"
-            git push origin main
+            # Checkout is triggered by a tag, so HEAD is detached - push explicitly to main
+            git push origin HEAD:main
           fi
       
       - name: Create GitHub Release
