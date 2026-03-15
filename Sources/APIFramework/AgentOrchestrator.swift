@@ -142,9 +142,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         for message in messages {
             /// Skip empty messages (invalid for Claude)
+            /// BUT: Never skip assistant messages with tool_calls - these have empty content
+            /// but the tool_calls array is essential for the API to match tool results
             let trimmedContent = message.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !trimmedContent.isEmpty else {
-                logger.debug("ALTERNATION_SKIP_EMPTY: role=\(message.role) (content empty)")
+            let hasToolCalls = message.toolCalls != nil && !(message.toolCalls?.isEmpty ?? true)
+            guard !trimmedContent.isEmpty || hasToolCalls else {
+                logger.debug("ALTERNATION_SKIP_EMPTY: role=\(message.role) (content empty, no tool_calls)")
                 continue
             }
 
@@ -173,14 +176,31 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 if message.role == "user" || message.role == "assistant" {
                     if let last = fixed.popLast() {
                         /// Merge content with double newline separator
-                        let mergedContent = (last.content ?? "") + "\n\n" + (message.content ?? "")
+                        let lastContent = last.content ?? ""
+                        let currentContent = message.content ?? ""
+                        let mergedContent: String
+                        if lastContent.isEmpty {
+                            mergedContent = currentContent
+                        } else if currentContent.isEmpty {
+                            mergedContent = lastContent
+                        } else {
+                            mergedContent = lastContent + "\n\n" + currentContent
+                        }
 
-                        /// Create new merged message preserving tool calls if present
+                        /// Combine tool calls from both messages (don't lose any)
+                        let combinedToolCalls: [OpenAIToolCall]?
+                        let lastCalls = last.toolCalls ?? []
+                        let currentCalls = message.toolCalls ?? []
+                        if !lastCalls.isEmpty || !currentCalls.isEmpty {
+                            combinedToolCalls = lastCalls + currentCalls
+                        } else {
+                            combinedToolCalls = nil
+                        }
+
+                        /// Create new merged message
                         let mergedMessage: OpenAIChatMessage
-                        if let currentToolCalls = message.toolCalls, !currentToolCalls.isEmpty {
-                            mergedMessage = OpenAIChatMessage(role: last.role, content: mergedContent, toolCalls: currentToolCalls)
-                        } else if let lastToolCalls = last.toolCalls {
-                            mergedMessage = OpenAIChatMessage(role: last.role, content: mergedContent, toolCalls: lastToolCalls)
+                        if let toolCalls = combinedToolCalls, !toolCalls.isEmpty {
+                            mergedMessage = OpenAIChatMessage(role: last.role, content: mergedContent.isEmpty ? nil : mergedContent, toolCalls: toolCalls)
                         } else if let toolCallId = last.toolCallId {
                             mergedMessage = OpenAIChatMessage(role: last.role, content: mergedContent, toolCallId: toolCallId)
                         } else {
@@ -188,7 +208,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         }
 
                         fixed.append(mergedMessage)
-                        logger.debug("MESSAGE_ALTERNATION: Merged consecutive \(message.role) messages")
+                        logger.debug("MESSAGE_ALTERNATION: Merged consecutive \(message.role) messages (toolCalls: \(combinedToolCalls?.count ?? 0))")
                     }
                 } else {
                     /// For system messages, just append (don't merge)
