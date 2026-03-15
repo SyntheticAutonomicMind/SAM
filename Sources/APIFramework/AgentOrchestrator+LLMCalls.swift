@@ -152,6 +152,31 @@ extension AgentOrchestrator {
             logger.debug("callLLM: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }
 
+        /// LTM INJECTION: Load and inject Long-Term Memory entries into system prompt
+        /// This gives the agent access to learned discoveries, solutions, and patterns
+        /// across sessions, scoped to the conversation or shared topic.
+        do {
+            let useSharedData = conversation.settings.useSharedData
+            let sharedTopicId = conversation.settings.sharedTopicId
+            let sharedTopicName = conversation.settings.sharedTopicName
+
+            let ltmPath = LongTermMemory.resolveFilePath(
+                conversationId: conversationId,
+                sharedTopicId: sharedTopicId,
+                sharedTopicName: sharedTopicName,
+                useSharedData: useSharedData
+            )
+
+            let ltm = LongTermMemory.load(from: ltmPath)
+            if ltm.totalEntries > 0 {
+                let ltmBlock = ltm.formatForSystemPrompt()
+                if !ltmBlock.isEmpty {
+                    systemPromptAdditions += "\n\n" + ltmBlock
+                    logger.info("callLLM: Injected LTM (\(ltm.totalEntries) entries) into system prompt")
+                }
+            }
+        }
+
         /// Session naming: inject instruction for unnamed conversations so AI provides a title
         if conversation.title.hasPrefix("New Conversation") {
             systemPromptAdditions += """
@@ -1199,6 +1224,29 @@ extension AgentOrchestrator {
             - Or omit topic_id to search only this conversation's archived history
             """
             logger.debug("callLLMStreaming: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
+        }
+
+        /// LTM INJECTION: Load and inject Long-Term Memory entries into system prompt
+        do {
+            let useSharedData = conversation.settings.useSharedData
+            let sharedTopicId = conversation.settings.sharedTopicId
+            let sharedTopicName = conversation.settings.sharedTopicName
+
+            let ltmPath = LongTermMemory.resolveFilePath(
+                conversationId: conversationId,
+                sharedTopicId: sharedTopicId,
+                sharedTopicName: sharedTopicName,
+                useSharedData: useSharedData
+            )
+
+            let ltm = LongTermMemory.load(from: ltmPath)
+            if ltm.totalEntries > 0 {
+                let ltmBlock = ltm.formatForSystemPrompt()
+                if !ltmBlock.isEmpty {
+                    systemPromptAdditions += "\n\n" + ltmBlock
+                    logger.info("callLLMStreaming: Injected LTM (\(ltm.totalEntries) entries) into system prompt")
+                }
+            }
         }
 
         /// Session naming: inject instruction for unnamed conversations so AI provides a title
