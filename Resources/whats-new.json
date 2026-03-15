@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "20260315.1",
+      "release_date": "March 15, 2026",
+      "introduction": "This release improves GitHub Copilot authentication reliability and adds CSV/TSV support with stronger data accuracy guarantees for spreadsheet and financial data.",
+      "improvements": [
+        {
+          "id": "csv-tsv-import",
+          "icon": "tablecells.fill",
+          "title": "CSV & TSV File Import",
+          "description": "SAM can now import CSV and TSV files directly. Headers are auto-detected, delimiters are identified automatically, and quoted fields are parsed correctly. Spreadsheet data is also now imported with its row and column structure preserved - previously, all cells were collapsed into a single line."
+        },
+        {
+          "id": "data-integrity",
+          "icon": "checkmark.shield.fill",
+          "title": "Stricter Data Accuracy for Numbers",
+          "description": "SAM now enforces a zero-tolerance policy against fabricating financial and numerical data. When you import a spreadsheet or CSV, SAM reads the actual values from your file before answering questions - it should not not estimate, approximate, or fill in numbers from memory.  As always, SAM's content is AI generated it should always be verified manually."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "copilot-auth-reliability",
+          "icon": "key.fill",
+          "title": "GitHub Copilot Auth Reliability",
+          "description": "Fixed three related authentication issues: Copilot providers created via device flow now load correctly on startup. Token refresh now properly uses the new token instead of the expired one. Mid-stream 401 errors are now recovered automatically, so Copilot keeps working without prompting you to re-authenticate."
+        }
+      ]
+    },
+    {
       "version": "20260313.3",
       "release_date": "March 13, 2026",
       "highlights": [
