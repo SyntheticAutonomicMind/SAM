@@ -116,14 +116,6 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           
-          # Stash local changes (e.g. appcast.xml from update step)
-          # so we can cleanly switch to main
-          git stash --include-untracked || true
-          git fetch origin main
-          git checkout main
-          git pull origin main
-          git stash pop || true
-          
           git add appcast.xml
           if git diff --staged --quiet; then
             echo "No changes to appcast.xml"

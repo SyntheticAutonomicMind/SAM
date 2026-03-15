@@ -6,25 +6,6 @@
         <description>Updates for SAM (Synthetic Autonomic Mind)</description>
         <language>en</language>
 
-<<<<<<< Updated upstream
-<!-- Latest release: v20260313.2 -->
-        <item>
-            <title>SAM 20260313.2</title>
-            <description><![CDATA[
-                <h2>What's New in SAM 20260313.2</h2>
-                <ul>
-                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260313.2">GitHub Releases</a> for details</li>
-                </ul>
-            ]]></description>
-            <pubDate>Fri, 13 Mar 2026 12:16:10 +0000</pubDate>
-            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260313.2</sparkle:releaseNotesLink>
-            <enclosure 
-                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260313.2/SAM-20260313.2.zip"
-                sparkle:version="20260313.2"
-                sparkle:shortVersionString="20260313.2"
-                sparkle:edSignature="T94twl63MjXL+jp6hCt5vN2xi+RV0UbCEfYXciVbyfTEvE613he15cZZuq9f9gHiYz+NN3tbjfpzkaSA8/lDAA=="
-                length="55334252"
-=======
 <!-- Latest release: v20260313.3 -->
         <item>
             <title>SAM 20260313.3</title>
@@ -42,7 +23,6 @@
                 sparkle:shortVersionString="20260313.3"
                 sparkle:edSignature="G7QUnr2D7KriJQzBCjm5V73+iP3aaeM9WUA3scnzWtQ4LIiGiDB+qxzpprBRw5KaCO+FEQl8kk2wV2EImayXCg=="
                 length="55326734"
->>>>>>> Stashed changes
                 type="application/octet-stream"
             />
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
