@@ -1563,12 +1563,38 @@ extension AgentOrchestrator {
 
         /// CONTEXT MANAGEMENT: Use MessageValidator (CLIO-style) for budget-based context trimming.
         let originalMessageCount = messages.count
-        messages = MessageValidator.validateAndTruncate(
+        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
             messages: messages,
             maxPromptTokens: modelContextLimit
         )
-        if messages.count < originalMessageCount {
-            logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages")
+        messages = truncationResult.messages
+        if truncationResult.wasTrimmed {
+            logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages (\(truncationResult.droppedMessages.count) dropped)")
+
+            // Archive dropped messages for later recall
+            if !truncationResult.droppedMessages.isEmpty {
+                Task {
+                    do {
+                        let droppedAsEnhanced = truncationResult.droppedMessages.compactMap { msg -> EnhancedMessage? in
+                            guard let content = msg.content, !content.isEmpty else { return nil }
+                            return EnhancedMessage(
+                                content: content,
+                                isFromUser: msg.role == "user"
+                            )
+                        }
+                        if !droppedAsEnhanced.isEmpty {
+                            _ = try await self.conversationManager.contextArchiveManager.archiveMessages(
+                                droppedAsEnhanced,
+                                conversationId: conversationId,
+                                reason: .conversationTrimmed
+                            )
+                            self.logger.debug("CONTEXT: Archived \(droppedAsEnhanced.count) dropped messages for recall")
+                        }
+                    } catch {
+                        self.logger.warning("CONTEXT: Failed to archive dropped messages: \(error)")
+                    }
+                }
+            }
         }
 
         logger.debug("callLLMStreaming: Request has \(messages.count) messages (after YARN)")

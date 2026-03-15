@@ -21,11 +21,11 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     SESSION MEMORY (per-conversation semantic search and storage):
     - search_memory: Semantic search memories (query, similarity_threshold)
     - store_memory: Save to memory (content, content_type, tags)
-    - recall_history: Recall archived conversation context (query)
+    - recall_history: Recall archived conversation context after trimming (query)
     - list_collections: View memory statistics
 
-    SESSION KEY-VALUE STORE (per-conversation working notes):
-    - store: Store key-value pair (key, content)
+    SESSION KEY-VALUE STORE (persistent per-conversation working notes):
+    - store: Store key-value pair (key, content) - persists across app restarts
     - retrieve: Get stored value by key (key)
     - search_kv: Search key-value store (query)
     - list_keys: List all stored keys
@@ -37,6 +37,18 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     - add_pattern: Store code/workflow pattern (pattern, confidence, examples)
     - ltm_stats: Get LTM statistics
     - prune_ltm: Remove old/low-confidence entries (max_age_days, min_confidence)
+
+    HOW TO USE:
+    1. Use store/retrieve for temporary per-conversation notes and working state
+    2. Use recall_history to recover context after the conversation is trimmed
+    3. Use add_discovery/add_solution/add_pattern for important facts to persist
+    4. LTM data is automatically injected into future conversations for context
+    5. Check ltm_stats before adding to avoid duplication
+
+    WHEN TO USE recall_history:
+    - After context trimming (you notice gaps in your knowledge of the conversation)
+    - When you see a thread_summary but lack details about earlier work
+    - Before re-investigating something that may have been discussed earlier
 
     SIMILARITY_THRESHOLD: 0.0-1.0 (default 0.3)
     - Document/RAG: 0.15-0.25 (lower scores typical)
