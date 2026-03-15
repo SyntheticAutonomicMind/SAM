@@ -2260,7 +2260,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     logger.debug("UNIFIED_WRAPPER: Workflow completed, stream finished")
                     
                 } catch {
-                    logger.error("ERROR: Streaming autonomous workflow failed: \(error)")
+                    logger.error("ERROR: Streaming autonomous workflow failed: \(type(of: error)) - \(error)")
                     continuation.finish(throwing: error)
                 }
             }

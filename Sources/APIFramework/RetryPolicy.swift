@@ -74,6 +74,11 @@ public struct RetryPolicy: Sendable {
             return true
         }
 
+        /// Check for auth recovery (token was refreshed, retry should succeed)
+        if let providerError = error as? ProviderError, providerError.isAuthRecoverable {
+            return true
+        }
+
         let nsError = error as NSError
 
         /// Check for retryable NSURLError codes.
@@ -135,12 +140,23 @@ public struct RetryPolicy: Sendable {
 
         /// Retry attempts with backoff.
         /// Rate limit errors get longer backoff delays
+        /// Auth recoverable errors retry immediately (token already refreshed)
         let effectiveMaxRetries = isRateLimitError ? 5 : maxRetries
 
         for attempt in 0..<effectiveMaxRetries {
-            /// Use longer delays for rate limit errors
+            /// Auth recoverable: retry immediately with no delay
+            let isAuthRecovery: Bool
+            if let providerError = lastError as? ProviderError, providerError.isAuthRecoverable {
+                isAuthRecovery = true
+            } else {
+                isAuthRecovery = false
+            }
+
+            /// Use longer delays for rate limit errors, zero delay for auth recovery
             let delay: TimeInterval
-            if isRateLimitError {
+            if isAuthRecovery {
+                delay = 0
+            } else if isRateLimitError {
                 guard let rateLimitDelay = rateLimitBackoffDelay(for: attempt) else {
                     break
                 }
@@ -152,8 +168,8 @@ public struct RetryPolicy: Sendable {
                 delay = normalDelay
             }
 
-            /// Notify caller of retry attempt (but don't show rate limit retries to user).
-            if !isRateLimitError {
+            /// Notify caller of retry attempt (don't show rate limit or auth recovery retries to user).
+            if !isRateLimitError && !isAuthRecovery {
                 onRetry?(attempt + 1, delay, lastError!)
             }
 
