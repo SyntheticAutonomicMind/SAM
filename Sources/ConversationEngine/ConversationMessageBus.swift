@@ -102,7 +102,8 @@ public class ConversationMessageBus: ObservableObject {
         contentParts: [MessageContentPart]? = nil,
         timestamp: Date = Date(),
         isStreaming: Bool = false,
-        isPinned: Bool = false
+        isPinned: Bool = false,
+        toolCalls: [SimpleToolCall]? = nil
     ) -> UUID {
         let messageId = UUID()
 
@@ -115,6 +116,7 @@ public class ConversationMessageBus: ObservableObject {
             contentParts: contentParts,
             isFromUser: false,
             timestamp: timestamp,
+            toolCalls: toolCalls,
             processingTime: nil,
             isStreaming: isStreaming,
             isPinned: isPinned,
@@ -124,7 +126,7 @@ public class ConversationMessageBus: ObservableObject {
         appendMessage(message)
         scheduleSave()
 
-        logger.debug("ASSISTANT_MESSAGE: id=\(messageId.uuidString.prefix(8)), streaming=\(isStreaming), hasParts=\(contentParts != nil), pinned=\(isPinned), importance=\(String(format: "%.2f", importance))")
+        logger.debug("ASSISTANT_MESSAGE: id=\(messageId.uuidString.prefix(8)), streaming=\(isStreaming), hasParts=\(contentParts != nil), pinned=\(isPinned), toolCalls=\(toolCalls?.count ?? 0), importance=\(String(format: "%.2f", importance))")
         return messageId
     }
 
@@ -136,7 +138,8 @@ public class ConversationMessageBus: ObservableObject {
         contentParts: [MessageContentPart]? = nil,
         timestamp: Date = Date(),
         isStreaming: Bool = false,
-        isPinned: Bool = false
+        isPinned: Bool = false,
+        toolCalls: [SimpleToolCall]? = nil
     ) -> UUID {
         let perfStart = CFAbsoluteTimeGetCurrent()
         defer {
@@ -155,6 +158,7 @@ public class ConversationMessageBus: ObservableObject {
             contentParts: contentParts,
             isFromUser: false,
             timestamp: timestamp,
+            toolCalls: toolCalls,
             processingTime: nil,
             isStreaming: isStreaming,
             isPinned: isPinned,

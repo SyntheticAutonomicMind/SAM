@@ -307,7 +307,10 @@ extension AgentOrchestrator {
         }
 
         /// Add conversation messages (user requests + LLM responses only, no tool results) CRITICAL: Use contextMessages if available (after pruning), otherwise use full messages This allows context pruning to work transparently - UI shows full history, LLM gets pruned context.
-        var messagesToSend = conversation.contextMessages ?? conversation.messages
+        /// Filter out tool messages - they're stored by MessageBus during execution but the
+        /// properly-structured versions (with correct assistant+tool_calls -> tool result ordering)
+        /// are in internalMessages. Including them here creates ordering violations.
+        var messagesToSend = (conversation.contextMessages ?? conversation.messages).filter { !$0.isToolMessage }
 
         /// Check if we have tool results to determine delta-only mode
         let hasToolResults = !internalMessages.isEmpty
@@ -1287,10 +1290,13 @@ extension AgentOrchestrator {
                 return true
             }
 
-            /// CRITICAL: Always keep tool messages - they contain tool execution results
-            /// These are needed for the agent to understand what work was done
+            /// Skip tool messages from conversation history - these are stored by MessageBus
+            /// during tool execution but the properly-structured versions (with correct
+            /// assistant+tool_calls -> tool result ordering) are in internalMessages.
+            /// Including them here creates duplicates and ordering violations that cause
+            /// API errors ("messages with role 'tool' must follow 'tool_calls'").
             if msg.isToolMessage {
-                return true
+                return false
             }
 
             /// For assistant messages, check if it's a UI-only progress message.
