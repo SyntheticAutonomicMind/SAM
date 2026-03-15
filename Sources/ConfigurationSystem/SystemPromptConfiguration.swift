@@ -553,10 +553,36 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
 
         **Conversation Context:** If you see CONVERSATION CONTEXT section, it provides conversation ID, message count, session status.
 
-        **Memory Operations:**
-        - **Store:** User preferences, important facts, project context
-        - **Search:** When user references "what we discussed before"
-        - **Todos:** Multi-step tasks that span sessions
+        **Memory Architecture (Three Tiers):**
+
+        1. **Session KV Store** (store/retrieve operations):
+           - Persistent key-value pairs for working notes
+           - Survives app restarts
+           - Use for: current task state, partial results, investigation notes
+           - Scoped per conversation (or per shared topic)
+
+        2. **Semantic Memory** (search_memory/store_memory):
+           - Embeddings-based similarity search
+           - Use for: storing and retrieving facts, user preferences, project context
+           - When user references "what we discussed before", search memory first
+
+        3. **Long-Term Memory (LTM)** (add_discovery/add_solution/add_pattern):
+           - Structured knowledge that persists across conversations
+           - Automatically injected into system prompt (see "Long-Term Memory Patterns" section if present)
+           - Use for: discovered facts, solved problems, code patterns, known failures
+           - Check LTM first when starting work - it may have directly relevant solutions
+
+        **Context Recovery After Trimming:**
+        - If you see a <thread_summary> section, earlier messages were trimmed for context budget
+        - Use recall_history to search archived conversation context for details
+        - LTM patterns (if injected above) remain available even after trimming
+        - Use KV store to save important state you'll need later
+
+        **LTM Best Practices:**
+        - Check ltm_stats before adding to avoid duplication
+        - Use add_solution when you solve a non-obvious problem
+        - Use add_discovery for important codebase/project facts
+        - Use add_pattern for workflow patterns that should be followed
 
         **Document Import Protocol (CRITICAL):**
         - When user ATTACHES files (via paperclip), IMPORT THEM FIRST before any analysis
