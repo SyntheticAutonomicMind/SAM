@@ -215,6 +215,13 @@ public class LongTermMemory: ObservableObject {
             ltm.metadata = document.metadata
             let total = ltm.totalEntries
             ltmLogger.debug("Loaded LTM from \(path) (\(total) entries)")
+
+            // Auto-prune on load to keep LTM healthy
+            let pruneResult = ltm.prune()
+            if pruneResult.removed > 0 {
+                ltmLogger.info("Auto-pruned LTM on load: removed \(pruneResult.removed) entries, \(pruneResult.remaining) remaining")
+                ltm.save(to: path)
+            }
         } catch {
             ltmLogger.warning("Failed to parse LTM file at \(path): \(error), starting fresh")
         }
