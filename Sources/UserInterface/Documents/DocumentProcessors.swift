@@ -158,6 +158,112 @@ class PDFDocumentProcessor: DocumentProcessor, @unchecked Sendable {
     }
 }
 
+/// CSV/TSV Document Processor - preserves tabular structure with headers and rows.
+class CSVDocumentProcessor: DocumentProcessor, @unchecked Sendable {
+    private let logger = Logger(label: "com.sam.documents.CSVProcessor")
+
+    func extractContent(from url: URL, contentType: UTType) async throws -> DocumentExtractedContent {
+        logger.debug("Processing CSV/TSV: \(url.lastPathComponent)")
+
+        let data = try Data(contentsOf: url)
+        guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else {
+            throw DocumentImportError.processingFailed("Could not decode CSV file")
+        }
+
+        var metadata: [String: String] = [:]
+        metadata["documentType"] = "Spreadsheet (CSV/TSV)"
+
+        /// Detect delimiter (comma, tab, semicolon)
+        let delimiter = detectDelimiter(text)
+        metadata["delimiter"] = delimiter == "\t" ? "tab" : String(delimiter)
+
+        /// Parse CSV preserving structure
+        let rows = parseCSV(text, delimiter: delimiter)
+        guard !rows.isEmpty else {
+            throw DocumentImportError.processingFailed("CSV file is empty or could not be parsed")
+        }
+
+        metadata["rowCount"] = String(rows.count)
+        metadata["columnCount"] = String(rows.first?.count ?? 0)
+
+        /// Build pipe-delimited output preserving row structure
+        var outputLines: [String] = []
+
+        /// First row is treated as headers
+        if let headers = rows.first {
+            outputLines.append(headers.joined(separator: " | "))
+            outputLines.append(String(repeating: "-", count: outputLines[0].count))
+        }
+
+        for row in rows.dropFirst() {
+            outputLines.append(row.joined(separator: " | "))
+        }
+
+        let output = outputLines.joined(separator: "\n")
+        metadata["note"] = "Tabular data preserved with row/column structure"
+
+        logger.debug("CSV processed: \(rows.count) rows, \(rows.first?.count ?? 0) columns")
+
+        return DocumentExtractedContent(text: output, metadata: metadata)
+    }
+
+    /// Detect the most likely delimiter in the content.
+    private func detectDelimiter(_ text: String) -> Character {
+        let firstLines = text.components(separatedBy: .newlines).prefix(5).joined(separator: "\n")
+        let commas = firstLines.filter { $0 == "," }.count
+        let tabs = firstLines.filter { $0 == "\t" }.count
+        let semicolons = firstLines.filter { $0 == ";" }.count
+
+        if tabs > commas && tabs > semicolons { return "\t" }
+        if semicolons > commas { return ";" }
+        return ","
+    }
+
+    /// Parse CSV handling quoted fields.
+    private func parseCSV(_ text: String, delimiter: Character) -> [[String]] {
+        var rows: [[String]] = []
+        var currentField = ""
+        var currentRow: [String] = []
+        var inQuotes = false
+
+        for char in text {
+            if inQuotes {
+                if char == "\"" {
+                    /// Check for escaped quote
+                    inQuotes = false
+                } else {
+                    currentField.append(char)
+                }
+            } else {
+                switch char {
+                case "\"":
+                    inQuotes = true
+                case delimiter:
+                    currentRow.append(currentField.trimmingCharacters(in: .whitespaces))
+                    currentField = ""
+                case "\n", "\r":
+                    if !currentField.isEmpty || !currentRow.isEmpty {
+                        currentRow.append(currentField.trimmingCharacters(in: .whitespaces))
+                        rows.append(currentRow)
+                        currentRow = []
+                        currentField = ""
+                    }
+                default:
+                    currentField.append(char)
+                }
+            }
+        }
+
+        /// Handle last row without trailing newline
+        if !currentField.isEmpty || !currentRow.isEmpty {
+            currentRow.append(currentField.trimmingCharacters(in: .whitespaces))
+            rows.append(currentRow)
+        }
+
+        return rows
+    }
+}
+
 /// Text Document Processor Handles plain text, markdown, RTF, and code files.
 class TextDocumentProcessor: DocumentProcessor, @unchecked Sendable {
     private let logger = Logger(label: "com.sam.documents.TextProcessor")
@@ -426,7 +532,7 @@ class OfficeDocumentProcessor: DocumentProcessor, @unchecked Sendable {
         return paragraphs.joined(separator: "\n\n")
     }
 
-    /// Extract text from Excel spreadsheet (.xlsx).
+    /// Extract text from Excel spreadsheet (.xlsx) preserving row/column structure.
     private func extractExcelDocument(from archive: Archive, metadata: inout [String: String]) async throws -> String {
         /// Excel stores shared strings in xl/sharedStrings.xml And sheet data in xl/worksheets/sheet*.xml.
 
@@ -448,8 +554,13 @@ class OfficeDocumentProcessor: DocumentProcessor, @unchecked Sendable {
         /// Find all worksheet entries.
         var worksheetText: [String] = []
         var sheetCount = 0
+        var totalRows = 0
 
-        for entry in archive where entry.path.hasPrefix("xl/worksheets/sheet") && entry.path.hasSuffix(".xml") {
+        /// Sort sheet entries so they appear in order
+        let sheetEntries = archive.sorted { $0.path < $1.path }
+            .filter { $0.path.hasPrefix("xl/worksheets/sheet") && $0.path.hasSuffix(".xml") }
+
+        for entry in sheetEntries {
             sheetCount += 1
 
             var sheetData = Data()
@@ -459,41 +570,88 @@ class OfficeDocumentProcessor: DocumentProcessor, @unchecked Sendable {
 
             let xmlDoc = try XMLDocument(data: sheetData)
 
-            /// Extract cell values Cells with shared strings reference index via <c t="s"><v>index</v></c> Cells with direct values use <c><v>value</v></c>.
-            let cellNodes = try xmlDoc.nodes(forXPath: "//c")
+            /// Parse by rows to preserve tabular structure
+            let rowNodes = try xmlDoc.nodes(forXPath: "//row")
+            var maxColumn = 0
+            var rows: [(rowNum: Int, cells: [(col: Int, value: String)])] = []
 
-            var sheetCells: [String] = []
+            for rowNode in rowNodes {
+                guard let rowElement = rowNode as? XMLElement else { continue }
+                let rowNum = Int(rowElement.attribute(forName: "r")?.stringValue ?? "0") ?? 0
+                let cellNodes = try rowElement.nodes(forXPath: "./c")
 
-            for cellNode in cellNodes {
-                if let cell = cellNode as? XMLElement {
-                    /// Check if cell uses shared string.
+                var rowCells: [(col: Int, value: String)] = []
+
+                for cellNode in cellNodes {
+                    guard let cell = cellNode as? XMLElement else { continue }
+                    let cellRef = cell.attribute(forName: "r")?.stringValue ?? ""
                     let cellType = cell.attribute(forName: "t")?.stringValue
+                    let colIndex = columnIndex(from: cellRef)
 
-                    if let valueNode = try cell.nodes(forXPath: "./v").first {
-                        if let valueString = valueNode.stringValue {
-                            if cellType == "s", let index = Int(valueString), index < sharedStrings.count {
-                                /// Shared string reference.
-                                sheetCells.append(sharedStrings[index])
-                            } else {
-                                /// Direct value.
-                                sheetCells.append(valueString)
-                            }
+                    if colIndex > maxColumn { maxColumn = colIndex }
+
+                    var cellValue = ""
+
+                    if let valueNode = try cell.nodes(forXPath: "./v").first,
+                       let valueString = valueNode.stringValue {
+                        if cellType == "s", let index = Int(valueString), index < sharedStrings.count {
+                            cellValue = sharedStrings[index]
+                        } else {
+                            cellValue = valueString
                         }
+                    } else if let inlineNode = try cell.nodes(forXPath: "./is/t").first {
+                        /// Handle inline strings
+                        cellValue = inlineNode.stringValue ?? ""
                     }
+
+                    if !cellValue.isEmpty {
+                        rowCells.append((col: colIndex, value: cellValue))
+                    }
+                }
+
+                if !rowCells.isEmpty {
+                    rows.append((rowNum: rowNum, cells: rowCells))
                 }
             }
 
-            if !sheetCells.isEmpty {
-                worksheetText.append("[Sheet \(sheetCount)]\n" + sheetCells.joined(separator: " | "))
+            if rows.isEmpty { continue }
+            totalRows += rows.count
+
+            /// Build pipe-delimited table with proper column alignment
+            var sheetLines: [String] = ["[Sheet \(sheetCount)]"]
+
+            for row in rows {
+                var columns = Array(repeating: "", count: maxColumn + 1)
+                for cell in row.cells {
+                    if cell.col <= maxColumn {
+                        columns[cell.col] = cell.value
+                    }
+                }
+                /// Trim trailing empty columns for this row
+                while columns.last?.isEmpty == true { columns.removeLast() }
+                sheetLines.append(columns.joined(separator: " | "))
             }
+
+            worksheetText.append(sheetLines.joined(separator: "\n"))
         }
 
         metadata["documentType"] = "Microsoft Excel"
         metadata["sheetCount"] = String(sheetCount)
-        metadata["note"] = "Cell values extracted (formatting not preserved)"
+        metadata["totalRows"] = String(totalRows)
+        metadata["note"] = "Tabular data preserved with row/column structure"
 
-        logger.debug("Extracted \(sheetCount) sheets from Excel document")
+        logger.debug("Extracted \(sheetCount) sheets, \(totalRows) rows from Excel document")
 
         return worksheetText.joined(separator: "\n\n")
+    }
+
+    /// Convert Excel column reference (e.g., "A", "B", "AA") to zero-based index.
+    private func columnIndex(from cellRef: String) -> Int {
+        let letters = cellRef.prefix(while: { $0.isLetter })
+        var index = 0
+        for char in letters.uppercased() {
+            index = index * 26 + Int(char.asciiValue! - Character("A").asciiValue!) + 1
+        }
+        return index - 1
     }
 }
