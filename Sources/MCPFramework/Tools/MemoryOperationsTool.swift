@@ -16,18 +16,32 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     private let storage = ToolResultStorage()
 
     public let description = """
-    Search and store conversation memory.
+    Memory and Long-Term Memory (LTM) operations.
 
-    OPERATIONS:
-    • search_memory - Semantic search memories (query, similarity_threshold)
-    • store_memory - Save to memory (content, content_type, tags)
-    • recall_history - Recall archived conversation context (query)
-    • list_collections - View memory statistics
+    SESSION MEMORY (per-conversation semantic search and storage):
+    - search_memory: Semantic search memories (query, similarity_threshold)
+    - store_memory: Save to memory (content, content_type, tags)
+    - recall_history: Recall archived conversation context (query)
+    - list_collections: View memory statistics
+
+    SESSION KEY-VALUE STORE (per-conversation working notes):
+    - store: Store key-value pair (key, content)
+    - retrieve: Get stored value by key (key)
+    - search_kv: Search key-value store (query)
+    - list_keys: List all stored keys
+    - delete_key: Remove a stored key (key)
+
+    LONG-TERM MEMORY (persists across conversations in same topic):
+    - add_discovery: Store a discovered fact (fact, confidence)
+    - add_solution: Store problem-solution pair (error, solution, examples)
+    - add_pattern: Store code/workflow pattern (pattern, confidence, examples)
+    - ltm_stats: Get LTM statistics
+    - prune_ltm: Remove old/low-confidence entries (max_age_days, min_confidence)
 
     SIMILARITY_THRESHOLD: 0.0-1.0 (default 0.3)
     - Document/RAG: 0.15-0.25 (lower scores typical)
     - Conversation: 0.3-0.5
-    - No results? Lower threshold: 0.3→0.2→0.15
+    - No results? Lower threshold: 0.3 -> 0.2 -> 0.15
 
     NOTE: For todo list management, use the 'todo_operations' tool instead.
     """
@@ -37,7 +51,17 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             "search_memory",
             "store_memory",
             "recall_history",
-            "list_collections"
+            "list_collections",
+            "store",
+            "retrieve",
+            "search_kv",
+            "list_keys",
+            "delete_key",
+            "add_discovery",
+            "add_solution",
+            "add_pattern",
+            "ltm_stats",
+            "prune_ltm"
         ]
     }
 
@@ -47,15 +71,28 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 type: .string,
                 description: """
                     Operation to perform:
-                    - search_memory: Query memories with natural language (includes similarity search)
+                    - search_memory: Query memories with natural language
                     - store_memory: Save new memory to database
+                    - recall_history: Recall archived conversation context
                     - list_collections: View memory statistics
+                    - store: Store key-value pair (key, content)
+                    - retrieve: Get stored value by key
+                    - search_kv: Search key-value store
+                    - list_keys: List all stored keys
+                    - delete_key: Remove a stored key
+                    - add_discovery: Store a discovered fact to LTM
+                    - add_solution: Store problem-solution pair to LTM
+                    - add_pattern: Store code/workflow pattern to LTM
+                    - ltm_stats: Get LTM statistics
+                    - prune_ltm: Remove old/low-confidence LTM entries
 
                     Note: For todo list management, use 'todo_operations' tool instead.
                     """,
                 required: true,
                 enumValues: [
-                    "search_memory", "store_memory", "recall_history", "list_collections"
+                    "search_memory", "store_memory", "recall_history", "list_collections",
+                    "store", "retrieve", "search_kv", "list_keys", "delete_key",
+                    "add_discovery", "add_solution", "add_pattern", "ltm_stats", "prune_ltm"
                 ]
             ),
 
@@ -102,6 +139,71 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                     - Lower threshold = more results (may include less relevant)
                     - Higher threshold = fewer results (only highly relevant)
                     """,
+                required: false
+            ),
+
+            // KV store parameters
+            "key": MCPToolParameter(
+                type: .string,
+                description: "Memory key for store/retrieve/delete operations",
+                required: false
+            ),
+
+            // LTM parameters
+            "fact": MCPToolParameter(
+                type: .string,
+                description: "Discovery fact to store (for add_discovery)",
+                required: false
+            ),
+            "confidence": MCPToolParameter(
+                type: .number,
+                description: "Confidence level 0.0-1.0 (for add_discovery/add_pattern)",
+                required: false
+            ),
+            "error": MCPToolParameter(
+                type: .string,
+                description: "Error/problem description (for add_solution)",
+                required: false
+            ),
+            "solution": MCPToolParameter(
+                type: .string,
+                description: "Solution description (for add_solution)",
+                required: false
+            ),
+            "pattern": MCPToolParameter(
+                type: .string,
+                description: "Pattern description (for add_pattern)",
+                required: false
+            ),
+            "examples": MCPToolParameter(
+                type: .array,
+                description: "Example file paths (for add_solution/add_pattern)",
+                required: false,
+                arrayElementType: .string
+            ),
+            "max_age_days": MCPToolParameter(
+                type: .integer,
+                description: "Max age in days for LTM entries (for prune_ltm, default: 90)",
+                required: false
+            ),
+            "min_confidence": MCPToolParameter(
+                type: .number,
+                description: "Minimum confidence threshold (for prune_ltm, default: 0.3)",
+                required: false
+            ),
+            "max_discoveries": MCPToolParameter(
+                type: .integer,
+                description: "Max discoveries to keep (for prune_ltm, default: 50)",
+                required: false
+            ),
+            "max_solutions": MCPToolParameter(
+                type: .integer,
+                description: "Max solutions to keep (for prune_ltm, default: 50)",
+                required: false
+            ),
+            "max_patterns": MCPToolParameter(
+                type: .integer,
+                description: "Max patterns to keep (for prune_ltm, default: 30)",
                 required: false
             )
         ]
@@ -191,6 +293,30 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
         case "list_collections":
             result = await handleListCollections(parameters: parameters, context: context)
+
+        // MARK: - Session KV Store Operations
+        case "store":
+            result = await handleKVStore(parameters: parameters, context: context)
+        case "retrieve":
+            result = await handleKVRetrieve(parameters: parameters, context: context)
+        case "search_kv":
+            result = await handleKVSearch(parameters: parameters, context: context)
+        case "list_keys":
+            result = await handleKVList(parameters: parameters, context: context)
+        case "delete_key":
+            result = await handleKVDelete(parameters: parameters, context: context)
+
+        // MARK: - LTM Operations
+        case "add_discovery":
+            result = await handleAddDiscovery(parameters: parameters, context: context)
+        case "add_solution":
+            result = await handleAddSolution(parameters: parameters, context: context)
+        case "add_pattern":
+            result = await handleAddPattern(parameters: parameters, context: context)
+        case "ltm_stats":
+            result = await handleLTMStats(parameters: parameters, context: context)
+        case "prune_ltm":
+            result = await handlePruneLTM(parameters: parameters, context: context)
 
         case "manage_todos":
             /// DEPRECATED: Redirect to todo_operations tool
@@ -485,6 +611,218 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             logger.error("List collections failed: \(error)")
             return errorResult("List collections failed: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Session KV Store Operations
+
+    /// In-memory KV store per conversation session
+    nonisolated(unsafe) private static var kvStores: [UUID: [String: (content: String, timestamp: Date)]] = [:]
+
+    @MainActor
+    private func handleKVStore(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let key = parameters["key"] as? String, !key.isEmpty else {
+            return errorResult("'store' operation requires 'key' parameter")
+        }
+        guard let content = parameters["content"] as? String, !content.isEmpty else {
+            return errorResult("'store' operation requires 'content' parameter")
+        }
+
+        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
+        if MemoryOperationsTool.kvStores[scopeId] == nil {
+            MemoryOperationsTool.kvStores[scopeId] = [:]
+        }
+        MemoryOperationsTool.kvStores[scopeId]?[key] = (content: content, timestamp: Date())
+
+        return successResult("{\"success\": true, \"key\": \"\(key)\", \"message\": \"Stored successfully\"}")
+    }
+
+    @MainActor
+    private func handleKVRetrieve(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let key = parameters["key"] as? String, !key.isEmpty else {
+            return errorResult("'retrieve' operation requires 'key' parameter")
+        }
+
+        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
+        guard let store = MemoryOperationsTool.kvStores[scopeId],
+              let entry = store[key] else {
+            return errorResult("Key '\(key)' not found")
+        }
+
+        let formatter = ISO8601DateFormatter()
+        return successResult("{\"success\": true, \"content\": \"\(entry.content.replacingOccurrences(of: "\"", with: "\\\""))\", \"timestamp\": \"\(formatter.string(from: entry.timestamp))\"}")
+    }
+
+    @MainActor
+    private func handleKVSearch(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let query = parameters["query"] as? String, !query.isEmpty else {
+            return errorResult("'search_kv' operation requires 'query' parameter")
+        }
+
+        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
+        guard let store = MemoryOperationsTool.kvStores[scopeId] else {
+            return successResult("{\"success\": true, \"matches\": [], \"count\": 0}")
+        }
+
+        let lowered = query.lowercased()
+        let matches = store.filter { (key, value) in
+            key.lowercased().contains(lowered) || value.content.lowercased().contains(lowered)
+        }
+
+        var lines: [String] = ["SEARCH RESULTS (\(matches.count) matches):"]
+        for (key, value) in matches {
+            let preview = value.content.count > 100 ? String(value.content.prefix(97)) + "..." : value.content
+            lines.append("  \(key): \(preview)")
+        }
+
+        return successResult(lines.joined(separator: "\n"))
+    }
+
+    @MainActor
+    private func handleKVList(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
+        guard let store = MemoryOperationsTool.kvStores[scopeId], !store.isEmpty else {
+            return successResult("{\"success\": true, \"memories\": [], \"count\": 0}")
+        }
+
+        var lines: [String] = ["STORED KEYS (\(store.count)):"]
+        for (key, value) in store.sorted(by: { $0.key < $1.key }) {
+            let preview = value.content.count > 60 ? String(value.content.prefix(57)) + "..." : value.content
+            lines.append("  \(key): \(preview)")
+        }
+
+        return successResult(lines.joined(separator: "\n"))
+    }
+
+    @MainActor
+    private func handleKVDelete(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let key = parameters["key"] as? String, !key.isEmpty else {
+            return errorResult("'delete_key' operation requires 'key' parameter")
+        }
+
+        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
+        guard MemoryOperationsTool.kvStores[scopeId]?.removeValue(forKey: key) != nil else {
+            return errorResult("Key '\(key)' not found")
+        }
+
+        return successResult("{\"success\": true, \"message\": \"Key '\(key)' deleted\"}")
+    }
+
+    // MARK: - LTM Operations
+
+    /// Load or get cached LTM for a conversation's scope.
+    @MainActor
+    private func getLTM(context: MCPExecutionContext) -> LongTermMemory? {
+        guard let conversationId = context.conversationId else {
+            logger.error("LTM operations require a conversation ID")
+            return nil
+        }
+
+        // Determine scope from context metadata
+        let useSharedData = context.metadata["useSharedData"] as? Bool ?? false
+        let sharedTopicId = context.metadata["sharedTopicId"] as? UUID
+        let sharedTopicName = context.metadata["sharedTopicName"] as? String
+
+        let path = LongTermMemory.resolveFilePath(
+            conversationId: conversationId,
+            sharedTopicId: sharedTopicId,
+            sharedTopicName: sharedTopicName,
+            useSharedData: useSharedData
+        )
+
+        let ltm = LongTermMemory.load(from: path)
+        return ltm
+    }
+
+    @MainActor
+    private func handleAddDiscovery(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let fact = parameters["fact"] as? String, !fact.isEmpty else {
+            return errorResult("'add_discovery' requires 'fact' parameter")
+        }
+        guard let ltm = getLTM(context: context) else {
+            return errorResult("LTM not available - missing conversation context")
+        }
+
+        let confidence = optionalDouble(parameters, key: "confidence", default: 0.8) ?? 0.8
+        ltm.addDiscovery(fact, confidence: confidence)
+        ltm.save()
+
+        return successResult("{\"success\": true, \"message\": \"Discovery added\", \"fact\": \"\(fact.prefix(100))\"}")
+    }
+
+    @MainActor
+    private func handleAddSolution(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let error = parameters["error"] as? String, !error.isEmpty else {
+            return errorResult("'add_solution' requires 'error' parameter")
+        }
+        guard let solution = parameters["solution"] as? String, !solution.isEmpty else {
+            return errorResult("'add_solution' requires 'solution' parameter")
+        }
+        guard let ltm = getLTM(context: context) else {
+            return errorResult("LTM not available - missing conversation context")
+        }
+
+        let examples = (parameters["examples"] as? [String]) ?? []
+        ltm.addSolution(error: error, solution: solution, examples: examples)
+        ltm.save()
+
+        return successResult("{\"success\": true, \"message\": \"Solution added\"}")
+    }
+
+    @MainActor
+    private func handleAddPattern(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let pattern = parameters["pattern"] as? String, !pattern.isEmpty else {
+            return errorResult("'add_pattern' requires 'pattern' parameter")
+        }
+        guard let ltm = getLTM(context: context) else {
+            return errorResult("LTM not available - missing conversation context")
+        }
+
+        let confidence = optionalDouble(parameters, key: "confidence", default: 0.7) ?? 0.7
+        let examples = (parameters["examples"] as? [String]) ?? []
+        ltm.addPattern(pattern, confidence: confidence, examples: examples)
+        ltm.save()
+
+        return successResult("{\"success\": true, \"message\": \"Pattern added\"}")
+    }
+
+    @MainActor
+    private func handleLTMStats(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let ltm = getLTM(context: context) else {
+            return errorResult("LTM not available - missing conversation context")
+        }
+
+        let summary = ltm.getSummary()
+        var lines: [String] = ["LTM STATISTICS:"]
+        for (key, value) in summary.sorted(by: { $0.key < $1.key }) {
+            lines.append("  \(key): \(value)")
+        }
+        lines.append("  total_entries: \(ltm.totalEntries)")
+
+        return successResult(lines.joined(separator: "\n"))
+    }
+
+    @MainActor
+    private func handlePruneLTM(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
+        guard let ltm = getLTM(context: context) else {
+            return errorResult("LTM not available - missing conversation context")
+        }
+
+        let maxAgeDays = optionalInt(parameters, key: "max_age_days")
+        let minConfidence = optionalDouble(parameters, key: "min_confidence")
+        let maxDiscoveries = optionalInt(parameters, key: "max_discoveries")
+        let maxSolutions = optionalInt(parameters, key: "max_solutions")
+        let maxPatterns = optionalInt(parameters, key: "max_patterns")
+
+        let result = ltm.prune(
+            maxAgeDays: maxAgeDays,
+            minConfidence: minConfidence,
+            maxDiscoveries: maxDiscoveries,
+            maxSolutions: maxSolutions,
+            maxPatterns: maxPatterns
+        )
+        ltm.save()
+
+        return successResult("{\"success\": true, \"removed\": \(result.removed), \"remaining\": \(result.remaining)}")
     }
 }
 

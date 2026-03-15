@@ -705,6 +705,9 @@ public class SharedConversationService: ObservableObject {
         case .boolean:
             return ["type": "boolean"]
 
+        case .number:
+            return ["type": "number"]
+
         case .array:
             return ["type": "array"]
 
