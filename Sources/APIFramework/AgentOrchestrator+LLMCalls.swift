@@ -307,10 +307,19 @@ extension AgentOrchestrator {
         }
 
         /// Add conversation messages (user requests + LLM responses only, no tool results) CRITICAL: Use contextMessages if available (after pruning), otherwise use full messages This allows context pruning to work transparently - UI shows full history, LLM gets pruned context.
-        /// Filter out tool messages - they're stored by MessageBus during execution but the
-        /// properly-structured versions (with correct assistant+tool_calls -> tool result ordering)
+        /// Filter out tool messages and assistant messages with tool_calls (when internalMessages exist).
+        /// Tool messages and assistant+tool_calls messages are stored by MessageBus during execution
+        /// but the properly-structured versions (with correct assistant+tool_calls -> tool result ordering)
         /// are in internalMessages. Including them here creates ordering violations.
-        var messagesToSend = (conversation.contextMessages ?? conversation.messages).filter { !$0.isToolMessage }
+        let hasInternalMsgs = !internalMessages.isEmpty
+        var messagesToSend = (conversation.contextMessages ?? conversation.messages).filter { msg in
+            if msg.isToolMessage { return false }
+            if !msg.isFromUser && hasInternalMsgs {
+                let hasToolCalls = msg.toolCalls != nil && !(msg.toolCalls?.isEmpty ?? true)
+                if hasToolCalls { return false }
+            }
+            return true
+        }
 
         /// Check if we have tool results to determine delta-only mode
         let hasToolResults = !internalMessages.isEmpty
@@ -1297,6 +1306,18 @@ extension AgentOrchestrator {
             /// API errors ("messages with role 'tool' must follow 'tool_calls'").
             if msg.isToolMessage {
                 return false
+            }
+
+            /// Skip assistant messages that have tool_calls when internalMessages exist.
+            /// These are stored by MessageBus during streaming tool-call workflow iterations.
+            /// The properly-structured versions are already in internalMessages with correct
+            /// assistant(tool_calls) -> tool(result) ordering. Including duplicates from
+            /// conversation history creates malformed message sequences.
+            if !msg.isFromUser && !internalMessages.isEmpty {
+                let hasToolCalls = msg.toolCalls != nil && !(msg.toolCalls?.isEmpty ?? true)
+                if hasToolCalls {
+                    return false
+                }
             }
 
             /// For assistant messages, check if it's a UI-only progress message.
