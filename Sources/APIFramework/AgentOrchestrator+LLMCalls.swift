@@ -479,93 +479,23 @@ extension AgentOrchestrator {
         logger.debug("callLLM: Request has \(messages.count) messages (\(messagesToSend.count) conversation + \(internalMessages.count) internal)")
         logger.debug("callLLM: User sees \(conversation.messages.count) messages, LLM context uses \(messagesToSend.count) messages")
 
-        /// CRITICAL: Get model's actual context limit BEFORE YaRN processing
-        /// This ensures YaRN compresses to the correct target for this specific model
+        /// Get model's actual context limit for MessageValidator budget calculation
         let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
-        logger.debug("YARN: Model '\(model)' has context limit of \(modelContextLimit) tokens")
+        logger.debug("CONTEXT: Model '\(model)' has context limit of \(modelContextLimit) tokens")
 
-        /// Process ALL messages with YARN before sending to LLM This includes conversation messages, system prompts, AND tool execution results Tool results can be massive (web scraping, document imports) and MUST be compressed.
-        logger.debug("YARN: Processing ALL \(messages.count) messages (conversation + tool results) before LLM call")
-
-        /// Calculate fingerprint BEFORE YaRN processing to detect compression
-        let originalFingerprint = messageFingerprint(messages)
-
-        var yarnCompressed = false
-        do {
-            messages = try await processAllMessagesWithYARN(messages, conversationId: conversationId, modelContextLimit: modelContextLimit)
-
-            /// Calculate fingerprint AFTER YaRN processing
-            let compressedFingerprint = messageFingerprint(messages)
-            yarnCompressed = (originalFingerprint != compressedFingerprint)
-
-            logger.debug("YARN: Processed messages ready for LLM (\(messages.count) messages after YARN)")
-            logger.debug("YARN: Compression \(yarnCompressed ? "ACTIVE" : "NOT NEEDED") - fingerprints \(yarnCompressed ? "differ" : "match")")
-            
-            /// CRITICAL SAFETY CHECK: Validate token count after YARN processing
-            /// Even with YARN compression, we must NEVER exceed the API limit
-            /// This is a hard requirement - violating it causes session failure
-            let postYarnTokens = await tokenCounter.countTokens(messages: messages, model: nil, isLocal: false)
-            if postYarnTokens > modelContextLimit {
-                logger.error("YARN_EMERGENCY: Post-compression tokens (\(postYarnTokens)) STILL exceed limit (\(modelContextLimit))!")
-                logger.error("YARN_EMERGENCY: Applying emergency truncation to prevent API rejection")
-                
-                /// Emergency truncation: Keep only most recent messages that fit
-                /// This is a last resort - should never happen if YARN is working correctly
-                var truncatedMessages: [OpenAIChatMessage] = []
-                var tokenCount = 0
-                let safeLimit = Int(Double(modelContextLimit) * 0.85) // 85% safety margin
-                
-                /// Always keep system message if present
-                if let systemMsg = messages.first(where: { $0.role == "system" }) {
-                    let systemTokens = await tokenCounter.estimateTokensRemote(text: systemMsg.content ?? "")
-                    truncatedMessages.append(systemMsg)
-                    tokenCount += systemTokens
-                }
-                
-                /// Add messages from most recent backwards until we hit the limit
-                for message in messages.reversed() {
-                    if message.role == "system" { continue } // Already added
-                    let msgTokens = await tokenCounter.estimateTokensRemote(text: message.content ?? "")
-                    if tokenCount + msgTokens <= safeLimit {
-                        truncatedMessages.insert(message, at: truncatedMessages.count)
-                        tokenCount += msgTokens
-                    } else {
-                        break
-                    }
-                }
-                
-                messages = truncatedMessages
-                logger.warning("YARN_EMERGENCY: Truncated to \(messages.count) messages, \(tokenCount) tokens (limit: \(modelContextLimit))")
-                
-                /// Notify user about emergency truncation
-                if !isExternalAPICall {
-                    let warningMessage = """
-                    ⚠️ CONTEXT LIMIT EXCEEDED
-                    
-                    Your conversation exceeded the model's maximum context limit even after compression.
-                    SAM had to truncate older messages to continue operation.
-                    
-                    Model: \(model)
-                    Limit: \(modelContextLimit) tokens
-                    Current: \(tokenCount) tokens (after emergency truncation)
-                    
-                    Consider starting a new conversation to maintain full context.
-                    """
-                    
-                    Task { @MainActor in
-                        conversation.messageBus?.addAssistantMessage(
-                            id: UUID(),
-                            content: warningMessage,
-                            timestamp: Date()
-                        )
-                    }
-                }
-            } else {
-                logger.debug("YARN_VALIDATION: Post-compression tokens (\(postYarnTokens)) within limit (\(modelContextLimit)) ✓")
-            }
-        } catch {
-            logger.warning("YARN: Processing failed, using original messages: \(error)")
-            /// Continue with original messages if YARN fails.
+        /// CONTEXT MANAGEMENT: Use MessageValidator (CLIO-style) for budget-based context trimming.
+        /// Preserves tool_call/tool_result pairs, compresses dropped context into thread_summary,
+        /// always keeps system prompt + most recent user message.
+        let originalMessageCount = messages.count
+        messages = MessageValidator.validateAndTruncate(
+            messages: messages,
+            maxPromptTokens: modelContextLimit
+        )
+        var yarnCompressed = messages.count < originalMessageCount
+        if yarnCompressed {
+            logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages")
+        } else {
+            logger.debug("CONTEXT: Messages within budget, no trimming needed")
         }
 
         /// Conditional statefulMarker based on YaRN compression + premium model status
@@ -1601,19 +1531,18 @@ extension AgentOrchestrator {
         messages = ensureMessageAlternation(messages)
         logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
 
-        /// CRITICAL: Get model's actual context limit BEFORE YaRN processing
-        /// This ensures YaRN compresses to the correct target for this specific model
+        /// Get model context limit for MessageValidator budget calculation
         let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
-        logger.debug("YARN: Model '\(model)' has context limit of \(modelContextLimit) tokens")
+        logger.debug("CONTEXT: Model has context limit of \(modelContextLimit) tokens")
 
-        /// Process ALL messages with YARN before sending to LLM This includes conversation messages, system prompts, AND tool execution results Tool results can be massive (web scraping, document imports) and MUST be compressed.
-        logger.debug("YARN: Processing ALL \(messages.count) messages (conversation + tool results) before LLM call")
-        do {
-            messages = try await processAllMessagesWithYARN(messages, conversationId: conversationId, modelContextLimit: modelContextLimit)
-            logger.debug("YARN: Processed messages ready for LLM (\(messages.count) messages after YARN)")
-        } catch {
-            logger.warning("YARN: Processing failed, using original messages: \(error)")
-            /// Continue with original messages if YARN fails.
+        /// CONTEXT MANAGEMENT: Use MessageValidator (CLIO-style) for budget-based context trimming.
+        let originalMessageCount = messages.count
+        messages = MessageValidator.validateAndTruncate(
+            messages: messages,
+            maxPromptTokens: modelContextLimit
+        )
+        if messages.count < originalMessageCount {
+            logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages")
         }
 
         logger.debug("callLLMStreaming: Request has \(messages.count) messages (after YARN)")
