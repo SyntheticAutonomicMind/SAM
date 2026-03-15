@@ -153,6 +153,7 @@ public enum MCPParameterType {
     case string
     case integer
     case boolean
+    case number
     case array
     case object(properties: [String: MCPToolParameter])
 
@@ -161,6 +162,7 @@ public enum MCPParameterType {
         case .string: return "string"
         case .integer: return "integer"
         case .boolean: return "boolean"
+        case .number: return "number"
         case .array: return "array"
         case .object: return "object"
         }
