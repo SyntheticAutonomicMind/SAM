@@ -1693,28 +1693,16 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         if let tools = request.tools {
             let MAX_TOOLS = 128
 
-            /// Determine which tools are actually referenced in the messages (YARN-processed).
-            let referencedToolNames = Set(request.messages.compactMap { msg -> [String]? in
-                guard let toolCalls = msg.toolCalls else { return nil }
-                return toolCalls.map { $0.function.name }
-            }.flatMap { $0 })
-
-            var toolsToSend: [OpenAITool] = []
-            if !referencedToolNames.isEmpty {
-                toolsToSend = tools.filter { referencedToolNames.contains($0.function.name) }
-                logger.debug("FILTER_TOOLS: Including only referenced tools (\(toolsToSend.count)): \(toolsToSend.map { $0.function.name }.joined(separator: ", "))")
-            } else {
-                /// Send ALL tools on first request (when no tools referenced yet) Previous code sent ZERO tools which made LLM think tools unavailable!.
-                toolsToSend = Array(tools.prefix(MAX_TOOLS))
-                if tools.count > 0 {
-                    logger.debug("FILTER_TOOLS: No referenced tools in messages (first request?) - sending ALL tools (\(toolsToSend.count)/\(tools.count))")
-                }
+            /// Always send all available tools up to the maximum limit.
+            /// Previous logic tried to filter to only "referenced" tools based on
+            /// conversation history, but this prevented the agent from using new tools
+            /// after returning results (e.g., after calling todo_operations, the agent
+            /// couldn't call file_operations because it wasn't "referenced").
+            var toolsToSend = Array(tools.prefix(MAX_TOOLS))
+            if tools.count > MAX_TOOLS {
+                logger.warning("TOOL_LIMIT: GitHub Copilot request has \(tools.count) tools, limiting to \(MAX_TOOLS)")
             }
-
-            if toolsToSend.count > MAX_TOOLS {
-                toolsToSend = Array(toolsToSend.prefix(MAX_TOOLS))
-                logger.warning("TOOL_LIMIT: GitHub Copilot request has >\(MAX_TOOLS) referenced tools, limiting to \(MAX_TOOLS)")
-            }
+            logger.debug("FILTER_TOOLS: Sending all \(toolsToSend.count) tools")
 
             if !toolsToSend.isEmpty {
                 requestBody["tools"] = toolsToSend.map { tool in
