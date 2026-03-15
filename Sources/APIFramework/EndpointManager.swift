@@ -642,8 +642,11 @@ public class EndpointManager: ObservableObject {
             }
 
             /// Only create provider if it has API key or doesn't require one.
+            /// GitHub Copilot also accepts device flow tokens from CopilotTokenStore.
             let requiresKey = providerType.requiresApiKey
-            if !requiresKey || config.apiKey != nil {
+            let hasAuth = config.apiKey != nil ||
+                (providerType == .githubCopilot && CopilotTokenStore.shared.isSignedIn)
+            if !requiresKey || hasAuth {
                 /// For local llama, create one provider per model using registry identifiers.
                 if providerType == .localLlama {
                     if let modelManager = localModelManager {
@@ -748,6 +751,30 @@ public class EndpointManager: ObservableObject {
                 }
             } else {
                 logger.debug("Provider \(providerId) not loaded - requires API key")
+            }
+        }
+
+        // Also check saved_provider_ids for any user-created provider IDs (may have timestamps)
+        if let savedProviderIds = UserDefaults.standard.stringArray(forKey: "saved_provider_ids") {
+            for savedProviderId in savedProviderIds {
+                // Skip if we already loaded this provider
+                if providers[savedProviderId] != nil {
+                    continue
+                }
+
+                // Try to load configuration for this custom ID
+                if let config = loadProviderConfiguration(for: savedProviderId) {
+                    let requiresKey = config.providerType.requiresApiKey
+                    let hasAuth = config.apiKey != nil ||
+                        (config.providerType == .githubCopilot && CopilotTokenStore.shared.isSignedIn)
+                    if !requiresKey || hasAuth {
+                        providers[savedProviderId] = createProvider(type: config.providerType, config: config)
+                        providerConfigs[savedProviderId] = config
+                        logger.debug("Loaded saved provider \(savedProviderId) with \(config.models.count) models")
+                    } else {
+                        logger.debug("Saved provider \(savedProviderId) not loaded - requires API key")
+                    }
+                }
             }
         }
 
@@ -1200,8 +1227,11 @@ public class EndpointManager: ObservableObject {
             }
 
             /// Only create provider if it has API key or doesn't require one.
+            /// GitHub Copilot also accepts device flow tokens from CopilotTokenStore.
             let requiresKey = providerType.requiresApiKey
-            if !requiresKey || config.apiKey != nil {
+            let hasAuth = config.apiKey != nil ||
+                (providerType == .githubCopilot && CopilotTokenStore.shared.isSignedIn)
+            if !requiresKey || hasAuth {
                 /// For local llama, create one provider per model using registry identifiers.
                 if providerType == .localLlama {
                     if let modelManager = localModelManager {
