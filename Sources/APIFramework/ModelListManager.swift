@@ -30,6 +30,11 @@ public class ModelListManager: ObservableObject {
     
     /// Initialize the manager with required dependencies
     public func initialize(endpointManager: EndpointManager) {
+        // Skip if already initialized with this endpoint manager
+        if self.endpointManager != nil {
+            logger.debug("ModelListManager already initialized, skipping")
+            return
+        }
         logger.info("Initializing ModelListManager with EndpointManager")
         self.endpointManager = endpointManager
         
