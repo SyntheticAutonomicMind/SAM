@@ -615,8 +615,39 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
     // MARK: - Session KV Store Operations
 
-    /// In-memory KV store per conversation session
-    nonisolated(unsafe) private static var kvStores: [UUID: [String: (content: String, timestamp: Date)]] = [:]
+    /// Persistent KV store cache per scope
+    nonisolated(unsafe) private static var kvStoreCache: [UUID: SessionKVStore] = [:]
+
+    /// Get or create a persistent KV store for a scope.
+    @MainActor
+    private func getKVStore(context: MCPExecutionContext) -> SessionKVStore? {
+        guard let conversationId = context.conversationId else {
+            logger.error("KV store requires a conversation ID")
+            return nil
+        }
+
+        let scopeId = context.effectiveScopeId ?? conversationId
+
+        if let cached = MemoryOperationsTool.kvStoreCache[scopeId] {
+            return cached
+        }
+
+        // Determine scope from context metadata
+        let useSharedData = (context.metadata["useSharedData"] as? Bool) ?? false
+        let sharedTopicId = (context.metadata["sharedTopicId"] as? String).flatMap { UUID(uuidString: $0) }
+        let sharedTopicName = context.metadata["sharedTopicName"] as? String
+
+        let path = SessionKVStore.resolveFilePath(
+            conversationId: conversationId,
+            sharedTopicId: sharedTopicId,
+            sharedTopicName: sharedTopicName,
+            useSharedData: useSharedData
+        )
+
+        let store = SessionKVStore(filePath: path)
+        MemoryOperationsTool.kvStoreCache[scopeId] = store
+        return store
+    }
 
     @MainActor
     private func handleKVStore(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
@@ -627,12 +658,11 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             return errorResult("'store' operation requires 'content' parameter")
         }
 
-        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
-        if MemoryOperationsTool.kvStores[scopeId] == nil {
-            MemoryOperationsTool.kvStores[scopeId] = [:]
+        guard let store = getKVStore(context: context) else {
+            return errorResult("KV store not available - no conversation context")
         }
-        MemoryOperationsTool.kvStores[scopeId]?[key] = (content: content, timestamp: Date())
 
+        store.store(key: key, content: content)
         return successResult("{\"success\": true, \"key\": \"\(key)\", \"message\": \"Stored successfully\"}")
     }
 
@@ -642,9 +672,11 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             return errorResult("'retrieve' operation requires 'key' parameter")
         }
 
-        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
-        guard let store = MemoryOperationsTool.kvStores[scopeId],
-              let entry = store[key] else {
+        guard let store = getKVStore(context: context) else {
+            return errorResult("KV store not available - no conversation context")
+        }
+
+        guard let entry = store.retrieve(key: key) else {
             return errorResult("Key '\(key)' not found")
         }
 
@@ -658,20 +690,16 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             return errorResult("'search_kv' operation requires 'query' parameter")
         }
 
-        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
-        guard let store = MemoryOperationsTool.kvStores[scopeId] else {
+        guard let store = getKVStore(context: context) else {
             return successResult("{\"success\": true, \"matches\": [], \"count\": 0}")
         }
 
-        let lowered = query.lowercased()
-        let matches = store.filter { (key, value) in
-            key.lowercased().contains(lowered) || value.content.lowercased().contains(lowered)
-        }
+        let matches = store.search(query: query)
 
         var lines: [String] = ["SEARCH RESULTS (\(matches.count) matches):"]
-        for (key, value) in matches {
-            let preview = value.content.count > 100 ? String(value.content.prefix(97)) + "..." : value.content
-            lines.append("  \(key): \(preview)")
+        for match in matches {
+            let preview = match.content.count > 100 ? String(match.content.prefix(97)) + "..." : match.content
+            lines.append("  \(match.key): \(preview)")
         }
 
         return successResult(lines.joined(separator: "\n"))
@@ -679,15 +707,14 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func handleKVList(parameters: [String: Any], context: MCPExecutionContext) async -> MCPToolResult {
-        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
-        guard let store = MemoryOperationsTool.kvStores[scopeId], !store.isEmpty else {
+        guard let store = getKVStore(context: context), !store.isEmpty else {
             return successResult("{\"success\": true, \"memories\": [], \"count\": 0}")
         }
 
-        var lines: [String] = ["STORED KEYS (\(store.count)):"]
-        for (key, value) in store.sorted(by: { $0.key < $1.key }) {
-            let preview = value.content.count > 60 ? String(value.content.prefix(57)) + "..." : value.content
-            lines.append("  \(key): \(preview)")
+        let keys = store.listKeys()
+        var lines: [String] = ["STORED KEYS (\(keys.count)):"]
+        for entry in keys {
+            lines.append("  \(entry.key): \(entry.preview)")
         }
 
         return successResult(lines.joined(separator: "\n"))
@@ -699,8 +726,11 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             return errorResult("'delete_key' operation requires 'key' parameter")
         }
 
-        let scopeId = context.effectiveScopeId ?? context.conversationId ?? UUID()
-        guard MemoryOperationsTool.kvStores[scopeId]?.removeValue(forKey: key) != nil else {
+        guard let store = getKVStore(context: context) else {
+            return errorResult("KV store not available - no conversation context")
+        }
+
+        guard store.delete(key: key) else {
             return errorResult("Key '\(key)' not found")
         }
 
