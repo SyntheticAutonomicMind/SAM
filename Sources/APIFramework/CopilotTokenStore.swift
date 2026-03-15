@@ -120,16 +120,18 @@ public class CopilotTokenStore: ObservableObject {
     public func getCopilotToken() async throws -> String {
         // If we have a Copilot token, use it (with refresh if needed)
         if let token = copilotToken {
-            // Check if expired
             if token.isExpired() {
                 logger.info("Copilot token expired, refreshing...")
                 try await refreshCopilotToken()
             }
-            return token.token
+            // Re-read copilotToken after potential refresh (local binding may be stale)
+            if let current = copilotToken {
+                return current.token
+            }
         }
         
         // Have a GitHub token but no Copilot token - try exchange
-        if let githubToken = githubToken {
+        if githubToken != nil {
             logger.info("No Copilot token, attempting exchange...")
             do {
                 try await refreshCopilotToken()
@@ -137,9 +139,10 @@ public class CopilotTokenStore: ObservableObject {
                     return token.token
                 }
             } catch {
-                logger.warning("Copilot token exchange failed: \(error.localizedDescription), using GitHub token directly")
+                logger.warning("Copilot token exchange failed: \(error.localizedDescription)")
             }
-            return githubToken
+            // Don't fall back to raw GitHub token - it won't work with Copilot API
+            throw TokenStoreError.noToken
         }
         
         // No token at all
@@ -189,19 +192,16 @@ public class CopilotTokenStore: ObservableObject {
         do {
             try await refreshCopilotToken()
             if let token = copilotToken {
-                logger.info("Token recovery succeeded")
+                logger.info("Token recovery succeeded - new Copilot token obtained")
                 return token.token
             }
         } catch {
             logger.warning("Token recovery failed: \(error.localizedDescription)")
         }
         
-        // If Copilot refresh failed, try returning the raw GitHub token
-        if let githubToken = githubToken {
-            logger.info("Falling back to GitHub token after Copilot refresh failure")
-            return githubToken
-        }
-        
+        // Don't fall back to raw GitHub token - it causes 401 loops
+        // The raw GitHub token can't authenticate against the Copilot API
+        logger.error("Token recovery failed - no valid Copilot token available")
         return nil
     }
     
