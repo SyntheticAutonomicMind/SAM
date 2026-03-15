@@ -1085,7 +1085,6 @@ extension AgentOrchestrator {
         sentInternalMessagesCount: Int = 0,
         retrievedMessageIds: inout Set<UUID>
     ) async throws -> LLMResponse {
-        logger.debug("ERROR:ERROR:ERROR: CALL_LLM_STREAMING_ENTRY_POINT_REACHED ERROR:ERROR:ERROR: - model: \(model), conversationId: \(conversationId)")
         logger.debug("callLLMStreaming: Building OpenAI streaming request for model '\(model)'")
 
         /// LAZY FETCH: Check if this is first GitHub Copilot request, fetch model capabilities if needed.
@@ -1642,38 +1641,11 @@ extension AgentOrchestrator {
 
         logger.debug("callLLMStreaming: Calling EndpointManager.processStreamingChatCompletion() with retry policy")
 
-        /// Wrap streaming call with retry policy Must retry BEFORE yielding any chunks to continuation.
-        let retryPolicy = RetryPolicy.default
-
-        let streamingResponse = try await retryPolicy.execute(
-            operation: { [self] in
-                try await self.endpointManager.processStreamingChatCompletion(finalRequest)
-            },
-            onRetry: { [self] attempt, delay, error in
-                self.logger.warning("STREAMING_RETRY: Attempt \(attempt)/\(retryPolicy.maxRetries) after \(delay)s delay - \(errorDescription(for: error))")
-
-                /// Send retry notification via streaming continuation (will appear in real-time).
-                let retryChunk = ServerOpenAIChatStreamChunk(
-                    id: requestId,
-                    object: "chat.completion.chunk",
-                    created: created,
-                    model: model,
-                    choices: [
-                        OpenAIChatStreamChoice(
-                            index: 0,
-                            delta: OpenAIChatDelta(
-                                role: nil,
-                                content: "\n\nNetwork timeout - retrying (attempt \(attempt)/\(retryPolicy.maxRetries))...\n\n",
-                                toolCalls: nil,
-                                statefulMarker: nil
-                            ),
-                            finishReason: nil
-                        )
-                    ]
-                )
-                continuation.yield(retryChunk)
-            }
-        )
+        /// Create streaming response with auth-recovery retry
+        /// Auth errors (401) manifest INSIDE the stream during iteration, not during creation.
+        /// The provider detects 401, refreshes the token, then throws authRecoverable.
+        /// We catch that during iteration and create a fresh stream with the new token.
+        var streamingResponse = try await endpointManager.processStreamingChatCompletion(finalRequest)
 
         /// Accumulate response while yielding chunks.
         var accumulatedContent = ""
@@ -1718,7 +1690,13 @@ extension AgentOrchestrator {
 
         /// Track chunk count for debugging
         var chunkCount = 0
+        var authRetryAttempts = 0
+        let maxAuthRetries = 2
 
+        /// Auth recovery retry loop: if the stream throws authRecoverable (401 token refresh),
+        /// create a new stream and restart. This only fires before any content chunks are yielded.
+        authRetryLoop: while true {
+        do {
         for try await chunk in streamingResponse {
             /// CRITICAL: Check for cancellation on each chunk to enable immediate stop
             /// This allows the stop button to immediately halt streaming from remote APIs
@@ -1934,6 +1912,20 @@ extension AgentOrchestrator {
                 }
             }
         }
+        /// Stream completed successfully - exit retry loop
+        logger.debug("AUTH_RETRY_DEBUG: Stream completed normally, breaking retry loop")
+        break authRetryLoop
+        } catch let error as ProviderError where error.isAuthRecoverable && authRetryAttempts < maxAuthRetries && chunkCount == 0 {
+            /// Token was refreshed after 401 - retry with a fresh stream
+            authRetryAttempts += 1
+            logger.info("AUTH_RETRY: Stream threw authRecoverable before any chunks, retrying (\(authRetryAttempts)/\(maxAuthRetries))")
+            streamingResponse = try await endpointManager.processStreamingChatCompletion(finalRequest)
+            continue authRetryLoop
+        } catch {
+            logger.error("AUTH_RETRY_DEBUG: Stream threw non-recoverable error: \(error), type=\(type(of: error))")
+            throw error
+        }
+        } // end authRetryLoop
 
         /// CONTENT FILTER DETECTION: Check if response was blocked and provide clear error message
         if finishReason == "content_filter" {
