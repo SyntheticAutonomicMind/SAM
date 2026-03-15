@@ -487,13 +487,39 @@ extension AgentOrchestrator {
         /// Preserves tool_call/tool_result pairs, compresses dropped context into thread_summary,
         /// always keeps system prompt + most recent user message.
         let originalMessageCount = messages.count
-        messages = MessageValidator.validateAndTruncate(
+        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
             messages: messages,
             maxPromptTokens: modelContextLimit
         )
-        var yarnCompressed = messages.count < originalMessageCount
+        messages = truncationResult.messages
+        var yarnCompressed = truncationResult.wasTrimmed
         if yarnCompressed {
-            logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages")
+            logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages (\(truncationResult.droppedMessages.count) dropped)")
+
+            // Archive dropped messages for later recall
+            if !truncationResult.droppedMessages.isEmpty {
+                Task {
+                    do {
+                        let droppedAsEnhanced = truncationResult.droppedMessages.compactMap { msg -> EnhancedMessage? in
+                            guard let content = msg.content, !content.isEmpty else { return nil }
+                            return EnhancedMessage(
+                                content: content,
+                                isFromUser: msg.role == "user"
+                            )
+                        }
+                        if !droppedAsEnhanced.isEmpty {
+                            _ = try await self.conversationManager.contextArchiveManager.archiveMessages(
+                                droppedAsEnhanced,
+                                conversationId: conversationId,
+                                reason: .conversationTrimmed
+                            )
+                            self.logger.debug("CONTEXT: Archived \(droppedAsEnhanced.count) dropped messages for recall")
+                        }
+                    } catch {
+                        self.logger.warning("CONTEXT: Failed to archive dropped messages: \(error)")
+                    }
+                }
+            }
         } else {
             logger.debug("CONTEXT: Messages within budget, no trimming needed")
         }
