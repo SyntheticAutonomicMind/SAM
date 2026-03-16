@@ -9,12 +9,20 @@ set -e
 
 VERSION="$1"
 ZIP_PATH="$2"
+# Third argument: either a private key path (old usage) or --signature <sig> (new usage)
+PRECOMPUTED_SIGNATURE=""
 PRIVATE_KEY_PATH="${3:-$HOME/.sam-sparkle-keys/private_key.txt}"
+if [ "$3" = "--signature" ]; then
+    PRECOMPUTED_SIGNATURE="$4"
+    PRIVATE_KEY_PATH=""
+fi
 
 if [ -z "$VERSION" ] || [ -z "$ZIP_PATH" ]; then
     echo "Usage: $0 <version> <zip_path> [private_key_path]"
+    echo "       $0 <version> <zip_path> --signature <precomputed_sig>"
     echo "Example: $0 20251214.1 dist/SAM-20251214.1.zip"
     echo "         $0 20251214.1 dist/SAM-20251214.1.zip /tmp/sparkle_key.txt"
+    echo "         $0 20251214.1 dist/SAM-20251214.1.zip --signature 'abc123...'"
     exit 1
 fi
 
@@ -23,10 +31,12 @@ if [ ! -f "$ZIP_PATH" ]; then
     exit 1
 fi
 
-if [ ! -f "$PRIVATE_KEY_PATH" ]; then
-    echo "Error: Sparkle private key not found: $PRIVATE_KEY_PATH"
-    echo "Please run scripts/setup_sparkle.sh to generate keys"
-    exit 1
+if [ -z "$PRECOMPUTED_SIGNATURE" ]; then
+    if [ ! -f "$PRIVATE_KEY_PATH" ]; then
+        echo "Error: Sparkle private key not found: $PRIVATE_KEY_PATH"
+        echo "Please run scripts/setup_sparkle.sh to generate keys"
+        exit 1
+    fi
 fi
 
 APPCAST_FILE="appcast.xml"
@@ -51,27 +61,33 @@ elif [ -f ".build/checkouts/Sparkle/sign_update" ]; then
     SIGN_UPDATE_BINARY=".build/checkouts/Sparkle/sign_update"
 fi
 
-if [ -z "$SIGN_UPDATE_BINARY" ]; then
+if [ -z "$PRECOMPUTED_SIGNATURE" ] && [ -z "$SIGN_UPDATE_BINARY" ]; then
     echo "Error: sign_update binary not found"
-    echo "Please run 'make build-debug' or 'make build-release' first"
+    echo "Please run 'make build-debug' or 'make build-release' first,"
+    echo "or pass a pre-computed signature with --signature <sig>"
     exit 1
 fi
 
 # Sign the ZIP file to get EdDSA signature
-echo "Signing ZIP file with EdDSA key..."
-SIGNATURE_OUTPUT=$("$SIGN_UPDATE_BINARY" "$ZIP_PATH" -f "$PRIVATE_KEY_PATH")
+if [ -n "$PRECOMPUTED_SIGNATURE" ]; then
+    echo "Using pre-computed EdDSA signature..."
+    SIGNATURE="$PRECOMPUTED_SIGNATURE"
+else
+    echo "Signing ZIP file with EdDSA key..."
+    SIGNATURE_OUTPUT=$("$SIGN_UPDATE_BINARY" "$ZIP_PATH" -f "$PRIVATE_KEY_PATH")
 
-if [ -z "$SIGNATURE_OUTPUT" ]; then
-    echo "Error: Failed to generate signature"
-    exit 1
-fi
+    if [ -z "$SIGNATURE_OUTPUT" ]; then
+        echo "Error: Failed to generate signature"
+        exit 1
+    fi
 
-# Extract just the signature value from: sparkle:edSignature="VALUE" length="..."
-SIGNATURE=$(echo "$SIGNATURE_OUTPUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+    # Extract just the signature value from: sparkle:edSignature="VALUE" length="..."
+    SIGNATURE=$(echo "$SIGNATURE_OUTPUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
 
-if [ -z "$SIGNATURE" ]; then
-    echo "Error: Failed to extract signature from output: $SIGNATURE_OUTPUT"
-    exit 1
+    if [ -z "$SIGNATURE" ]; then
+        echo "Error: Failed to extract signature from output: $SIGNATURE_OUTPUT"
+        exit 1
+    fi
 fi
 
 echo "  Signature: $SIGNATURE"
