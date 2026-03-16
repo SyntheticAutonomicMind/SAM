@@ -55,15 +55,15 @@ public class MarkdownToDOCXConverter {
     /// Convert markdown text to DOCX XML paragraphs (legacy method for compatibility)
     /// - Parameter markdown: Markdown-formatted text
     /// - Returns: Word XML paragraphs ready for document.xml
-    public func convert(markdown: String) -> String {
-        let result = convertWithImages(markdown: markdown)
+    public func convert(markdown: String) async -> String {
+        let result = await convertWithImages(markdown: markdown)
         return result.paragraphsXML
     }
 
     /// Convert markdown text to DOCX XML with embedded images
     /// - Parameter markdown: Markdown-formatted text
     /// - Returns: DOCXConversionResult containing XML paragraphs and image data for embedding
-    public func convertWithImages(markdown: String) -> DOCXConversionResult {
+    public func convertWithImages(markdown: String) async -> DOCXConversionResult {
         logger.info("MARKDOWN_CONVERT: Input length=\(markdown.count)")
         logger.info("MARKDOWN_CONVERT: First 200 chars=\(String(markdown.prefix(200)))")
 
@@ -79,7 +79,7 @@ public class MarkdownToDOCXConverter {
         logger.info("MARKDOWN_CONVERT: Parsed document successfully")
 
         /// Walk AST and generate XML.
-        walkDocument(document)
+        await walkDocument(document)
 
         /// Flush any remaining runs.
         flushParagraph()
@@ -94,13 +94,13 @@ public class MarkdownToDOCXConverter {
 
     // MARK: - AST Walking
 
-    private func walkDocument(_ document: Document) {
+    private func walkDocument(_ document: Document) async {
         for child in document.children {
-            walk(markup: child)
+            await walk(markup: child)
         }
     }
 
-    private func walk(markup: Markup) {
+    private func walk(markup: Markup) async {
         /// Process entering event.
         switch markup {
         case let paragraph as Paragraph:
@@ -122,7 +122,7 @@ public class MarkdownToDOCXConverter {
             processInlineCode(inlineCode)
 
         case let codeBlock as Markdown.CodeBlock:
-            processCodeBlock(codeBlock)
+            await processCodeBlock(codeBlock)
 
         case let list as UnorderedList:
             processList(list, entering: true, isOrdered: false)
@@ -162,11 +162,11 @@ public class MarkdownToDOCXConverter {
         if shouldWalkChildren {
             if let container = markup as? BlockMarkup {
                 for child in container.children {
-                    walk(markup: child)
+                    await walk(markup: child)
                 }
             } else if let container = markup as? InlineMarkup {
                 for child in container.children {
-                    walk(markup: child)
+                    await walk(markup: child)
                 }
             }
         }
@@ -255,12 +255,12 @@ public class MarkdownToDOCXConverter {
         currentRuns.append(codeRun)
     }
 
-    private func processCodeBlock(_ codeBlock: Markdown.CodeBlock) {
+    private func processCodeBlock(_ codeBlock: Markdown.CodeBlock) async {
         flushParagraph()
 
         // Check if this is a Mermaid diagram
         if let language = codeBlock.language, language.lowercased() == "mermaid" {
-            processMermaidDiagram(code: codeBlock.code)
+            await processMermaidDiagram(code: codeBlock.code)
             return
         }
 
@@ -289,12 +289,13 @@ public class MarkdownToDOCXConverter {
     }
 
     /// Process Mermaid diagram code block by embedding as image
-    private func processMermaidDiagram(code: String) {
+    @MainActor
+    private func processMermaidDiagram(code: String) async {
         logger.debug("Processing Mermaid diagram in DOCX conversion")
 
         do {
             // Export Mermaid diagram to PNG
-            let imageURL = try mermaidExporter.exportDiagramToTemp(
+            let imageURL = try await mermaidExporter.exportDiagramToTemp(
                 code,
                 format: .png,
                 size: CGSize(width: 800, height: 600)

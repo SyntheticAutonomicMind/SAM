@@ -17,45 +17,129 @@ class MarkdownASTToNSAttributedString {
     private let boldFont = NSFont.boldSystemFont(ofSize: 12)
 
     /// Convert AST to NSAttributedString (accepts single node or array)
-    func convert(_ node: MarkdownASTNode) -> NSAttributedString {
-        return convertNode(node)
+    func convert(_ node: MarkdownASTNode) async -> NSAttributedString {
+        return await convertNode(node)
     }
 
-    func convert(_ nodes: [MarkdownASTNode]) -> NSAttributedString {
+    func convert(_ nodes: [MarkdownASTNode]) async -> NSAttributedString {
         let result = NSMutableAttributedString()
 
         for node in nodes {
-            result.append(convertNode(node))
+            result.append(await convertNode(node))
         }
 
         return result
     }
 
-    // MARK: - Node Conversion
+    /// Synchronous conversion (skips async mermaid rendering, shows code fallback)
+    func convertSync(_ node: MarkdownASTNode) -> NSAttributedString {
+        return convertNodeSync(node)
+    }
 
-    private func convertNode(_ node: MarkdownASTNode) -> NSAttributedString {
+    func convertSync(_ nodes: [MarkdownASTNode]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for node in nodes {
+            result.append(convertNodeSync(node))
+        }
+        return result
+    }
+
+    private func convertNodeSync(_ node: MarkdownASTNode) -> NSAttributedString {
         switch node {
         case .document(let children):
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertNode(child))
+                result.append(convertNodeSync(child))
+            }
+            return result
+        case .heading(let level, let children):
+            let fontSize: CGFloat = {
+                switch level {
+                case 1: return 24; case 2: return 20; case 3: return 16
+                case 4: return 14; case 5: return 13; default: return 12
+                }
+            }()
+            let font = NSFont.boldSystemFont(ofSize: fontSize)
+            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
+            let result = NSMutableAttributedString()
+            for child in children { result.append(convertNodeSync(child)) }
+            if result.length > 0 { result.addAttributes(attrs, range: NSRange(location: 0, length: result.length)) }
+            result.append(NSAttributedString(string: "\n\n"))
+            return result
+        case .paragraph(let children):
+            let result = NSMutableAttributedString()
+            for child in children { result.append(convertNodeSync(child)) }
+            result.append(NSAttributedString(string: "\n\n"))
+            return result
+        case .text(let string):
+            return NSAttributedString(string: string, attributes: baseAttributes())
+        case .strong(let children):
+            let attrs: [NSAttributedString.Key: Any] = [.font: boldFont, .foregroundColor: NSColor.labelColor]
+            let result = NSMutableAttributedString()
+            for child in children { result.append(convertNodeSync(child)) }
+            if result.length > 0 { result.addAttributes(attrs, range: NSRange(location: 0, length: result.length)) }
+            return result
+        case .emphasis(let children):
+            let italicFont = NSFont(descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic), size: baseFontSize) ?? baseFont
+            let attrs: [NSAttributedString.Key: Any] = [.font: italicFont, .foregroundColor: NSColor.labelColor]
+            let result = NSMutableAttributedString()
+            for child in children { result.append(convertNodeSync(child)) }
+            if result.length > 0 { result.addAttributes(attrs, range: NSRange(location: 0, length: result.length)) }
+            return result
+        case .inlineCode(let text):
+            return NSAttributedString(string: text, attributes: [.font: codeFont, .foregroundColor: NSColor.labelColor, .backgroundColor: NSColor.controlBackgroundColor])
+        case .codeBlock(let language, let code):
+            let result = NSMutableAttributedString()
+            if let language = language {
+                result.append(NSAttributedString(string: language + "\n", attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.secondaryLabelColor]))
+            }
+            result.append(NSAttributedString(string: code, attributes: [.font: codeFont, .foregroundColor: NSColor.labelColor, .backgroundColor: NSColor.controlBackgroundColor]))
+            result.append(NSAttributedString(string: "\n\n"))
+            return result
+        case .list(_, let items):
+            let result = NSMutableAttributedString()
+            for item in items {
+                result.append(NSAttributedString(string: "• ", attributes: baseAttributes()))
+                for child in item.children { result.append(convertNodeSync(child)) }
+            }
+            result.append(NSAttributedString(string: "\n"))
+            return result
+        case .softBreak:
+            return NSAttributedString(string: " ")
+        case .hardBreak:
+            return NSAttributedString(string: "\n")
+        case .horizontalRule:
+            return NSAttributedString(string: "────────────────────────────────\n\n", attributes: baseAttributes())
+        default:
+            return NSAttributedString(string: "", attributes: baseAttributes())
+        }
+    }
+
+    // MARK: - Node Conversion
+
+    private func convertNode(_ node: MarkdownASTNode) async -> NSAttributedString {
+        switch node {
+        case .document(let children):
+            let result = NSMutableAttributedString()
+            for child in children {
+                result.append(await convertNode(child))
             }
             return result
 
         case .heading(let level, let children):
-            return convertHeading(level: level, children: children)
+            return await convertHeading(level: level, children: children)
 
         case .paragraph(let children):
-            return convertParagraph(children: children)
+            return await convertParagraph(children: children)
 
         case .blockquote(let depth, let children):
-            return convertBlockquote(depth: depth, children: children)
+            return await convertBlockquote(depth: depth, children: children)
 
         case .codeBlock(let language, let code):
-            return convertCodeBlock(language: language, code: code)
+            return await convertCodeBlock(language: language, code: code)
 
         case .list(let type, let items):
-            return convertList(type: type, items: items)
+            return await convertList(type: type, items: items)
 
         case .table(let headers, let alignments, let rows):
             return convertTable(headers: headers, alignments: alignments, rows: rows)
@@ -70,13 +154,13 @@ class MarkdownASTToNSAttributedString {
             return NSAttributedString(string: string, attributes: baseAttributes())
 
         case .strong(let children):
-            return convertStrong(children: children)
+            return await convertStrong(children: children)
 
         case .emphasis(let children):
-            return convertEmphasis(children: children)
+            return await convertEmphasis(children: children)
 
         case .strikethrough(let children):
-            return convertStrikethrough(children: children)
+            return await convertStrikethrough(children: children)
 
         case .inlineCode(let text):
             return convertInlineCode(text: text)
@@ -94,7 +178,7 @@ class MarkdownASTToNSAttributedString {
 
     // MARK: - Block Elements
 
-    private func convertHeading(level: Int, children: [MarkdownASTNode]) -> NSAttributedString {
+    private func convertHeading(level: Int, children: [MarkdownASTNode]) async -> NSAttributedString {
         let fontSize: CGFloat = {
             switch level {
             case 1: return 24
@@ -114,25 +198,25 @@ class MarkdownASTToNSAttributedString {
 
         let result = NSMutableAttributedString()
         for child in children {
-            result.append(convertInlineNode(child, baseAttributes: attributes))
+            result.append(await convertInlineNode(child, baseAttributes: attributes))
         }
         result.append(NSAttributedString(string: "\n\n"))
 
         return result
     }
 
-    private func convertParagraph(children: [MarkdownASTNode]) -> NSAttributedString {
+    private func convertParagraph(children: [MarkdownASTNode]) async -> NSAttributedString {
         let result = NSMutableAttributedString()
 
         for child in children {
-            result.append(convertInlineNode(child, baseAttributes: baseAttributes()))
+            result.append(await convertInlineNode(child, baseAttributes: baseAttributes()))
         }
 
         result.append(NSAttributedString(string: "\n"))
         return result
     }
 
-    private func convertBlockquote(depth: Int, children: [MarkdownASTNode]) -> NSAttributedString {
+    private func convertBlockquote(depth: Int, children: [MarkdownASTNode]) async -> NSAttributedString {
         let indent = CGFloat(depth * 20)
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.firstLineHeadIndent = indent
@@ -152,7 +236,7 @@ class MarkdownASTToNSAttributedString {
         result.append(NSAttributedString(string: barString, attributes: attributes))
 
         for child in children {
-            result.append(convertNode(child))
+            result.append(await convertNode(child))
         }
 
         result.append(NSAttributedString(string: "\n"))
@@ -160,10 +244,10 @@ class MarkdownASTToNSAttributedString {
     }
 
     @MainActor
-    private func convertCodeBlock(language: String?, code: String) -> NSAttributedString {
+    private func convertCodeBlock(language: String?, code: String) async -> NSAttributedString {
         // Special handling for mermaid diagrams
         if language?.lowercased() == "mermaid" {
-            return convertMermaidDiagram(code: code)
+            return await convertMermaidDiagram(code: code)
         }
 
         let paragraphStyle = NSMutableParagraphStyle()
@@ -195,112 +279,25 @@ class MarkdownASTToNSAttributedString {
         return result
     }
 
-    /// Convert Mermaid diagram to image for PDF/print using bitmapImageRepForCachingDisplay
+    /// Convert Mermaid diagram to image for PDF/print using mermaid.js via WKWebView
     @MainActor
-    private func convertMermaidDiagram(code: String) -> NSAttributedString {
+    private func convertMermaidDiagram(code: String) async -> NSAttributedString {
         logger.info("Converting mermaid diagram for PDF/print, code length: \(code.count)")
         let result = NSMutableAttributedString()
 
-        // PRE-PARSE diagram BEFORE creating view (critical for synchronous rendering)
-        let parser = MermaidParser()
-        let parsedDiagram = parser.parse(code)
-        logger.info("Pre-parsed mermaid diagram type: \(parsedDiagram)")
-
-        // Skip unsupported diagrams
-        if case .unsupported = parsedDiagram {
-            logger.warning("Unsupported mermaid diagram type, showing code block")
-            return createFallbackCodeBlock(code: code)
-        }
-
-        // Render at higher resolution (700px) for better quality
-        // Then scale down to PDF page width (550px) for proper fitting
         let renderWidth: CGFloat = 700
         let targetWidth: CGFloat = 550  // PDF page usable width
-        
-        // Create SwiftUI diagram view WITH pre-parsed diagram
-        let diagramView = MermaidDiagramView(code: code, diagram: parsedDiagram, showBackground: false)
-            .frame(width: renderWidth, alignment: .leading)
 
-        // Use bitmapImageRepForCachingDisplay - most reliable for offscreen rendering
-        var capturedImage: NSImage?
-
-        let renderWithBitmap: () -> NSImage? = { [self] in
-            let hostingView = NSHostingView(rootView: diagramView)
-            // INCREASED: Use 3000px initial height (was 1000px) for complex diagrams
-            hostingView.frame = NSRect(x: 0, y: 0, width: renderWidth, height: 3000)
-
-            // Force layout multiple times for SwiftUI to properly render
-            // INCREASED: 5 cycles with longer delays (was 3 cycles × 0.05s)
-            var lastHeight: CGFloat = 0
-            for cycle in 0..<5 {
-                hostingView.layout()
-                hostingView.layoutSubtreeIfNeeded()
-                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
-                
-                // Check for stabilization
-                let currentSize = hostingView.fittingSize
-                self.logger.debug("PDF render cycle \(cycle): fittingSize=\(currentSize.width)×\(currentSize.height)")
-                
-                if cycle > 2 && currentSize.height > 100 {
-                    let heightChange = abs(currentSize.height - lastHeight)
-                    let changePercent = heightChange / max(currentSize.height, 1) * 100
-                    if changePercent < 5 {
-                        self.logger.info("PDF render stabilized at cycle \(cycle): height=\(currentSize.height)")
-                        break
-                    }
-                }
-                lastHeight = currentSize.height
-            }
-
-            // Get actual size after layout
-            let actualSize = hostingView.fittingSize
-            self.logger.info("PDF render fittingSize: \(actualSize.width)×\(actualSize.height)")
-            
-            // INCREASED: Allow up to 4000px height (was 2000px) for very complex diagrams
-            let finalHeight = max(min(actualSize.height, 4000), 100)
-            let finalWidth = max(actualSize.width, renderWidth)
-            
-            hostingView.frame = NSRect(x: 0, y: 0, width: finalWidth, height: finalHeight)
-            self.logger.info("PDF render final frame: \(finalWidth)×\(finalHeight)")
-            
-            hostingView.layout()
-            hostingView.layoutSubtreeIfNeeded()
-
-            // Render using bitmapImageRepForCachingDisplay (reliable for offscreen)
-            guard let bitmapRep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
-                self.logger.error("Failed to create bitmap representation for PDF")
-                return nil
-            }
-            hostingView.cacheDisplay(in: hostingView.bounds, to: bitmapRep)
-
-            let image = NSImage(size: hostingView.bounds.size)
-            image.addRepresentation(bitmapRep)
-            return image
-        }
-
-        if Thread.isMainThread {
-            capturedImage = MainActor.assumeIsolated { renderWithBitmap() }
-        } else {
-            DispatchQueue.main.sync {
-                capturedImage = MainActor.assumeIsolated { renderWithBitmap() }
-            }
-        }
+        // Render using mermaid.js (handles all diagram types)
+        let capturedImage = await MermaidWebRenderer.renderToImage(code: code, width: renderWidth, isDarkMode: false)
 
         if let nsImage = capturedImage {
             logger.info("Captured mermaid diagram: \(nsImage.size.width)x\(nsImage.size.height)")
-            
-            // Debug: Log representation details
-            if let bitmapRep = nsImage.representations.first as? NSBitmapImageRep {
-                logger.info("Mermaid BitmapRep - size: \(bitmapRep.size), pixelsWide: \(bitmapRep.pixelsWide), pixelsHigh: \(bitmapRep.pixelsHigh)")
-                logger.info("Mermaid BitmapRep - bitsPerPixel: \(bitmapRep.bitsPerPixel), colorSpace: \(String(describing: bitmapRep.colorSpaceName))")
-            }
 
-            // Create attachment with the rendered image
             let attachment = NSTextAttachment()
             attachment.image = nsImage
 
             // Scale image to fit PDF page width
-            // Render at 700px for quality, scale to 550px for page fit
             let scale = targetWidth / nsImage.size.width
             attachment.bounds = CGRect(
                 x: 0,
@@ -308,15 +305,11 @@ class MarkdownASTToNSAttributedString {
                 width: nsImage.size.width * scale,
                 height: nsImage.size.height * scale
             )
-            
-            logger.debug("Mermaid NSTextAttachment created - hasImage: \(attachment.image != nil), bounds: \(attachment.bounds)")
 
-            // Use default left alignment (matches text)
             result.append(NSAttributedString(attachment: attachment))
             result.append(NSAttributedString(string: "\n\n"))
         } else {
-            // Fallback: show code block if rendering fails
-            logger.warning("Failed to render mermaid diagram with ImageRenderer, showing code instead")
+            logger.warning("Failed to render mermaid diagram, showing code instead")
             result.append(createFallbackCodeBlock(code: code))
         }
 
@@ -345,7 +338,7 @@ class MarkdownASTToNSAttributedString {
         return image
     }
 
-    private func convertList(type: MarkdownASTNode.ListType, items: [MarkdownASTNode.ListItemNode]) -> NSAttributedString {
+    private func convertList(type: MarkdownASTNode.ListType, items: [MarkdownASTNode.ListItemNode]) async -> NSAttributedString {
         let result = NSMutableAttributedString()
 
         for (index, item) in items.enumerated() {
@@ -377,7 +370,7 @@ class MarkdownASTToNSAttributedString {
 
             // Item content
             for child in item.children {
-                result.append(convertNode(child))
+                result.append(await convertNode(child))
             }
         }
 
@@ -442,14 +435,8 @@ class MarkdownASTToNSAttributedString {
             return image
         }
         
-        // Handle threading exactly like Mermaid diagrams
-        if Thread.isMainThread {
-            capturedImage = MainActor.assumeIsolated { renderWithBitmap() }
-        } else {
-            DispatchQueue.main.sync {
-                capturedImage = MainActor.assumeIsolated { renderWithBitmap() }
-            }
-        }
+        // Already on MainActor in async context
+        capturedImage = renderWithBitmap()
         
         guard let image = capturedImage else {
             logger.error("convertTable: renderWithBitmap returned nil")
@@ -639,7 +626,7 @@ class MarkdownASTToNSAttributedString {
 
     // MARK: - Inline Elements
 
-    private func convertInlineNode(_ node: MarkdownASTNode, baseAttributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
+    private func convertInlineNode(_ node: MarkdownASTNode, baseAttributes: [NSAttributedString.Key: Any]) async -> NSAttributedString {
         switch node {
         case .text(let string):
             return NSAttributedString(string: string, attributes: baseAttributes)
@@ -649,7 +636,7 @@ class MarkdownASTToNSAttributedString {
             attrs[.font] = NSFont.boldSystemFont(ofSize: baseFontSize)
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: attrs))
+                result.append(await convertInlineNode(child, baseAttributes: attrs))
             }
             return result
 
@@ -659,7 +646,7 @@ class MarkdownASTToNSAttributedString {
             attrs[.font] = italicFont
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: attrs))
+                result.append(await convertInlineNode(child, baseAttributes: attrs))
             }
             return result
 
@@ -674,11 +661,11 @@ class MarkdownASTToNSAttributedString {
 
         default:
             // For block elements called as inline, just convert normally
-            return convertNode(node)
+            return await convertNode(node)
         }
     }
 
-    private func convertStrong(children: [MarkdownASTNode]) -> NSAttributedString {
+    private func convertStrong(children: [MarkdownASTNode]) async -> NSAttributedString {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: boldFont,
             .foregroundColor: NSColor.labelColor
@@ -686,12 +673,12 @@ class MarkdownASTToNSAttributedString {
 
         let result = NSMutableAttributedString()
         for child in children {
-            result.append(convertInlineNode(child, baseAttributes: attributes))
+            result.append(await convertInlineNode(child, baseAttributes: attributes))
         }
         return result
     }
 
-    private func convertEmphasis(children: [MarkdownASTNode]) -> NSAttributedString {
+    private func convertEmphasis(children: [MarkdownASTNode]) async -> NSAttributedString {
         let italicFont = NSFont(descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic), size: baseFontSize) ?? baseFont
         let attributes: [NSAttributedString.Key: Any] = [
             .font: italicFont,
@@ -700,7 +687,7 @@ class MarkdownASTToNSAttributedString {
 
         let result = NSMutableAttributedString()
         for child in children {
-            result.append(convertInlineNode(child, baseAttributes: attributes))
+            result.append(await convertInlineNode(child, baseAttributes: attributes))
         }
         return result
     }
@@ -724,7 +711,7 @@ class MarkdownASTToNSAttributedString {
         return NSAttributedString(string: text, attributes: attributes)
     }
 
-    private func convertStrikethrough(children: [MarkdownASTNode]) -> NSAttributedString {
+    private func convertStrikethrough(children: [MarkdownASTNode]) async -> NSAttributedString {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: baseFont,
             .foregroundColor: NSColor.labelColor,
@@ -733,7 +720,7 @@ class MarkdownASTToNSAttributedString {
 
         let result = NSMutableAttributedString()
         for child in children {
-            result.append(convertInlineNode(child, baseAttributes: attributes))
+            result.append(await convertInlineNode(child, baseAttributes: attributes))
         }
         return result
     }
@@ -768,27 +755,27 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
     }
 
     /// Convert single AST node to NSAttributedString, extracting images via handler
-    func convert(_ node: MarkdownASTNode) -> NSAttributedString {
-        return convertNode(node)
+    func convert(_ node: MarkdownASTNode) async -> NSAttributedString {
+        return await convertNode(node)
     }
 
     /// Convert AST nodes array to NSAttributedString, extracting images via handler
-    func convert(_ nodes: [MarkdownASTNode]) -> NSAttributedString {
+    func convert(_ nodes: [MarkdownASTNode]) async -> NSAttributedString {
         let result = NSMutableAttributedString()
 
         for node in nodes {
-            result.append(convertNode(node))
+            result.append(await convertNode(node))
         }
 
         return result
     }
 
-    private func convertNode(_ node: MarkdownASTNode) -> NSAttributedString {
+    private func convertNode(_ node: MarkdownASTNode) async -> NSAttributedString {
         switch node {
         case .document(let children):
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertNode(child))
+                result.append(await convertNode(child))
             }
             return result
 
@@ -812,7 +799,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
 
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: attributes))
+                result.append(await convertInlineNode(child, baseAttributes: attributes))
             }
             result.append(NSAttributedString(string: "\n\n"))
             return result
@@ -820,7 +807,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
         case .paragraph(let children):
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: baseAttributes()))
+                result.append(await convertInlineNode(child, baseAttributes: baseAttributes()))
             }
             result.append(NSAttributedString(string: "\n\n"))
             return result
@@ -842,7 +829,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
             result.append(NSAttributedString(string: barString, attributes: attributes))
 
             for child in children {
-                result.append(convertNode(child))
+                result.append(await convertNode(child))
             }
             result.append(NSAttributedString(string: "\n"))
             return result
@@ -850,7 +837,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
         case .codeBlock(let language, let code):
             // Special handling for mermaid - extract as image
             if language?.lowercased() == "mermaid" {
-                return convertMermaidDiagram(code: code)
+                return await convertMermaidDiagram(code: code)
             }
 
             let paragraphStyle = NSMutableParagraphStyle()
@@ -901,7 +888,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
 
                 result.append(NSAttributedString(string: bullet, attributes: bulletAttributes))
                 for child in item.children {
-                    result.append(convertNode(child))
+                    result.append(await convertNode(child))
                 }
             }
             result.append(NSAttributedString(string: "\n"))
@@ -942,14 +929,8 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
                 return image
             }
             
-            // Handle threading exactly like Mermaid diagrams
-            if Thread.isMainThread {
-                capturedImage = MainActor.assumeIsolated { renderWithBitmap() }
-            } else {
-                DispatchQueue.main.sync {
-                    capturedImage = MainActor.assumeIsolated { renderWithBitmap() }
-                }
-            }
+            // Already on MainActor in async context
+            capturedImage = renderWithBitmap()
             
             guard let image = capturedImage else {
                 return NSAttributedString(string: "[Table rendering failed]\n\n")
@@ -1003,7 +984,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
             ]
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: attributes))
+                result.append(await convertInlineNode(child, baseAttributes: attributes))
             }
             return result
 
@@ -1015,7 +996,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
             ]
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: attributes))
+                result.append(await convertInlineNode(child, baseAttributes: attributes))
             }
             return result
 
@@ -1027,7 +1008,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
             ]
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: attributes))
+                result.append(await convertInlineNode(child, baseAttributes: attributes))
             }
             return result
 
@@ -1057,72 +1038,16 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
 
     /// Convert Mermaid diagram - renders to image and passes to handler instead of embedding
     @MainActor
-    private func convertMermaidDiagram(code: String) -> NSAttributedString {
+    private func convertMermaidDiagram(code: String) async -> NSAttributedString {
         logger.info("Extracting mermaid diagram as separate image")
         let result = NSMutableAttributedString()
 
-        // Pre-parse diagram
-        let parser = MermaidParser()
-        let parsedDiagram = parser.parse(code)
-
-        // Skip unsupported diagrams
-        if case .unsupported = parsedDiagram {
-            logger.warning("Unsupported mermaid diagram type, showing code block")
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: codeFont,
-                .foregroundColor: NSColor.labelColor,
-                .backgroundColor: NSColor.controlBackgroundColor
-            ]
-            return NSAttributedString(string: "mermaid\n" + code + "\n\n", attributes: attributes)
-        }
-
-        let diagramView = MermaidDiagramView(code: code, diagram: parsedDiagram, showBackground: false)
-            .frame(width: 700, alignment: .leading)
-
-        var capturedImage: NSImage?
-
-        // Use bitmapImageRepForCachingDisplay - most reliable for offscreen rendering
-        let renderWithBitmap: () -> NSImage? = {
-            let hostingView = NSHostingView(rootView: diagramView)
-            hostingView.frame = NSRect(x: 0, y: 0, width: 700, height: 1000)
-
-            // Force layout multiple times for SwiftUI to properly render
-            for _ in 0..<3 {
-                hostingView.layout()
-                hostingView.layoutSubtreeIfNeeded()
-                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
-            }
-
-            let actualSize = hostingView.fittingSize
-            let finalHeight = max(min(actualSize.height, 2000), 100)
-            hostingView.frame = NSRect(x: 0, y: 0, width: 700, height: finalHeight)
-            hostingView.layout()
-            hostingView.layoutSubtreeIfNeeded()
-
-            // Render using bitmapImageRepForCachingDisplay (reliable for offscreen)
-            guard let bitmapRep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
-                return nil
-            }
-            hostingView.cacheDisplay(in: hostingView.bounds, to: bitmapRep)
-
-            let image = NSImage(size: hostingView.bounds.size)
-            image.addRepresentation(bitmapRep)
-            return image
-        }
-
-        if Thread.isMainThread {
-            capturedImage = MainActor.assumeIsolated { renderWithBitmap() }
-        } else {
-            DispatchQueue.main.sync {
-                capturedImage = MainActor.assumeIsolated { renderWithBitmap() }
-            }
-        }
+        // Render using mermaid.js (handles all diagram types)
+        let capturedImage = await MermaidWebRenderer.renderToImage(code: code, width: 700, isDarkMode: false)
 
         if let image = capturedImage {
             logger.info("Extracted mermaid image: \(image.size.width)x\(image.size.height)")
-            // Pass image to handler instead of embedding
             imageHandler(image)
-            // Add placeholder text indicating where image goes
             result.append(NSAttributedString(string: "\n", attributes: baseAttributes()))
         } else {
             // Fallback: show code
@@ -1137,7 +1062,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
         return result
     }
 
-    private func convertInlineNode(_ node: MarkdownASTNode, baseAttributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
+    private func convertInlineNode(_ node: MarkdownASTNode, baseAttributes: [NSAttributedString.Key: Any]) async -> NSAttributedString {
         switch node {
         case .text(let string):
             return NSAttributedString(string: string, attributes: baseAttributes)
@@ -1147,7 +1072,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
             attrs[.font] = NSFont.boldSystemFont(ofSize: baseFontSize)
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: attrs))
+                result.append(await convertInlineNode(child, baseAttributes: attrs))
             }
             return result
 
@@ -1157,7 +1082,7 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
             attrs[.font] = italicFont
             let result = NSMutableAttributedString()
             for child in children {
-                result.append(convertInlineNode(child, baseAttributes: attrs))
+                result.append(await convertInlineNode(child, baseAttributes: attrs))
             }
             return result
 
@@ -1176,9 +1101,9 @@ class MarkdownASTToNSAttributedStringWithImageExtraction {
             return NSAttributedString(string: text, attributes: attrs)
 
         default:
-            return convertNode(node)
+            return await convertNode(node)
         }
-    }
+    } 
 
     private func baseAttributes() -> [NSAttributedString.Key: Any] {
         return [

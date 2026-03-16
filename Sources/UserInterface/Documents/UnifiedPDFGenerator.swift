@@ -39,13 +39,13 @@ public class UnifiedPDFGenerator {
             throw PDFGenerationError.noContent("No visible messages to export")
         }
         
-        // Pre-render all messages
+        // Pre-render all messages with image extraction
         var renderedMessages: [RenderedMessage] = []
         for message in visibleMessages {
             let cleanContent = MessageExportService.stripUserContext(message.content)
             
-            // Use regular parseMarkdownForPDF which embeds images as NSTextAttachment in correct positions
-            let textContent = MessageExportService.parseMarkdownForPDF(cleanContent)
+            // Use WithImages variant to extract mermaid diagrams separately
+            let (textContent, mermaidImages) = await MessageExportService.parseMarkdownForPDFWithImages(cleanContent)
             
             // Collect contentParts images (these are separate from markdown content)
             var contentPartsImages: [NSImage] = []
@@ -60,128 +60,22 @@ public class UnifiedPDFGenerator {
                 }
             }
             
+            // Merge all images (mermaid + contentParts) for drawing
+            let allImages = mermaidImages + contentPartsImages
+            
             renderedMessages.append(RenderedMessage(
                 message: message,
                 textContent: textContent,
-                contentPartsImages: contentPartsImages
+                allImages: allImages
             ))
         }
         
-        // Calculate total content height
-        let marginHorizontal: CGFloat = 54
-        let marginVertical: CGFloat = 20   // Minimal (printInfo provides per-page margins)
-        let contentWidth = pageWidth - (marginHorizontal * 2)
-        
-        // Build combined attributed string (same as in draw method)
-        let combined = NSMutableAttributedString()
-        
-        for (index, rendered) in renderedMessages.enumerated() {
-            // Add separator (except before first message)
-            if index > 0 {
-                let separator = NSAttributedString(string: "\n\n" + String(repeating: "─", count: 40) + "\n\n", attributes: [
-                    .font: NSFont.systemFont(ofSize: 10),
-                    .foregroundColor: NSColor.lightGray
-                ])
-                combined.append(separator)
-            }
-            
-            // Role header (if requested)
-            if includeHeaders {
-                let roleText = rendered.message.isFromUser ? "You:" : "SAM:"
-                let roleColor = rendered.message.isFromUser ? NSColor.systemBlue : NSColor.systemGreen
-                let roleAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.boldSystemFont(ofSize: 14),
-                    .foregroundColor: roleColor
-                ]
-                let roleString = NSAttributedString(string: roleText + "\n", attributes: roleAttributes)
-                combined.append(roleString)
-            }
-            
-            // Text content
-            combined.append(rendered.textContent)
-            combined.append(NSAttributedString(string: "\n"))
-        }
-        
-        // Calculate total height from combined string (includes embedded images) + contentParts images
-        let textHeight = calculateTextHeight(combined, width: contentWidth)
-        var contentPartsImagesHeight: CGFloat = 0
-        
-        for rendered in renderedMessages {
-            for image in rendered.contentPartsImages {
-                let maxWidth = contentWidth * 0.9
-                let imageSize = image.size
-                if imageSize.width > maxWidth {
-                    let scale = maxWidth / imageSize.width
-                    contentPartsImagesHeight += imageSize.height * scale + 20  // Image + spacing
-                } else {
-                    contentPartsImagesHeight += imageSize.height + 20
-                }
-            }
-        }
-        
-        let totalHeight = marginVertical + textHeight + contentPartsImagesHeight + marginVertical  // Top + text + contentParts images + bottom
-        
-        // Create NSTextView for rendering (handles pagination automatically)
-        let viewFrame = CGRect(x: 0, y: 0, width: pageWidth, height: totalHeight)
-        logger.debug("Total content height: \(totalHeight), frame: width=\(viewFrame.width) height=\(viewFrame.height)")
-        
-        let textView = NSTextView(frame: viewFrame)
-        textView.isEditable = false
-        textView.isSelectable = false
-        textView.textContainerInset = NSSize(width: marginHorizontal, height: marginVertical)
-        
-        // Append contentParts images to the combined attributed string
-        for rendered in renderedMessages {
-            for image in rendered.contentPartsImages {
-                // Add content parts images as NSTextAttachment
-                let attachment = NSTextAttachment()
-                attachment.image = image
-                
-                // Scale if needed
-                let maxWidth = contentWidth * 0.9
-                if image.size.width > maxWidth {
-                    let scale = maxWidth / image.size.width
-                    attachment.bounds = CGRect(x: 0, y: 0, width: image.size.width * scale, height: image.size.height * scale)
-                } else {
-                    attachment.bounds = CGRect(origin: .zero, size: image.size)
-                }
-                
-                // Use default left alignment (matches text)
-                let imageAttrString = NSAttributedString(attachment: attachment)
-                combined.append(imageAttrString)
-                combined.append(NSAttributedString(string: "\n"))
-            }
-        }
-        
-        // Set the complete attributed string on the text view
-        textView.textStorage?.setAttributedString(combined)
-        
-        // Debug: Check for attachments in the combined string
-        var attachmentCount = 0
-        combined.enumerateAttribute(.attachment, in: NSRange(location: 0, length: combined.length)) { value, range, _ in
-            if let attachment = value as? NSTextAttachment {
-                attachmentCount += 1
-                let imageSize = attachment.image?.size ?? .zero
-                logger.debug("Found NSTextAttachment #\(attachmentCount) at range \(range), image size: \(imageSize)")
-            }
-        }
-        logger.info("Total NSTextAttachments in combined string: \(attachmentCount)")
-        
-        logger.debug("Created NSTextView with \(renderedMessages.count) rendered messages")
-        
-        // Use NSPrintOperation for proper pagination (NSTextView handles pagination automatically)
-        let pdfView = textView  // NSTextView is the view to print
-        let printInfo = NSPrintInfo()
-        printInfo.paperSize = NSSize(width: pageWidth, height: pageHeight)
-        // Add margins to each page - 54pt = 0.75 inch (standard macOS margins)
-        printInfo.topMargin = 54      // 0.75 inch top margin per page
-        printInfo.bottomMargin = 54   // 0.75 inch bottom margin per page
-        printInfo.leftMargin = 0
-        printInfo.rightMargin = 0
-        printInfo.horizontalPagination = .clip
-        printInfo.verticalPagination = .automatic
-        printInfo.isHorizontallyCentered = false
-        printInfo.isVerticallyCentered = false
+        // Generate PDF using CGContext for reliable image rendering
+        // NSPrintOperation drops NSTextAttachment images, so we draw manually
+        let marginH: CGFloat = 54
+        let marginV: CGFloat = 54
+        let contentWidth = pageWidth - (marginH * 2)
+        let usableHeight = pageHeight - (marginV * 2)
         
         // Create temporary file for output
         let tempDir = FileManager.default.temporaryDirectory
@@ -192,25 +86,173 @@ public class UnifiedPDFGenerator {
         let filename = "SAM_\(sanitizedTitle)_\(dateString).pdf"
         let fileURL = tempDir.appendingPathComponent(filename)
         
-        // Configure to save to file
-        printInfo.jobDisposition = .save
-        printInfo.dictionary()[NSPrintInfo.AttributeKey(rawValue: NSPrintInfo.AttributeKey.jobSavingURL.rawValue)] = fileURL
+        // Build content segments: each segment is either text or an image
+        var segments: [PDFSegment] = []
         
-        // Create and run print operation
-        let printOperation = NSPrintOperation(view: pdfView, printInfo: printInfo)
-        printOperation.showsPrintPanel = false
-        printOperation.showsProgressPanel = false
-        
-        guard printOperation.run() else {
-            throw PDFGenerationError.renderingFailed("NSPrintOperation failed")
+        for (index, rendered) in renderedMessages.enumerated() {
+            // Separator between messages
+            if index > 0 {
+                let separator = NSAttributedString(string: "\n" + String(repeating: "─", count: 40) + "\n\n", attributes: [
+                    .font: NSFont.systemFont(ofSize: 10),
+                    .foregroundColor: NSColor.lightGray
+                ])
+                segments.append(.text(separator))
+            }
+            
+            // Role header
+            if includeHeaders {
+                let roleText = rendered.message.isFromUser ? "You:" : "SAM:"
+                let roleColor = rendered.message.isFromUser ? NSColor.systemBlue : NSColor.systemGreen
+                let roleAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.boldSystemFont(ofSize: 14),
+                    .foregroundColor: roleColor
+                ]
+                segments.append(.text(NSAttributedString(string: roleText + "\n", attributes: roleAttributes)))
+            }
+            
+            // Text content (may contain NSTextAttachment for tables, etc.)
+            segments.append(.text(rendered.textContent))
+            
+            // Extracted images (mermaid diagrams + contentParts)
+            for image in rendered.allImages {
+                segments.append(.image(image))
+            }
+            
+            // Trailing newline
+            segments.append(.text(NSAttributedString(string: "\n")))
         }
         
-        // Load the generated PDF to set metadata
+        // Draw PDF pages using CGContext
+        var mediaBox = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+        guard let context = CGContext(fileURL as CFURL, mediaBox: &mediaBox, nil) else {
+            throw PDFGenerationError.renderingFailed("Failed to create CGContext for PDF")
+        }
+        
+        var currentY: CGFloat = marginV  // Y position from top of current page
+        var pageCount = 0
+        
+        func startNewPage() {
+            if pageCount > 0 {
+                context.endPage()
+            }
+            context.beginPage(mediaBox: &mediaBox)
+            pageCount += 1
+            currentY = marginV
+        }
+        
+        // Start first page
+        startNewPage()
+        
+        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        
+        for segment in segments {
+            switch segment {
+            case .text(let attrString):
+                guard attrString.length > 0 else { continue }
+                
+                // Use text container to lay out text in chunks that fit pages
+                let textStorage = NSTextStorage(attributedString: attrString)
+                let layoutManager = NSLayoutManager()
+                textStorage.addLayoutManager(layoutManager)
+                
+                let textContainer = NSTextContainer(containerSize: CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
+                textContainer.lineFragmentPadding = 0
+                layoutManager.addTextContainer(textContainer)
+                layoutManager.ensureLayout(for: textContainer)
+                
+                let totalTextHeight = layoutManager.usedRect(for: textContainer).height
+                var textOffset: CGFloat = 0  // How much text we've drawn
+                
+                while textOffset < totalTextHeight {
+                    let remainingOnPage = usableHeight - currentY
+                    
+                    if remainingOnPage < 20 {
+                        // Not enough space, start new page
+                        startNewPage()
+                        continue
+                    }
+                    
+                    // Determine glyph range that fits in remaining space
+                    let drawHeight = min(remainingOnPage, totalTextHeight - textOffset)
+                    
+                    // Draw text chunk
+                    let savedState = NSGraphicsContext.current
+                    NSGraphicsContext.current = nsContext
+                    
+                    // CGContext origin is bottom-left, flipped
+                    let drawOriginY = pageHeight - marginV - currentY - drawHeight
+                    
+                    context.saveGState()
+                    // Clip to the area we want to draw in
+                    context.clip(to: CGRect(x: marginH, y: drawOriginY, width: contentWidth, height: drawHeight))
+                    
+                    // Draw text at the correct offset
+                    let textOrigin = NSPoint(
+                        x: marginH,
+                        y: drawOriginY + drawHeight - totalTextHeight + textOffset
+                    )
+                    layoutManager.drawBackground(forGlyphRange: layoutManager.glyphRange(for: textContainer), at: textOrigin)
+                    layoutManager.drawGlyphs(forGlyphRange: layoutManager.glyphRange(for: textContainer), at: textOrigin)
+                    
+                    context.restoreGState()
+                    NSGraphicsContext.current = savedState
+                    
+                    textOffset += drawHeight
+                    currentY += drawHeight
+                    
+                    if textOffset < totalTextHeight {
+                        startNewPage()
+                    }
+                }
+                
+            case .image(let nsImage):
+                // Scale image to fit content width
+                let maxWidth = contentWidth * 0.9
+                var drawWidth = nsImage.size.width
+                var drawHeight = nsImage.size.height
+                
+                if drawWidth > maxWidth {
+                    let scale = maxWidth / drawWidth
+                    drawWidth = drawWidth * scale
+                    drawHeight = drawHeight * scale
+                }
+                
+                // Cap height to usable page height
+                if drawHeight > usableHeight {
+                    let scale = usableHeight / drawHeight
+                    drawWidth = drawWidth * scale
+                    drawHeight = drawHeight * scale
+                }
+                
+                let remainingOnPage = usableHeight - currentY
+                if drawHeight + 10 > remainingOnPage {
+                    startNewPage()
+                }
+                
+                // Draw image (CGContext y is from bottom)
+                let imageY = pageHeight - marginV - currentY - drawHeight
+                let imageRect = CGRect(x: marginH, y: imageY, width: drawWidth, height: drawHeight)
+                
+                if let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                    context.draw(cgImage, in: imageRect)
+                    logger.debug("Drew image at y=\(imageY), size=\(drawWidth)x\(drawHeight)")
+                } else {
+                    logger.warning("Failed to get CGImage from NSImage")
+                }
+                
+                currentY += drawHeight + 10  // Image + spacing
+            }
+        }
+        
+        // End last page
+        context.endPage()
+        context.closePDF()
+        
+        // Load to set metadata
         guard let pdfDocument = PDFDocument(url: fileURL) else {
             throw PDFGenerationError.renderingFailed("Failed to load generated PDF")
         }
         
-        // Set metadata
         setMetadata(on: pdfDocument, title: conversationTitle, modelName: modelName, messageCount: visibleMessages.count)
         pdfDocument.write(to: fileURL)
         
@@ -334,8 +376,13 @@ public class UnifiedPDFGenerator {
 
 private struct RenderedMessage {
     let message: EnhancedMessage
-    let textContent: NSAttributedString  // Contains NSTextAttachment for Mermaid/markdown images
-    let contentPartsImages: [NSImage]     // Separate images from message.contentParts
+    let textContent: NSAttributedString
+    let allImages: [NSImage]  // Mermaid diagrams + contentParts images
+}
+
+private enum PDFSegment {
+    case text(NSAttributedString)
+    case image(NSImage)
 }
 
 // MARK: - Error Types

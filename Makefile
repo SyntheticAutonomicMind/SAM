@@ -73,6 +73,8 @@ build-debug: llamacpp
 	@cp Resources/vendor/xterm/xterm-addon-fit.js .build/Build/Products/Debug/SAM.app/Contents/Resources/
 	@cp Sources/ConfigurationSystem/Resources/model_config.json .build/Build/Products/Debug/SAM.app/Contents/Resources/
 	@cp Resources/whats-new.json .build/Build/Products/Debug/SAM.app/Contents/Resources/
+	@cp Resources/help.json .build/Build/Products/Debug/SAM.app/Contents/Resources/
+	@cp Resources/vendor/mermaid/mermaid.min.js .build/Build/Products/Debug/SAM.app/Contents/Resources/
 	@cp -R .build/Build/Products/Debug/PackageFrameworks/llama.framework .build/Build/Products/Debug/SAM.app/Contents/Frameworks/
 	@if [ -d ".build/Build/Products/Debug/Sparkle.framework" ]; then \
 		echo "Copying Sparkle.framework to app bundle..."; \
@@ -115,6 +117,8 @@ build-release: llamacpp
 	@cp Resources/vendor/xterm/xterm-addon-fit.js .build/Build/Products/Release/SAM.app/Contents/Resources/
 	@cp Sources/ConfigurationSystem/Resources/model_config.json .build/Build/Products/Release/SAM.app/Contents/Resources/
 	@cp Resources/whats-new.json .build/Build/Products/Release/SAM.app/Contents/Resources/
+	@cp Resources/help.json .build/Build/Products/Release/SAM.app/Contents/Resources/
+	@cp Resources/vendor/mermaid/mermaid.min.js .build/Build/Products/Release/SAM.app/Contents/Resources/
 	@cp -R .build/Build/Products/Release/PackageFrameworks/llama.framework .build/Build/Products/Release/SAM.app/Contents/Frameworks/
 	@echo "Fixing llama framework install name..."
 	@install_name_tool -id "@rpath/llama.framework/Versions/A/llama" .build/Build/Products/Release/SAM.app/Contents/Frameworks/llama.framework/Versions/A/llama 2>/dev/null || true

@@ -286,7 +286,7 @@ public class DocumentCreateTool: MCPTool, @unchecked Sendable {
 
                 // Generate PPTX
                 logger.info("Generating PPTX: \(outputURL.lastPathComponent)")
-                let fileURL = try pptxGenerator.generate(
+                let fileURL = try await pptxGenerator.generate(
                     markdown: content,
                     outputPath: outputURL,
                     template: template
