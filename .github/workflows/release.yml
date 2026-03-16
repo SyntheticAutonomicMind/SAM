@@ -93,7 +93,6 @@ jobs:
           echo "Distribution files ready:"
           ls -lh dist/SAM-${VERSION}.*
       
-      - name: Update appcast.xml
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
