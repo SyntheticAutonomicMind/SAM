@@ -121,7 +121,12 @@ jobs:
             echo "No changes to appcast.xml"
           else
             git commit -m "chore(release): update appcast.xml for v${VERSION}"
-            # Checkout is triggered by a tag, so HEAD is detached - push explicitly to main
+            # Checkout is triggered by a tag, so HEAD is detached.
+            # The build takes ~10 minutes, so commits may have landed on main since
+            # we checked out. Fetch and rebase so our appcast commit lands on top,
+            # then push. This is race-condition-proof without force-pushing.
+            git fetch origin main
+            git rebase origin/main
             git push origin HEAD:main
           fi
       
