@@ -1821,11 +1821,13 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     let errorGuidanceContent: String
                     if !stuckTools.isEmpty {
                         let stuckToolNames = stuckTools.map { $0.key }.joined(separator: ", ")
+                        let maxFailures = stuckTools.values.map { $0.failureCount }.max() ?? 3
                         errorGuidanceContent = """
-                        TOOL FAILURE LOOP: \(stuckToolNames) failed 3+ consecutive times.
+                        TOOL FAILURE LOOP: \(stuckToolNames) failed \(maxFailures)+ consecutive times.
                         Failed: \(failedToolDetails)
-                        DO NOT retry the same tool with the same parameters.
-                        Either try a completely different approach or signal {"status": "stop"} if stuck.
+                        This tool is not working. STOP using it entirely.
+                        Move on to other tasks or skip this test.
+                        Do NOT call \(stuckToolNames) again in this session.
                         """
                         logger.error("TOOL_FAILURE_LOOP", metadata: [
                             "stuckTools": .string(stuckToolNames)

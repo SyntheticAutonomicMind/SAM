@@ -130,7 +130,17 @@ public class ImageGenerationTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     public func initialize() async throws {
-        logger.debug("ImageGenerationTool initialized")
+        logger.debug("ImageGenerationTool initializing")
+        guard let service = service else {
+            logger.info("ImageGenerationTool: No image generation service configured - tool will not be available")
+            throw NSError(domain: "ImageGenerationTool", code: 2, userInfo: [NSLocalizedDescriptionKey: "Image generation service not configured"])
+        }
+        let available = await service.isAvailable()
+        if !available {
+            logger.info("ImageGenerationTool: ALICE server not reachable - tool will not be available")
+            throw NSError(domain: "ImageGenerationTool", code: 3, userInfo: [NSLocalizedDescriptionKey: "Image generation server not available"])
+        }
+        logger.info("ImageGenerationTool initialized - ALICE server is available")
     }
 
     public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
