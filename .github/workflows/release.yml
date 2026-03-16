@@ -94,42 +94,6 @@ jobs:
           ls -lh dist/SAM-${VERSION}.*
       
       - name: Update appcast.xml
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          # Create temporary file for private key
-          TEMP_KEY_FILE=$(mktemp)
-          echo "$SPARKLE_PRIVATE_KEY" > "$TEMP_KEY_FILE"
-          chmod 600 "$TEMP_KEY_FILE"
-          
-          # Update appcast with signature
-          ./scripts/update_appcast.sh "${VERSION}" "dist/SAM-${VERSION}.zip" "$TEMP_KEY_FILE"
-          
-          # Clean up temporary key file
-          rm -f "$TEMP_KEY_FILE"
-      
-      - name: Commit and push appcast changes
-        env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          
-          git add appcast.xml
-          if git diff --staged --quiet; then
-            echo "No changes to appcast.xml"
-          else
-            git commit -m "chore(release): update appcast.xml for v${VERSION}"
-            # Checkout is triggered by a tag, so HEAD is detached.
-            # The build takes ~10 minutes, so commits may have landed on main since
-            # we checked out. Fetch and rebase so our appcast commit lands on top,
-            # then push. This is race-condition-proof without force-pushing.
-            git fetch origin main
-            git rebase origin/main
-            git push origin HEAD:main
-          fi
-      
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
