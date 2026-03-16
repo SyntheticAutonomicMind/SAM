@@ -174,10 +174,11 @@ public struct ToolErrorGuidance: Sendable {
         switch category {
         case .missingRequired:
             // Try to extract missing parameter name from error
-            let pattern = try? NSRegularExpression(pattern: "parameter[s]?:?\\s*([a-z_]+)", options: .caseInsensitive)
+            // First try quoted format: parameter 'name' or parameter "name"
+            let quotedPattern = try? NSRegularExpression(pattern: "parameter\\s+['\"]([a-zA-Z_]+)['\"]", options: .caseInsensitive)
             var missingParams = "the required parameter(s)"
             
-            if let match = pattern?.firstMatch(in: error, range: NSRange(error.startIndex..., in: error)),
+            if let match = quotedPattern?.firstMatch(in: error, range: NSRange(error.startIndex..., in: error)),
                let range = Range(match.range(at: 1), in: error) {
                 missingParams = "'\(error[range])'"
             }
@@ -300,7 +301,7 @@ public struct ToolErrorGuidance: Sendable {
             EXAMPLE (file_operations):
             {
                 "operation": "read_file",
-                "path": "path/to/file.txt"
+                "filePath": "path/to/file.txt"
             }
             """,
             "memory_operations": """
@@ -317,6 +318,12 @@ public struct ToolErrorGuidance: Sendable {
             EXAMPLE (todo_operations):
             {
                 "operation": "read"
+            }
+            
+            UPDATE EXAMPLE:
+            {
+                "operation": "update",
+                "todoUpdates": [{"id": 1, "status": "completed"}]
             }
             """,
             "user_collaboration": """
