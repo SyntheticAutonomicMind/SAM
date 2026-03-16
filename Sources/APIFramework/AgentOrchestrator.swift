@@ -154,6 +154,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// Handle tool messages separately - they don't participate in alternation
             if message.role == "tool" {
                 fixed.append(message)
+                /// Reset lastRole so the next assistant/user message after tool results
+                /// won't be merged with the one before the tool results.
+                /// Tool messages break the "consecutive same role" sequence.
+                lastRole = "tool"
                 logger.debug("ALTERNATION_PRESERVE_TOOL: role=tool preserved (contentLen=\(message.content?.count ?? 0))")
                 continue
             }
