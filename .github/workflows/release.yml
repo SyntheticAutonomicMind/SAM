@@ -77,7 +77,42 @@ jobs:
             source /Users/andrew/.sam_runner_env
           fi
           make sign-only-release
-      
+
+      - name: Compute EdDSA signature
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          # Find sign_update - present because the build just ran
+          SIGN_UPDATE=""
+          for candidate in \
+            ".build/artifacts/sparkle/Sparkle/bin/sign_update" \
+            ".build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
+            ".build/checkouts/Sparkle/sign_update"; do
+            [ -f "$candidate" ] && SIGN_UPDATE="$candidate" && break
+          done
+          if [ -z "$SIGN_UPDATE" ]; then
+            echo "ERROR: sign_update binary not found"
+            exit 1
+          fi
+
+          TEMP_KEY_FILE=$(mktemp)
+          echo "$SPARKLE_PRIVATE_KEY" > "$TEMP_KEY_FILE"
+          chmod 600 "$TEMP_KEY_FILE"
+
+          # sign_update outputs: sparkle:edSignature="SIG" length="N"
+          SIG_OUTPUT=$("$SIGN_UPDATE" "dist/SAM-${VERSION}.zip" -f "$TEMP_KEY_FILE")
+          rm -f "$TEMP_KEY_FILE"
+
+          SIGNATURE=$(echo "$SIG_OUTPUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+          if [ -z "$SIGNATURE" ]; then
+            echo "ERROR: Failed to extract signature from: $SIG_OUTPUT"
+            exit 1
+          fi
+
+          echo "Signature: $SIGNATURE"
+          echo "$SIGNATURE" > "dist/SAM-${VERSION}.zip.sig"
+
       - name: Verify distribution files
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
@@ -90,9 +125,13 @@ jobs:
             echo "ERROR: ZIP not found"
             exit 1
           fi
+          if [ ! -f "dist/SAM-${VERSION}.zip.sig" ]; then
+            echo "ERROR: Signature file not found"
+            exit 1
+          fi
           echo "Distribution files ready:"
           ls -lh dist/SAM-${VERSION}.*
-      
+
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -119,5 +158,6 @@ jobs:
             --notes-file "$NOTES_FILE" \
             --generate-notes \
             "dist/SAM-${VERSION}.dmg" \
-            "dist/SAM-${VERSION}.zip"
+            "dist/SAM-${VERSION}.zip" \
+            "dist/SAM-${VERSION}.zip.sig"
           rm -f "$NOTES_FILE"
