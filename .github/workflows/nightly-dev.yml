@@ -136,6 +136,10 @@ jobs:
             echo "No changes to development appcast files"
           else
             git commit -m "chore(dev-release): update appcast-dev.xml for v${DEV_VERSION}"
+            # The build takes time; commits may have landed on main. Fetch and rebase
+            # so our appcast commit lands on top before pushing.
+            git fetch origin main
+            git rebase origin/main
             git push origin HEAD:main
           fi
       
