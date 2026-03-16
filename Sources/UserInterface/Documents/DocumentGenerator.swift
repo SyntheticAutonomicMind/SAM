@@ -62,7 +62,7 @@ public class DocumentGenerator: @unchecked Sendable {
             )
 
         case .docx:
-            fileURL = try generateWordDocument(
+            fileURL = try await generateWordDocument(
                 content: content,
                 filename: sanitizedFilename,
                 outputDirectory: outputDirectory,
@@ -508,7 +508,7 @@ public class DocumentGenerator: @unchecked Sendable {
         outputDirectory: URL,
         metadata: DocumentMetadata?,
         formattingMetadata: FormattingMetadata?
-    ) throws -> URL {
+    ) async throws -> URL {
         logger.info("Generating Word document: \(filename).docx")
         logger.debug("DOCX_GEN: Step 1 - Starting generation, outputDir=\(outputDirectory.path)")
 
@@ -528,7 +528,7 @@ public class DocumentGenerator: @unchecked Sendable {
 
         /// Build DOCX structure.
         logger.debug("DOCX_GEN: Step 5 - Building DOCX structure")
-        try createWordDocumentStructure(
+        try await createWordDocumentStructure(
             at: tempDir,
             content: content,
             metadata: metadata,
@@ -550,7 +550,7 @@ public class DocumentGenerator: @unchecked Sendable {
         content: String,
         metadata: DocumentMetadata?,
         formattingMetadata: FormattingMetadata?
-    ) throws {
+    ) async throws {
         logger.info("DOCX_STRUCTURE: formattingMetadata provided: \(formattingMetadata != nil)")
         if let formatting = formattingMetadata {
             logger.info("DOCX_STRUCTURE: font=\(formatting.defaultFont?.familyName ?? "nil"), size=\(formatting.defaultFontSize ?? 0)")
@@ -563,7 +563,7 @@ public class DocumentGenerator: @unchecked Sendable {
 
         /// Convert markdown content to get paragraphs and images
         let converter = MarkdownToDOCXConverter()
-        let conversionResult = converter.convertWithImages(markdown: content)
+        let conversionResult = await converter.convertWithImages(markdown: content)
         let embeddedImages = conversionResult.images
 
         logger.info("DOCX_STRUCTURE: Content converted with \(embeddedImages.count) embedded images")

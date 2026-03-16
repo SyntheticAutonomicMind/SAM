@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "version": "20260316.2",
+      "release_date": "March 16, 2026",
+      "introduction": "This release adds support for the latest GPT models, overhauls diagram rendering for better quality and offline use, and fixes several agent reliability issues.",
+      "improvements": [
+        {
+          "id": "gpt-5-4-support",
+          "icon": "cpu.fill",
+          "title": "GPT-5.4 & New Model Support",
+          "description": "SAM now supports GPT-5.4 and other models that use OpenAI's newer Responses API. These models are automatically detected from your GitHub Copilot subscription and work with all of SAM's tools and agent capabilities."
+        },
+        {
+          "id": "mermaid-rendering",
+          "icon": "chart.bar.doc.horizontal.fill",
+          "title": "Improved Diagram Rendering",
+          "description": "Diagrams now render using a bundled engine instead of loading from the internet, so they appear faster and work offline. Rendering respects your light/dark theme setting, and diagrams are properly sized instead of stretching to fill the window."
+        },
+        {
+          "id": "more-diagram-types",
+          "icon": "square.grid.3x3.fill",
+          "title": "More Diagram Types",
+          "description": "SAM can now generate over 20 diagram types including state diagrams, ER diagrams, Sankey flow charts, Kanban boards, packet diagrams, block diagrams, and C4 architecture diagrams - in addition to the existing flowcharts, sequence diagrams, Gantt charts, pie charts, and more."
+        },
+        {
+          "id": "diagram-in-documents",
+          "icon": "doc.richtext.fill",
+          "title": "Diagrams in Exported Documents",
+          "description": "When you export a conversation as PDF, Word, or PowerPoint, any diagrams are now rendered as high-quality images in the document. Previously, exports would show the raw diagram code instead of the rendered visual."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "tool-execution-responses-api",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Fixed Agent Tool Execution",
+          "description": "Fixed a bug where the agent would recognize tool calls but never execute them when using certain models. The agent now correctly runs tools and continues multi-step workflows on all supported models."
+        },
+        {
+          "id": "system-prompt-responses",
+          "icon": "text.bubble.fill",
+          "title": "Fixed System Prompt for New Models",
+          "description": "System prompts and agent instructions are now correctly sent to all models. Previously, some newer models would ignore the system prompt entirely, leading to generic responses without SAM's personality or capabilities."
+        }
+      ]
+    },
+    {
       "version": "20260316.1",
       "release_date": "March 16, 2026",
       "introduction": "This release improves GitHub Copilot authentication reliability, adds CSV/TSV support with stronger data accuracy guarantees, and fixes agent tool reliability issues.",

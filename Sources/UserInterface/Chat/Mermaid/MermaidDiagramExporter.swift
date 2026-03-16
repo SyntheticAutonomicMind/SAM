@@ -5,7 +5,8 @@ import Foundation
 import AppKit
 import Logging
 
-/// Exports Mermaid diagrams as PNG or SVG images for embedding in documents
+/// Exports Mermaid diagrams as PNG or SVG images for embedding in documents.
+/// Uses bundled mermaid.js for full diagram type support.
 public class MermaidDiagramExporter {
     private let logger = Logger(label: "com.sam.mermaid.exporter")
 
@@ -35,104 +36,65 @@ public class MermaidDiagramExporter {
     }
 
     /// Export Mermaid diagram code to image file
-    /// - Parameters:
-    ///   - code: The Mermaid diagram code to render
-    ///   - format: The output format (PNG or SVG)
-    ///   - size: The desired size for rendering (default: 800x600)
-    ///   - outputPath: The URL where the image should be saved
-    /// - Returns: The URL of the exported image file
+    @MainActor
     public func exportDiagram(
         _ code: String,
         format: ExportFormat,
         size: CGSize = CGSize(width: 800, height: 600),
         outputPath: URL
-    ) throws -> URL {
+    ) async throws -> URL {
         logger.debug("Exporting Mermaid diagram: format=\(format), size=\(size)")
 
-        // 1. Validate diagram code
-        let parser = MermaidParser()
-        let diagram = parser.parse(code)
-
-        // Check if diagram is supported
-        if case .unsupported = diagram {
-            logger.error("Attempted to export unsupported diagram type")
-            throw ExportError.invalidDiagramCode
-        }
-
-        // 2. Render to NSImage on the main thread (SwiftUI requirement)
-        var image: NSImage?
-        var renderError: Error?
-
-        if Thread.isMainThread {
-            image = MainActor.assumeIsolated {
-                MermaidImageRenderer.renderDiagram(code: code, width: size.width)
-            }
-        } else {
-            // Dispatch to main thread and wait
-            DispatchQueue.main.sync {
-                image = MainActor.assumeIsolated {
-                    MermaidImageRenderer.renderDiagram(code: code, width: size.width)
-                }
-            }
-        }
+        // Render to NSImage via mermaid.js
+        let image = await MermaidImageRenderer.renderDiagram(code: code, width: size.width)
 
         guard let renderedImage = image else {
             logger.error("Failed to render Mermaid diagram to NSImage")
             throw ExportError.renderingFailed
         }
 
-        logger.debug("Successfully rendered diagram to NSImage: \(renderedImage.size)")
+        logger.debug("Rendered diagram: \(renderedImage.size)")
 
-        // 3. Export based on format
         switch format {
         case .png:
             return try exportPNG(image: renderedImage, to: outputPath)
         case .svg:
-            // SVG export would require vector path generation
-            // For now, we only support PNG
             logger.warning("SVG export requested but not yet implemented")
             throw ExportError.unsupportedFormat
         }
     }
 
-    /// Export NSImage as PNG file
     private func exportPNG(image: NSImage, to path: URL) throws -> URL {
-        logger.debug("Converting NSImage to PNG format")
+        logger.debug("Converting to PNG format")
 
-        // Convert NSImage to PNG data
         guard let tiffData = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiffData),
               let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            logger.error("Failed to convert NSImage to PNG data")
+            logger.error("Failed to convert to PNG data")
             throw ExportError.conversionFailed
         }
 
-        // Write to file
         do {
             try pngData.write(to: path)
-            logger.info("Exported PNG diagram to \(path.path)")
+            logger.info("Exported PNG: \(path.path)")
             return path
         } catch {
-            logger.error("Failed to write PNG file: \(error.localizedDescription)")
+            logger.error("Failed to write PNG: \(error.localizedDescription)")
             throw ExportError.conversionFailed
         }
     }
 
     /// Export diagram with auto-generated filename in temporary directory
-    /// - Parameters:
-    ///   - code: The Mermaid diagram code to render
-    ///   - format: The output format (PNG or SVG)
-    ///   - size: The desired size for rendering
-    /// - Returns: The URL of the exported image file
+    @MainActor
     public func exportDiagramToTemp(
         _ code: String,
         format: ExportFormat = .png,
         size: CGSize = CGSize(width: 800, height: 600)
-    ) throws -> URL {
+    ) async throws -> URL {
         let tempDir = FileManager.default.temporaryDirectory
         let filename = "mermaid_\(UUID().uuidString).png"
         let outputURL = tempDir.appendingPathComponent(filename)
 
-        return try exportDiagram(code, format: format, size: size, outputPath: outputURL)
+        return try await exportDiagram(code, format: format, size: size, outputPath: outputURL)
     }
 }

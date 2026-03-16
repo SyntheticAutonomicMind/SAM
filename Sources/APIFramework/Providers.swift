@@ -1329,8 +1329,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                     throw ProviderError.rateLimitExceeded("GitHub Copilot rate limit exceeded. Wait \(Int(waitInterval))s before retry. Details: \(errorMessage)")
 
                 case 400:
-                    logger.error("GitHub Copilot bad request (400) [req:\(requestId.prefix(8))]. Possible causes: payload too large, invalid tool schema, or malformed request. Details: \(errorMessage.prefix(500))")
-                    throw ProviderError.invalidRequest("GitHub Copilot rejected request (400). This often indicates payload size limits or invalid parameters. Consider reducing conversation history or tool count. Details: \(errorMessage.prefix(200))")
+                    logger.error("GitHub Copilot bad request (400) [req:\(requestId.prefix(8))]: \(errorMessage.prefix(500))")
+                    throw ProviderError.invalidRequest("GitHub Copilot rejected request (400): \(errorMessage.prefix(200))")
 
                 case 401, 403:
                     // Attempt token recovery before failing
@@ -1928,6 +1928,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     /// Determines whether to use Responses API vs Chat Completions API.
     /// Uses supported_endpoints from the GitHub Copilot /models API response.
     /// Models like codex only support /responses, while most models support /chat/completions.
+    /// Prefers Chat Completions when available (stable, well-tested path).
+    /// Only uses Responses API when model exclusively supports /responses.
     private func useResponsesApi(for model: String) -> Bool {
         let modelWithoutPrefix = model.components(separatedBy: "/").last ?? model
 
@@ -1937,14 +1939,16 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             let hasResponses = endpoints.contains(.responses)
             let hasChatCompletions = endpoints.contains(.chatCompletions)
 
-            /// Use Responses API if model supports it (prefer /responses when available)
-            if hasResponses {
-                logger.debug("Model \(modelWithoutPrefix) supports Responses API (endpoints: \(endpoints)) - using /responses")
-                return true
-            }
+            /// Prefer Chat Completions when available - stable, well-tested path
             if hasChatCompletions {
-                logger.debug("Model \(modelWithoutPrefix) supports Chat Completions only - using /chat/completions")
+                logger.debug("Model \(modelWithoutPrefix) supports Chat Completions (endpoints: \(endpoints)) - using /chat/completions")
                 return false
+            }
+
+            /// Only use Responses API when model exclusively supports it
+            if hasResponses {
+                logger.debug("Model \(modelWithoutPrefix) only supports Responses API - using /responses")
+                return true
             }
         }
 
@@ -2040,8 +2044,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                             return
 
                         case 400:
-                            self.logger.error("GitHub Copilot Responses API bad request (400) [req:\(requestId.prefix(8))]. Possible causes: payload too large, invalid tool schema, or malformed request. Details: \(errorBody.prefix(500))")
-                            continuation.finish(throwing: ProviderError.invalidRequest("GitHub Copilot Responses API rejected request (400). This often indicates payload size limits or invalid parameters. Consider reducing conversation history or tool count. Details: \(errorBody.prefix(200))"))
+                            self.logger.error("GitHub Copilot Responses API bad request (400) [req:\(requestId.prefix(8))]: \(errorBody.prefix(500))")
+                            continuation.finish(throwing: ProviderError.invalidRequest("GitHub Copilot Responses API rejected request (400): \(errorBody.prefix(200))"))
                             return
 
                         case 401, 403:
@@ -2075,6 +2079,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
                     var incompleteBuffer = ""
                     var textAccumulator = ""
+                    var responsesHadToolCalls = false
 
                     for try await byte in bytes {
                         /// Check cancellation in streaming loop.
@@ -2114,7 +2119,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                                                 let event = try decoder.decode(ResponsesStreamEvent.self, from: jsonData)
 
                                                 /// Transform Responses API event to Chat Completions format.
-                                                if let chunk = self.transformResponsesEvent(event, requestId: requestId, textAccumulator: &textAccumulator) {
+                                                if let chunk = self.transformResponsesEvent(event, requestId: requestId, textAccumulator: &textAccumulator, hadToolCalls: &responsesHadToolCalls) {
                                                     continuation.yield(chunk)
                                                 }
                                             } catch {
@@ -2137,7 +2142,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     }
 
     /// Transform Responses API event to Chat Completions stream chunk **Why needed**: GitHub Copilot Responses API uses different event format than Chat Completions **Key differences**: - Responses API: `type`, `code`, `content`, `created` fields, nested structures - Chat Completions API: `choices[].delta.content`, flat structure **What this does**: 1.
-    private func transformResponsesEvent(_ event: ResponsesStreamEvent, requestId: String, textAccumulator: inout String) -> ServerOpenAIChatStreamChunk? {
+    private func transformResponsesEvent(_ event: ResponsesStreamEvent, requestId: String, textAccumulator: inout String, hadToolCalls: inout Bool) -> ServerOpenAIChatStreamChunk? {
         let id = requestId
         let model = config.models.first ?? "gpt-4"
 
@@ -2161,6 +2166,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         case .outputItemAdded(let addedEvent):
             if addedEvent.item.type == "function_call", let name = addedEvent.item.name {
                 logger.debug("Responses API: Tool call started - \(name)")
+                hadToolCalls = true
                 /// Yield delta with tool call start (just name, no full call yet).
                 let toolCall = OpenAIToolCall(id: "", type: "function", function: OpenAIFunctionCall(name: name, arguments: ""))
                 let delta = OpenAIChatDelta(role: nil, content: nil, toolCalls: [toolCall], statefulMarker: nil)
@@ -2188,10 +2194,18 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             let statefulMarker = completedEvent.response.id
             logger.debug("SUCCESS: Responses API completed with statefulMarker: \(statefulMarker.prefix(20))...")
 
+            /// Set finish reason based on whether tool calls were made.
+            /// Chat Completions API uses "tool_calls" when model invokes tools, "stop" otherwise.
+            /// Responses API doesn't distinguish - we track tool calls ourselves.
+            let finishReason = hadToolCalls ? "tool_calls" : "stop"
+
             /// Yield final chunk with statefulMarker and finish reason.
             let delta = OpenAIChatDelta(role: nil, content: "", toolCalls: nil, statefulMarker: statefulMarker)
-            let choice = OpenAIChatStreamChoice(index: 0, delta: delta, finishReason: "stop")
+            let choice = OpenAIChatStreamChoice(index: 0, delta: delta, finishReason: finishReason)
             return ServerOpenAIChatStreamChunk(id: id, object: "chat.completion.chunk", created: Int(Date().timeIntervalSince1970), model: model, choices: [choice])
+
+        case .ignored:
+            return nil
         }
     }
 
@@ -2289,7 +2303,6 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             previousResponseId: result.previousResponseId,
             stream: true,
             tools: tools,
-            topP: request.temperature,
             maxOutputTokens: request.maxTokens,
             toolChoice: nil,
             store: false
@@ -2412,14 +2425,23 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         }
 
         /// Convert messages to Responses API format.
+        /// First, add system messages as developer-role messages (filtered out above for token counting).
         var input: [ResponsesInputItem] = []
+
+        for message in messages where message.role == "system" {
+            if let content = message.content, !content.isEmpty {
+                let contentItem = ResponsesInputTextContent(text: content)
+                let messageItem = ResponsesInputMessage(role: "developer", content: [.inputText(contentItem)])
+                input.append(.message(messageItem))
+            }
+        }
 
         for message in messagesToInclude {
             switch message.role {
             case "user":
                 if let content = message.content {
-                    let contentItem = ResponsesTextContent(text: content)
-                    let messageItem = ResponsesInputMessage(role: "user", content: [.text(contentItem)])
+                    let contentItem = ResponsesInputTextContent(text: content)
+                    let messageItem = ResponsesInputMessage(role: "user", content: [.inputText(contentItem)])
                     input.append(.message(messageItem))
                 }
 
@@ -2438,8 +2460,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
                 /// Assistant messages with content.
                 if let content = message.content, !content.isEmpty {
-                    let contentItem = ResponsesTextContent(text: content)
-                    let messageItem = ResponsesInputMessage(role: "assistant", content: [.text(contentItem)])
+                    let contentItem = ResponsesOutputTextContent(text: content)
+                    let messageItem = ResponsesInputMessage(role: "assistant", content: [.outputText(contentItem)])
                     input.append(.message(messageItem))
                 }
 

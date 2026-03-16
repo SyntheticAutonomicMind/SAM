@@ -32,11 +32,12 @@ public class PPTXGenerator {
     ///   - outputPath: Where to save the PPTX file
     ///   - template: Optional template to use
     /// - Returns: URL of the generated PPTX file
+    @MainActor
     public func generate(
         markdown: String,
         outputPath: URL,
         template: DocumentTemplate? = nil
-    ) throws -> URL {
+    ) async throws -> URL {
         logger.info("Generating PPTX presentation: \(outputPath.lastPathComponent)")
 
         // 1. Parse markdown into slides
@@ -56,7 +57,7 @@ public class PPTXGenerator {
             if let diagramCode = slide.diagramCode {
                 // This slide contains a Mermaid diagram
                 do {
-                    let imagePath = try exporter.exportDiagramToTemp(
+                    let imagePath = try await exporter.exportDiagramToTemp(
                         diagramCode,
                         format: .png,
                         size: CGSize(width: 960, height: 720)

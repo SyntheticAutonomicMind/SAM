@@ -167,6 +167,7 @@ struct UserMessageBubble: View {
                             .fill(Color.accentColor)
                             .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
                     )
+                    .clipped()
                     .foregroundColor(.white)
 
                 /// Timestamp with copy button.
@@ -342,11 +343,13 @@ struct AssistantMessageBubble: View {
                     MarkdownText(displayedContent)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 18)
                                 .fill(Color.primary.opacity(0.05))
                                 .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
                         )
+                        .clipped()
                         .foregroundColor(.primary)
                 }                /// Render contentParts if present (images, etc.)
                 if let contentParts = message.contentParts {

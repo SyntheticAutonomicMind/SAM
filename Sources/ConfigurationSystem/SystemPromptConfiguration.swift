@@ -648,7 +648,16 @@ private static func buildSAMSpecificPatterns() -> String {
 
     ## Data Visualization Protocol (CRITICAL)
 
-    **Mermaid Diagram Types:** flowchart, sequenceDiagram, classDiagram, gantt, pie, barChart, journey, mindmap, timeline, quadrantChart, requirementDiagram, gitGraph, xychart-beta (bar/line charts).
+    **Mermaid Diagram Types:** flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, pie, journey, mindmap, timeline, quadrantChart, requirementDiagram, gitGraph, xychart-beta (bar/line charts), sankey-beta, block-beta, packet-beta, kanban, C4Context, C4Container, C4Component, C4Deployment.
+
+    **Syntax notes for commonly misgenerated types:**
+    - barChart is NOT a type. Use `xychart-beta` with `bar` data: `x-axis [Jan, Feb]` then `bar [10, 20]`
+    - xychart-beta y-axis: `y-axis "Label" 0 --> 100` (NOT `y-axis ["Label"]`)
+    - sankey-beta uses CSV lines: `Source,Target,Value` (one per line, NO arrows)
+    - packet-beta uses bit-range fields: `0-7: "Header"` then `8-15: "Payload"` (NOT indented blocks)
+    - C4 diagrams use function syntax: `Person(id, "Name", "Desc")`, `System(id, "Name")`, `Rel(from, to, "label")`
+    - requirementDiagram relationships: `element - satisfies -> req1` (NOT `req1 - req2`)
+    - classDiagram methods: `+eat() void` (include return type)
 
     **DECISION RULE - Mermaid vs Image Generation:**
 

@@ -101,7 +101,7 @@ public class MessageExportService {
 
     /// Parse markdown content into attributed string for PDF Manual parser handles headers, bold, italic, code blocks, inline code.
     @MainActor
-    public static func parseMarkdownForPDF(_ markdown: String) -> NSAttributedString {
+    public static func parseMarkdownForPDF(_ markdown: String) async -> NSAttributedString {
         /// Strip user context tags before parsing
         let cleanedMarkdown = stripUserContext(markdown)
         
@@ -110,14 +110,14 @@ public class MessageExportService {
         let astNodes = astParser.parse(cleanedMarkdown)
 
         let converter = MarkdownASTToNSAttributedString()
-        return converter.convert(astNodes)
+        return await converter.convert(astNodes)
     }
 
     /// Parse markdown and extract images separately (for continuous PDF rendering)
     /// This is needed because NSTextAttachment images don't render correctly in some PDF contexts
     /// - Returns: Tuple of (text content as attributed string, array of extracted images)
     @MainActor
-    public static func parseMarkdownForPDFWithImages(_ markdown: String) -> (NSAttributedString, [NSImage]) {
+    public static func parseMarkdownForPDFWithImages(_ markdown: String) async -> (NSAttributedString, [NSImage]) {
         /// Strip user context tags before parsing
         let cleanedMarkdown = stripUserContext(markdown)
         
@@ -130,9 +130,20 @@ public class MessageExportService {
         let converter = MarkdownASTToNSAttributedStringWithImageExtraction(imageHandler: { image in
             extractedImages.append(image)
         })
-        let textContent = converter.convert(astNodes)
+        let textContent = await converter.convert(astNodes)
 
         return (textContent, extractedImages)
+    }
+
+    /// Synchronous version for legacy code paths (no mermaid rendering)
+    @MainActor
+    public static func parseMarkdownForPDFSync(_ markdown: String) -> NSAttributedString {
+        let cleanedMarkdown = stripUserContext(markdown)
+        let astParser = MarkdownASTParser()
+        let astNodes = astParser.parse(cleanedMarkdown)
+        // Use synchronous conversion without async mermaid rendering
+        let converter = MarkdownASTToNSAttributedString()
+        return converter.convertSync(astNodes)
     }
 
     /// Convert MarkdownElements from MarkdownSemanticParser to NSAttributedString for PDF/print.
@@ -203,57 +214,16 @@ public class MessageExportService {
             result.append(NSAttributedString(string: "\n\n", attributes: paragraphAttributes))
 
         case .codeBlock(let language, let code):
-            // Special handling for Mermaid diagrams - render as images
+            // Special handling for Mermaid diagrams
             if let lang = language, lang.lowercased() == "mermaid" {
-                // INCREASED: Use 800px width for PDF export (was 550px)
-                // Complex diagrams need more width for proper layout
-                if let diagramImage = MermaidImageRenderer.renderDiagram(code: code, width: 800) {
-                    // Create attachment for image
-                    let imageAttachment = NSTextAttachment()
-                    imageAttachment.image = diagramImage
-
-                    // Scale image to fit page width if needed
-                    let maxWidth: CGFloat = 800
-                    let imageSize = diagramImage.size
-                    if imageSize.width > maxWidth {
-                        let scale = maxWidth / imageSize.width
-                        imageAttachment.bounds = CGRect(
-                            x: 0,
-                            y: 0,
-                            width: imageSize.width * scale,
-                            height: imageSize.height * scale
-                        )
-                    } else {
-                        imageAttachment.bounds = CGRect(
-                            x: 0,
-                            y: 0,
-                            width: imageSize.width,
-                            height: imageSize.height
-                        )
-                    }
-
-                    // Add small label above diagram
-                    let labelAttributes: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: 10),
-                        .foregroundColor: NSColor.secondaryLabelColor
-                    ]
-                    let label = NSAttributedString(string: "[Mermaid Diagram]\n", attributes: labelAttributes)
-                    result.append(label)
-
-                    // Add image
-                    let imageString = NSAttributedString(attachment: imageAttachment)
-                    result.append(imageString)
-                    result.append(NSAttributedString(string: "\n\n"))
-                } else {
-                    // Fallback to code text if rendering fails
-                    let codeAttributes: [NSAttributedString.Key: Any] = [
-                        .font: codeFont,
-                        .foregroundColor: NSColor.darkGray,
-                        .backgroundColor: codeBackgroundColor
-                    ]
-                    let codeString = NSAttributedString(string: "[mermaid]\n" + code + "\n\n", attributes: codeAttributes)
-                    result.append(codeString)
-                }
+                // Deprecated sync path - show code fallback (use async parseMarkdownForPDF instead)
+                let codeAttributes: [NSAttributedString.Key: Any] = [
+                    .font: codeFont,
+                    .foregroundColor: NSColor.darkGray,
+                    .backgroundColor: codeBackgroundColor
+                ]
+                let codeString = NSAttributedString(string: "[mermaid]\n" + code + "\n\n", attributes: codeAttributes)
+                result.append(codeString)
             } else {
                 // Regular code block
                 let codeAttributes: [NSAttributedString.Key: Any] = [
@@ -788,7 +758,7 @@ private class MessagePrintView: NSView {
         let contentWidth = pageWidth - (margin * 2)
 
         /// Calculate content height.
-        let content = MessageExportService.parseMarkdownForPDF(message.content)
+        let content = MessageExportService.parseMarkdownForPDFSync(message.content)
         let textContainer = NSTextContainer(containerSize: CGSize(width: contentWidth, height: .greatestFiniteMagnitude))
         let layoutManager = NSLayoutManager()
         let textStorage = NSTextStorage(attributedString: content)
@@ -816,7 +786,7 @@ private class MessagePrintView: NSView {
         let currentY = margin
 
         /// Draw content only - no header or footer.
-        let contentAttributedString = MessageExportService.parseMarkdownForPDF(message.content)
+        let contentAttributedString = MessageExportService.parseMarkdownForPDFSync(message.content)
         let contentRect = CGRect(
             x: margin,
             y: currentY,

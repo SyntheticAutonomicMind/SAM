@@ -4,284 +4,293 @@
 import SwiftUI
 import Logging
 
-/// Main Mermaid diagram view - integrates parser and renderers
+/// Main Mermaid diagram view - renders using bundled mermaid.js via WKWebView.
+/// All diagram types (flowchart, sequence, class, state, ER, gantt, pie,
+/// journey, mindmap, timeline, quadrant, requirement, gitGraph, xychart,
+/// C4, sankey, block, kanban, architecture, etc.) are handled by mermaid.js.
+///
+/// Streaming-safe: waits for code to stabilize before attempting render.
 @MainActor
 struct MermaidDiagramView: View {
     let code: String
     let showBackground: Bool
     private let logger = Logger(label: "com.sam.mermaid")
-    @State private var diagram: MermaidDiagram?
-    @State private var lastCodeLength: Int = 0  // Track code length changes
-    private let preparsedDiagram: MermaidDiagram? // For PDF/print: skip async parsing
 
-    /// Standard initializer - parses diagram on appear (for UI)
+    @Environment(\.colorScheme) private var colorScheme
+
+    @State private var cachedImage: NSImage?
+    @State private var renderedHeight: CGFloat = 300
+    @State private var renderError: String?
+    @State private var isRendering = false
+    @State private var lastRenderedCode: String = ""
+    @State private var renderDebounceTask: Task<Void, Never>?
+
+    /// Standard initializer (for UI)
     init(code: String, showBackground: Bool = true) {
         self.code = code
         self.showBackground = showBackground
-        self.preparsedDiagram = nil
     }
 
-    /// Pre-parsed initializer - for PDF/print where we need immediate rendering
+    /// Pre-parsed initializer (kept for API compatibility - diagram param ignored,
+    /// mermaid.js handles all parsing now)
     init(code: String, diagram: MermaidDiagram, showBackground: Bool = true) {
         self.code = code
         self.showBackground = showBackground
-        self.preparsedDiagram = diagram
-        self._diagram = State(initialValue: diagram) // Initialize state immediately
     }
 
     var body: some View {
         Group {
-            if let diagram = diagram {
-                switch diagram {
-                case .flowchart(let flowchart):
-                    // Flowcharts calculate their own internal spacing, no padding needed
-                    FlowchartRenderer(flowchart: flowchart)
-                        .conditionalBackground(showBackground)
-
-                case .sequence(let sequence):
-                    SequenceDiagramRenderer(diagram: sequence)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .classDiagram(let classDiagram):
-                    ClassDiagramRenderer(diagram: classDiagram)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .stateDiagram(let stateDiagram):
-                    StateDiagramRenderer(diagram: stateDiagram)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .erDiagram(let erDiagram):
-                    ERDiagramRenderer(diagram: erDiagram)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .gantt(let gantt):
-                    GanttRenderer(chart: gantt)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .pie(let pie):
-                    PieChartRenderer(chart: pie)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .journey(let journey):
-                    JourneyRenderer(journey: journey)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .mindmap(let mindmap):
-                    MindmapRenderer(mindmap: mindmap)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .timeline(let timeline):
-                    TimelineRenderer(timeline: timeline)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .quadrant(let quadrant):
-                    QuadrantChartRenderer(chart: quadrant)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .requirement(let requirement):
-                    RequirementDiagramRenderer(diagram: requirement)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .gitGraph(let gitGraph):
-                    GitGraphRenderer(graph: gitGraph)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .xychart(let xychart):
-                    XYChartRenderer(chart: xychart)
-                        .padding()
-                        .conditionalBackground(showBackground)
-
-                case .unsupported:
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            Text("MERMAID (unsupported type)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                            Spacer()
-                        }
-                        .background(Color.secondary.opacity(0.1))
-
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            Text(code)
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.primary)
-                                .padding(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                    )
-                }
+            if let image = cachedImage {
+                imageView(image)
+            } else if isRendering {
+                renderingView
+            } else if !MermaidCodeValidator.isLikelyComplete(code) {
+                // Still streaming - show placeholder
+                streamingPlaceholder
             } else {
-                ProgressView()
-                    .frame(height: 200)
-                    .frame(maxWidth: .infinity)
-                    .conditionalBackground(showBackground)
-
+                // Ready to render
+                renderingView
             }
         }
+        .conditionalBackground(showBackground)
         .onAppear {
-            // Skip parsing if we have a pre-parsed diagram (for PDF/print)
-            if preparsedDiagram == nil {
-                parseDiagram()
-            }
+            scheduleRenderIfReady()
         }
-        .onChange(of: code) { _ in
-            // Only re-parse if not using pre-parsed diagram
-            if preparsedDiagram == nil {
-                parseDiagram()
+        .onChange(of: code) { _, newCode in
+            handleCodeChange(newCode)
+        }
+        .onChange(of: colorScheme) { _, _ in
+            // Force re-render on theme change
+            cachedImage = nil
+            renderError = nil
+            lastRenderedCode = ""
+            scheduleRenderIfReady()
+        }
+    }
+
+    // MARK: - Render Scheduling
+
+    private func handleCodeChange(_ newCode: String) {
+        // Cancel any pending render
+        renderDebounceTask?.cancel()
+        renderDebounceTask = nil
+
+        // If the code hasn't meaningfully changed, skip
+        if newCode == lastRenderedCode { return }
+
+        // Only render when code looks complete (avoids streaming errors)
+        if MermaidCodeValidator.isLikelyComplete(newCode) {
+            scheduleRender(delay: 0.3)
+        }
+        // Otherwise: show streaming placeholder, wait for more code
+    }
+
+    private func scheduleRenderIfReady() {
+        if cachedImage == nil && !code.isEmpty && MermaidCodeValidator.isLikelyComplete(code) {
+            scheduleRender(delay: 0.1)
+        }
+    }
+
+    private func scheduleRender(delay: TimeInterval) {
+        renderDebounceTask?.cancel()
+        renderDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            if !code.isEmpty {
+                cachedImage = nil
+                renderError = nil
+                await performRender()
             }
         }
     }
 
-    private func parseDiagram() {
-        /// CRITICAL FIX: Only parse if not already parsed OR if previously unsupported
-        /// Prevents re-parsing on every .onAppear (scroll into view)
-        /// which was causing scroll bounce due to height recalculation
-        /// STREAMING FIX: Allow re-parsing if:
-        /// 1. Diagram is .unsupported (incomplete during streaming)
-        /// 2. Diagram is empty (no content yet)
-        /// 3. Code length is still changing (streaming in progress)
-        if let currentDiagram = diagram {
-            switch currentDiagram {
-            case .unsupported:
-                // Allow re-parsing for unsupported diagrams (likely incomplete during streaming)
-                logger.debug("Re-parsing previously unsupported diagram, code length: \(code.count)")
-            default:
-                // Check if we have an empty diagram OR code is still changing
-                let isEmpty = isDiagramEmpty(currentDiagram)
-                let codeStillChanging = code.count != lastCodeLength
+    // MARK: - Offscreen Rendering
 
-                if isEmpty {
-                    logger.debug("Re-parsing empty diagram (minimum threshold not met), code length: \(code.count)")
-                    break
-                } else if codeStillChanging {
-                    logger.debug("Re-parsing diagram (code still changing: \(lastCodeLength) → \(code.count))")
-                    break
+    private func performRender() async {
+        guard !isRendering else { return }
+        isRendering = true
+
+        let isDark = colorScheme == .dark
+        let image = await MermaidWebRenderer.renderToImage(
+            code: code,
+            width: 700,
+            isDarkMode: isDark
+        )
+
+        if let image = image {
+            cachedImage = image
+            renderedHeight = image.size.height
+            lastRenderedCode = code
+        } else {
+            if MermaidCodeValidator.isLikelyComplete(code) {
+                renderError = "Failed to render diagram"
+            }
+            logger.error("Mermaid diagram render returned nil")
+        }
+        isRendering = false
+    }
+
+    // MARK: - Subviews
+
+    private var renderingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(0.8)
+            Text("Rendering diagram...")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(height: 200)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var streamingPlaceholder: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(0.8)
+            Text("Receiving diagram...")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(height: 200)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func imageView(_ image: NSImage) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
+            .frame(maxWidth: min(image.size.width, 560))
+            .padding(.vertical, 4)
+    }
+
+    private func errorView(_ error: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("MERMAID")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                Spacer()
+            }
+            .background(Color.secondary.opacity(0.1))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(code)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(.primary)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Mermaid Code Validator
+
+/// Checks whether mermaid code is likely complete enough to render.
+/// Used to avoid sending partial/streaming code to mermaid.js.
+struct MermaidCodeValidator {
+
+    /// Known mermaid diagram type prefixes for first-line detection
+    private static let knownPrefixes = [
+        "graph ", "flowchart ", "sequencediagram", "classdiagram",
+        "statediagram", "erdiagram", "gantt", "pie", "journey",
+        "mindmap", "timeline", "quadrantchart", "requirementdiagram",
+        "gitgraph", "xychart-beta", "sankey-beta",
+        "block-beta", "packet-beta", "kanban",
+        "c4context", "c4container", "c4component", "c4deployment"
+    ]
+
+    /// Quick heuristic check: is this mermaid code likely complete?
+    /// - Balanced brackets/parens (context-aware for certain diagram types)
+    /// - Has at least one complete statement after the diagram type declaration
+    /// - Doesn't end mid-token
+    static func isLikelyComplete(_ code: String) -> Bool {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        // Must have at least 2 lines (type declaration + at least one statement)
+        let lines = trimmed.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("%%") }
+        guard lines.count >= 2 else { return false }
+
+        // Verify first line looks like a diagram type declaration
+        let firstLine = lines[0].lowercased()
+        let isKnownType = knownPrefixes.contains { firstLine.hasPrefix($0) }
+
+        // For unknown types, still attempt render if code has multiple lines
+        // and doesn't look obviously incomplete
+        if !isKnownType {
+            // If it has multiple non-empty lines, give mermaid.js a chance
+            return lines.count >= 2
+        }
+
+        // Detect diagram type for context-aware parsing
+        let isERDiagram = firstLine.hasPrefix("erdiagram")
+        let isSankey = firstLine.hasPrefix("sankey-beta")
+        let isPacket = firstLine.hasPrefix("packet-beta")
+
+        // Sankey and packet diagrams use simple value lines, no brackets needed
+        if isSankey || isPacket {
+            return true
+        }
+
+        // Check balanced brackets
+        var squareBrackets = 0
+        var curlyBraces = 0
+        var parens = 0
+
+        let allLines = trimmed.components(separatedBy: .newlines)
+        for line in allLines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+
+            // ER diagram relationship lines use { and } as cardinality markers
+            if isERDiagram && (trimmedLine.contains("||") || trimmedLine.contains("|{") ||
+                               trimmedLine.contains("}|") || trimmedLine.contains("o{") ||
+                               trimmedLine.contains("}o")) {
+                continue
+            }
+
+            for char in trimmedLine {
+                switch char {
+                case "[": squareBrackets += 1
+                case "]": squareBrackets -= 1
+                case "{": curlyBraces += 1
+                case "}": curlyBraces -= 1
+                case "(": parens += 1
+                case ")": parens -= 1
+                default: break
                 }
-
-                // Diagram is complete and code stopped changing
-                logger.debug("Diagram complete, code stabilized at \(code.count) chars")
-                return
             }
         }
 
-        // Update code length tracker
-        lastCodeLength = code.count
-
-        let parser = MermaidParser()
-        let newDiagram = parser.parse(code)
-
-        // CRITICAL: Force SwiftUI to detect state change by wrapping in withAnimation
-        // This ensures view updates when diagram changes from .unsupported to valid type
-        withAnimation {
-            diagram = newDiagram
+        // If any bracket type is unbalanced, code is incomplete
+        if squareBrackets != 0 || curlyBraces != 0 || parens != 0 {
+            return false
         }
 
-        switch diagram {
-        case .flowchart(let fc):
-            logger.info("Parsed flowchart with \(fc.nodes.count) nodes and \(fc.edges.count) edges")
-        case .sequence(let seq):
-            logger.info("Parsed sequence diagram with \(seq.participants.count) participants and \(seq.messages.count) messages")
-        case .classDiagram(let cd):
-            logger.info("Parsed class diagram with \(cd.classes.count) classes")
-        case .stateDiagram(let sd):
-            logger.info("Parsed state diagram with \(sd.states.count) states")
-        case .erDiagram(let er):
-            logger.info("Parsed ER diagram with \(er.entities.count) entities")
-        case .gantt(let gantt):
-            logger.info("Parsed Gantt chart with \(gantt.tasks.count) tasks")
-        case .pie(let pie):
-            logger.info("Parsed pie chart with \(pie.slices.count) slices")
-        case .journey(let journey):
-            logger.info("Parsed user journey with \(journey.sections.count) sections")
-        case .mindmap:
-            logger.info("Parsed mindmap")
-        case .timeline(let timeline):
-            logger.info("Parsed timeline with \(timeline.events.count) events")
-        case .quadrant(let quadrant):
-            logger.info("Parsed quadrant chart with \(quadrant.points.count) points")
-        case .requirement(let req):
-            logger.info("Parsed requirement diagram with \(req.requirements.count) requirements")
-        case .gitGraph(let git):
-            logger.info("Parsed git graph with \(git.commits.count) commits")
-        case .xychart(let xy):
-            logger.info("Parsed XY chart with \(xy.dataSeries.count) series")
-        case .unsupported:
-            logger.warning("Unsupported diagram type")
-        case .none:
-            logger.error("Failed to parse diagram")
+        // Check the last line doesn't end mid-arrow or mid-token
+        if let lastLine = lines.last {
+            let dangling = ["-->", "-.->", "==>", "->", "--", "-.", "==",
+                            ":", "|", ">>", "<<", "->>" ]
+            for suffix in dangling {
+                if lastLine.hasSuffix(suffix) {
+                    return false
+                }
+            }
         }
-    }
 
-    /// Check if diagram is empty (just type declaration, no actual content)
-    /// Empty diagrams should be re-parsed when more content arrives
-    /// STREAMING: Use minimum viable thresholds to avoid stopping too early
-    private func isDiagramEmpty(_ diagram: MermaidDiagram) -> Bool {
-        switch diagram {
-        case .flowchart(let fc):
-            // Need at least 2 nodes AND 1 edge for a viable flowchart
-            return fc.nodes.count < 2 || fc.edges.isEmpty
-        case .sequence(let seq):
-            // Need at least 2 participants AND 1 message
-            return seq.participants.count < 2 || seq.messages.isEmpty
-        case .classDiagram(let cd):
-            // Need at least 2 classes
-            return cd.classes.count < 2
-        case .stateDiagram(let sd):
-            // Need at least 2 states
-            return sd.states.count < 2
-        case .erDiagram(let er):
-            // Need at least 2 entities
-            return er.entities.count < 2
-        case .gantt(let gantt):
-            // Need at least 2 tasks
-            return gantt.tasks.count < 2
-        case .pie(let pie):
-            // Need at least 2 slices
-            return pie.slices.count < 2
-        case .journey(let journey):
-            // Need at least 1 section with tasks
-            return journey.sections.isEmpty || journey.sections.allSatisfy { $0.tasks.isEmpty }
-        case .mindmap(let mindmap):
-            // Need at least 1 child node
-            return mindmap.root.children.isEmpty
-        case .timeline(let timeline):
-            // Need at least 2 events
-            return timeline.events.count < 2
-        case .quadrant(let quadrant):
-            // Need at least 2 points
-            return quadrant.points.count < 2
-        case .requirement(let req):
-            // Need at least 1 requirement
-            return req.requirements.isEmpty
-        case .gitGraph(let git):
-            // Need at least 2 commits
-            return git.commits.count < 2
-        case .xychart(let xy):
-            // Need at least 1 series with 2+ values
-            return xy.dataSeries.isEmpty || xy.dataSeries.allSatisfy { $0.values.count < 2 }
-        case .unsupported:
-            return false // Will be handled separately
-        }
+        return true
     }
 }
 
@@ -316,15 +325,18 @@ extension View {
             C --> E[End]
         """)
 
-        Text("Simple Flow")
+        Text("Sequence Diagram")
             .font(.headline)
 
         MermaidDiagramView(code: """
-        graph LR
-            A[Input] --> B(Process)
-            B --> C{Decision}
-            C -->|Option 1| D[Result 1]
-            C -->|Option 2| E[Result 2]
+        sequenceDiagram
+            participant User
+            participant SAM
+            participant API
+            User->>SAM: Send message
+            SAM->>API: Process request
+            API-->>SAM: Return response
+            SAM-->>User: Display result
         """)
     }
     .padding()

@@ -167,10 +167,11 @@ public struct ResponsesRequest: Codable {
     public let previousResponseId: String?
     public let stream: Bool
     public let tools: [ResponsesFunctionTool]?
-    public let topP: Double?
     public let maxOutputTokens: Int?
     public let toolChoice: String?
     public let store: Bool
+    public let truncation: String?
+    public let reasoning: ResponsesReasoning?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -178,22 +179,33 @@ public struct ResponsesRequest: Codable {
         case previousResponseId = "previous_response_id"
         case stream
         case tools
-        case topP = "top_p"
         case maxOutputTokens = "max_output_tokens"
         case toolChoice = "tool_choice"
         case store
+        case truncation
+        case reasoning
     }
 
-    public init(model: String, input: [ResponsesInputItem], previousResponseId: String?, stream: Bool, tools: [ResponsesFunctionTool]?, topP: Double?, maxOutputTokens: Int?, toolChoice: String?, store: Bool = false) {
+    public init(model: String, input: [ResponsesInputItem], previousResponseId: String?, stream: Bool, tools: [ResponsesFunctionTool]?, maxOutputTokens: Int?, toolChoice: String?, store: Bool = false, truncation: String? = "disabled", reasoning: ResponsesReasoning? = ResponsesReasoning()) {
         self.model = model
         self.input = input
         self.previousResponseId = previousResponseId
         self.stream = stream
         self.tools = tools
-        self.topP = topP
         self.maxOutputTokens = maxOutputTokens
         self.toolChoice = toolChoice
         self.store = store
+        self.truncation = truncation
+        self.reasoning = reasoning
+    }
+}
+
+/// Responses API reasoning configuration.
+public struct ResponsesReasoning: Codable {
+    public let effort: String
+
+    public init(effort: String = "medium") {
+        self.effort = effort
     }
 }
 
@@ -263,7 +275,8 @@ public struct ResponsesInputMessage: Codable {
 
 /// Responses API content item.
 public enum ResponsesContentItem: Codable {
-    case text(ResponsesTextContent)
+    case inputText(ResponsesInputTextContent)
+    case outputText(ResponsesOutputTextContent)
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -274,9 +287,13 @@ public enum ResponsesContentItem: Codable {
         let type = try container.decode(String.self, forKey: .type)
 
         switch type {
-        case "text":
-            let text = try ResponsesTextContent(from: decoder)
-            self = .text(text)
+        case "input_text":
+            let text = try ResponsesInputTextContent(from: decoder)
+            self = .inputText(text)
+
+        case "output_text":
+            let text = try ResponsesOutputTextContent(from: decoder)
+            self = .outputText(text)
 
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown content item type: \(type)")
@@ -285,15 +302,27 @@ public enum ResponsesContentItem: Codable {
 
     public func encode(to encoder: Encoder) throws {
         switch self {
-        case .text(let text):
+        case .inputText(let text):
+            try text.encode(to: encoder)
+        case .outputText(let text):
             try text.encode(to: encoder)
         }
     }
 }
 
-/// Responses API text content.
-public struct ResponsesTextContent: Codable {
-    public var type: String = "text"
+/// Responses API input text content (for user/developer messages).
+public struct ResponsesInputTextContent: Codable {
+    public var type: String = "input_text"
+    public let text: String
+
+    public init(text: String) {
+        self.text = text
+    }
+}
+
+/// Responses API output text content (for assistant messages).
+public struct ResponsesOutputTextContent: Codable {
+    public var type: String = "output_text"
     public let text: String
 
     public init(text: String) {
@@ -345,7 +374,8 @@ public struct ResponsesFunctionTool: Codable {
     public var type: String = "function"
     public let name: String
     public let description: String
-    public let parameters: [String: Any]
+    /// Parameters stored as raw JSON data to preserve structure during encoding.
+    public let parametersData: Data
     public let strict: Bool = false
 
     enum CodingKeys: String, CodingKey {
@@ -355,20 +385,18 @@ public struct ResponsesFunctionTool: Codable {
     public init(name: String, description: String, parameters: [String: Any]) {
         self.name = name
         self.description = description
-        self.parameters = parameters
+        self.parametersData = (try? JSONSerialization.data(withJSONObject: parameters)) ?? Data()
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.name = try container.decode(String.self, forKey: .name)
         self.description = try container.decode(String.self, forKey: .description)
-
-        /// Decode parameters as JSON object.
-        let parametersData = try container.decode(Data.self, forKey: .parameters)
-        if let parametersDict = try JSONSerialization.jsonObject(with: parametersData) as? [String: Any] {
-            self.parameters = parametersDict
+        /// Decode parameters however they come.
+        if let rawJSON = try? container.decode(RawJSON.self, forKey: .parameters) {
+            self.parametersData = rawJSON.data
         } else {
-            self.parameters = [:]
+            self.parametersData = Data()
         }
     }
 
@@ -379,9 +407,104 @@ public struct ResponsesFunctionTool: Codable {
         try container.encode(description, forKey: .description)
         try container.encode(strict, forKey: .strict)
 
-        /// Encode parameters as JSON.
-        let parametersData = try JSONSerialization.data(withJSONObject: parameters)
-        try container.encode(parametersData, forKey: .parameters)
+        /// Encode parameters as a raw JSON object (not as a string).
+        let rawJSON = RawJSON(data: parametersData)
+        try container.encode(rawJSON, forKey: .parameters)
+    }
+}
+
+/// Helper type that preserves raw JSON structure through Codable encoding/decoding.
+/// Encodes as a native JSON object/array/value rather than a string or base64.
+private struct RawJSON: Codable {
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        /// Try decoding as various JSON types and re-serialize.
+        if let dict = try? container.decode([String: RawJSON].self) {
+            let rebuilt = dict.mapValues { (try? JSONSerialization.jsonObject(with: $0.data)) ?? NSNull() }
+            self.data = (try? JSONSerialization.data(withJSONObject: rebuilt)) ?? Data()
+        } else if let string = try? container.decode(String.self) {
+            /// Maybe it's a JSON string - try parsing it.
+            if let parsed = string.data(using: .utf8),
+               (try? JSONSerialization.jsonObject(with: parsed)) != nil {
+                self.data = parsed
+            } else {
+                self.data = (try? JSONSerialization.data(withJSONObject: string)) ?? Data()
+            }
+        } else {
+            self.data = Data()
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        guard !data.isEmpty,
+              let jsonObject = try? JSONSerialization.jsonObject(with: data) else {
+            try container.encode([String: String]())
+            return
+        }
+        /// Re-encode via a CodableAny wrapper.
+        let wrapped = CodableAny(jsonObject)
+        try container.encode(wrapped)
+    }
+}
+
+/// Wraps Any JSON value for Codable encoding.
+private enum CodableAny: Codable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case null
+    case array([CodableAny])
+    case object([String: CodableAny])
+
+    init(_ value: Any) {
+        if let s = value as? String { self = .string(s) }
+        else if let n = value as? NSNumber {
+            // Check for boolean before numeric (NSNumber bridges both)
+            if CFGetTypeID(n) == CFBooleanGetTypeID() {
+                self = .bool(n.boolValue)
+            } else if n.doubleValue == Double(n.intValue) {
+                self = .int(n.intValue)
+            } else {
+                self = .double(n.doubleValue)
+            }
+        }
+        else if let a = value as? [Any] { self = .array(a.map { CodableAny($0) }) }
+        else if let d = value as? [String: Any] { self = .object(d.mapValues { CodableAny($0) }) }
+        else if value is NSNull { self = .null }
+        else { self = .null }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let s = try? container.decode(String.self) { self = .string(s) }
+        else if let i = try? container.decode(Int.self) { self = .int(i) }
+        else if let d = try? container.decode(Double.self) { self = .double(d) }
+        else if let b = try? container.decode(Bool.self) { self = .bool(b) }
+        else if let a = try? container.decode([CodableAny].self) { self = .array(a) }
+        else if let o = try? container.decode([String: CodableAny].self) { self = .object(o) }
+        else if container.decodeNil() { self = .null }
+        else { self = .null }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let s): try container.encode(s)
+        case .int(let i): try container.encode(i)
+        case .double(let d): try container.encode(d)
+        case .bool(let b): try container.encode(b)
+        case .null: try container.encodeNil()
+        case .array(let a): try container.encode(a)
+        case .object(let o): try container.encode(o)
+        }
     }
 }
 
@@ -394,6 +517,7 @@ public enum ResponsesStreamEvent: Codable {
     case outputItemAdded(ResponsesOutputItemAddedEvent)
     case outputItemDone(ResponsesOutputItemDoneEvent)
     case completed(ResponsesCompletedEvent)
+    case ignored
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -424,8 +548,21 @@ public enum ResponsesStreamEvent: Codable {
             let event = try ResponsesCompletedEvent(from: decoder)
             self = .completed(event)
 
+        case "response.created",
+             "response.in_progress",
+             "response.content_part.added",
+             "response.content_part.done",
+             "response.output_text.done",
+             "response.function_call_arguments.delta",
+             "response.function_call_arguments.done",
+             "response.reasoning_summary_text.delta",
+             "response.reasoning_summary_text.done":
+            /// Informational events - safely ignored.
+            /// Tool call args come via outputItemDone with complete data.
+            self = .ignored
+
         default:
-            /// Ignore unknown event types.
+            /// Truly unknown event types.
             throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown event type: \(type)")
         }
     }
@@ -446,6 +583,9 @@ public enum ResponsesStreamEvent: Codable {
 
         case .completed(let event):
             try event.encode(to: encoder)
+
+        case .ignored:
+            break
         }
     }
 }

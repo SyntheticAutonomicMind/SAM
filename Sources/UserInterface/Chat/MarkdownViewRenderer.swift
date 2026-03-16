@@ -295,6 +295,7 @@ class MarkdownViewRenderer {
     /// Render table
     @ViewBuilder
     private func renderTable(headers: [String], alignments: [MarkdownASTNode.TableAlignment], rows: [[String]]) -> some View {
+        ScrollView(.horizontal, showsIndicators: true) {
         Grid(alignment: .leading, horizontalSpacing: 1, verticalSpacing: 1) {
             // Header row
             GridRow {
@@ -334,6 +335,7 @@ class MarkdownViewRenderer {
                 }
             }
         }
+        } // ScrollView(.horizontal)
         .background(Color.primary.opacity(0.02))
         .cornerRadius(8)
         .overlay(
