@@ -1,9 +1,9 @@
 {
   "releases": [
     {
-      "version": "20260315.1",
+      "version": "20260315.2",
       "release_date": "March 15, 2026",
-      "introduction": "This release improves GitHub Copilot authentication reliability and adds CSV/TSV support with stronger data accuracy guarantees for spreadsheet and financial data.",
+      "introduction": "This release improves GitHub Copilot authentication reliability, adds CSV/TSV support with stronger data accuracy guarantees, and fixes agent tool reliability issues.",
       "improvements": [
         {
           "id": "csv-tsv-import",
@@ -24,6 +24,24 @@
           "icon": "key.fill",
           "title": "GitHub Copilot Auth Reliability",
           "description": "Fixed three related authentication issues: Copilot providers created via device flow now load correctly on startup. Token refresh now properly uses the new token instead of the expired one. Mid-stream 401 errors are now recovered automatically, so Copilot keeps working without prompting you to re-authenticate."
+        },
+        {
+          "id": "image-gen-health-check",
+          "icon": "photo.badge.checkmark.fill",
+          "title": "Smarter Image Generation Handling",
+          "description": "SAM now checks if ALICE is reachable before offering image generation. Previously, the agent would repeatedly attempt image generation even when the server was unavailable, wasting time and context."
+        },
+        {
+          "id": "tool-error-feedback",
+          "icon": "exclamationmark.bubble.fill",
+          "title": "Better Tool Error Recovery",
+          "description": "When the agent makes a bad tool call, error messages now correctly identify the problem and provide the right fix. The agent also stops retrying tools that are genuinely broken instead of looping on them."
+        },
+        {
+          "id": "conversation-alternation-fix",
+          "icon": "bubble.left.and.bubble.right.fill",
+          "title": "Fixed Message Ordering Issues",
+          "description": "Fixed a bug where tool responses could cause messages to merge incorrectly, leading to malformed API requests. Multi-step agent workflows are now more reliable."
         }
       ]
     },
