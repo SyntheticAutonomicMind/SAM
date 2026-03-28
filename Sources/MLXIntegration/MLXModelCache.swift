@@ -6,7 +6,7 @@ import Logging
 import Crypto
 
 /// Model cache manager for MLX models Handles local storage, validation, and management of downloaded models.
-public class MLXModelCache {
+public class MLXModelCache: @unchecked Sendable {
     private let logger = Logger(label: "com.sam.mlx.cache")
     private let fileManager = FileManager.default
 
