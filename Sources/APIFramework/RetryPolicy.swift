@@ -43,10 +43,12 @@ public struct RetryPolicy: Sendable {
     )
 
     /// Rate limit specific retry policy with longer delays
-    /// Used for 429 errors to give API time to reset
+    /// Used for 429 errors to give API time to reset.
+    /// Rate limit retries are effectively unlimited - they always clear.
+    /// Uses 15s floor with exponential backoff: 15/30/60/120/300s.
     public nonisolated(unsafe) static let rateLimitPolicy = RetryPolicy(
-        maxRetries: 5,
-        backoffDelays: [4.0, 8.0, 16.0, 32.0, 60.0],
+        maxRetries: 20,
+        backoffDelays: [15.0, 30.0, 60.0, 120.0, 300.0],
         retryableHTTPCodes: [429],
         retryableURLErrorCodes: []
     )
@@ -94,9 +96,9 @@ public struct RetryPolicy: Sendable {
     /// Get the appropriate backoff delay for rate limit errors
     /// Rate limits need longer waits than regular transient errors
     public func rateLimitBackoffDelay(for attempt: Int) -> TimeInterval? {
-        /// Use longer delays for rate limiting: 4s, 8s, 16s, 32s, 60s
-        let rateLimitDelays: [TimeInterval] = [4.0, 8.0, 16.0, 32.0, 60.0]
-        guard attempt < maxRetries else { return nil }
+        /// Use longer delays for rate limiting: 15s floor with exponential backoff to 300s cap.
+        let rateLimitDelays: [TimeInterval] = [15.0, 30.0, 60.0, 120.0, 300.0]
+        /// Rate limits always clear - don't cap retries
         guard attempt < rateLimitDelays.count else {
             return rateLimitDelays.last
         }
@@ -141,7 +143,7 @@ public struct RetryPolicy: Sendable {
         /// Retry attempts with backoff.
         /// Rate limit errors get longer backoff delays
         /// Auth recoverable errors retry immediately (token already refreshed)
-        let effectiveMaxRetries = isRateLimitError ? 5 : maxRetries
+        let effectiveMaxRetries = isRateLimitError ? 20 : maxRetries
 
         for attempt in 0..<effectiveMaxRetries {
             /// Auth recoverable: retry immediately with no delay
