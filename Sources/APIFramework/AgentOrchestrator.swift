@@ -1334,10 +1334,13 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                 /// Call LLM with combined messages.
                 /// UNIFIED PATH: Support both streaming and non-streaming based on continuation parameter
-                /// RATE LIMIT HANDLING: Retry up to 5 times on rate limit errors invisibly
+                /// RATE LIMIT HANDLING: Retry indefinitely on rate limit errors (they always clear)
                 var response: LLMResponse
                 var rateLimitRetryCount = 0
-                let maxRateLimitRetries = 5
+                /// Rate limit retries are unlimited - rate limits always clear eventually.
+                /// Uses 15s floor with exponential backoff: 15s, 30s, 60s, 120s, 300s (cap).
+                let rateLimitBaseDelay: Double = 15.0
+                let rateLimitMaxDelay: Double = 300.0
 
                 if let continuation = streamContinuation {
                     /// STREAMING MODE - Call callLLMStreaming
@@ -1365,38 +1368,33 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         } catch let error as ProviderError {
                             if case .rateLimitExceeded(let message) = error {
                                 rateLimitRetryCount += 1
-                                if rateLimitRetryCount <= maxRateLimitRetries {
-                                    /// Calculate exponential backoff delay
-                                    let backoffDelay = pow(2.0, Double(rateLimitRetryCount)) * 2.0  /// 4s, 8s, 16s, 32s, 64s
-                                    logger.warning("RATE_LIMIT_RETRY_STREAMING: Attempt \(rateLimitRetryCount)/\(maxRateLimitRetries) after \(String(format: "%.1f", backoffDelay))s delay")
+                                /// Rate limits always clear - retry indefinitely with exponential backoff.
+                                /// Floor: 15s, doubling: 15/30/60/120/300 (cap).
+                                let backoffDelay = min(rateLimitMaxDelay, rateLimitBaseDelay * pow(2.0, Double(rateLimitRetryCount - 1)))
+                                logger.warning("RATE_LIMIT_RETRY_STREAMING: Attempt \(rateLimitRetryCount) after \(String(format: "%.1f", backoffDelay))s delay (no max retries - rate limits always clear)")
 
-                                    /// Notify UI that we hit a rate limit and are retrying.
-                                    let providerName = endpointManager.getProviderTypeForModel(model) ?? "Provider"
-                                    await MainActor.run {
-                                        NotificationCenter.default.post(
-                                            name: .providerRateLimitHit,
-                                            object: nil,
-                                            userInfo: [
-                                                "retryAfterSeconds": backoffDelay,
-                                                "providerName": providerName,
-                                                "message": message
-                                            ]
-                                        )
-                                    }
-
-                                    try await Task.sleep(for: .seconds(backoffDelay))
-
-                                    /// Notify UI that retry is starting.
-                                    await MainActor.run {
-                                        NotificationCenter.default.post(name: .providerRateLimitRetrying, object: nil)
-                                    }
-
-                                    continue  /// Retry
-                                } else {
-                                    /// All retries exhausted - show user-friendly message
-                                    logger.error("RATE_LIMIT_EXHAUSTED_STREAMING: All \(maxRateLimitRetries) retries failed")
-                                    throw ProviderError.rateLimitExceeded("The service is busy. Please wait a moment and try again.")
+                                /// Notify UI that we hit a rate limit and are retrying.
+                                let providerName = endpointManager.getProviderTypeForModel(model) ?? "Provider"
+                                await MainActor.run {
+                                    NotificationCenter.default.post(
+                                        name: .providerRateLimitHit,
+                                        object: nil,
+                                        userInfo: [
+                                            "retryAfterSeconds": backoffDelay,
+                                            "providerName": providerName,
+                                            "message": message
+                                        ]
+                                    )
                                 }
+
+                                try await Task.sleep(for: .seconds(backoffDelay))
+
+                                /// Notify UI that retry is starting.
+                                await MainActor.run {
+                                    NotificationCenter.default.post(name: .providerRateLimitRetrying, object: nil)
+                                }
+
+                                continue  /// Retry
                             } else {
                                 throw error  /// Re-throw non-rate-limit errors
                             }
@@ -1421,38 +1419,32 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         } catch let error as ProviderError {
                             if case .rateLimitExceeded(let message) = error {
                                 rateLimitRetryCount += 1
-                                if rateLimitRetryCount <= maxRateLimitRetries {
-                                    /// Calculate exponential backoff delay
-                                    let backoffDelay = pow(2.0, Double(rateLimitRetryCount)) * 2.0  /// 4s, 8s, 16s, 32s, 64s
-                                    logger.warning("RATE_LIMIT_RETRY: Attempt \(rateLimitRetryCount)/\(maxRateLimitRetries) after \(String(format: "%.1f", backoffDelay))s delay")
+                                /// Rate limits always clear - retry indefinitely with exponential backoff.
+                                let backoffDelay = min(rateLimitMaxDelay, rateLimitBaseDelay * pow(2.0, Double(rateLimitRetryCount - 1)))
+                                logger.warning("RATE_LIMIT_RETRY: Attempt \(rateLimitRetryCount) after \(String(format: "%.1f", backoffDelay))s delay (no max retries - rate limits always clear)")
 
-                                    /// Notify UI that we hit a rate limit and are retrying.
-                                    let providerName = endpointManager.getProviderTypeForModel(model) ?? "Provider"
-                                    await MainActor.run {
-                                        NotificationCenter.default.post(
-                                            name: .providerRateLimitHit,
-                                            object: nil,
-                                            userInfo: [
-                                                "retryAfterSeconds": backoffDelay,
-                                                "providerName": providerName,
-                                                "message": message
-                                            ]
-                                        )
-                                    }
-
-                                    try await Task.sleep(for: .seconds(backoffDelay))
-
-                                    /// Notify UI that retry is starting.
-                                    await MainActor.run {
-                                        NotificationCenter.default.post(name: .providerRateLimitRetrying, object: nil)
-                                    }
-
-                                    continue  /// Retry
-                                } else {
-                                    /// All retries exhausted - show user-friendly message
-                                    logger.error("RATE_LIMIT_EXHAUSTED: All \(maxRateLimitRetries) retries failed")
-                                    throw ProviderError.rateLimitExceeded("The service is busy. Please wait a moment and try again.")
+                                /// Notify UI that we hit a rate limit and are retrying.
+                                let providerName = endpointManager.getProviderTypeForModel(model) ?? "Provider"
+                                await MainActor.run {
+                                    NotificationCenter.default.post(
+                                        name: .providerRateLimitHit,
+                                        object: nil,
+                                        userInfo: [
+                                            "retryAfterSeconds": backoffDelay,
+                                            "providerName": providerName,
+                                            "message": message
+                                        ]
+                                    )
                                 }
+
+                                try await Task.sleep(for: .seconds(backoffDelay))
+
+                                /// Notify UI that retry is starting.
+                                await MainActor.run {
+                                    NotificationCenter.default.post(name: .providerRateLimitRetrying, object: nil)
+                                }
+
+                                continue  /// Retry
                             } else {
                                 throw error  /// Re-throw non-rate-limit errors
                             }

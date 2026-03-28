@@ -687,6 +687,12 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     /// RATE LIMIT BARRIER: When set, ALL requests must wait until this time
     /// This is set after a 429 error to ensure the FULL backoff period is respected
     /// before any subsequent request is attempted (fixes the "immediate retry after 429" bug)
+    /// Per-model proactive request throttle
+    /// Tracks request timestamps per model in a 60-second sliding window.
+    /// When the count approaches the inferred rate limit, adds a pre-emptive delay.
+    private var modelRequestTimes: [String: [Date]] = [:]
+    private var modelRateLimits: [String: Int] = [:]
+
     private var rateLimitedUntil: Date?
 
     /// Cache persistence paths
@@ -708,6 +714,64 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
     /// Token counter for context management (CRITICAL for Claude 400 fix).
     private let tokenCounter = TokenCounter()
+
+    // MARK: - Per-Model Proactive Throttle
+
+    /// Record a request for a given model in the sliding window.
+    private func modelThrottleRecord(_ model: String) {
+        let now = Date()
+        var times = modelRequestTimes[model] ?? []
+        times = times.filter { now.timeIntervalSince($0) < 60 }
+        times.append(now)
+        modelRequestTimes[model] = times
+    }
+
+    /// Learn the effective rate limit for a model from a rate limit event.
+    /// Called when a rate limit is hit - the current window count becomes the ceiling.
+    private func modelThrottleLearn(_ model: String) {
+        let now = Date()
+        let times = modelRequestTimes[model] ?? []
+        let count = times.filter { now.timeIntervalSince($0) < 60 }.count
+        guard count > 0 else { return }
+
+        let newLimit = max(count - 1, 1)
+        let existing = modelRateLimits[model]
+        if existing == nil || newLimit < existing! {
+            modelRateLimits[model] = newLimit
+            logger.info("THROTTLE: Learned rate limit for \(model): \(newLimit) req/60s (was \(existing.map(String.init) ?? "unknown"))")
+        }
+    }
+
+    /// Check if we should proactively throttle before sending a request.
+    /// Returns the suggested delay in seconds (0 if no throttle needed).
+    private func modelThrottleCheck(_ model: String) -> TimeInterval {
+        let now = Date()
+        var times = modelRequestTimes[model] ?? []
+        times = times.filter { now.timeIntervalSince($0) < 60 }
+        modelRequestTimes[model] = times
+
+        let count = times.count
+        guard let limit = modelRateLimits[model], limit > 0 else { return 0 }
+
+        let pct = Double(count) / Double(limit)
+        guard pct >= 0.7 else { return 0 }
+
+        // Find oldest timestamp in window to estimate time-to-window-reset
+        let oldest = times.first ?? now
+        let windowAge = now.timeIntervalSince(oldest)
+        let windowRemaining = 60.0 - windowAge
+
+        if pct >= 1.0 {
+            // At or over limit - wait for the oldest request to fall out of the window
+            return windowRemaining > 0 ? windowRemaining + 1 : 2
+        }
+
+        // 70-99%: add a proportional fractional delay to spread requests out
+        let remaining = limit - count + 1
+        var spreadDelay = (pct - 0.7) / 0.3 * (windowRemaining / Double(remaining))
+        spreadDelay = max(1.0, min(10.0, spreadDelay))
+        return spreadDelay
+    }
 
     public init(config: ProviderConfiguration) {
         self.identifier = config.providerId
@@ -1101,6 +1165,15 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
         let urlRequest = try await createGitHubCopilotRequest(request, apiKey: apiKey, streaming: true)
 
+        /// Proactive per-model throttle: check if we're approaching the inferred rate limit.
+        let model = request.model
+        let throttleDelay = modelThrottleCheck(model)
+        if throttleDelay > 0 {
+            logger.info("THROTTLE: Proactive rate throttle for \(model): \(String(format: "%.1f", throttleDelay))s (approaching inferred limit)")
+            try await Task.sleep(for: .seconds(throttleDelay))
+        }
+        modelThrottleRecord(model)
+
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -1145,6 +1218,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                             /// SET RATE LIMIT BARRIER: Next request must wait the FULL backoff period
                             self.rateLimitedUntil = Date().addingTimeInterval(waitInterval)
                             self.logger.warning("GitHub Copilot rate limit exceeded (429) [req:\(requestId.prefix(8))]. Setting rate limit barrier for \(waitInterval)s (error count: \(self.consecutiveRateLimitErrors))")
+                            self.modelThrottleLearn(request.model)
                             continuation.finish(throwing: ProviderError.rateLimitExceeded("GitHub Copilot rate limit exceeded. Waiting \(Int(waitInterval))s before next request."))
                             return
 
@@ -1251,6 +1325,24 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
                                                 let copilotChunk = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
 
+                                                /// Detect rate limit errors embedded in 200 OK response body.
+                                                /// GitHub returns HTTP 200 with error object containing string code
+                                                /// like "user_model_rate_limited" instead of proper 429 status.
+                                                if let errorObj = copilotChunk?["error"] as? [String: Any] {
+                                                    let errorCode = errorObj["code"] as? String ?? ""
+                                                    let errorMessage = errorObj["message"] as? String ?? "Rate limit exceeded"
+                                                    if errorCode.range(of: "rate.lim", options: [.regularExpression, .caseInsensitive]) != nil {
+                                                        self.logger.warning("RATE_LIMIT_IN_BODY: Detected rate limit in 200 response (code=\(errorCode)): \(errorMessage)")
+                                                        self.consecutiveRateLimitErrors += 1
+                                                        let waitInterval = max(60.0, self.minimumRequestInterval)
+                                                        self.minimumRequestInterval = max(self.baseInterval, waitInterval)
+                                                        self.rateLimitedUntil = Date().addingTimeInterval(waitInterval)
+                                                        self.modelThrottleLearn(request.model)
+                                                        continuation.finish(throwing: ProviderError.rateLimitExceeded("GitHub Copilot rate limit exceeded (\(errorCode)). Waiting \(Int(waitInterval))s before next request."))
+                                                        return
+                                                    }
+                                                }
+
                                                 /// Log extracted content from JSON - CHECK FOR ESCAPING HERE.
                                                 if let choices = copilotChunk?["choices"] as? [[String: Any]],
                                                    let firstChoice = choices.first,
@@ -1296,6 +1388,15 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
         let urlRequest = try await createGitHubCopilotRequest(request, apiKey: apiKey, streaming: streaming)
 
+        /// Proactive per-model throttle for non-streaming requests
+        let model = request.model
+        let throttleDelay = modelThrottleCheck(model)
+        if throttleDelay > 0 {
+            logger.info("THROTTLE: Proactive rate throttle for \(model): \(String(format: "%.1f", throttleDelay))s (approaching inferred limit)")
+            try await Task.sleep(for: .seconds(throttleDelay))
+        }
+        modelThrottleRecord(model)
+
         do {
             let (data, response) = try await URLSession.shared.data(for: urlRequest)
 
@@ -1326,6 +1427,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                         logger.info("RATE_LIMIT: No Retry-After header, using default: \(waitInterval)s")
                     }
                     logger.warning("GitHub Copilot rate limit exceeded [req:\(requestId.prefix(8))]. Wait \(Int(waitInterval))s before retry")
+                    modelThrottleLearn(request.model)
                     throw ProviderError.rateLimitExceeded("GitHub Copilot rate limit exceeded. Wait \(Int(waitInterval))s before retry. Details: \(errorMessage)")
 
                 case 400:
@@ -1757,6 +1859,21 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     private func parseGitHubCopilotResponse(_ data: Data, requestId: String) throws -> ServerOpenAIChatResponse {
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
+        /// Detect rate limit errors embedded in 200 OK response body.
+        /// GitHub can return HTTP 200 with an error object containing rate limit codes.
+        if let errorObj = json?["error"] as? [String: Any] {
+            let errorCode = errorObj["code"] as? String ?? ""
+            let errorMessage = errorObj["message"] as? String ?? "Rate limit exceeded"
+            if errorCode.range(of: "rate.lim", options: [.regularExpression, .caseInsensitive]) != nil {
+                logger.warning("RATE_LIMIT_IN_BODY: Detected rate limit in non-streaming 200 response (code=\(errorCode)): \(errorMessage)")
+                consecutiveRateLimitErrors += 1
+                let waitInterval = max(60.0, minimumRequestInterval)
+                minimumRequestInterval = max(baseInterval, waitInterval)
+                rateLimitedUntil = Date().addingTimeInterval(waitInterval)
+                throw ProviderError.rateLimitExceeded("GitHub Copilot rate limit exceeded (\(errorCode)). Waiting \(Int(waitInterval))s before next request.")
+            }
+        }
+
         guard let responseDict = json,
               let id = responseDict["id"] as? String,
               let model = responseDict["model"] as? String,
@@ -1989,6 +2106,15 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
         let urlRequest = try await createResponsesAPIRequest(request, apiKey: apiKey)
 
+        /// Proactive per-model throttle: check if we're approaching the inferred rate limit.
+        let model = request.model
+        let throttleDelay = modelThrottleCheck(model)
+        if throttleDelay > 0 {
+            logger.info("THROTTLE: Proactive rate throttle for \(model): \(String(format: "%.1f", throttleDelay))s (approaching inferred limit)")
+            try await Task.sleep(for: .seconds(throttleDelay))
+        }
+        modelThrottleRecord(model)
+
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -2040,6 +2166,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                             /// SET RATE LIMIT BARRIER: Next request must wait the FULL backoff period
                             self.rateLimitedUntil = Date().addingTimeInterval(waitInterval)
                             self.logger.warning("GitHub Copilot Responses API rate limit exceeded [req:\(requestId.prefix(8))]. Setting rate limit barrier for \(waitInterval)s (error count: \(self.consecutiveRateLimitErrors))")
+                            self.modelThrottleLearn(request.model)
                             continuation.finish(throwing: ProviderError.rateLimitExceeded("GitHub Copilot Responses API rate limit exceeded. Waiting \(Int(waitInterval))s before next request. Details: \(errorBody)"))
                             return
 
@@ -2117,6 +2244,22 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                                             do {
                                                 let decoder = JSONDecoder()
                                                 let event = try decoder.decode(ResponsesStreamEvent.self, from: jsonData)
+
+                                                /// Detect rate limit errors in Responses API events.
+                                                /// GitHub can return error events with rate limit codes inside a 200 OK stream.
+                                                if case .error(let errorEvent) = event {
+                                                    let errorCode = errorEvent.code ?? ""
+                                                    if errorCode.range(of: "rate.lim", options: [.regularExpression, .caseInsensitive]) != nil {
+                                                        self.logger.warning("RATE_LIMIT_IN_BODY: Detected rate limit in Responses API event (code=\(errorCode)): \(errorEvent.message)")
+                                                        self.consecutiveRateLimitErrors += 1
+                                                        let waitInterval = max(60.0, self.minimumRequestInterval)
+                                                        self.minimumRequestInterval = max(self.baseInterval, waitInterval)
+                                                        self.rateLimitedUntil = Date().addingTimeInterval(waitInterval)
+                                                        self.modelThrottleLearn(request.model)
+                                                        continuation.finish(throwing: ProviderError.rateLimitExceeded("GitHub Copilot rate limit exceeded (\(errorCode)). Waiting \(Int(waitInterval))s before next request."))
+                                                        return
+                                                    }
+                                                }
 
                                                 /// Transform Responses API event to Chat Completions format.
                                                 if let chunk = self.transformResponsesEvent(event, requestId: requestId, textAccumulator: &textAccumulator, hadToolCalls: &responsesHadToolCalls) {
