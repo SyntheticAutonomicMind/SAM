@@ -207,6 +207,216 @@ public class DeepSeekProvider: AIProvider {
     }
 }
 
+// MARK: - MiniMax Provider
+
+/// Provider for MiniMax AI API.
+/// MiniMax uses OpenAI-compatible API format at https://api.minimax.io/v1
+@MainActor
+public class MiniMaxProvider: AIProvider {
+    public let identifier: String
+    public let config: ProviderConfiguration
+    private let logger = Logger(label: "com.sam.api.minimax")
+
+    public init(config: ProviderConfiguration) {
+        self.identifier = config.providerId
+        self.config = config
+        logger.debug("MiniMax Provider initialized")
+    }
+
+    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    /// Check cancellation before HTTP request.
+                    if Task.isCancelled {
+                        self.logger.debug("TASK_CANCELLED: MiniMax request cancelled before start")
+                        continuation.finish()
+                        return
+                    }
+
+                    let response = try await self.processChatCompletion(request)
+                    let chunks = self.convertToStreamChunks(response)
+
+                    for chunk in chunks {
+                        /// Check cancellation in streaming loop.
+                        if Task.isCancelled {
+                            self.logger.debug("TASK_CANCELLED: MiniMax streaming cancelled")
+                            continuation.finish()
+                            return
+                        }
+
+                        continuation.yield(chunk)
+                        try await Task.sleep(nanoseconds: 50_000_000)
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
+        guard let choice = response.choices.first else { return [] }
+        var chunks: [ServerOpenAIChatStreamChunk] = []
+
+        chunks.append(ServerOpenAIChatStreamChunk(
+            id: response.id,
+            object: "chat.completion.chunk",
+            created: response.created,
+            model: response.model,
+            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
+        ))
+
+        let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        for word in words {
+            chunks.append(ServerOpenAIChatStreamChunk(
+                id: response.id,
+                object: "chat.completion.chunk",
+                created: response.created,
+                model: response.model,
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
+            ))
+        }
+
+        chunks.append(ServerOpenAIChatStreamChunk(
+            id: response.id,
+            object: "chat.completion.chunk",
+            created: response.created,
+            model: response.model,
+            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
+        ))
+
+        return chunks
+    }
+
+    public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
+        let requestId = UUID().uuidString
+        logger.debug("Processing chat completion via MiniMax API [req:\(requestId.prefix(8))]")
+
+        guard let apiKey = config.apiKey else {
+            throw ProviderError.authenticationFailed("MiniMax API key not configured")
+        }
+
+        guard let baseURL = config.baseURL ?? ProviderType.minimax.defaultBaseURL else {
+            throw ProviderError.invalidConfiguration("MiniMax base URL not configured")
+        }
+
+        /// MiniMax uses OpenAI-compatible API format.
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw ProviderError.invalidConfiguration("Invalid MiniMax base URL: \(baseURL)")
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        /// MiniMax has specific temperature range: 0.01 to 1.0
+        let temperature = request.temperature ?? config.temperature ?? 0.7
+        let clampedTemperature = min(max(temperature, 0.01), 1.0)
+
+        /// Create request body.
+        let requestBody: [String: Any] = [
+            "model": request.model,
+            "messages": request.messages.map { message in
+                [
+                    "role": message.role,
+                    "content": message.content
+                ]
+            },
+            "max_tokens": request.maxTokens ?? config.maxTokens ?? 8192,
+            "temperature": clampedTemperature,
+            "stream": false
+        ]
+
+        do {
+            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        } catch {
+            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
+        }
+
+        /// Set timeout (5 minutes minimum for tool-enabled requests).
+        /// Even if config specifies lower timeout, enforce 300s minimum to prevent timeouts.
+        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
+        urlRequest.timeoutInterval = max(configuredTimeout, 300)
+
+        logger.debug("Sending request to MiniMax API [req:\(requestId.prefix(8))]")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ProviderError.networkError("Invalid response type")
+            }
+
+            logger.debug("MiniMax API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
+
+            guard 200...299 ~= httpResponse.statusCode else {
+                if let errorData = String(data: data, encoding: .utf8) {
+                    logger.error("MiniMax API error [req:\(requestId.prefix(8))]: \(errorData)")
+                }
+                throw ProviderError.networkError("MiniMax API returned status \(httpResponse.statusCode)")
+            }
+
+            /// Parse response.
+            let minimaxResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
+            logger.debug("Successfully processed MiniMax response [req:\(requestId.prefix(8))]")
+
+            return minimaxResponse
+
+        } catch let error as ProviderError {
+            throw error
+        } catch {
+            logger.error("MiniMax API request failed [req:\(requestId.prefix(8))]: \(error)")
+            throw ProviderError.networkError("Network error: \(error.localizedDescription)")
+        }
+    }
+
+    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
+        let models = config.models.map { modelId in
+            ServerOpenAIModel(
+                id: modelId,
+                object: "model",
+                created: Int(Date().timeIntervalSince1970),
+                ownedBy: "minimax"
+            )
+        }
+
+        return ServerOpenAIModelsResponse(
+            object: "list",
+            data: models
+        )
+    }
+
+    public func supportsModel(_ model: String) -> Bool {
+        return config.models.contains(model) || model.hasPrefix("MiniMax-")
+    }
+
+    public func validateConfiguration() async throws -> Bool {
+        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
+            throw ProviderError.authenticationFailed("MiniMax API key is required")
+        }
+
+        return true
+    }
+
+    // MARK: - Lifecycle
+
+    public func loadModel() async throws -> ModelCapabilities {
+        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
+    }
+
+    public func getLoadedStatus() async -> Bool {
+        return false
+    }
+
+    public func unload() async {
+        /// No-op for remote providers.
+    }
+}
+
 // MARK: - Supporting Types
 
 public struct ModelStatus {

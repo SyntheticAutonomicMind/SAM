@@ -266,6 +266,9 @@ struct EndpointManagementView: View {
         case .gemini:
             return "Get your API key from aistudio.google.com"
 
+        case .minimax:
+            return "Get your API key from platform.minimax.io"
+
         case .openrouter:
             return "Get your API key from openrouter.ai/keys"
 
@@ -415,6 +418,7 @@ struct ProviderRowView: View {
         case .githubCopilot: return "arrow.triangle.branch"
         case .deepseek: return "magnifyingglass"
         case .gemini: return "globe"
+        case .minimax: return "m.circle"
         case .openrouter: return "arrow.triangle.merge"
         case .localLlama: return "laptopcomputer"
         case .localMLX: return "flame"
@@ -869,6 +873,9 @@ struct ProviderConfigurationSheet: View {
         case .gemini:
             return "Create an API key at aistudio.google.com"
 
+        case .minimax:
+            return "Get your API key from platform.minimax.io"
+
         case .openrouter:
             return "Get your API key from openrouter.ai/keys - provides access to 400+ AI models"
 
@@ -933,7 +940,7 @@ struct ProviderConfigurationSheet: View {
         /// Add authentication if required.
         if providerType.requiresApiKey && !apiKey.isEmpty {
             switch providerType {
-            case .openai, .deepseek, .custom:
+            case .openai, .deepseek, .minimax, .custom:
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
             case .openrouter:

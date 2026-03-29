@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "20260329.1",
+      "release_date": "March 29, 2026",
+      "introduction": "This release adds support for MiniMax AI provider, enabling access to MiniMax's powerful language models with extended context windows.",
+      "improvements": [
+        {
+          "id": "minimax-provider",
+          "icon": "m.circle.fill",
+          "title": "MiniMax AI Provider",
+          "description": "SAM now supports MiniMax AI, featuring models with up to 200,000 token context windows and 128,000 token output support. Configure your MiniMax API key in Preferences to get started."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
       "version": "20260316.2",
       "release_date": "March 16, 2026",
       "introduction": "This release adds support for the latest GPT models, overhauls diagram rendering for better quality and offline use, and fixes several agent reliability issues.",
