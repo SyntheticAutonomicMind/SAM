@@ -864,6 +864,15 @@ public class EndpointManager: ObservableObject {
                 models: []
             )
 
+        case .minimax:
+            return ProviderConfiguration(
+                providerId: "minimax",
+                providerType: .minimax,
+                isEnabled: false,
+                baseURL: "https://api.minimax.io/v1",
+                models: []
+            )
+
         case .openrouter:
             return ProviderConfiguration(
                 providerId: "openrouter",
@@ -918,6 +927,9 @@ public class EndpointManager: ObservableObject {
 
         case .gemini:
             return GeminiProvider(config: config)
+
+        case .minimax:
+            return MiniMaxProvider(config: config)
 
         case .openrouter:
             return OpenRouterProvider(config: config)
