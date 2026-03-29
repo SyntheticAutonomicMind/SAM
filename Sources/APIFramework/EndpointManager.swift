@@ -1229,19 +1229,35 @@ public class EndpointManager: ObservableObject {
         for providerType in ProviderType.allCases {
             let providerId = providerType.defaultIdentifier
 
-            /// Load saved configuration or create default.
-            var config = loadProviderConfiguration(for: providerId) ?? createDefaultConfiguration(for: providerType)
+            /// For local models, always create providers if models exist on disk.
+            /// Local models don't require saved configurations since they're auto-discovered.
+            let isLocalModel = providerType == .localLlama || providerType == .localMLX
+            
+            /// Remote providers only: require saved configuration to be created.
+            /// If a user deleted a remote provider, we should NOT recreate it with a default config.
+            var config: ProviderConfiguration?
+            if isLocalModel {
+                config = loadProviderConfiguration(for: providerId) ?? createDefaultConfiguration(for: providerType)
+            } else {
+                config = loadProviderConfiguration(for: providerId)
+            }
+            
+            /// If no config found, skip this provider entirely.
+            guard var finalConfig = config else {
+                logger.debug("Skipping provider \(providerId) - no saved configuration found")
+                continue
+            }
 
             /// For local llama, populate models from LocalModelManager.
             if providerType == .localLlama, let modelManager = localModelManager {
-                config.models = modelManager.getAvailableModels()
-                logger.debug("Found \(config.models.count) local GGUF models")
+                finalConfig.models = modelManager.getAvailableModels()
+                logger.debug("Found \(finalConfig.models.count) local GGUF models")
             }
 
             /// Only create provider if it has API key or doesn't require one.
             /// GitHub Copilot also accepts device flow tokens from CopilotTokenStore.
             let requiresKey = providerType.requiresApiKey
-            let hasAuth = config.apiKey != nil ||
+            let hasAuth = finalConfig.apiKey != nil ||
                 (providerType == .githubCopilot && CopilotTokenStore.shared.isSignedIn)
             if !requiresKey || hasAuth {
                 /// For local llama, create one provider per model using registry identifiers.
@@ -1257,14 +1273,14 @@ public class EndpointManager: ObservableObject {
                             let providerSpecificConfig = ProviderConfiguration(
                                 providerId: providerIdentifier,
                                 providerType: .localLlama,
-                                isEnabled: config.isEnabled,
+                                isEnabled: finalConfig.isEnabled,
                                 baseURL: nil,
                                 models: [providerIdentifier],
-                                maxTokens: config.maxTokens,
-                                temperature: config.temperature,
-                                customHeaders: config.customHeaders,
-                                timeoutSeconds: config.timeoutSeconds,
-                                retryCount: config.retryCount
+                                maxTokens: finalConfig.maxTokens,
+                                temperature: finalConfig.temperature,
+                                customHeaders: finalConfig.customHeaders,
+                                timeoutSeconds: finalConfig.timeoutSeconds,
+                                retryCount: finalConfig.retryCount
                             )
                             let provider = LlamaProvider(
                                 config: providerSpecificConfig,
@@ -1296,14 +1312,14 @@ public class EndpointManager: ObservableObject {
                             let providerSpecificConfig = ProviderConfiguration(
                                 providerId: providerIdentifier,
                                 providerType: .localMLX,
-                                isEnabled: config.isEnabled,
+                                isEnabled: finalConfig.isEnabled,
                                 baseURL: nil,
                                 models: [providerIdentifier],
-                                maxTokens: config.maxTokens,
-                                temperature: config.temperature,
-                                customHeaders: config.customHeaders,
-                                timeoutSeconds: config.timeoutSeconds,
-                                retryCount: config.retryCount
+                                maxTokens: finalConfig.maxTokens,
+                                temperature: finalConfig.temperature,
+                                customHeaders: finalConfig.customHeaders,
+                                timeoutSeconds: finalConfig.timeoutSeconds,
+                                retryCount: finalConfig.retryCount
                             )
                             /// For MLX models: Use parent directory (not individual file path)
                             /// For diffusers models: Path is already the directory
@@ -1331,8 +1347,8 @@ public class EndpointManager: ObservableObject {
                         }
                     }
                 } else {
-                    providers[providerId] = createProvider(type: providerType, config: config)
-                    providerConfigs[providerId] = config
+                    providers[providerId] = createProvider(type: providerType, config: finalConfig)
+                    providerConfigs[providerId] = finalConfig
                     logger.debug("Recreated provider \(providerId) with updated configuration")
                 }
             }
