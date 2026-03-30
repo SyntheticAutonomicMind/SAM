@@ -1,18 +1,25 @@
 {
   "releases": [
     {
-      "version": "20260329.1",
-      "release_date": "March 29, 2026",
-      "introduction": "This release adds support for MiniMax AI provider, enabling access to MiniMax's powerful language models with extended context windows.",
+      "version": "20260330.1",
+      "release_date": "March 30, 2026",
+      "introduction": "This release adds MiniMax as a first-class AI provider with full streaming and tool support, and fixes table rendering in conversations.",
       "improvements": [
         {
           "id": "minimax-provider",
           "icon": "m.circle.fill",
           "title": "MiniMax AI Provider",
-          "description": "SAM now supports MiniMax AI, featuring models with up to 200,000 token context windows and 128,000 token output support. Configure your MiniMax API key in Preferences to get started."
+          "description": "SAM now supports MiniMax AI, featuring models with up to 200,000 token context windows and 128,000 token output support. Includes real-time streaming, full tool/agent support, and reasoning display. Configure your MiniMax API key in Preferences to get started."
         }
       ],
-      "bugfixes": []
+      "bugfixes": [
+        {
+          "id": "table-border-fix",
+          "icon": "tablecells",
+          "title": "Fixed Table Border Alignment",
+          "description": "Table borders now correctly wrap the table content instead of stretching to the edge of the message bubble."
+        }
+      ]
     },
     {
       "version": "20260316.2",
