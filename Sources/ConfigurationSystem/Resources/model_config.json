@@ -441,6 +441,104 @@
       "requires_alternating_messages": false,
       "cost_per_million_input_tokens": 0,
       "cost_per_million_output_tokens": 0
+    },
+    "MiniMax-M2.7": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 204800,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.01,
+      "cost_per_million_output_tokens": 0.1
+    },
+    "minimax-m2.7": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 204800,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.01,
+      "cost_per_million_output_tokens": 0.1
+    },
+    "MiniMax-M2.7-highspeed": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 204800,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.02,
+      "cost_per_million_output_tokens": 0.2
+    },
+    "MiniMax-M2.5": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 204800,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.01,
+      "cost_per_million_output_tokens": 0.1
+    },
+    "MiniMax-M2.5-highspeed": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 204800,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.02,
+      "cost_per_million_output_tokens": 0.2
+    },
+    "MiniMax-M2.1": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 204800,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.008,
+      "cost_per_million_output_tokens": 0.08
+    },
+    "MiniMax-M2.1-highspeed": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 204800,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.015,
+      "cost_per_million_output_tokens": 0.15
     }
   },
   "provider_defaults": {
@@ -463,6 +561,11 @@
       "delta_mode": "incremental",
       "supports_streaming": true,
       "supports_stateful_marker": false
+    },
+    "minimax": {
+      "delta_mode": "incremental",
+      "supports_streaming": true,
+      "supports_stateful_marker": false
     }
   },
   "model_family_patterns": {
@@ -470,6 +573,7 @@
     "gpt": ["gpt-4", "gpt-3.5", "o1"],
     "gemini": ["gemini"],
     "llama": ["llama", "llama3", "llama-3"],
-    "stable-diffusion": ["sd/", "stable-diffusion"]
+    "stable-diffusion": ["sd/", "stable-diffusion"],
+    "minimax": ["minimax", "MiniMax"]
   }
 }

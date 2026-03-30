@@ -88,6 +88,21 @@ public class MCPManager: ObservableObject {
             }
         }
 
+
+        /// Handle operation aliases (e.g., "file_search" -> "file_operations" with operation="file_search")
+        /// This fixes MiniMax and similar models calling operations directly instead of using file_operations with operation parameter
+        /// Based on CLIO fix for MiniMax tool calling issues.
+        if toolRegistry.isOperationAlias(resolvedName) {
+            if let aliasInfo = toolRegistry.getAliasInfo(for: resolvedName) {
+                logger.info("OPERATION_ALIAS: '\(resolvedName)' -> '\(aliasInfo.tool)' with operation='\(aliasInfo.operation)'")
+                resolvedName = aliasInfo.tool
+                /// Only add operation if not already specified
+                if resolvedParameters["operation"] == nil {
+                    resolvedParameters["operation"] = aliasInfo.operation
+                }
+            }
+        }
+
         guard let tool = toolRegistry.getTool(name: resolvedName) else {
             logger.error("Tool not found: \(name)")
             throw MCPError.toolNotFound(name)
@@ -263,13 +278,138 @@ public class MCPToolRegistry {
         "image_generation"
     ]
 
+    /// Operation aliases - maps operation names to their parent tool with default operation
+    /// This handles cases where AI calls "file_search" instead of "file_operations" with operation="file_search"
+    /// Critical for MiniMax models that tend to call operations directly
+    private let operationAliases: [String: (tool: String, operation: String)] = [
+        /// file_operations operations
+        "file_search": ("file_operations", "file_search"),
+        "list_dir": ("file_operations", "list_dir"),
+        "read_file": ("file_operations", "read_file"),
+        "write_file": ("file_operations", "write_file"),
+        "create_file": ("file_operations", "create_file"),
+        "delete_file": ("file_operations", "delete_file"),
+        "grep_search": ("file_operations", "grep_search"),
+        "semantic_search": ("file_operations", "semantic_search"),
+        "file_exists": ("file_operations", "file_exists"),
+        "get_file_info": ("file_operations", "get_file_info"),
+        "rename_file": ("file_operations", "rename_file"),
+        "append_file": ("file_operations", "append_file"),
+        "replace_string": ("file_operations", "replace_string"),
+        "insert_at_line": ("file_operations", "insert_at_line"),
+        "create_directory": ("file_operations", "create_directory"),
+        "get_errors": ("file_operations", "get_errors"),
+        "read_tool_result": ("file_operations", "read_tool_result"),
+        "list_dir_recursive": ("file_operations", "list_dir_recursive"),
+
+        /// version_control operations (git)
+        "git": ("version_control", "status"),
+        "status": ("version_control", "status"),
+        "log": ("version_control", "log"),
+        "diff": ("version_control", "diff"),
+        "commit": ("version_control", "commit"),
+        "push": ("version_control", "push"),
+        "pull": ("version_control", "pull"),
+        "branch": ("version_control", "branch"),
+        "stash": ("version_control", "stash"),
+        "tag": ("version_control", "tag"),
+
+        /// terminal_operations operations
+        "shell": ("terminal_operations", "exec"),
+        "exec": ("terminal_operations", "exec"),
+        "terminal_exec": ("terminal_operations", "exec"),
+        "run_command": ("terminal_operations", "exec"),
+
+        /// memory_operations operations
+        "store_memory": ("memory_operations", "store"),
+        "retrieve_memory": ("memory_operations", "retrieve"),
+        "search_memory": ("memory_operations", "search"),
+        "list_memory": ("memory_operations", "list"),
+        "delete_memory": ("memory_operations", "delete"),
+        "recall_sessions": ("memory_operations", "recall_sessions"),
+        "add_discovery": ("memory_operations", "add_discovery"),
+        "add_solution": ("memory_operations", "add_solution"),
+        "add_pattern": ("memory_operations", "add_pattern"),
+
+        /// web_operations operations
+        "search_web": ("web_operations", "search_web"),
+        "fetch_url": ("web_operations", "fetch_url"),
+        "web_search": ("web_operations", "search_web"),
+
+        /// todo_operations operations
+        "todo_read": ("todo_operations", "read"),
+        "todo_write": ("todo_operations", "write"),
+        "todo_update": ("todo_operations", "update"),
+        "todo_add": ("todo_operations", "add"),
+
+        /// code_intelligence operations
+        "list_usages": ("code_intelligence", "list_usages"),
+        "search_history": ("code_intelligence", "search_history"),
+
+        /// user_collaboration operations
+        "request_input": ("user_collaboration", "request_input"),
+
+        /// agent_operations operations
+        "spawn_agent": ("agent_operations", "spawn"),
+        "list_agents": ("agent_operations", "list"),
+        "agent_inbox": ("agent_operations", "inbox"),
+        "agent_status": ("agent_operations", "status"),
+        "kill_agent": ("agent_operations", "kill"),
+        "send_to_agent": ("agent_operations", "send"),
+        "broadcast_agents": ("agent_operations", "broadcast"),
+
+        /// remote_execution operations
+        "execute_remote": ("remote_execution", "execute_remote"),
+        "execute_parallel": ("remote_execution", "execute_parallel"),
+        "prepare_remote": ("remote_execution", "prepare_remote"),
+        "cleanup_remote": ("remote_execution", "cleanup_remote"),
+        "check_remote": ("remote_execution", "check_remote"),
+
+        /// document_operations operations
+        "document_create": ("document_operations", "document_create"),
+        "document_import": ("document_operations", "document_import"),
+        "document_list": ("document_operations", "document_list"),
+        "document_delete": ("document_operations", "document_delete"),
+
+        /// image_generation operations
+        "generate_image": ("image_generation", "generate_image"),
+
+        /// math_operations - default to calculate when called directly without operation
+        "math_operations": ("math_operations", "calculate"),
+
+        /// apply_patch - single operation tool
+        "apply_patch": ("apply_patch", "patch"),
+    ]
+
     public func registerTool(_ tool: any MCPTool, name: String) {
         registeredTools[name] = tool
         logger.debug("Registered tool in registry: \(name)")
     }
 
+    /// Get alias info for a tool name if it's an operation alias
+    /// Returns (tool: String, operation: String) if the name is an alias, nil otherwise
+    public func getAliasInfo(for name: String) -> (tool: String, operation: String)? {
+        return operationAliases[name]
+    }
+
+    /// Check if a name is an alias for an operation
+    public func isOperationAlias(_ name: String) -> Bool {
+        return operationAliases[name] != nil
+    }
+
     public func getTool(name: String) -> (any MCPTool)? {
-        return registeredTools[name]
+        /// First, try exact match
+        if let tool = registeredTools[name] {
+            return tool
+        }
+
+        /// Check if name is an alias for an operation
+        if let aliasInfo = operationAliases[name] {
+            logger.debug("OPERATION_ALIAS: Resolving '\(name)' to '\(aliasInfo.tool)' with operation='\(aliasInfo.operation)'")
+            return registeredTools[aliasInfo.tool]
+        }
+
+        return nil
     }
 
     public func getToolNames() -> [String] {
