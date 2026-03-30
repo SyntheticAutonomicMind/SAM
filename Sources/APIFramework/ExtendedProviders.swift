@@ -317,9 +317,14 @@ public class MiniMaxProvider: AIProvider {
         let temperature = request.temperature ?? config.temperature ?? 0.7
         let clampedTemperature = min(max(temperature, 0.01), 1.0)
 
+        /// Strip provider prefix from model name before sending to API User-facing: "minimax/MiniMax-M2.7" -> API expects: "MiniMax-M2.7".
+        let modelForAPI = request.model.contains("/")
+            ? request.model.components(separatedBy: "/").last ?? request.model
+            : request.model
+
         /// Create request body.
         let requestBody: [String: Any] = [
-            "model": request.model,
+            "model": modelForAPI,
             "messages": request.messages.map { message in
                 [
                     "role": message.role,
