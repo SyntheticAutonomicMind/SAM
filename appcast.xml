@@ -6,7 +6,27 @@
         <description>Updates for SAM (Synthetic Autonomic Mind)</description>
         <language>en</language>
 
-<!-- Latest release: v20260316.2 -->
+<!-- Latest release: v20260330.1 -->
+        <item>
+            <title>SAM 20260330.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260330.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260330.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Mon, 30 Mar 2026 15:48:07 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260330.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260330.1/SAM-20260330.1.zip"
+                sparkle:version="20260330.1"
+                sparkle:shortVersionString="20260330.1"
+                sparkle:edSignature="Ayvcyb6QoEiOR5u+mKTS/WI34Y25jOrMNXR8bop6l89YH1JTU216cylxsNS5rjosNwD03x6YAo/iy/dsAhRgBA=="
+                length="56042680"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
         <item>
             <title>SAM 20260316.2</title>
             <description><![CDATA[
