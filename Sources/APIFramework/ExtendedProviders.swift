@@ -62,24 +62,62 @@ public class DeepSeekProvider: AIProvider {
             choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
         ))
 
-        let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-        for word in words {
+        // Handle tool calls if present
+        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
+            for toolCall in toolCalls {
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(
+                        index: 0,
+                        delta: OpenAIChatDelta(
+                            content: nil,
+                            toolCalls: [
+                                OpenAIToolCall(
+                                    id: toolCall.id,
+                                    type: "function",
+                                    function: OpenAIFunctionCall(
+                                        name: toolCall.function.name,
+                                        arguments: toolCall.function.arguments
+                                    )
+                                )
+                            ]
+                        )
+                    )]
+                ))
+            }
+            
+            // Final chunk with finish_reason="tool_calls"
             chunks.append(ServerOpenAIChatStreamChunk(
                 id: response.id,
                 object: "chat.completion.chunk",
                 created: response.created,
                 model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
+            ))
+        } else {
+            // No tool calls - stream text content as before
+            let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+            for word in words {
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
+                ))
+            }
+
+            chunks.append(ServerOpenAIChatStreamChunk(
+                id: response.id,
+                object: "chat.completion.chunk",
+                created: response.created,
+                model: response.model,
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
             ))
         }
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-        ))
 
         return chunks
     }
@@ -223,21 +261,125 @@ public class MiniMaxProvider: AIProvider {
         logger.debug("MiniMax Provider initialized")
     }
 
+    /// MiniMax uses OpenAI-compatible SSE streaming.
+    /// This implementation does proper SSE parsing for real-time token delivery.
     public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
+        let requestId = UUID().uuidString
+        logger.debug("MiniMax streaming: Starting SSE streaming [req:\(requestId.prefix(8))]")
+
+        /// Validate API key.
+        guard let apiKey = config.apiKey else {
+            throw ProviderError.authenticationFailed("MiniMax API key not configured")
+        }
+
+        /// Build base URL.
+        guard let baseURL = config.baseURL ?? ProviderType.minimax.defaultBaseURL else {
+            throw ProviderError.invalidConfiguration("MiniMax base URL not configured")
+        }
+
+        /// MiniMax OpenAI-compatible endpoint for streaming.
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw ProviderError.invalidConfiguration("Invalid MiniMax base URL: \(baseURL)")
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        /// Strip provider prefix from model name.
+        let modelForAPI = request.model.contains("/")
+            ? request.model.components(separatedBy: "/").last ?? request.model
+            : request.model
+
+        /// MiniMax temperature range: 0.01 to 1.0.
+        let temperature = request.temperature ?? config.temperature ?? 0.7
+        let clampedTemperature = min(max(temperature, 0.01), 1.0)
+
+        /// MiniMax supports up to 131072 max output tokens.
+        let requestMaxTokens = request.maxTokens ?? 0
+        let configMaxTokens = config.maxTokens ?? 131072
+        let effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
+
+        /// Build request body with streaming enabled.
+        var requestBody: [String: Any] = [
+            "model": modelForAPI,
+            "messages": buildMiniMaxMessages(from: request.messages, requestId: requestId),
+            "max_tokens": effectiveMaxTokens,
+            "temperature": clampedTemperature,
+            "stream": true  /// Enable SSE streaming
+        ]
+
+        /// Add tools support if present.
+        if let tools = request.tools, !tools.isEmpty {
+            requestBody["tools"] = tools.map { tool -> [String: Any] in
+                let parameters: Any
+                if let parametersData = tool.function.parametersJson.data(using: .utf8),
+                   let parsedParameters = try? JSONSerialization.jsonObject(with: parametersData) {
+                    parameters = parsedParameters
+                } else {
+                    parameters = [:]
+                }
+                return [
+                    "type": tool.type,
+                    "function": [
+                        "name": tool.function.name,
+                        "description": tool.function.description,
+                        "parameters": parameters
+                    ]
+                ]
+            }
+            logger.debug("MiniMax streaming: Added \(tools.count) tools [req:\(requestId.prefix(8))]")
+        }
+
+        /// Serialize request body.
+        guard let requestBodyData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            throw ProviderError.networkError("Failed to serialize MiniMax request")
+        }
+        urlRequest.httpBody = requestBodyData
+
+        /// Set timeout.
+        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
+        urlRequest.timeoutInterval = max(configuredTimeout, 300)
+
+        logger.debug("MiniMax streaming: Sending SSE request [req:\(requestId.prefix(8))]")
+
         return AsyncThrowingStream { continuation in
             Task {
                 do {
                     /// Check cancellation before HTTP request.
                     if Task.isCancelled {
-                        self.logger.debug("TASK_CANCELLED: MiniMax request cancelled before start")
+                        self.logger.debug("TASK_CANCELLED: MiniMax streaming cancelled before start")
                         continuation.finish()
                         return
                     }
 
-                    let response = try await self.processChatCompletion(request)
-                    let chunks = self.convertToStreamChunks(response)
+                    /// Perform streaming HTTP request.
+                    let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest)
 
-                    for chunk in chunks {
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        continuation.finish(throwing: ProviderError.networkError("Invalid response type"))
+                        return
+                    }
+
+                    /// Handle HTTP errors.
+                    guard 200...299 ~= httpResponse.statusCode else {
+                        var errorBody = ""
+                        for try await byte in bytes {
+                            errorBody.append(Character(UnicodeScalar(byte)))
+                            if errorBody.count > 2000 { break }
+                        }
+                        self.logger.error("MiniMax streaming HTTP error [req:\(requestId.prefix(8))]: \(httpResponse.statusCode) - \(errorBody.prefix(500))")
+                        continuation.finish(throwing: ProviderError.networkError("MiniMax API returned status \(httpResponse.statusCode)"))
+                        return
+                    }
+
+                    /// Parse SSE stream.
+                    var sseBuffer = Data()
+                    var inThinking = false
+                    var thinkingBuffer = ""
+
+                    for try await byte in bytes {
                         /// Check cancellation in streaming loop.
                         if Task.isCancelled {
                             self.logger.debug("TASK_CANCELLED: MiniMax streaming cancelled")
@@ -245,18 +387,374 @@ public class MiniMaxProvider: AIProvider {
                             return
                         }
 
-                        continuation.yield(chunk)
-                        try await Task.sleep(nanoseconds: 50_000_000)
+                        sseBuffer.append(byte)
+
+                        /// Process complete SSE events (ending with double newline).
+                        /// Check for \n\n in the raw bytes to avoid UTF-8 decoding issues.
+                        let doubleNewline = Data([0x0A, 0x0A])  // \n\n
+                        while let range = sseBuffer.range(of: doubleNewline) {
+                            let eventData = sseBuffer[sseBuffer.startIndex..<range.lowerBound]
+                            sseBuffer = Data(sseBuffer[range.upperBound...])
+
+                            /// Decode the complete event as UTF-8.
+                            guard let eventText = String(data: Data(eventData), encoding: .utf8) else {
+                                continue
+                            }
+
+                            /// Parse SSE data line.
+                            if eventText.hasPrefix("data: ") {
+                                let jsonString = String(eventText.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                                /// Skip [DONE] marker.
+                                if jsonString == "[DONE]" {
+                                    self.logger.debug("MiniMax streaming: Received [DONE]")
+                                    continuation.finish()
+                                    return
+                                }
+
+                                /// Parse chunk JSON using JSONSerialization for flexibility.
+                                guard let data = jsonString.data(using: .utf8),
+                                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                                    self.logger.debug("MiniMax streaming: Failed to parse JSON: \(jsonString.prefix(100))")
+                                    continue
+                                }
+
+                                /// Extract common fields.
+                                let chunkId = json["id"] as? String ?? UUID().uuidString
+                                let chunkModel = json["model"] as? String ?? modelForAPI
+                                let created = json["created"] as? Int ?? Int(Date().timeIntervalSince1970)
+                                let object = json["object"] as? String ?? "chat.completion.chunk"
+
+                                /// Parse choices.
+                                guard let choices = json["choices"] as? [[String: Any]] else {
+                                    continue
+                                }
+
+                                for (index, choice) in choices.enumerated() {
+                                    let choiceIndex = choice["index"] as? Int ?? index
+                                    let finishReason = choice["finish_reason"] as? String
+
+                                    /// Parse delta.
+                                    guard let delta = choice["delta"] as? [String: Any] else {
+                                        continue
+                                    }
+
+                                    /// Handle reasoning_details delta (when reasoning_split=true).
+                                    /// Also handles OpenRouter-style reasoning_details.
+                                    /// Uses separate path from <think> tag parsing since
+                                    /// reasoning_details is already structured by the API.
+                                    if let reasoningDetails = delta["reasoning_details"] as? [[String: Any]] {
+                                        var reasoningText = ""
+                                        for detail in reasoningDetails {
+                                            if let text = detail["text"] as? String, !text.isEmpty {
+                                                reasoningText += text
+                                            }
+                                        }
+                                        if !reasoningText.isEmpty {
+                                            let thinkingChunk = ServerOpenAIChatStreamChunk(
+                                                id: chunkId,
+                                                object: object,
+                                                created: created,
+                                                model: chunkModel,
+                                                choices: [OpenAIChatStreamChoice(
+                                                    index: choiceIndex,
+                                                    delta: OpenAIChatDelta(),
+                                                    finishReason: nil
+                                                )],
+                                                isToolMessage: true,
+                                                toolName: "thinking",
+                                                toolIcon: "brain.head.profile",
+                                                toolStatus: "running",
+                                                toolDetails: [reasoningText]
+                                            )
+                                            continuation.yield(thinkingChunk)
+                                        }
+                                    }
+
+                                    /// Process text content with streaming-safe think tag handling.
+                                    /// MiniMax M2.x models send thinking in <think>...</think> tags.
+                                    /// Tags may arrive split across chunks, so we use a state machine:
+                                    /// - inThinking: currently inside <think> block
+                                    /// - thinkingBuffer: accumulated thinking text (for tag detection)
+                                    if let content = delta["content"] as? String, !content.isEmpty {
+                                        /// Append to working buffer for tag detection.
+                                        var workBuffer = thinkingBuffer + content
+                                        thinkingBuffer = ""
+
+                                        if inThinking {
+                                            /// Inside a <think> block - look for closing </think>.
+                                            if let endRange = workBuffer.range(of: "</think>") {
+                                                /// Found end of thinking. Extract thinking text,
+                                                /// yield thinking card, then process remainder.
+                                                let thinkText = String(workBuffer[..<endRange.lowerBound])
+                                                let afterThink = String(workBuffer[endRange.upperBound...])
+                                                    .trimmingCharacters(in: CharacterSet(charactersIn: "\n"))
+
+                                                /// Yield accumulated thinking as a tool message card.
+                                                if !thinkText.isEmpty {
+                                                    let thinkingChunk = ServerOpenAIChatStreamChunk(
+                                                        id: chunkId,
+                                                        object: object,
+                                                        created: created,
+                                                        model: chunkModel,
+                                                        choices: [OpenAIChatStreamChoice(
+                                                            index: choiceIndex,
+                                                            delta: OpenAIChatDelta(),
+                                                            finishReason: nil
+                                                        )],
+                                                        isToolMessage: true,
+                                                        toolName: "thinking",
+                                                        toolIcon: "brain.head.profile",
+                                                        toolStatus: "complete",
+                                                        toolDetails: [thinkText]
+                                                    )
+                                                    continuation.yield(thinkingChunk)
+                                                }
+
+                                                inThinking = false
+
+                                                /// Yield any content after </think> as regular text.
+                                                if !afterThink.isEmpty {
+                                                    let contentChunk = ServerOpenAIChatStreamChunk(
+                                                        id: chunkId,
+                                                        object: object,
+                                                        created: created,
+                                                        model: chunkModel,
+                                                        choices: [OpenAIChatStreamChoice(
+                                                            index: choiceIndex,
+                                                            delta: OpenAIChatDelta(content: afterThink),
+                                                            finishReason: nil
+                                                        )]
+                                                    )
+                                                    continuation.yield(contentChunk)
+                                                }
+                                            } else if workBuffer.hasSuffix("<") ||
+                                                      workBuffer.hasSuffix("</") ||
+                                                      workBuffer.hasSuffix("</t") ||
+                                                      workBuffer.hasSuffix("</th") ||
+                                                      workBuffer.hasSuffix("</thi") ||
+                                                      workBuffer.hasSuffix("</thin") ||
+                                                      workBuffer.hasSuffix("</think") {
+                                                /// Possible partial </think> tag at end - buffer it.
+                                                thinkingBuffer = workBuffer
+                                            } else {
+                                                /// Still thinking - keep accumulating.
+                                                thinkingBuffer = workBuffer
+                                            }
+                                        } else {
+                                            /// Not in thinking mode - look for opening <think>.
+                                            if let startRange = workBuffer.range(of: "<think>") {
+                                                /// Found opening tag. Yield any text before it.
+                                                let beforeThink = String(workBuffer[..<startRange.lowerBound])
+                                                let afterTag = String(workBuffer[startRange.upperBound...])
+
+                                                if !beforeThink.isEmpty {
+                                                    let contentChunk = ServerOpenAIChatStreamChunk(
+                                                        id: chunkId,
+                                                        object: object,
+                                                        created: created,
+                                                        model: chunkModel,
+                                                        choices: [OpenAIChatStreamChoice(
+                                                            index: choiceIndex,
+                                                            delta: OpenAIChatDelta(content: beforeThink),
+                                                            finishReason: nil
+                                                        )]
+                                                    )
+                                                    continuation.yield(contentChunk)
+                                                }
+
+                                                inThinking = true
+
+                                                /// Check if </think> is also in this chunk.
+                                                if let endRange = afterTag.range(of: "</think>") {
+                                                    let thinkText = String(afterTag[..<endRange.lowerBound])
+                                                    let afterEnd = String(afterTag[endRange.upperBound...])
+                                                        .trimmingCharacters(in: CharacterSet(charactersIn: "\n"))
+
+                                                    if !thinkText.isEmpty {
+                                                        let thinkingChunk = ServerOpenAIChatStreamChunk(
+                                                            id: chunkId,
+                                                            object: object,
+                                                            created: created,
+                                                            model: chunkModel,
+                                                            choices: [OpenAIChatStreamChoice(
+                                                                index: choiceIndex,
+                                                                delta: OpenAIChatDelta(),
+                                                                finishReason: nil
+                                                            )],
+                                                            isToolMessage: true,
+                                                            toolName: "thinking",
+                                                            toolIcon: "brain.head.profile",
+                                                            toolStatus: "complete",
+                                                            toolDetails: [thinkText]
+                                                        )
+                                                        continuation.yield(thinkingChunk)
+                                                    }
+
+                                                    inThinking = false
+
+                                                    if !afterEnd.isEmpty {
+                                                        let contentChunk = ServerOpenAIChatStreamChunk(
+                                                            id: chunkId,
+                                                            object: object,
+                                                            created: created,
+                                                            model: chunkModel,
+                                                            choices: [OpenAIChatStreamChoice(
+                                                                index: choiceIndex,
+                                                                delta: OpenAIChatDelta(content: afterEnd),
+                                                                finishReason: nil
+                                                            )]
+                                                        )
+                                                        continuation.yield(contentChunk)
+                                                    }
+                                                } else {
+                                                    /// Still waiting for </think>.
+                                                    thinkingBuffer = afterTag
+                                                }
+                                            } else if workBuffer.hasSuffix("<") ||
+                                                      workBuffer.hasSuffix("<t") ||
+                                                      workBuffer.hasSuffix("<th") ||
+                                                      workBuffer.hasSuffix("<thi") ||
+                                                      workBuffer.hasSuffix("<thin") ||
+                                                      workBuffer.hasSuffix("<think") {
+                                                /// Possible partial <think> tag at end.
+                                                /// Buffer just the potential tag prefix.
+                                                let partialLen = workBuffer.distance(
+                                                    from: workBuffer.lastIndex(of: "<")!,
+                                                    to: workBuffer.endIndex
+                                                )
+                                                let safeContent = String(workBuffer.dropLast(partialLen))
+                                                thinkingBuffer = String(workBuffer.suffix(partialLen))
+
+                                                if !safeContent.isEmpty {
+                                                    let contentChunk = ServerOpenAIChatStreamChunk(
+                                                        id: chunkId,
+                                                        object: object,
+                                                        created: created,
+                                                        model: chunkModel,
+                                                        choices: [OpenAIChatStreamChoice(
+                                                            index: choiceIndex,
+                                                            delta: OpenAIChatDelta(content: safeContent),
+                                                            finishReason: nil
+                                                        )]
+                                                    )
+                                                    continuation.yield(contentChunk)
+                                                }
+                                            } else {
+                                                /// Normal content, no think tags.
+                                                let contentChunk = ServerOpenAIChatStreamChunk(
+                                                    id: chunkId,
+                                                    object: object,
+                                                    created: created,
+                                                    model: chunkModel,
+                                                    choices: [OpenAIChatStreamChoice(
+                                                        index: choiceIndex,
+                                                        delta: OpenAIChatDelta(content: workBuffer),
+                                                        finishReason: nil
+                                                    )]
+                                                )
+                                                continuation.yield(contentChunk)
+                                            }
+                                        }
+                                    }
+
+                                    /// Pass through tool call deltas incrementally.
+                                    /// MiniMax (like all OpenAI-compatible APIs) sends tool calls
+                                    /// across multiple chunks: first chunk has id+name, subsequent
+                                    /// chunks have argument fragments. The orchestrator's
+                                    /// StreamingToolCalls accumulator handles reassembly by index.
+                                    if let toolCalls = delta["tool_calls"] as? [[String: Any]] {
+                                        for toolCallData in toolCalls {
+                                            let function = toolCallData["function"] as? [String: Any]
+                                            let tcIndex = toolCallData["index"] as? Int
+                                            let toolCallId = toolCallData["id"] as? String ?? ""
+                                            let tcType = toolCallData["type"] as? String ?? ""
+                                            let name = function?["name"] as? String ?? ""
+                                            let arguments = function?["arguments"] as? String ?? ""
+
+                                            let toolCallChunk = ServerOpenAIChatStreamChunk(
+                                                id: chunkId,
+                                                object: object,
+                                                created: created,
+                                                model: chunkModel,
+                                                choices: [OpenAIChatStreamChoice(
+                                                    index: choiceIndex,
+                                                    delta: OpenAIChatDelta(
+                                                        content: nil,
+                                                        toolCalls: [OpenAIToolCall(
+                                                            id: toolCallId,
+                                                            type: tcType.isEmpty ? "function" : tcType,
+                                                            function: OpenAIFunctionCall(
+                                                                name: name,
+                                                                arguments: arguments
+                                                            ),
+                                                            index: tcIndex
+                                                        )]
+                                                    ),
+                                                    finishReason: nil
+                                                )]
+                                            )
+                                            continuation.yield(toolCallChunk)
+                                        }
+                                    }
+
+                                    /// If this choice has a finish reason, emit final chunk.
+                                    /// Also complete any pending thinking.
+                                    if let fr = finishReason, fr == "stop" || fr == "tool_calls" {
+                                        /// Complete any pending thinking first.
+                                        if inThinking && !thinkingBuffer.isEmpty {
+                                            let finalThinkingChunk = ServerOpenAIChatStreamChunk(
+                                                id: chunkId,
+                                                object: object,
+                                                created: created,
+                                                model: chunkModel,
+                                                choices: [OpenAIChatStreamChoice(
+                                                    index: choiceIndex,
+                                                    delta: OpenAIChatDelta(),
+                                                    finishReason: nil
+                                                )],
+                                                isToolMessage: true,
+                                                toolName: "thinking",
+                                                toolIcon: "brain.head.profile",
+                                                toolStatus: "completed",
+                                                toolDetails: [thinkingBuffer]
+                                            )
+                                            continuation.yield(finalThinkingChunk)
+                                            thinkingBuffer = ""
+                                            inThinking = false
+                                        }
+
+                                        let finalChunk = ServerOpenAIChatStreamChunk(
+                                            id: chunkId,
+                                            object: object,
+                                            created: created,
+                                            model: chunkModel,
+                                            choices: [OpenAIChatStreamChoice(
+                                                index: choiceIndex,
+                                                delta: OpenAIChatDelta(),
+                                                finishReason: fr
+                                            )]
+                                        )
+                                        continuation.yield(finalChunk)
+                                    }
+                                }
+                            }
+                        }
                     }
 
+                    /// Stream ended normally.
+                    self.logger.debug("MiniMax streaming: Stream ended [req:\(requestId.prefix(8))]")
                     continuation.finish()
+
                 } catch {
+                    self.logger.error("MiniMax streaming error [req:\(requestId.prefix(8))]: \(error)")
                     continuation.finish(throwing: error)
                 }
             }
         }
     }
 
+    /// Fallback: Convert non-streaming response to chunks (used for error recovery).
     private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
         guard let choice = response.choices.first else { return [] }
         var chunks: [ServerOpenAIChatStreamChunk] = []
@@ -269,24 +767,62 @@ public class MiniMaxProvider: AIProvider {
             choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
         ))
 
-        let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-        for word in words {
+        // Handle tool calls if present
+        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
+            for toolCall in toolCalls {
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(
+                        index: 0,
+                        delta: OpenAIChatDelta(
+                            content: nil,
+                            toolCalls: [
+                                OpenAIToolCall(
+                                    id: toolCall.id,
+                                    type: "function",
+                                    function: OpenAIFunctionCall(
+                                        name: toolCall.function.name,
+                                        arguments: toolCall.function.arguments
+                                    )
+                                )
+                            ]
+                        )
+                    )]
+                ))
+            }
+            
+            // Final chunk with finish_reason="tool_calls"
             chunks.append(ServerOpenAIChatStreamChunk(
                 id: response.id,
                 object: "chat.completion.chunk",
                 created: response.created,
                 model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
+            ))
+        } else {
+            // No tool calls - stream text content as before
+            let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+            for word in words {
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
+                ))
+            }
+
+            chunks.append(ServerOpenAIChatStreamChunk(
+                id: response.id,
+                object: "chat.completion.chunk",
+                created: response.created,
+                model: response.model,
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
             ))
         }
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-        ))
 
         return chunks
     }
@@ -307,6 +843,9 @@ public class MiniMaxProvider: AIProvider {
         guard let url = URL(string: "\(baseURL)/chat/completions") else {
             throw ProviderError.invalidConfiguration("Invalid MiniMax base URL: \(baseURL)")
         }
+        
+        logger.debug("MiniMax request URL: \(url.absoluteString)")
+        logger.debug("MiniMax API key present: \(apiKey.isEmpty == false)")
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
@@ -317,24 +856,54 @@ public class MiniMaxProvider: AIProvider {
         let temperature = request.temperature ?? config.temperature ?? 0.7
         let clampedTemperature = min(max(temperature, 0.01), 1.0)
 
+        /// MiniMax supports up to 131072 max output tokens with 200k context.
+        /// Use the HIGHER of request.maxTokens or config.maxTokens to ensure
+        /// we don't artificially limit MiniMax's capabilities.
+        let requestMaxTokens = request.maxTokens ?? 0
+        let configMaxTokens = config.maxTokens ?? 131072
+        let effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
+
         /// Strip provider prefix from model name before sending to API User-facing: "minimax/MiniMax-M2.7" -> API expects: "MiniMax-M2.7".
         let modelForAPI = request.model.contains("/")
             ? request.model.components(separatedBy: "/").last ?? request.model
             : request.model
 
-        /// Create request body.
-        let requestBody: [String: Any] = [
+        /// Create request body using MiniMax-compatible format.
+        /// MiniMax requires different tool message formatting:
+        /// - Tool results: {"role": "tool", "content": [{"name": "...", "type": "text", "text": "..."}]}
+        /// - Assistant with tool_calls: {"role": "assistant", "tool_calls": [...], "content": ""}
+        /// See: https://platform.minimax.io/docs/guides/text-function-call
+        var requestBody: [String: Any] = [
             "model": modelForAPI,
-            "messages": request.messages.map { message in
-                [
-                    "role": message.role,
-                    "content": message.content
-                ]
-            },
-            "max_tokens": request.maxTokens ?? config.maxTokens ?? 8192,
+            "messages": buildMiniMaxMessages(from: request.messages, requestId: requestId),
+            "max_tokens": effectiveMaxTokens,
             "temperature": clampedTemperature,
             "stream": false
         ]
+
+        /// Add tools support if present (required for structured tool_calls).
+        if let tools = request.tools, !tools.isEmpty {
+            requestBody["tools"] = tools.map { tool in
+                /// Parse the parametersJson back to object for the API.
+                let parameters: Any
+                if let parametersData = tool.function.parametersJson.data(using: .utf8),
+                   let parsedParameters = try? JSONSerialization.jsonObject(with: parametersData) {
+                    parameters = parsedParameters
+                } else {
+                    parameters = [:]
+                }
+
+                return [
+                    "type": tool.type,
+                    "function": [
+                        "name": tool.function.name,
+                        "description": tool.function.description,
+                        "parameters": parameters
+                    ]
+                ]
+            }
+            logger.debug("Added \(tools.count) tools to MiniMax request [req:\(requestId.prefix(8))]")
+        }
 
         do {
             urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
@@ -350,7 +919,24 @@ public class MiniMaxProvider: AIProvider {
         logger.debug("Sending request to MiniMax API [req:\(requestId.prefix(8))]")
 
         do {
+            let requestBodyData = try JSONSerialization.data(withJSONObject: requestBody)
+            
+            // Log full request body to debug file for diagnosing 2013 errors
+            if let bodyString = String(data: requestBodyData, encoding: .utf8) {
+                let debugPath = FileManager.default.temporaryDirectory.appendingPathComponent("minimax_request_\(requestId.prefix(8)).json")
+                try? bodyString.write(to: debugPath, atomically: true, encoding: .utf8)
+                logger.debug("MiniMax request body (\(bodyString.count) chars) written to: \(debugPath.path)")
+            }
+            
+            urlRequest.httpBody = requestBodyData
+        } catch {
+            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
+        }
+
+        do {
+            logger.debug("MiniMax: Starting URLSession request...")
             let (data, response) = try await URLSession.shared.data(for: urlRequest)
+            logger.debug("MiniMax: URLSession request completed")
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw ProviderError.networkError("Invalid response type")
@@ -367,6 +953,10 @@ public class MiniMaxProvider: AIProvider {
 
             /// Parse response.
             let minimaxResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
+            logger.debug("MiniMax raw response: id=\(minimaxResponse.id), model=\(minimaxResponse.model), choices=\(minimaxResponse.choices.count)")
+            if let firstChoice = minimaxResponse.choices.first {
+                logger.debug("MiniMax choice: finish_reason=\(firstChoice.finishReason ?? "nil"), content_len=\(firstChoice.message.content?.count ?? 0), tool_calls=\(firstChoice.message.toolCalls?.count ?? 0)")
+            }
             logger.debug("Successfully processed MiniMax response [req:\(requestId.prefix(8))]")
 
             return minimaxResponse
@@ -405,6 +995,85 @@ public class MiniMaxProvider: AIProvider {
         }
 
         return true
+    }
+
+    // MARK: - Message Transformation
+
+    /// Build MiniMax-compatible messages array from OpenAI format.
+    /// MiniMax requires different tool message formatting:
+    /// - Tool results: {"role": "tool", "content": [{"name": "...", "type": "text", "text": "..."}]}
+    /// - Assistant with tool_calls: {"role": "assistant", "tool_calls": [...], "content": ""}
+    /// See: https://platform.minimax.io/docs/guides/text-function-call
+    private func buildMiniMaxMessages(from messages: [OpenAIChatMessage], requestId: String) -> [[String: Any]] {
+        // First pass: collect tool_call_id -> function_name mappings from assistant messages
+        var toolCallIdToFunctionName: [String: String] = [:]
+        for message in messages {
+            if message.role == "assistant", let toolCalls = message.toolCalls {
+                for tc in toolCalls {
+                    toolCallIdToFunctionName[tc.id] = tc.function.name
+                    logger.debug("MiniMax: Collected tool_call id=\(tc.id), name=\(tc.function.name)")
+                }
+            }
+        }
+
+        var result: [[String: Any]] = []
+
+        for message in messages {
+            if message.role == "tool" {
+                // MiniMax tool message format: content is an array of {name, type, text} objects
+                // Need to look up function name from tool_call_id
+                var toolContent: [[String: Any]] = []
+
+                // Try to get function name from tool_call_id mapping
+                let funcName: String
+                if let toolCallId = message.toolCallId, let name = toolCallIdToFunctionName[toolCallId] {
+                    funcName = name
+                } else {
+                    // Fallback: try to parse from content
+                    funcName = "unknown"
+                }
+
+                toolContent.append([
+                    "name": funcName,
+                    "type": "text",
+                    "text": message.content ?? ""
+                ])
+
+                result.append([
+                    "role": "tool",
+                    "tool_call_id": message.toolCallId ?? "",
+                    "content": toolContent
+                ])
+
+                logger.debug("MiniMax tool message: tool_call_id=\(message.toolCallId ?? "nil"), name=\(funcName), content_len=\(message.content?.count ?? 0)")
+            } else {
+                // Standard message format
+                var msgDict: [String: Any] = [
+                    "role": message.role,
+                    "content": message.content ?? ""
+                ]
+
+                // Handle tool_calls for assistant messages
+                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                    msgDict["tool_calls"] = toolCalls.map { tc -> [String: Any] in
+                        return [
+                            "id": tc.id,
+                            "type": "function",
+                            "function": [
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments ?? "{}"
+                            ]
+                        ]
+                    }
+                    // Clear content for assistant messages with tool_calls
+                    msgDict["content"] = ""
+                }
+
+                result.append(msgDict)
+            }
+        }
+
+        return result
     }
 
     // MARK: - Lifecycle
@@ -499,24 +1168,62 @@ public class CustomProvider: AIProvider {
             choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
         ))
 
-        let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-        for word in words {
+        // Handle tool calls if present
+        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
+            for toolCall in toolCalls {
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(
+                        index: 0,
+                        delta: OpenAIChatDelta(
+                            content: nil,
+                            toolCalls: [
+                                OpenAIToolCall(
+                                    id: toolCall.id,
+                                    type: "function",
+                                    function: OpenAIFunctionCall(
+                                        name: toolCall.function.name,
+                                        arguments: toolCall.function.arguments
+                                    )
+                                )
+                            ]
+                        )
+                    )]
+                ))
+            }
+            
+            // Final chunk with finish_reason="tool_calls"
             chunks.append(ServerOpenAIChatStreamChunk(
                 id: response.id,
                 object: "chat.completion.chunk",
                 created: response.created,
                 model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
+            ))
+        } else {
+            // No tool calls - stream text content as before
+            let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+            for word in words {
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
+                ))
+            }
+
+            chunks.append(ServerOpenAIChatStreamChunk(
+                id: response.id,
+                object: "chat.completion.chunk",
+                created: response.created,
+                model: response.model,
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
             ))
         }
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-        ))
 
         return chunks
     }

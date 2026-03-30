@@ -822,7 +822,19 @@ extension AgentOrchestrator {
                             finishReason = firstChoice.finishReason
                         }
                     }
-                    let content = contentChoice.message.content ?? ""
+                    var content = contentChoice.message.content ?? ""
+
+                    /// Strip <think>...</think> tags from non-streaming responses.
+                    /// Some providers (MiniMax) include thinking inline.
+                    if content.contains("<think>") || content.contains("</think>") {
+                        while let startRange = content.range(of: "<think>"),
+                              let endRange = content.range(of: "</think>", range: startRange.upperBound..<content.endIndex) {
+                            content.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+                        }
+                        content = content.replacingOccurrences(of: "<think>", with: "")
+                        content = content.replacingOccurrences(of: "</think>", with: "")
+                        content = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
 
                     logger.debug("callLLM: Response has \(response.choices.count) choices, finishReason=\(finishReason), choiceWithTools=\(choiceWithTools != nil)")
 
@@ -1711,6 +1723,9 @@ extension AgentOrchestrator {
         /// This prevents empty assistant messages when LLM only returns tool calls
         var assistantMessageId: UUID?
 
+        /// Track thinking message for provider-level thinking (e.g., MiniMax <think> tags)
+        var thinkingMessageId: UUID?
+
         /// Track tool messages by execution ID to create separate cards for each tool call
         var toolMessagesByExecutionId: [String: UUID] = [:]
 
@@ -1749,7 +1764,25 @@ extension AgentOrchestrator {
             /// - Regular chunks (isToolMessage=false) → update ASSISTANT message
             let targetMessageId: UUID
 
-            if chunk.isToolMessage == true, let executionId = chunk.toolExecutionId {
+            if chunk.isToolMessage == true, chunk.toolName == "thinking" {
+                /// Thinking chunk from provider (e.g., MiniMax <think> tags).
+                /// Create a proper .thinking message via addThinkingMessage().
+                let thinkingText = chunk.toolDetails?.joined(separator: "\n") ?? ""
+                if !thinkingText.isEmpty {
+                    let enableReasoning = conversation.settings.enableReasoning
+                    let thinkMsgId = conversation.messageBus?.addThinkingMessage(
+                        id: UUID(),
+                        reasoningContent: thinkingText,
+                        showReasoning: enableReasoning
+                    ) ?? UUID()
+                    thinkingMessageId = thinkMsgId
+                    targetMessageId = thinkMsgId
+                    logger.debug("THINKING_MESSAGE_CREATE: id=\(thinkMsgId.uuidString.prefix(8)) len=\(thinkingText.count) reasoning=\(enableReasoning)")
+                } else {
+                    /// Empty thinking chunk - skip.
+                    continue
+                }
+            } else if chunk.isToolMessage == true, let executionId = chunk.toolExecutionId {
                 /// Tool chunk: create tool message if this is first chunk for this execution
                 if let existingToolMessageId = toolMessagesByExecutionId[executionId] {
                     /// Reuse existing tool message for this execution
@@ -2048,6 +2081,21 @@ extension AgentOrchestrator {
             finalContent = accumulatedContentByMessageId[msgId] ?? ""
         }
         var finalToolCalls = parsedToolCalls
+
+        /// Strip residual <think>...</think> tags from final content.
+        /// Some providers (MiniMax) include thinking in <think> tags that may
+        /// not be fully intercepted by the streaming parser. Clean up any remnants.
+        if finalContent.contains("<think>") || finalContent.contains("</think>") {
+            /// Remove complete <think>...</think> blocks.
+            while let startRange = finalContent.range(of: "<think>"),
+                  let endRange = finalContent.range(of: "</think>", range: startRange.upperBound..<finalContent.endIndex) {
+                finalContent.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+            }
+            /// Remove any orphaned tags.
+            finalContent = finalContent.replacingOccurrences(of: "<think>", with: "")
+            finalContent = finalContent.replacingOccurrences(of: "</think>", with: "")
+            finalContent = finalContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
 
         /// CRITICAL: Complete streaming for all tool messages
         /// Tool messages were created during streaming, now mark them as complete

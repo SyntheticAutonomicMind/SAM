@@ -335,13 +335,13 @@ class MarkdownViewRenderer {
                 }
             }
         }
-        } // ScrollView(.horizontal)
         .background(Color.primary.opacity(0.02))
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
         )
+        } // ScrollView(.horizontal)
         .padding(.vertical, 4)
     }
 
