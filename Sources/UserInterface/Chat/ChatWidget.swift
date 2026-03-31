@@ -2990,8 +2990,7 @@ public struct ChatWidget: View {
         /// Check memory requirements before loading.
         if let requirement = localModelManager.checkModelMemory(
             provider: provider,
-            modelName: modelName,
-            inferenceLimitGB: 8.0
+            modelName: modelName
         ) {
             if !requirement.isSafe {
                 /// Show warning dialog.
