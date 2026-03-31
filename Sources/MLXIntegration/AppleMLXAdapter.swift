@@ -536,6 +536,14 @@ public class AppleMLXAdapter {
     public func clearCache() {
         loadedModels.removeAll()
         loadedTokenizers.removeAll()
+
+        /// Release MLX Metal GPU buffer pool.
+        /// Without this, Metal buffers remain allocated even after model references are dropped.
+        let before = MLX.Memory.activeMemory + MLX.Memory.cacheMemory
+        MLX.Memory.clearCache()
+        let after = MLX.Memory.activeMemory + MLX.Memory.cacheMemory
+        logger.info("MLX_MEMORY: Cleared Metal buffer cache (before: \(before / 1024 / 1024)MB, after: \(after / 1024 / 1024)MB)")
+
         logger.debug("Cleared model cache")
     }
 }

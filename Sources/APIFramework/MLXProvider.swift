@@ -106,50 +106,38 @@ public class MLXProvider: AIProvider {
             providerLogger.info("MLX_DEBUG: Message \(index): role=\(msg.role), content=\(msg.content?.prefix(100) ?? "nil")")
         }
 
-        /// PRIORITY 3 OPTIMIZATION: Single-pass message processing (4x faster) Instead of 4 separate iterations: system extraction, tool conversion, role merging, final building We now do all operations in ONE pass with inline merging.
-        providerLogger.debug("MLX_OPTIMIZATION: Processing \(requestToProcess.messages.count) messages in single pass")
+        /// Use the orchestrator's system prompt instead of generating a duplicate.
+        /// Extract system content from incoming messages, fall back to SystemPromptManager.
+        var allSystemContent = ""
+        var nonSystemMessagesSync = [OpenAIChatMessage]()
 
-        /// Get system prompt with tool guidance
-        let toolsEnabled = request.samConfig?.mcpToolsEnabled ?? true
-        var systemPrompt = SystemPromptManager.shared.generateSystemPrompt(toolsEnabled: toolsEnabled)
-
-        /// Add tool guidance dynamically if tools present
-        if let requestTools = request.tools, !requestTools.isEmpty {
-            var toolsList = "\n\n## Available Tools\n"
-            for tool in requestTools {
-                toolsList += "\(tool.function.name): \(tool.function.description)\n"
-
-                if let paramsData = tool.function.parametersJson.data(using: .utf8),
-                   let params = try? JSONSerialization.jsonObject(with: paramsData) as? [String: Any],
-                   let props = params["properties"] as? [String: [String: Any]] {
-                    let required = (params["required"] as? [String]) ?? []
-                    var paramList: [String] = []
-
-                    for (paramName, paramDetails) in props.sorted(by: { $0.key < $1.key }) {
-                        let isRequired = required.contains(paramName)
-                        let paramType = paramDetails["type"] as? String ?? "any"
-                        let reqMark = isRequired ? "*" : ""
-                        paramList.append("\(paramName)\(reqMark):\(paramType)")
+        for msg in requestToProcess.messages {
+            if msg.role == "system" {
+                if let content = msg.content {
+                    if !allSystemContent.isEmpty {
+                        allSystemContent += "\n\n"
                     }
-
-                    if !paramList.isEmpty {
-                        toolsList += "  Args: " + paramList.joined(separator: ", ") + "\n"
-                    }
+                    allSystemContent += content
                 }
-                toolsList += "\n"
+            } else {
+                nonSystemMessagesSync.append(msg)
             }
-            systemPrompt += toolsList
         }
 
-        providerLogger.info("MLX_NON_STREAMING_PROMPT: Using SystemPromptManager, tools=\(request.tools?.count ?? 0), length=\(systemPrompt.count)")
+        let systemPrompt: String
+        if !allSystemContent.isEmpty {
+            systemPrompt = allSystemContent
+            providerLogger.info("MLX_NON_STREAMING_PROMPT: Using orchestrator system prompt, length=\(systemPrompt.count)")
+        } else {
+            let toolsEnabled = request.samConfig?.mcpToolsEnabled ?? true
+            systemPrompt = SystemPromptManager.shared.generateSystemPrompt(toolsEnabled: toolsEnabled)
+            providerLogger.info("MLX_NON_STREAMING_PROMPT: Fallback to SystemPromptManager, tools=\(request.tools?.count ?? 0), length=\(systemPrompt.count)")
+        }
 
-        /// Process messages in single pass (replaces 4 separate iterations)
-        var processedWithoutSystem = processMessagesOptimized(requestToProcess.messages)
+        /// Process non-system messages for strict alternation.
+        let processedWithoutSystem = processMessagesOptimized(nonSystemMessagesSync)
 
-        /// Remove system message from processed (we'll add our own)
-        processedWithoutSystem.removeAll { $0.role == "system" }
-
-        /// Build final message list with our system prompt first
+        /// Build final message list with system prompt first.
         var alternatingMessages = [OpenAIChatMessage]()
         alternatingMessages.append(OpenAIChatMessage(role: "system", content: systemPrompt))
         alternatingMessages.append(contentsOf: processedWithoutSystem)
@@ -351,40 +339,20 @@ public class MLXProvider: AIProvider {
                     /// Build final message list: merged system message FIRST, then all others.
                     var processedMessages = [OpenAIChatMessage]()
 
-                    /// Use SystemPromptManager to get real SAM prompt with all guard rails Pass toolsEnabled from samConfig to filter tool-specific guidance when tools are disabled.
-                    let toolsEnabled = request.samConfig?.mcpToolsEnabled ?? true
-                    var systemPrompt = SystemPromptManager.shared.generateSystemPrompt(toolsEnabled: toolsEnabled)
-
-                    /// Add tool guidance dynamically if tools present - minimal format, let model use native format.
-                    if let requestTools = request.tools, !requestTools.isEmpty {
-                        var toolsList = "\n\n## Available Tools\n"
-                        for tool in requestTools {
-                            toolsList += "\(tool.function.name): \(tool.function.description)\n"
-
-                            /// Parse parametersJson to get parameter names and types only.
-                            if let paramsData = tool.function.parametersJson.data(using: .utf8),
-                               let params = try? JSONSerialization.jsonObject(with: paramsData) as? [String: Any],
-                               let props = params["properties"] as? [String: [String: Any]] {
-                                let required = (params["required"] as? [String]) ?? []
-                                var paramList: [String] = []
-
-                                for (paramName, paramDetails) in props.sorted(by: { $0.key < $1.key }) {
-                                    let isRequired = required.contains(paramName)
-                                    let paramType = paramDetails["type"] as? String ?? "any"
-                                    let reqMark = isRequired ? "*" : ""
-                                    paramList.append("\(paramName)\(reqMark):\(paramType)")
-                                }
-
-                                if !paramList.isEmpty {
-                                    toolsList += "  Args: " + paramList.joined(separator: ", ") + "\n"
-                                }
-                            }
-                            toolsList += "\n"
-                        }
-                        systemPrompt += toolsList
+                    /// Use the orchestrator's system prompt - it already contains the full prompt,
+                    /// context, guard rails, and tool information. Generating a second prompt here
+                    /// doubles the token count and wastes context window.
+                    let systemPrompt: String
+                    if !allSystemContent.isEmpty {
+                        systemPrompt = allSystemContent
+                        providerLogger.info("MLX_STREAMING_PROMPT: Using orchestrator system prompt, length=\(systemPrompt.count)")
+                    } else {
+                        /// Fallback: generate from SystemPromptManager if orchestrator didn't provide one.
+                        let toolsEnabled = request.samConfig?.mcpToolsEnabled ?? true
+                        systemPrompt = SystemPromptManager.shared.generateSystemPrompt(toolsEnabled: toolsEnabled)
+                        providerLogger.info("MLX_STREAMING_PROMPT: Fallback to SystemPromptManager, tools=\(request.tools?.count ?? 0), length=\(systemPrompt.count)")
                     }
 
-                    providerLogger.info("MLX_STREAMING_PROMPT: Using SystemPromptManager, tools=\(request.tools?.count ?? 0), length=\(systemPrompt.count)")
                     processedMessages.append(OpenAIChatMessage(role: "system", content: systemPrompt))
                     processedMessages.append(contentsOf: nonSystemMessages)
 
@@ -510,6 +478,21 @@ public class MLXProvider: AIProvider {
                             providerLogger.info("PERFORMANCE: Using user-configured MLX preset: \(preset)")
                         }
                     }
+
+                    /// Set MLX Metal buffer cache limit based on performance profile.
+                    /// Without this, MLX retains all intermediate computation buffers indefinitely.
+                    let metalCacheLimit: Int
+                    if let maxKV = mlxConfig.maxKVSize {
+                        /// Constrained profiles: limit Metal cache proportionally.
+                        /// Each KV token uses ~model_dim * 2 * num_layers bytes.
+                        /// For a 4B model with 4096 maxKV, ~512MB is reasonable.
+                        metalCacheLimit = maxKV * 128 * 1024  // ~512MB for 4096, ~1GB for 8192
+                    } else {
+                        /// Unconstrained profiles: allow generous but bounded cache.
+                        metalCacheLimit = 2 * 1024 * 1024 * 1024  // 2GB
+                    }
+                    MLX.Memory.cacheLimit = metalCacheLimit
+                    providerLogger.info("MLX_MEMORY: Set Metal cache limit to \(metalCacheLimit / 1024 / 1024)MB")
 
                     /// PER-CONVERSATION KV CACHE Strategy: Each conversation gets its own persistent cache - System prompt (6000+ tokens with tools) cached automatically on first turn - Conversation history accumulated incrementally - Isolated per conversation for privacy Performance: - Turn 1: Full computation (~20-30s for cold start) - Turn 2+: Only new tokens computed (~5-10s, system prompt cached!) - Benefit: 6000+ token system prompt processed once, reused forever in conversation.
 
@@ -874,6 +857,13 @@ public class MLXProvider: AIProvider {
 
         /// MEMORY LEAK FIX: Clear conversation caches on model unload.
         clearAllConversationCaches()
+
+        /// Release MLX Metal GPU buffer pool.
+        /// KV caches and model weights allocate Metal buffers that persist
+        /// in MLX's buffer cache even after Swift references are dropped.
+        MLX.Memory.clearCache()
+        let remaining = MLX.Memory.activeMemory
+        providerLogger.info("MLX_MEMORY: After unload - active memory: \(remaining / 1024 / 1024)MB")
     }
 
     /// Load the model into memory and return its capabilities.
