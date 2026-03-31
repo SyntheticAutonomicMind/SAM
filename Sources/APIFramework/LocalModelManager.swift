@@ -277,6 +277,23 @@ public class LocalModelManager {
         return totalSize
     }
 
+    /// Calculate total size of model weight files in a directory (safetensors, gguf, bin).
+    private func calculateModelWeightsSize(in directory: URL) -> Int64 {
+        let weightExtensions: Set<String> = ["safetensors", "gguf", "bin"]
+        var totalSize: Int64 = 0
+        if let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey]) {
+            for file in files {
+                let ext = file.pathExtension.lowercased()
+                if weightExtensions.contains(ext) {
+                    if let fileSize = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                        totalSize += Int64(fileSize)
+                    }
+                }
+            }
+        }
+        return totalSize
+    }
+
     /// Sync scanned models with registry.
     /// Sync discovered models with registry and return whether changes were made
     private func syncWithRegistry() -> Bool {
@@ -539,25 +556,56 @@ public class LocalModelManager {
         }
     }
 
-    /// Estimate memory requirements for loading a model - Parameters: - modelPath: Path to the model file - inferenceLimitGB: Configured inference memory limit in GB (default: 8) - Returns: Memory requirement estimation with safety check.
-    public func estimateMemoryRequirement(modelPath: String, inferenceLimitGB: Double = 8.0) -> MemoryRequirement? {
-        guard FileManager.default.fileExists(atPath: modelPath) else {
+    /// Estimate memory requirements for loading a model - Parameters: - modelPath: Path to the model file or directory - inferenceLimitGB: Fixed overhead for KV cache, Metal buffers, and runtime (default: 2.0) - Returns: Memory requirement estimation with safety check.
+    public func estimateMemoryRequirement(modelPath: String, inferenceLimitGB: Double = 2.0) -> MemoryRequirement? {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: modelPath) else {
             modelLogger.error("Model file not found: \(modelPath)")
             return nil
         }
 
         do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: modelPath)
-            guard let fileSizeBytes = attributes[.size] as? Int64 else {
-                modelLogger.error("Could not determine file size for: \(modelPath)")
-                return nil
+            /// Calculate total model size, handling both single files and directories.
+            /// For multi-shard models (safetensors split across files), we need the
+            /// parent directory total, not just one shard.
+            let fileSizeBytes: Int64
+            let pathURL = URL(fileURLWithPath: modelPath)
+
+            var isDirectory: ObjCBool = false
+            fileManager.fileExists(atPath: modelPath, isDirectory: &isDirectory)
+
+            if isDirectory.boolValue {
+                /// Path is a directory - sum all files (handles MLX model dirs).
+                fileSizeBytes = calculateDirectorySize(pathURL)
+            } else {
+                /// Path is a file - check if it's a shard in a multi-part model.
+                let parentDir = pathURL.deletingLastPathComponent()
+                let filename = pathURL.lastPathComponent
+
+                if filename.contains("-of-") {
+                    /// Multi-shard model: sum all weight files in the directory.
+                    fileSizeBytes = calculateModelWeightsSize(in: parentDir)
+                } else {
+                    /// Single file model (e.g., .gguf).
+                    let attributes = try fileManager.attributesOfItem(atPath: modelPath)
+                    guard let size = attributes[.size] as? Int64 else {
+                        modelLogger.error("Could not determine file size for: \(modelPath)")
+                        return nil
+                    }
+                    fileSizeBytes = size
+                }
             }
 
             /// Convert to GB.
             let modelSizeGB = Double(fileSizeBytes) / 1_073_741_824.0
 
-            /// Estimate total memory requirement: Model size * 1.5 (covers KV cache + activations) + inference limit.
-            let estimatedTotalGB = (modelSizeGB * 1.5) + inferenceLimitGB
+            /// Estimate total memory: model weights + inference overhead.
+            /// MLX loads weights into unified memory. Runtime overhead includes:
+            /// - Metal buffer cache (bounded by MLX.Memory.cacheLimit)
+            /// - KV cache (depends on context length and quantization)
+            /// - Tokenizer, activations, and app overhead
+            /// Based on observed usage: ~1.2x model weights + ~2GB fixed overhead.
+            let estimatedTotalGB = (modelSizeGB * 1.2) + inferenceLimitGB
 
             /// Get available system RAM (dynamic measurement) Use mach host statistics to measure currently free/inactive/purgeable pages.
             func getAvailableMemoryBytes() -> UInt64 {
@@ -600,13 +648,13 @@ public class LocalModelManager {
             var warningMessage: String?
             if !isSafe {
                 warningMessage = """
-                This model needs about \(String(format: "%.0f", estimatedTotalGB))GB of free memory.
+                This model needs about \(String(format: "%.0f", estimatedTotalGB))GB of free memory \
+                (model weights: \(String(format: "%.1f", modelSizeGB))GB + runtime overhead).
                 You currently have \(String(format: "%.0f", availableMemoryGB))GB available.
 
                 To free up memory:
                 • Close other applications
                 • Use a smaller or more quantized model
-                • Reduce inference limit in Preferences (currently \(String(format: "%.0f", inferenceLimitGB))GB)
                 """
                 modelLogger.warning("Memory check FAILED for \(modelPath):")
                 modelLogger.warning("  Estimated need: \(String(format: "%.1f", estimatedTotalGB))GB")
@@ -633,7 +681,7 @@ public class LocalModelManager {
     }
 
     /// Check if a model is safe to load based on available memory - Parameters: - provider: Model provider (e.g., "unsloth") - modelName: Model name (e.g., "Qwen2.5-Coder-7B-Instruct-Q5_K_M") - inferenceLimitGB: Configured inference memory limit in GB - Returns: Memory requirement estimation, or nil if model not found.
-    public func checkModelMemory(provider: String, modelName: String, inferenceLimitGB: Double = 8.0) -> MemoryRequirement? {
+    public func checkModelMemory(provider: String, modelName: String, inferenceLimitGB: Double = 2.0) -> MemoryRequirement? {
         guard let modelPath = getModelPath(provider: provider, modelName: modelName) else {
             modelLogger.error("Model not found: \(provider)/\(modelName)")
             return nil
