@@ -1,6 +1,45 @@
 {
   "releases": [
     {
+      "version": "20260331.1",
+      "release_date": "March 31, 2026",
+      "introduction": "This release brings significant performance and memory improvements to local AI models, along with support for the latest Qwen 3.5 models.",
+      "improvements": [
+        {
+          "id": "mlx-performance",
+          "icon": "gauge.open.with.lines.needle.33percent.badge.arrow.up",
+          "title": "Faster Local Model Inference",
+          "description": "Upgraded the local inference engine with up to 35% faster token generation and optimized prompt processing that scales to your hardware. Conversations start faster, especially with longer system prompts."
+        },
+        {
+          "id": "qwen35-support",
+          "icon": "cpu.fill",
+          "title": "Qwen 3.5 Model Support",
+          "description": "SAM now supports Qwen 3.5 models, including the new hybrid attention architecture. Download Qwen 3.5 models directly from SAM's model manager."
+        },
+        {
+          "id": "memory-efficiency",
+          "icon": "memorychip.fill",
+          "title": "Lower Memory Usage",
+          "description": "Local models now release GPU memory immediately when unloaded or when switching between models. Memory estimates for large models are also more accurate, so SAM won't try to load models that don't fit."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "duplicate-system-prompt",
+          "icon": "doc.on.doc.fill",
+          "title": "Fixed Duplicate System Prompt",
+          "description": "Fixed an issue where the system prompt could be sent twice to local models, wasting context window space and slowing down responses."
+        },
+        {
+          "id": "missing-chat-template",
+          "icon": "text.bubble.fill",
+          "title": "Fixed Community Model Compatibility",
+          "description": "Some community-quantized models (such as 4-bit variants) were missing configuration needed for conversation formatting. SAM now detects this and applies a compatible format automatically."
+        }
+      ]
+    },
+    {
       "version": "20260330.1",
       "release_date": "March 30, 2026",
       "introduction": "This release adds MiniMax as a first-class AI provider with full streaming and tool support, and fixes table rendering in conversations.",
