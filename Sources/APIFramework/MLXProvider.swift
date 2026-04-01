@@ -550,6 +550,7 @@ public class MLXProvider: AIProvider {
                         kvGroupSize: mlxConfig.kvGroupSize,
                         quantizedKVStart: mlxConfig.quantizedKVStart,
                         maxKVSize: mlxConfig.maxKVSize,
+                        prefillStepSize: mlxConfig.prefillStepSize,
                         modelId: requestToProcess.model,
                         hideThinking: hideThinking
                     )

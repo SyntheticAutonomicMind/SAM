@@ -270,6 +270,7 @@ public class AppleMLXAdapter {
         kvGroupSize: Int = 64,
         quantizedKVStart: Int = 0,
         maxKVSize: Int? = nil,
+        prefillStepSize: Int = 512,
         modelId: String = "mlx-local",
         hideThinking: Bool = false
     ) -> AsyncThrowingStream<MLXTextChunk, Error> {
@@ -312,7 +313,8 @@ public class AppleMLXAdapter {
                         temperature: temperature,
                         topP: topP,
                         repetitionPenalty: repetitionPenalty,
-                        repetitionContextSize: repetitionContextSize
+                        repetitionContextSize: repetitionContextSize,
+                        prefillStepSize: prefillStepSize
                     )
 
                     /// Accumulate full response for debugging.

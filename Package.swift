@@ -48,14 +48,14 @@ let package = Package(
     ],
     dependencies: [
         // MLX Swift for Apple Silicon AI acceleration
-        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.31.1"),
 
         // MLX Swift LM - LLMs and VLMs with MLX Swift (split from mlx-swift-examples)
-        // Pinned to main for Qwen3.5 support (PR #120) - not yet tagged
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", revision: "b362c8a43fec27e8a11067220091cf522c7ab19c"),
+        // Pinned to main for Qwen3.5 support + 35% gen speed fix (CPU<->GPU sync elimination)
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", revision: "2a296f145c3129fea4290bb6e4a0a5fb458efa06"),
 
         // Transformers and tokenization support
-        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.0"),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.2.0"),
 
 
         // Additional dependencies for HTTP requests and JSON handling
