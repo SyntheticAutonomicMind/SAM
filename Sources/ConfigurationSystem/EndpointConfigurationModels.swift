@@ -100,6 +100,9 @@ public struct MLXConfiguration: Codable, Equatable {
     /// Maximum tokens to generate per response.
     public var maxTokens: Int
 
+    /// Prompt prefill step size (larger = faster prefill, more memory). Default: 512.
+    public var prefillStepSize: Int
+
     public init(
         kvBits: Int? = nil,
         kvGroupSize: Int = 64,
@@ -110,7 +113,8 @@ public struct MLXConfiguration: Codable, Equatable {
         repetitionPenalty: Double? = 1.1,
         repetitionContextSize: Int = 20,
         contextLength: Int = 8192,
-        maxTokens: Int = 2048
+        maxTokens: Int = 2048,
+        prefillStepSize: Int = 512
     ) {
         self.kvBits = kvBits
         self.kvGroupSize = kvGroupSize
@@ -122,6 +126,7 @@ public struct MLXConfiguration: Codable, Equatable {
         self.repetitionContextSize = repetitionContextSize
         self.contextLength = contextLength
         self.maxTokens = maxTokens
+        self.prefillStepSize = prefillStepSize
     }
 
     /// Optimized configuration for memory-constrained systems (8GB RAM) Uses 4-bit KV cache quantization to reduce memory usage by ~75%.

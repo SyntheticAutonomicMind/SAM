@@ -138,7 +138,8 @@ public enum RAMProfile: String, Codable, CaseIterable {
                 repetitionPenalty: 1.1,
                 repetitionContextSize: 20,
                 contextLength: 4096,
-                maxTokens: 1024
+                maxTokens: 1024,
+                prefillStepSize: 256
             )
 
         case .moderate:
@@ -153,7 +154,8 @@ public enum RAMProfile: String, Codable, CaseIterable {
                 repetitionPenalty: 1.1,
                 repetitionContextSize: 20,
                 contextLength: 8192,
-                maxTokens: 1024
+                maxTokens: 1024,
+                prefillStepSize: 512
             )
 
         case .balanced:
@@ -168,7 +170,8 @@ public enum RAMProfile: String, Codable, CaseIterable {
                 repetitionPenalty: 1.1,
                 repetitionContextSize: 20,
                 contextLength: 16384,
-                maxTokens: 2048
+                maxTokens: 2048,
+                prefillStepSize: 1024
             )
 
         case .aggressive:
@@ -183,7 +186,8 @@ public enum RAMProfile: String, Codable, CaseIterable {
                 repetitionPenalty: 1.1,
                 repetitionContextSize: 20,
                 contextLength: 32768,
-                maxTokens: 4096
+                maxTokens: 4096,
+                prefillStepSize: 1024
             )
 
         case .maximum:
@@ -198,7 +202,8 @@ public enum RAMProfile: String, Codable, CaseIterable {
                 repetitionPenalty: 1.1,
                 repetitionContextSize: 20,
                 contextLength: 65536,
-                maxTokens: 8192
+                maxTokens: 8192,
+                prefillStepSize: 2048
             )
         }
     }
