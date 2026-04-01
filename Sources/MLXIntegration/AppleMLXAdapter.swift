@@ -29,6 +29,10 @@ public class AppleMLXAdapter {
     private let logger = Logger(label: "com.sam.mlx.adapter")
     private let typeRegistry = LLMTypeRegistry.shared
 
+    /// ChatML fallback template for models missing chat_template in tokenizer_config.json. Covers Qwen, ChatML-family models, and most mlx-community quantizations.
+    // swiftlint:disable:next line_length
+    static let defaultChatMLTemplate = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+
     /// Cache loaded models to avoid reloading.
     private var loadedModels: [String: any LanguageModel] = [:]
     private var loadedTokenizers: [String: Tokenizer] = [:]
@@ -283,8 +287,23 @@ public class AppleMLXAdapter {
                     /// DON'T pass tools to applyChatTemplate - causes system prompt bleeding **The problem**: When tools passed to applyChatTemplate: - Some chat templates inject tool definitions directly into prompt - This causes system prompt content to leak into assistant responses - Model gets confused between instructions and conversation **The solution**: Tools in system message content only - MLXProvider handles tool formatting in system message - applyChatTemplate just formats conversation structure - Clean separation: system message = instructions, chat = conversation **VERIFIED**: mlx-swift-examples Chat.swift does NOT pass tools to template Tool definitions should be in system message content (handled by MLXProvider).
 
                     /// Pass add_generation_prompt=true to append <|im_start|>assistant\n Without this, Qwen2.5 doesn't know to generate a response and echoes system prompt Chat template has: {%- if add_generation_prompt %} {{- '<|im_start|>assistant\n' %}} {%- endif %}.
-                    let additionalContext = ["add_generation_prompt": true]
-                    let inputTokens = try tokenizer.applyChatTemplate(messages: messages, tools: nil, additionalContext: additionalContext)
+                    let additionalContext: [String: any Sendable] = ["add_generation_prompt": true]
+
+                    /// Some community-quantized models (e.g. mlx-community/*) are missing the chat_template in tokenizer_config.json. Detect this and provide a ChatML fallback so generation doesn't fail.
+                    let fallbackTemplate: ChatTemplateArgument? = tokenizer.hasChatTemplate ? nil : .literal(Self.defaultChatMLTemplate)
+                    if fallbackTemplate != nil {
+                        logger.warning("Model is missing chat_template in tokenizer_config.json, using ChatML fallback")
+                    }
+
+                    let inputTokens = try tokenizer.applyChatTemplate(
+                        messages: messages,
+                        chatTemplate: fallbackTemplate,
+                        addGenerationPrompt: true,
+                        truncation: false,
+                        maxLength: nil,
+                        tools: nil,
+                        additionalContext: additionalContext
+                    )
                     logger.debug("Chat template applied with add_generation_prompt=true, tokenized to \(inputTokens.count) tokens")
 
                     /// Decode the input tokens to see what chat template produced.
@@ -495,8 +514,23 @@ public class AppleMLXAdapter {
         /// DON'T pass tools to applyChatTemplate - causes system prompt bleeding (See streaming path for full documentation of this issue) Tool definitions should be in system message content (handled by MLXProvider) VERIFIED: mlx-swift-examples Chat.swift does NOT pass tools to template.
 
         /// Pass add_generation_prompt=true to append <|im_start|>assistant\n Without this, Qwen2.5 doesn't know to generate a response and echoes system prompt.
-        let additionalContext = ["add_generation_prompt": true]
-        let inputTokens = try tokenizer.applyChatTemplate(messages: messages, tools: nil, additionalContext: additionalContext)
+        let additionalContext: [String: any Sendable] = ["add_generation_prompt": true]
+
+        /// Some community-quantized models are missing the chat_template in tokenizer_config.json. Detect and provide ChatML fallback.
+        let fallbackTemplate: ChatTemplateArgument? = tokenizer.hasChatTemplate ? nil : .literal(Self.defaultChatMLTemplate)
+        if fallbackTemplate != nil {
+            logger.warning("Model is missing chat_template in tokenizer_config.json, using ChatML fallback")
+        }
+
+        let inputTokens = try tokenizer.applyChatTemplate(
+            messages: messages,
+            chatTemplate: fallbackTemplate,
+            addGenerationPrompt: true,
+            truncation: false,
+            maxLength: nil,
+            tools: nil,
+            additionalContext: additionalContext
+        )
         logger.debug("Chat template applied with add_generation_prompt=true, tokenized to \(inputTokens.count) tokens")
 
         /// Create input.
