@@ -3,8 +3,20 @@
     {
       "version": "20260404.1",
       "release_date": "April 4, 2026",
-      "introduction": "This release fixes MiniMax AI compatibility, ensuring reliable conversations and tool use with MiniMax models.",
+      "introduction": "This release adds security protections against prompt injection and credential leakage, fixes MiniMax AI compatibility, and preserves reasoning quality in multi-step agent workflows.",
       "improvements": [
+        {
+          "id": "prompt-injection-protection",
+          "icon": "shield.lefthalf.filled",
+          "title": "Prompt Injection Protection",
+          "description": "SAM now filters invisible Unicode characters from custom instructions and file content before they reach the AI. Attackers can embed hidden instructions using zero-width characters, BiDi overrides, and Unicode tag blocks that are invisible to users but readable by AI models. SAM strips all of these before processing."
+        },
+        {
+          "id": "credential-redaction",
+          "icon": "eye.slash.fill",
+          "title": "Automatic Credential Redaction",
+          "description": "When SAM reads files and sends their contents to an AI provider, sensitive values are automatically redacted. API keys, tokens, passwords in connection strings, and personal information like SSNs and credit card numbers are replaced with placeholders before leaving your device."
+        },
         {
           "id": "minimax-think-roundtrip",
           "icon": "brain.head.profile.fill",
