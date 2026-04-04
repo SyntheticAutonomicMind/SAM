@@ -252,8 +252,12 @@ public class CreateFileTool: MCPTool, @unchecked Sendable {
                     throw MCPError.executionFailed("Failed to write file: \(writeResult.error ?? "Unknown error")")
                 }
             } else {
-                /// New file - write directly.
+                /// New file - write directly, then set appropriate permissions.
                 try content.write(to: url, atomically: true, encoding: .utf8)
+                let mode = fileOperationsSafety.determineFileMode(for: filePath, content: content)
+                if mode != 0o644 {
+                    fileOperationsSafety.applyFilePermissions(to: filePath, mode: mode)
+                }
             }
         } catch let mcpError as MCPError {
             throw mcpError

@@ -6,6 +6,7 @@ import Logging
 import ConversationEngine
 import MCPFramework
 import ConfigurationSystem
+import SecurityFramework
 
 /// Safe string operations to prevent index crashes with multi-byte UTF-8 characters.
 fileprivate extension String {
@@ -755,6 +756,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Last LLM response content.
         var lastResponse: String
 
+        /// Raw LLM response preserving provider-specific tags (e.g., MiniMax <think> tags).
+        /// Used when building internal messages for API round-trips.
+        var rawLastResponse: String?
+
         /// Last finish_reason from LLM.
         var lastFinishReason: String
 
@@ -883,6 +888,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
             /// LLM response state.
             self.lastResponse = ""
+            self.rawLastResponse = nil
             self.lastFinishReason = ""
             self.finalResponseAddedToConversation = false
 
@@ -1468,6 +1474,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     isToolOutput: false,
                     toolName: nil
                 )
+
+                /// Preserve raw content with provider-specific tags for API round-trips.
+                context.rawLastResponse = response.rawContent
+
                 if handled {
                     continue
                 }
@@ -1854,18 +1864,22 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                 context.internalMessages.append(OpenAIChatMessage(
                     role: "assistant",
-                    content: context.lastResponse,
+                    content: context.rawLastResponse ?? context.lastResponse,
                     toolCalls: openAIToolCalls
                 ))
 
                 logger.debug("SUCCESS: Added assistant message with \(openAIToolCalls.count) tool_calls to internal tracking")
 
                 /// 6b. Add tool results to internal messages
-                /// For large results (>8KB), persist them to disk and send preview + marker
-                for execution in executionResults {
+               /// For large results (>8KB), persist them to disk and send preview + marker
+               for execution in executionResults {
+                    // SECURITY: Sanitize tool output before sending to AI provider
+                    // Strips invisible characters and redacts secrets (PII, API keys, etc.)
+                    let sanitizedResult = SecurityPipeline.sanitizeToolOutput(execution.result)
+
                     let processedContent = toolResultStorage.processToolResult(
                         toolCallId: execution.toolCallId,
-                        content: execution.result,
+                        content: sanitizedResult,
                         conversationId: conversationId
                     )
 
@@ -2518,6 +2532,18 @@ struct LLMResponse {
     let finishReason: String
     let toolCalls: [ToolCall]?
     let statefulMarker: String?
+    /// Raw content preserving provider-specific tags (e.g., MiniMax <think> tags).
+    /// Used for API round-trips where the provider requires full content fidelity.
+    /// Falls back to `content` if nil.
+    let rawContent: String?
+
+    init(content: String, finishReason: String, toolCalls: [ToolCall]? = nil, statefulMarker: String? = nil, rawContent: String? = nil) {
+        self.content = content
+        self.finishReason = finishReason
+        self.toolCalls = toolCalls
+        self.statefulMarker = statefulMarker
+        self.rawContent = rawContent
+    }
 }
 
 /// Tool call information from LLM response.

@@ -262,6 +262,9 @@ public class FileOperationsSafety: @unchecked Sendable {
             return OperationResult(success: false, error: validation.error)
         }
 
+        /// Capture existing file permissions before any changes.
+        let originalMode = determineFileMode(for: filePath, content: content)
+
         /// Create backup if requested.
         var backupPath: String?
         if createBackup {
@@ -275,6 +278,9 @@ public class FileOperationsSafety: @unchecked Sendable {
         /// Perform atomic write.
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)
+
+            /// Restore original permissions (atomic write may reset them).
+            applyFilePermissions(to: filePath, mode: originalMode)
 
             /// Success - return result with backup path.
             return OperationResult(
@@ -348,5 +354,62 @@ public class FileOperationsSafety: @unchecked Sendable {
         /// Write modified content with backup.
         let writeResult = atomicWrite(content: modifiedContent, to: path, createBackup: true)
         return writeResult
+    }
+
+    // MARK: - File Permission Utilities
+
+    /// Script file extensions that should receive execute permissions.
+    private static let scriptExtensions: Set<String> = [
+        "sh", "bash", "zsh", "fish",
+        "py", "pl", "rb", "cgi",
+        "ps1", "bat", "cmd"
+    ]
+
+    /// Determine appropriate POSIX permissions for a file.
+    ///
+    /// For existing files: returns current permissions (preserves what's already set).
+    /// For new files: returns 0o755 for scripts (detected by extension or shebang), 0o644 otherwise.
+    ///
+    /// - Parameters:
+    ///   - path: File path to check
+    ///   - content: File content (used to detect shebang for new files)
+    /// - Returns: POSIX permission mode as UInt16
+    public func determineFileMode(for path: String, content: String? = nil) -> UInt16 {
+        // Existing file: preserve current permissions
+        if let attributes = try? fileManager.attributesOfItem(atPath: path),
+           let posixPermissions = attributes[.posixPermissions] as? NSNumber {
+            return posixPermissions.uint16Value
+        }
+
+        // New file: detect if it's a script
+        let url = URL(fileURLWithPath: path)
+        let ext = url.pathExtension.lowercased()
+
+        if Self.scriptExtensions.contains(ext) {
+            return 0o755
+        }
+
+        // Check for shebang in content
+        if let content = content, content.hasPrefix("#!") {
+            return 0o755
+        }
+
+        return 0o644
+    }
+
+    /// Apply POSIX permissions to a file.
+    ///
+    /// - Parameters:
+    ///   - path: File path
+    ///   - mode: POSIX permission mode
+    public func applyFilePermissions(to path: String, mode: UInt16) {
+        do {
+            try fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: mode)],
+                ofItemAtPath: path
+            )
+        } catch {
+            // Non-critical: permission setting failure doesn't block the write
+        }
     }
 }
