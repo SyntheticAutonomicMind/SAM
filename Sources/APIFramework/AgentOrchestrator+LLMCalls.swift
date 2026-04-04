@@ -6,6 +6,7 @@ import Logging
 import ConversationEngine
 import MCPFramework
 import ConfigurationSystem
+import SecurityFramework
 
 /// Safe string operations to prevent index crashes with multi-byte UTF-8 characters.
 fileprivate extension String {
@@ -85,6 +86,10 @@ extension AgentOrchestrator {
                 logger.info("Merged personality '\(personality.name)' into system prompt (\(personalityInstructions.count) chars)")
             }
         }
+
+        // SECURITY: Sanitize system prompt to remove invisible character injection vectors
+        // Custom instructions loaded from files could contain hidden Unicode payloads
+        userSystemPrompt = SecurityPipeline.sanitizeInputNonNil(userSystemPrompt)
 
         /// Inject conversation ID for memory operations.
         var systemPromptAdditions = """
@@ -826,7 +831,11 @@ extension AgentOrchestrator {
 
                     /// Strip <think>...</think> tags from non-streaming responses.
                     /// Some providers (MiniMax) include thinking inline.
+                    /// Preserve raw content for API round-trips (MiniMax requires it).
+                    let rawContentBeforeThinkStrip = content
+                    var hadThinkTags = false
                     if content.contains("<think>") || content.contains("</think>") {
+                        hadThinkTags = true
                         while let startRange = content.range(of: "<think>"),
                               let endRange = content.range(of: "</think>", range: startRange.upperBound..<content.endIndex) {
                             content.removeSubrange(startRange.lowerBound..<endRange.upperBound)
@@ -877,7 +886,8 @@ extension AgentOrchestrator {
                         content: content,
                         finishReason: finishReason,
                         toolCalls: toolCalls,
-                        statefulMarker: responseMarker
+                        statefulMarker: responseMarker,
+                        rawContent: hadThinkTags ? rawContentBeforeThinkStrip : nil
                     )
 
                 } catch {
@@ -1061,7 +1071,8 @@ extension AgentOrchestrator {
             content: finalContent,
             finishReason: finishReason,
             toolCalls: finalToolCalls,
-            statefulMarker: statefulMarker
+            statefulMarker: statefulMarker,
+            rawContent: content.contains("<think>") ? content : nil
         )
     }
 
@@ -1131,6 +1142,11 @@ extension AgentOrchestrator {
                 logger.info("Merged personality '\(personality.name)' into system prompt (\(personalityInstructions.count) chars)")
             }
         }
+
+        // SECURITY: Sanitize system prompt to remove invisible character injection vectors
+        // Custom instructions loaded from files could contain hidden Unicode payloads
+        userSystemPrompt = SecurityPipeline.sanitizeInputNonNil(userSystemPrompt)
+
 
         /// Inject conversation ID for memory operations.
         var systemPromptAdditions = """
@@ -1732,6 +1748,10 @@ extension AgentOrchestrator {
         /// Track accumulated content separately for each message
         var accumulatedContentByMessageId: [UUID: String] = [:]
 
+        /// Track accumulated thinking text for providers that strip <think> tags during streaming.
+        /// Used to reconstruct rawContent (with <think> tags) for API round-trips.
+        var accumulatedThinkingText = ""
+
         /// Use StreamingToolCalls for index-based accumulation.
         let streamingToolCalls = StreamingToolCalls()
 
@@ -1769,6 +1789,9 @@ extension AgentOrchestrator {
                 /// Create a proper .thinking message via addThinkingMessage().
                 let thinkingText = chunk.toolDetails?.joined(separator: "\n") ?? ""
                 if !thinkingText.isEmpty {
+                    /// Accumulate thinking text for rawContent reconstruction.
+                    accumulatedThinkingText += thinkingText
+
                     let enableReasoning = conversation.settings.enableReasoning
                     let thinkMsgId = conversation.messageBus?.addThinkingMessage(
                         id: UUID(),
@@ -2177,7 +2200,10 @@ extension AgentOrchestrator {
             content: finalContent,
             finishReason: finishReason ?? "stop",
             toolCalls: finalToolCalls,
-            statefulMarker: statefulMarker
+            statefulMarker: statefulMarker,
+            rawContent: !accumulatedThinkingText.isEmpty
+                ? "<think>\(accumulatedThinkingText)</think>\n\(finalContent)"
+                : nil
         )
     }
 }

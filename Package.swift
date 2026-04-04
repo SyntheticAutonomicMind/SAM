@@ -42,6 +42,10 @@ let package = Package(
             targets: ["SharedData"]
         ),
         .library(
+            name: "SecurityFramework",
+            targets: ["SecurityFramework"]
+        ),
+        .library(
             name: "VoiceFramework",
             targets: ["VoiceFramework"]
         )
@@ -186,6 +190,7 @@ let package = Package(
                 "ConfigurationSystem",
                 "MLXIntegration",
                 "SharedData",
+                "SecurityFramework",
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
@@ -197,9 +202,19 @@ let package = Package(
             name: "MCPFramework",
             dependencies: [
                 "ConfigurationSystem",
+                "SecurityFramework",
                 .product(name: "Logging", package: "swift-log")
             ],
             path: "Sources/MCPFramework"
+        ),
+
+        // Security Framework for input sanitization, secret redaction, and command analysis
+        .target(
+            name: "SecurityFramework",
+            dependencies: [
+                .product(name: "Logging", package: "swift-log")
+            ],
+            path: "Sources/SecurityFramework"
         ),
 
         // Voice Framework for speech input/output
