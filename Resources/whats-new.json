@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "20260404.1",
+      "release_date": "April 4, 2026",
+      "introduction": "This release fixes MiniMax AI compatibility, ensuring reliable conversations and tool use with MiniMax models.",
+      "improvements": [
+        {
+          "id": "minimax-think-roundtrip",
+          "icon": "brain.head.profile.fill",
+          "title": "MiniMax Reasoning Preservation",
+          "description": "MiniMax reasoning content is now preserved during multi-step tool workflows. Previously, thinking output was stripped before being sent back to the model, which could degrade response quality in longer agent sessions."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "minimax-2013-fix",
+          "icon": "m.circle.fill",
+          "title": "Fixed MiniMax Connection Errors",
+          "description": "Fixed a bug where MiniMax conversations would fail with an 'invalid chat setting' error. The issue was caused by sending multiple system messages in the API request - MiniMax requires exactly one. All system context is now consolidated into a single message."
+        }
+      ]
+    },
+    {
       "version": "20260331.1",
       "release_date": "March 31, 2026",
       "introduction": "This release brings significant performance and memory improvements to local AI models, along with support for the latest Qwen 3.5 models.",

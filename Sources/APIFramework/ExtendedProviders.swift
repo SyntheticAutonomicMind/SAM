@@ -920,14 +920,6 @@ public class MiniMaxProvider: AIProvider {
 
         do {
             let requestBodyData = try JSONSerialization.data(withJSONObject: requestBody)
-            
-            // Log full request body to debug file for diagnosing 2013 errors
-            if let bodyString = String(data: requestBodyData, encoding: .utf8) {
-                let debugPath = FileManager.default.temporaryDirectory.appendingPathComponent("minimax_request_\(requestId.prefix(8)).json")
-                try? bodyString.write(to: debugPath, atomically: true, encoding: .utf8)
-                logger.debug("MiniMax request body (\(bodyString.count) chars) written to: \(debugPath.path)")
-            }
-            
             urlRequest.httpBody = requestBodyData
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
@@ -1016,20 +1008,44 @@ public class MiniMaxProvider: AIProvider {
             }
         }
 
-        var result: [[String: Any]] = []
+        // MiniMax only supports ONE system message and it MUST be the first message.
+        // Consolidate all system-role messages into a single system message.
+        // Non-first system messages get merged into the first one.
+        var systemParts: [String] = []
+        var nonSystemMessages: [OpenAIChatMessage] = []
 
         for message in messages {
+            if message.role == "system" {
+                if let content = message.content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    systemParts.append(content)
+                }
+            } else {
+                nonSystemMessages.append(message)
+            }
+        }
+
+        var result: [[String: Any]] = []
+
+        // Add consolidated system message first
+        if !systemParts.isEmpty {
+            let consolidatedSystem = systemParts.joined(separator: "\n\n")
+            result.append([
+                "role": "system",
+                "content": consolidatedSystem
+            ])
+            logger.debug("MiniMax: Consolidated \(systemParts.count) system messages into 1 (\(consolidatedSystem.count) chars) [req:\(requestId.prefix(8))]")
+        }
+
+        // Process remaining non-system messages
+        for message in nonSystemMessages {
             if message.role == "tool" {
                 // MiniMax tool message format: content is an array of {name, type, text} objects
-                // Need to look up function name from tool_call_id
                 var toolContent: [[String: Any]] = []
 
-                // Try to get function name from tool_call_id mapping
                 let funcName: String
                 if let toolCallId = message.toolCallId, let name = toolCallIdToFunctionName[toolCallId] {
                     funcName = name
                 } else {
-                    // Fallback: try to parse from content
                     funcName = "unknown"
                 }
 
@@ -1047,7 +1063,6 @@ public class MiniMaxProvider: AIProvider {
 
                 logger.debug("MiniMax tool message: tool_call_id=\(message.toolCallId ?? "nil"), name=\(funcName), content_len=\(message.content?.count ?? 0)")
             } else {
-                // Standard message format
                 var msgDict: [String: Any] = [
                     "role": message.role,
                     "content": message.content ?? ""
@@ -1065,8 +1080,11 @@ public class MiniMaxProvider: AIProvider {
                             ]
                         ]
                     }
-                    // Clear content for assistant messages with tool_calls
-                    msgDict["content"] = ""
+                    // Preserve content for assistant messages with tool_calls.
+                    // MiniMax needs thinking content in round-trips.
+                    if (message.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        msgDict["content"] = ""
+                    }
                 }
 
                 result.append(msgDict)
