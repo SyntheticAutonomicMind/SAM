@@ -48,7 +48,7 @@ curl -X POST http://127.0.0.1:8080/api/chat/completions \
 
 ### What Still Works
 
-- ✅ **All LLM providers** - OpenAI, Anthropic, GitHub Copilot, DeepSeek, local models
+- ✅ **All LLM providers** - OpenAI, Anthropic, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, local models
 - ✅ **Streaming responses** - Real-time token streaming
 - ✅ **Standard OpenAI format** - Compatible with any OpenAI client library
 - ✅ **CLIO's own tools** - CLIO can send its own tools in the request
@@ -156,9 +156,11 @@ curl http://localhost:8080/v1/models/github_copilot/gpt-4.1
 ### Remote Providers
 - **GitHub Copilot**: `github_copilot/gpt-4.1`, `github_copilot/gpt-4o`, `github_copilot/o1-preview`
 - **OpenAI**: `openai/gpt-4`, `openai/gpt-4-turbo`, `openai/gpt-3.5-turbo`
-- **Anthropic**: `anthropic/claude-3-5-sonnet`, `anthropic/claude-3-opus`
+- **Anthropic**: `anthropic/claude-4-sonnet`, `anthropic/claude-3.5-sonnet`
+- **Google Gemini**: `gemini/gemini-2.5-pro`, `gemini/gemini-2.5-flash`, `gemini/gemini-2.0-flash`
 - **DeepSeek**: `deepseek/deepseek-coder`, `deepseek/deepseek-chat`
-- **Google**: `gemini/gemini-2.5-pro`, `gemini/gemini-1.5-flash`
+- **MiniMax**: `minimax/MiniMax-M2.7`, `minimax/MiniMax-M2.5`
+- **OpenRouter**: Any model available on OpenRouter (e.g., `openrouter/anthropic/claude-4-sonnet`)
 
 ### Local Models (if you have them installed)
 - **MLX**: `mlx/mlx-community/Llama-3.2-3B-Instruct-4bit`

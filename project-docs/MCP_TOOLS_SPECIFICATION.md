@@ -1,14 +1,14 @@
 # SAM: MCP Tools Specification
 
 **Version:** 4.0
-**Last Updated:** March 12, 2026
+**Last Updated:** April 7, 2026
 **Status:** Updated post-consolidation
 
 ## Overview
 
 SAM uses a **consolidated tool architecture** where related operations are grouped under unified tools with an `operation` parameter. Internal sub-tools handle individual operations but are not directly visible to the LLM.
 
-**Tool Count:** 10 consolidated tools exposed to the LLM
+**Tool Count:** 8 consolidated tools exposed to the LLM
 **Internal Tools:** ~21 sub-tools dispatched by consolidated tools
 
 ---

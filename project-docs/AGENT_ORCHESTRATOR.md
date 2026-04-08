@@ -33,7 +33,7 @@ The **AgentOrchestrator** is SAM's autonomous workflow execution engine. It enab
 
 ### Key Design Principles
 
-- **Model-Agnostic**: Works with MLX, OpenAI, GitHub Copilot, Anthropic
+- **Model-Agnostic**: Works with MLX, OpenAI, GitHub Copilot, Anthropic, Google Gemini, DeepSeek, MiniMax, OpenRouter
 - **Streaming-First**: Real-time progress updates for better UX
 - **Context-Aware**: Adapts guidance based on workflow state
 - **Safe**: Iteration limits prevent infinite loops
