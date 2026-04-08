@@ -19,7 +19,7 @@ SAM (Synthetic Autonomic Mind) is a native macOS AI assistant built with Swift a
 ### Prerequisites
 
 - macOS 14.0+ (development on macOS 15.0+)
-- Xcode 14.0+ with Swift 6.0+
+- Xcode 16.0+ with Swift 6.0+
 - Command line tools: `xcode-select --install`
 - ccache (optional, speeds up builds): `brew install ccache`
 
@@ -202,18 +202,20 @@ Sources/
 │   └── PropertiesStorage/
 ├── APIFramework/               - Multi-provider support, orchestration
 │   ├── APIProvider.swift (protocol)
-│   ├── Providers/ (OpenAI, Anthropic, DeepSeek, GitHub Copilot)
+│   ├── Providers/ (OpenAI, Anthropic, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter)
 │   ├── AgentOrchestrator.swift (multi-step workflows)
 │   └── ToolCallExtractor.swift
 ├── MCPFramework/               - Model Context Protocol tools
 │   ├── MCPTool.swift (protocol)
-│   ├── Tools/ (10 tools, 60+ operations)
+│   ├── Tools/ (8 tools, 60+ operations)
 │   ├── ToolRegistry.swift
 │   └── ToolResult.swift
 ├── SharedData/                 - Shared types, thread-safe storage
 │   ├── SharedTopics.swift
 │   ├── Storage.swift
 │   └── Locking/
+├── SecurityFramework/          - Authorization, path security
+│   └── SecurityOperations.swift
 └── VoiceFramework/             - Speech recognition, TTS, wake word
     ├── SpeechRecognizer.swift
     ├── TextToSpeech.swift

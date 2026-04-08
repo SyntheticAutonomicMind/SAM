@@ -2,7 +2,7 @@
 
 This directory contains comprehensive technical documentation for SAM developers and contributors.
 
-**Last Updated:** March 12, 2026
+**Last Updated:** April 7, 2026
 **License:** CC-BY-NC-4.0
 
 ---
@@ -15,7 +15,7 @@ This directory contains comprehensive technical documentation for SAM developers
 |----------|-------------|-------|
 | [API_FRAMEWORK.md](API_FRAMEWORK.md) | Provider system, endpoints, authentication, OpenAI compatibility | 885 |
 | [AGENT_ORCHESTRATOR.md](AGENT_ORCHESTRATOR.md) | Agent loop, tool dispatch, streaming, auto-continue | 584 |
-| [MCP_TOOLS_SPECIFICATION.md](MCP_TOOLS_SPECIFICATION.md) | Complete tool API reference (10 tools, 60+ operations) | 208 |
+| [MCP_TOOLS_SPECIFICATION.md](MCP_TOOLS_SPECIFICATION.md) | Complete tool API reference (8 tools, 60+ operations) | 208 |
 | [CONVERSATION_ENGINE.md](CONVERSATION_ENGINE.md) | Chat processing, state management, persistence | 946 |
 | [MESSAGING_ARCHITECTURE.md](MESSAGING_ARCHITECTURE.md) | Message flow, transformations, streaming | 1,018 |
 | [STREAMING_CONVERSATIONAL_ARCHITECTURE.md](STREAMING_CONVERSATIONAL_ARCHITECTURE.md) | Real-time streaming implementation | 237 |
@@ -79,6 +79,15 @@ All documentation files follow these standards:
 
 ## Recent Updates
 
+### April 7, 2026
+- **Full documentation QA pass:** Verified all claims against actual source code
+- **Provider accuracy:** Updated all provider lists to include Google Gemini, MiniMax, OpenRouter
+- **Tool accuracy:** Fixed tool counts (8 tools), verified operation lists against code
+- **Math formulas:** Expanded formula list from 10 to 24 (matching actual implementation)
+- **Storage paths:** Corrected model cache path (`sam-rewritten/models/`), verified `memory.db` paths
+- **Keyboard shortcuts:** Expanded shortcuts table with all documented commands
+- **Cross-doc consistency:** Ensured provider lists, tool names, and paths match across all docs
+
 ### March 12, 2026
 - **Documentation overhaul:** Removed stale docs for deleted features (StableDiffusion, Training/LoRA, Think tool, Python validation)
 - **Deleted:** STABLE_DIFFUSION.md, LORA_TRAINING.md, DOCUMENT_TRAINING_EXPORT.md, PYTHON_VALIDATION.md, THINK_TOOL_SPECIFICATION.md
@@ -96,7 +105,7 @@ All documentation files follow these standards:
 
 - License compliance: 100% (all have SPDX headers)
 - Sensitive information: None found
-- Last full audit: March 12, 2026
+- Last full audit: April 7, 2026
 
 ---
 

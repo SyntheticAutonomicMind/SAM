@@ -18,9 +18,10 @@ SAM is a native macOS AI assistant built with Swift and SwiftUI. Unlike cloud-on
 
 - **Website:** [www.syntheticautonomicmind.org](https://www.syntheticautonomicmind.org)
 - **Download SAM:** [Latest Release](https://github.com/SyntheticAutonomicMind/SAM/releases)
-- **Documentation:** [User Guides & Tutorials](https://www.syntheticautonomicmind.org)
+- **Documentation:** [User Guide](docs/USER_GUIDE.md) · [Features](docs/FEATURES.md) · [All Docs](docs/)
 - **Source Code:** [GitHub Repository](https://github.com/SyntheticAutonomicMind/SAM)
 - **Report Issues:** [Issue Tracker](https://github.com/SyntheticAutonomicMind/SAM/issues)
+- **Security:** [Security Policy](SECURITY.md)
 - **Support SAM:** [Patreon](https://www.patreon.com/fewtarius)
 
 ---
@@ -118,7 +119,7 @@ SAM's clean interface and natural interactions make powerful AI accessible to ev
 
 ## Features at a Glance
 
-- **Multi‑AI support**: Choose from OpenAI, Anthropic (Claude), GitHub Copilot, DeepSeek, or run models locally (MLX, llama.cpp)
+- **Multi-AI support**: Choose from OpenAI, Anthropic (Claude), GitHub Copilot, Google Gemini, DeepSeek, MiniMax, or run models locally (MLX, llama.cpp)
 - **Voice in & out**: "Hey SAM" wake word, speech recognition, and natural text‑to‑speech
 - **Image generation**: Create images via [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server with automatic model discovery
 - **Math tools**: Real computation for calculations, conversions, and financial formulas
@@ -146,7 +147,7 @@ Get a glimpse of SAM's native macOS interface in action:
     <td width="50%">
       <h3>Flexible AI Provider Selection</h3>
       <img src=".images/sam-image-2.png"/>
-      <em>Choose from local models (MLX, llama.cpp), or cloud providers (OpenAI, Anthropic, DeepSeek, OpenRouter)</em>
+      <em>Choose from local models (MLX, llama.cpp), or cloud providers (OpenAI, Anthropic, Google Gemini, DeepSeek, MiniMax, OpenRouter)</em>
     </td>
   </tr>
 </table>
@@ -217,7 +218,7 @@ Get a glimpse of SAM's native macOS interface in action:
 - Secure API authentication
 
  **Flexible AI Provider Support**
-- **Cloud AI**: OpenAI, Anthropic (Claude), GitHub Copilot, DeepSeek, OpenRouter
+- **Cloud AI**: OpenAI, Anthropic (Claude), GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter
 - **Local Models**: Run AI completely on your Mac with MLX or llama.cpp
 - Switch models mid-conversation
 - Use custom OpenAI-compatible endpoints
@@ -254,7 +255,7 @@ brew upgrade --cask sam
 3. Go to **AI Providers** tab
 4. Click **Add Provider**
 5. Choose your provider:
-  - **Cloud AI**: OpenAI, Claude, GitHub Copilot, or DeepSeek
+  - **Cloud AI**: OpenAI, Claude, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, or OpenRouter
   - **Local Model**: Choose a model to download and run on your Mac
 6. For cloud providers: Enter your API key
 7. Save and start chatting!
@@ -358,6 +359,9 @@ Your feedback helps make SAM better for everyone!
 | **Anthropic** | Claude 3.5 Sonnet, Claude 4 (long context) |
 | **GitHub Copilot** | GPT-4o, Claude 3.5, o1 (requires subscription) |
 | **DeepSeek** | Cost-effective AI models |
+| **Google Gemini** | Gemini 2.5 Pro/Flash, large context windows |
+| **MiniMax** | MiniMax-M2.7, M2.5 (128K context) |
+| **OpenRouter** | Access 100+ models from multiple providers |
 | **Local MLX** | Run models on Apple Silicon Macs |
 | **Local llama.cpp** | Run models on any Mac (Intel or Apple Silicon) |
 | **Custom** | Use any OpenAI-compatible API |
@@ -478,9 +482,8 @@ When you use cloud AI providers (OpenAI, Claude, etc.), only the messages you se
 
 ### Downloaded AI Models
 ```
-~/Library/Caches/sam/models/
-├── mlx/                       # MLX models (Apple Silicon)
-└── gguf/                      # llama.cpp models
+~/Library/Caches/sam-rewritten/models/
+└── {model-name}/              # Individual model files
 ```
 
 ### Working Files
@@ -582,10 +585,19 @@ For developers who want to build SAM from source, see [BUILDING.md](BUILDING.md)
 
 Complete documentation is available:
 
-- **[Website](https://www.syntheticautonomicmind.org)** - User guides and tutorials
-- **[project-docs/](project-docs/)** - Technical documentation for developers
-- **[BUILDING.md](BUILDING.md)** - Build instructions
+- **[User Guide](docs/USER_GUIDE.md)** - Getting started and using SAM
+- **[Features](docs/FEATURES.md)** - Complete feature reference
+- **[Architecture](docs/ARCHITECTURE.md)** - How SAM is built
+- **[Providers](docs/PROVIDERS.md)** - AI provider setup guide
+- **[Tools](docs/TOOLS.md)** - Built-in tools reference
+- **[Memory](docs/MEMORY.md)** - Memory and search system
+- **[Security](docs/SECURITY.md)** - Privacy and security model
+- **[Installation](docs/INSTALLATION.md)** - Installation guide
+- **[Performance](docs/PERFORMANCE.md)** - Performance and optimization
+- **[BUILDING.md](BUILDING.md)** - Build from source
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute
+- **[project-docs/](project-docs/)** - Internal technical specifications
+- **[Website](https://www.syntheticautonomicmind.org)** - Online guides
 
 ---
 

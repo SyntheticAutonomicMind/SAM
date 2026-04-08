@@ -1,0 +1,70 @@
+# SAM (Synthetic Autonomic Mind)
+
+> Native macOS AI assistant with privacy-first design, autonomous tool use, and multi-provider support.
+
+SAM is a native macOS application built with Swift 6.0 and SwiftUI. It runs on macOS 14.0+ and supports Apple Silicon and Intel Macs. SAM connects to cloud AI providers (OpenAI, Anthropic, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter) and local models (MLX on Apple Silicon, llama.cpp on any Mac) to provide conversational AI with real tool capabilities.
+
+## Key Capabilities
+
+- Conversations with context persistence, export/import, and model switching
+- Autonomous tool use: file operations, web research, document import/creation, math, image generation, memory, and task management
+- Voice control with "Hey SAM" wake word, speech-to-text, and streaming text-to-speech
+- Semantic memory using Apple NaturalLanguage vector embeddings for document and conversation search
+- Shared Topics for cross-conversation context sharing
+- SAM-Web remote access via local API server (Vapor-based, token auth)
+- Image generation via remote ALICE server (Stable Diffusion)
+- Real math computation via Python interpreter
+- Auto-updates via Sparkle framework
+
+## Architecture
+
+Ten Swift modules (SPM targets): SAM (entry point), UserInterface (SwiftUI), APIFramework (providers, orchestrator, API server), MCPFramework (tools), ConversationEngine (conversations, memory, Vector RAG), ConfigurationSystem (settings, prompts), MLXIntegration (local models), VoiceFramework (speech), SharedData (SQLite shared topics), SecurityFramework (authorization).
+
+Actor-based concurrency with Swift 6 strict checking. @MainActor for all UI. Zero telemetry, local-first data storage.
+
+## Repository Structure
+
+- Sources/ - All Swift source modules
+- Tests/ - XCTest unit and integration tests
+- docs/ - User-facing documentation
+- project-docs/ - Internal technical specifications (27 files)
+- external/llama.cpp - Git submodule for local model support
+- Makefile - Build automation (debug, release, DMG, signing)
+- Package.swift - SPM manifest
+
+## Build
+
+```
+git clone --recursive https://github.com/SyntheticAutonomicMind/SAM.git
+cd SAM
+make build-debug
+```
+
+## Test
+
+```
+swift test
+./Tests/run_all_tests.sh
+```
+
+## Documentation
+
+- docs/USER_GUIDE.md - Complete user guide
+- docs/FEATURES.md - Feature reference
+- docs/ARCHITECTURE.md - Architecture overview
+- docs/PROVIDERS.md - AI provider setup
+- docs/MEMORY.md - Memory and search system
+- docs/TOOLS.md - Tool reference
+- docs/SECURITY.md - Security and privacy
+- docs/INSTALLATION.md - Installation guide
+- docs/PERFORMANCE.md - Performance and optimization
+- BUILDING.md - Build from source
+- CONTRIBUTING.md - Contribution guidelines
+- VERSIONING.md - Version scheme
+- SECURITY.md - Security policy
+
+## Links
+
+- Website: https://www.syntheticautonomicmind.org
+- Repository: https://github.com/SyntheticAutonomicMind/SAM
+- License: GPL-3.0-only
