@@ -15,32 +15,30 @@ This document is a starting point for understanding SAM's design. For deep imple
 ## System Architecture
 
 ```mermaid
-block-beta
-  columns 1
-
-  block:app["SAM Application"]
-    columns 3
-
-    block:ui["UserInterface\nChatWidget - Preferences - Documents - Help - Search"]:3
-    end
-
-    block:api["APIFramework\nAgentOrchestrator - Providers - EndpointManager\nToolCallExtractor - TokenCounter - SAMAPIServer"]:3
-    end
-
-    block:mcp["MCPFramework\nTools (8)"]
-    end
-    block:conv["ConversationEngine\nMemory - VectorRAG"]
-    end
-    block:config["ConfigurationSystem\nPreferences - Prompts"]
-    end
-
-    block:mlx["MLXIntegration\nLocal Models"]
-    end
-    block:voice["VoiceFramework\nTTS - STT"]
-    end
-    block:shared["SharedData\nSQLite"]
-    end
-  end
+graph TB
+    UI["UserInterface<br/>ChatWidget - Preferences - Documents - Help - Search"]
+    API["APIFramework<br/>AgentOrchestrator - Providers - EndpointManager<br/>ToolCallExtractor - TokenCounter - SAMAPIServer"]
+    MCP["MCPFramework<br/>Tools - 8 consolidated"]
+    CONV["ConversationEngine<br/>Memory - VectorRAG"]
+    CONFIG["ConfigurationSystem<br/>Preferences - Prompts"]
+    MLX["MLXIntegration<br/>Local Models"]
+    VOICE["VoiceFramework<br/>TTS - STT"]
+    SHARED["SharedData<br/>SQLite"]
+    MAIN["🔷 SAM Application"]
+    
+    MAIN --> UI
+    MAIN --> API
+    MAIN --> MCP
+    MAIN --> CONV
+    MAIN --> CONFIG
+    MAIN --> MLX
+    MAIN --> VOICE
+    MAIN --> SHARED
+    
+    API --> MCP
+    API --> CONV
+    CONV --> SHARED
+    MCP --> CONFIG
 ```
 
 ---
