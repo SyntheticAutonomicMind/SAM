@@ -182,6 +182,35 @@ extension AgentOrchestrator {
             }
         }
 
+        /// MINI PROMPT INJECTION: Include enabled mini-prompts in system prompt
+        /// Mini-prompts are user-configured persistent instructions for the conversation.
+        /// By embedding them in the system prompt (which is sent on every call), they are
+        /// always visible to the agent without consuming additional context slots.
+        if !conversation.enabledMiniPromptIds.isEmpty {
+            let miniPromptText = MiniPromptManager.shared.getInjectedText(
+                for: conversation.id,
+                enabledIds: conversation.enabledMiniPromptIds
+            )
+            if !miniPromptText.isEmpty {
+                let enabledPrompts = MiniPromptManager.shared.enabledPrompts(
+                    for: conversation.id,
+                    enabledIds: conversation.enabledMiniPromptIds
+                )
+                systemPromptAdditions += """
+
+
+                # User Instructions (Mini-Prompts)
+
+                The user has specified the following instructions that you MUST follow:
+
+                \(miniPromptText)
+
+                These instructions take priority. Follow them exactly.
+                """
+                logger.info("callLLM: Injected \(enabledPrompts.count) mini-prompt(s) into system prompt (\(miniPromptText.count) chars)")
+            }
+        }
+
         /// Session naming: inject instruction for unnamed conversations so AI provides a title
         if conversation.title.hasPrefix("New Conversation") {
             systemPromptAdditions += """
@@ -276,22 +305,6 @@ extension AgentOrchestrator {
             )
         } else {
             todoReminderContent = nil
-        }
-
-        /// MINI PROMPT REMINDER INJECTION: Remind agent of user's mini prompts (instructions)
-        /// This addresses agents "forgetting" user instructions during long research sessions
-        let miniPromptReminderContent: String?
-        if MiniPromptReminderInjector.shared.shouldInjectReminder(
-            conversationId: conversation.id,
-            enabledMiniPromptIds: conversation.enabledMiniPromptIds,
-            currentResponseCount: responseCount
-        ) {
-            miniPromptReminderContent = MiniPromptReminderInjector.shared.formatMiniPromptReminder(
-                conversationId: conversation.id,
-                enabledMiniPromptIds: conversation.enabledMiniPromptIds
-            )
-        } else {
-            miniPromptReminderContent = nil
         }
 
         /// DOCUMENT IMPORT REMINDER INJECTION Tell agent what documents are already imported so they search memory instead of re-importing
@@ -458,17 +471,6 @@ extension AgentOrchestrator {
 
         /// VS CODE COPILOT PATTERN: Inject reminders RIGHT BEFORE the user message
         /// This positions them with maximum salience - the agent sees them immediately before responding
-
-        /// Mini prompt reminder - user's enabled mini prompts (instructions)
-        if let miniPromptReminder = miniPromptReminderContent {
-            messages.append(createSystemReminder(content: miniPromptReminder, model: model))
-            /// Record successful injection to prevent repeating
-            MiniPromptReminderInjector.shared.recordInjection(
-                conversationId: conversation.id,
-                enabledMiniPromptIds: conversation.enabledMiniPromptIds
-            )
-            logger.debug("callLLM: Injected mini prompt reminder RIGHT BEFORE user message")
-        }
 
         /// Todo reminder - task progress tracking
         if let todoReminder = todoReminderContent {
@@ -1237,6 +1239,35 @@ extension AgentOrchestrator {
             }
         }
 
+        /// MINI PROMPT INJECTION: Include enabled mini-prompts in system prompt
+        /// Mini-prompts are user-configured persistent instructions for the conversation.
+        /// By embedding them in the system prompt (which is sent on every call), they are
+        /// always visible to the agent without consuming additional context slots.
+        if !conversation.enabledMiniPromptIds.isEmpty {
+            let miniPromptText = MiniPromptManager.shared.getInjectedText(
+                for: conversation.id,
+                enabledIds: conversation.enabledMiniPromptIds
+            )
+            if !miniPromptText.isEmpty {
+                let enabledPrompts = MiniPromptManager.shared.enabledPrompts(
+                    for: conversation.id,
+                    enabledIds: conversation.enabledMiniPromptIds
+                )
+                systemPromptAdditions += """
+
+
+                # User Instructions (Mini-Prompts)
+
+                The user has specified the following instructions that you MUST follow:
+
+                \(miniPromptText)
+
+                These instructions take priority. Follow them exactly.
+                """
+                logger.info("callLLMStreaming: Injected \(enabledPrompts.count) mini-prompt(s) into system prompt (\(miniPromptText.count) chars)")
+            }
+        }
+
         /// Session naming: inject instruction for unnamed conversations so AI provides a title
         if conversation.title.hasPrefix("New Conversation") {
             systemPromptAdditions += """
@@ -1511,26 +1542,6 @@ extension AgentOrchestrator {
         /// This is critical for multi-step workflows - agent needs to see reminders right before responding
         let activeTodoCount = TodoManager.shared.getProgressStatistics(for: conversation.id.uuidString).totalTodos
         let responseCount = conversation.messages.count
-
-        /// Mini prompt reminder - user's enabled mini prompts (instructions)
-        if MiniPromptReminderInjector.shared.shouldInjectReminder(
-            conversationId: conversation.id,
-            enabledMiniPromptIds: conversation.enabledMiniPromptIds,
-            currentResponseCount: responseCount
-        ) {
-            if let miniPromptReminder = MiniPromptReminderInjector.shared.formatMiniPromptReminder(
-                conversationId: conversation.id,
-                enabledMiniPromptIds: conversation.enabledMiniPromptIds
-            ) {
-                messages.append(createSystemReminder(content: miniPromptReminder, model: model))
-                /// Record successful injection to prevent repeating
-                MiniPromptReminderInjector.shared.recordInjection(
-                    conversationId: conversation.id,
-                    enabledMiniPromptIds: conversation.enabledMiniPromptIds
-                )
-                logger.debug("callLLMStreaming: Injected mini prompt reminder at END of messages")
-            }
-        }
 
         /// Todo reminder - task progress tracking
         if TodoReminderInjector.shared.shouldInjectReminder(
