@@ -64,11 +64,9 @@ public struct ChatWidget: View {
     @State private var lastUIUpdateTime: Date = Date()
     @State private var streamingUpdateCount: Int = 0
 
-    /// PERFORMANCE: Scroll throttling for large conversations
-    /// Single consolidated scroll system to prevent bounce from competing scroll calls
+    /// Scroll system: auto-scroll to latest content during streaming
     @State private var lastScrollTime: Date = .distantPast
     @State private var pendingScrollTask: Task<Void, Never>?
-    @State private var isScrolling: Bool = false
     @State private var lastScrolledToId: UUID?
 
     /// Scroll proxy for keyboard navigation (stored from ScrollViewReader)
@@ -480,12 +478,29 @@ public struct ChatWidget: View {
             conversationSubscription = nil
 
             syncWithActiveConversation()
+
+            /// Scroll to the newest message after conversation switch.
+            /// Delay lets SwiftUI complete the layout pass after sync.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if let lastMessage = messages.last {
+                    scrollProxy?.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+                }
+                isInputFocused = true
+            }
         }
         .onAppear {
             /// Sync messages on initial view appearance.
             /// onChange(of: activeConversation?.id) doesn't fire if conversation is already set before view loads.
             logger.debug("MESSAGE_LIFECYCLE: ChatWidget appeared, triggering initial sync")
             syncWithActiveConversation()
+
+            /// Scroll to newest message on initial appearance
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if let lastMessage = messages.last {
+                    scrollProxy?.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+                }
+                isInputFocused = true
+            }
 
             /// FEATURE: Restore draft message on initial appearance
             /// This handles the case where conversation is already set before view loads
@@ -1245,58 +1260,34 @@ public struct ChatWidget: View {
             }
             .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
             .onChange(of: messages.count) { _, _ in
-                /// UNIFIED SCROLL HANDLER: Consolidate all scroll triggers here
-                /// Previous bug: separate onChange handlers competed, causing bounce
-                /// 
-                /// This handler fires when:
-                /// 1. New message added (user, assistant, tool, thinking)
-                /// 2. Message removed (rare)
-                ///
-                /// Handles both new messages AND streaming (via debounced task)
+                /// New message added or removed - scroll if auto-scroll is active
                 guard scrollLockEnabled, let lastMessage = messages.last else { return }
-
-                /// Skip if already scrolling to this message (prevents duplicate calls)
-                if lastScrolledToId == lastMessage.id && !lastMessage.isStreaming {
-                    return
-                }
-
                 performThrottledScroll(proxy: proxy, to: lastMessage)
             }
             .onChange(of: messages.last?.content.count) { _, _ in
-                /// STREAMING CONTENT UPDATE: Only fires during active streaming
-                /// Debounced to prevent layout thrashing in long conversations
+                /// Streaming content update - only scroll during active streaming
                 guard scrollLockEnabled,
                       let lastMessage = messages.last,
                       lastMessage.isStreaming else { return }
-
                 performThrottledScroll(proxy: proxy, to: lastMessage)
             }
             .onChange(of: messages.last?.type) { _, newType in
-                /// TOOL CARD SCROLL: When a tool execution message becomes the last message,
-                /// scroll to make it visible. This handles tool cards that weren't scrolled
-                /// because messages.count doesn't change when tool result is added to existing card.
+                /// Tool card or thinking type change - scroll to make visible
                 guard scrollLockEnabled,
                       let lastMessage = messages.last,
                       newType == .toolExecution || newType == .thinking else { return }
-
                 performThrottledScroll(proxy: proxy, to: lastMessage)
             }
             .onChange(of: messages) { _, newMessages in
-                /// PERFORMANCE FIX: Cache tool hierarchy when messages change
-                /// Prevents expensive recalculation on every view recomputation (e.g., typing)
+                /// Cache tool hierarchy and prune stale message cache
                 cachedToolHierarchy = buildToolHierarchy(messages: newMessages)
-
-                /// PERFORMANCE: Prune stale entries from cleaned message cache
-                /// Only keep cache entries for messages that still exist
                 let currentMessageIds = Set(newMessages.map { $0.id })
                 cachedCleanedMessages = cachedCleanedMessages.filter { currentMessageIds.contains($0.key) }
             }
             .onAppear {
-                /// Store scroll proxy for keyboard navigation
                 scrollProxy = proxy
             }
             .onReceive(NotificationCenter.default.publisher(for: .scrollToTop)) { _ in
-                /// Scroll to first message in conversation
                 if let firstMessage = messages.first {
                     withAnimation(.easeOut(duration: 0.3)) {
                         proxy.scrollTo(firstMessage.id.uuidString, anchor: .top)
@@ -1304,18 +1295,14 @@ public struct ChatWidget: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .scrollToBottom)) { _ in
-                /// Scroll to bottom of conversation
                 withAnimation(.easeOut(duration: 0.3)) {
                     proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .pageUp)) { _ in
-                /// Page up - scroll up by approximately one screen
-                /// Find a message roughly one screen up from current position
                 pageScroll(proxy: proxy, direction: .up)
             }
             .onReceive(NotificationCenter.default.publisher(for: .pageDown)) { _ in
-                /// Page down - scroll down by approximately one screen
                 pageScroll(proxy: proxy, direction: .down)
             }
         }
@@ -1360,86 +1347,57 @@ public struct ChatWidget: View {
         lastScrolledToId = targetMessage.id
     }
 
-    /// Unified scroll handler with throttling and collision prevention
-    /// Prevents scroll bounce by:
-    /// 1. Blocking concurrent scroll operations (isScrolling flag)
-    /// 2. Throttling to max 10 scrolls/second (100ms interval)
-    /// 3. Cancelling pending scroll if new one requested
-    /// 4. Using stable bottom anchor for streaming, message top for user messages
+    /// Scroll to the latest content with simple throttling.
     ///
-    /// LARGE MESSAGE FIX: When a user sends a message larger than the viewport,
-    /// scrolling to the bottom causes the top to be off-screen and LazyVStack
-    /// may not render it. For user messages, we scroll to the TOP of the message
-    /// so it renders properly. For streaming assistant messages, we scroll to bottom.
+    /// Strategy:
+    /// - For growing content (streaming, tools, thinking): scroll to the last message
+    ///   with `.bottom` anchor so the tail of the content stays visible as it grows.
+    /// - For completed content (user messages, finished assistant responses): scroll to
+    ///   the message with `.top` anchor so the beginning is visible.
+    /// - Throttled to ~10 updates/sec to prevent layout thrashing.
     private func performThrottledScroll(proxy: ScrollViewProxy, to message: EnhancedMessage) {
-        /// Prevent concurrent scroll operations
-        guard !isScrolling else { return }
-
         let now = Date()
         let timeSinceLastScroll = now.timeIntervalSince(lastScrollTime)
 
-        /// Determine scroll target based on message type
-        /// - User messages: scroll to TOP of message (ensures large messages render from top)
-        /// - Streaming messages: scroll to bottom anchor (content grows downward)
-        /// - Tool execution messages: scroll to bottom anchor (content grows as tool runs)
-        /// - Thinking messages: scroll to bottom anchor (content grows during thinking)
-        /// - Assistant messages (non-streaming): scroll to TOP (like user messages)
-        let scrollToMessageTop = message.type == .user ||
-            (!message.isStreaming && message.type == .assistant && message.type != .toolExecution && message.type != .thinking)
+        /// Content is growing if the message is streaming, or is a tool/thinking card
+        let isGrowingContent = message.isStreaming ||
+            message.type == .toolExecution ||
+            message.type == .thinking
 
         if timeSinceLastScroll >= 0.1 {
             /// Enough time passed - scroll immediately
-            isScrolling = true
             lastScrollTime = now
             lastScrolledToId = message.id
 
-            if scrollToMessageTop {
-                /// LARGE MESSAGE FIX: Scroll to the TOP of the message
-                /// This ensures LazyVStack renders the message from the visible top portion
-                /// Uses the message's stable ID with .top anchor
-                proxy.scrollTo(message.id.uuidString, anchor: .top)
+            if isGrowingContent {
+                /// Growing content: scroll to the last message's bottom edge.
+                /// This keeps the newest content visible as it streams in without
+                /// overshooting past the content into empty space.
+                proxy.scrollTo(message.id.uuidString, anchor: .bottom)
             } else {
-                /// STREAMING FIX: Scroll to stable bottom anchor
-                /// The anchor position doesn't change when message content updates
-                /// This prevents the bounce caused by content size recalculation
-                proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
-            }
-
-            /// Clear isScrolling after a short delay
-            Task {
-                try? await Task.sleep(for: .milliseconds(50))
-                await MainActor.run { isScrolling = false }
+                /// Static content: scroll to the top of the message so user
+                /// can read from the beginning (handles large messages well).
+                proxy.scrollTo(message.id.uuidString, anchor: .top)
             }
         } else {
-            /// Too soon - debounce with pending task
+            /// Too soon - debounce
             pendingScrollTask?.cancel()
             pendingScrollTask = Task {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    guard !isScrolling else { return }
-
-                    /// Re-check conditions after delay
                     guard let currentLast = messages.last else { return }
-
-                    isScrolling = true
                     lastScrollTime = Date()
                     lastScrolledToId = currentLast.id
 
-                    /// Re-determine scroll target with current message state
-                    /// Tool execution and thinking messages should scroll to bottom (content grows)
-                    let scrollToTop = currentLast.type == .user ||
-                        (!currentLast.isStreaming && currentLast.type == .assistant && currentLast.type != .toolExecution && currentLast.type != .thinking)
+                    let growing = currentLast.isStreaming ||
+                        currentLast.type == .toolExecution ||
+                        currentLast.type == .thinking
 
-                    if scrollToTop {
-                        proxy.scrollTo(currentLast.id.uuidString, anchor: .top)
+                    if growing {
+                        proxy.scrollTo(currentLast.id.uuidString, anchor: .bottom)
                     } else {
-                        proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
-                    }
-
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(50))
-                        await MainActor.run { isScrolling = false }
+                        proxy.scrollTo(currentLast.id.uuidString, anchor: .top)
                     }
                 }
             }
@@ -1562,15 +1520,12 @@ public struct ChatWidget: View {
                                         )
                                     }
                                 }
-                                /// LAZYVSTACK RENDER FIX (v2): Force intrinsic content height calculation
-                                /// minHeight: 1 alone doesn't work because LazyVStack may defer rendering
-                                /// until the view enters the visible area, causing empty placeholders
-                                /// 
-                                /// Solution: Use .fixedSize to force immediate size calculation,
-                                /// combined with minHeight for edge cases (empty content)
-                                /// This ensures SwiftUI measures actual content before display
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(minHeight: 24) /// Minimum reasonable message height
+                                /// LAZYVSTACK RENDER FIX: Force intrinsic content height for non-streaming messages.
+                                /// Without .fixedSize, LazyVStack may defer rendering and show empty placeholders.
+                                /// During streaming, skip .fixedSize to avoid excessive layout recalculations
+                                /// as content changes size rapidly.
+                                .fixedSize(horizontal: false, vertical: !message.isStreaming)
+                                .frame(minHeight: 24)
                                 .id(viewID)
                             } else {
                                 /// PERFORMANCE: Removed filter logging (fired on every render)
@@ -1579,9 +1534,8 @@ public struct ChatWidget: View {
                         }
                     }
 
-                    /// SCROLL ANCHOR: Invisible view at the very bottom of message list
-                    /// Scrolling to this provides more stable behavior than scrolling to last message
-                    /// because its position doesn't change when message content updates
+                    /// SCROLL ANCHOR: Invisible view at the bottom of the message list.
+                    /// Used for "scroll to bottom" commands.
                     Color.clear
                         .frame(height: 1)
                         .id("scroll-bottom-anchor")
@@ -2384,7 +2338,7 @@ public struct ChatWidget: View {
                 }
             }
 
-            .onChange(of: scrollLockEnabled) { _, _ in
+            .onChange(of: scrollLockEnabled) { _, newValue in
                 guard !isLoadingConversationSettings else { return }
                 syncSettingsToConversation()
             }
@@ -3314,10 +3268,7 @@ public struct ChatWidget: View {
             logger.debug("Updated StateManager: conversation \(conversation.id) now processing")
         }
 
-        /// REMOVED: Don't force-enable scroll lock when user sends message
-        /// User's scroll lock preference should be respected
-        /// scrollLockEnabled = true  // OLD CODE - was overriding user preference
-
+        /// Reset scroll-away state when user sends a message - they expect to follow the response
         /// CRITICAL: Mark streaming as active to prevent conversation sync
         /// This ensures UI messages (created from chunks) are not overwritten
         /// by stale data loaded from conversation file during streaming
@@ -3343,10 +3294,6 @@ public struct ChatWidget: View {
                         state.activeTools.removeAll()
                     }
                     logger.debug("Updated StateManager: conversation \(conversation.id) now idle")
-                }
-
-                /// Trigger final scroll after completion to ensure last message is visible
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 }
 
                 /// FEATURE: Play completion sound if enabled in preferences.
@@ -5945,4 +5892,3 @@ public struct ChatWidget: View {
         )
     }
 }
-
