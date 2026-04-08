@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "20260408.1",
+      "release_date": "April 8, 2026",
+      "introduction": "This release fixes a bug where mini-prompts disappeared mid-conversation, and includes UI improvements for smoother scrolling and conversation navigation.",
+      "improvements": [
+        {
+          "id": "scroll-system-rewrite",
+          "icon": "arrow.up.arrow.down.circle.fill",
+          "title": "Rewritten Scroll System",
+          "description": "The conversation scroll system has been completely rewritten to fix content jumping off-screen. Conversations now scroll to the newest message and auto-focus the input field when opened."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "mini-prompt-mid-conversation",
+          "icon": "brain.head.profile.fill",
+          "title": "Fixed Mini-Prompts Disappearing Mid-Conversation",
+          "description": "Mini-prompts are now injected directly into user messages at API call time, so agents act on them immediately instead of treating them as background context. When you enable a mini-prompt mid-conversation, it's persisted once as a hidden message for continuity and injected ephemerally on every turn for attention."
+        }
+      ]
+    },
+    {
       "version": "20260404.1",
       "release_date": "April 4, 2026",
       "introduction": "This release adds security protections against prompt injection and credential leakage, fixes MiniMax AI compatibility, and preserves reasoning quality in multi-step agent workflows.",

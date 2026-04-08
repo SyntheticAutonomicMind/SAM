@@ -3052,9 +3052,8 @@ public struct ChatWidget: View {
                         for: activeConversation.id,
                         enabledIds: activeConversation.enabledMiniPromptIds
                     )
-                    /// Mini prompt injection tracking is handled by AgentOrchestrator
-                    /// ChatWidget should NOT call recordInjection() here - that blocks the
-                    /// orchestrator from injecting its own <miniPromptReminder> system message
+                    /// ChatWidget handles first-message persist only. AgentOrchestrator handles
+                    /// one-time mid-conversation persist and ephemeral per-turn injection.
                     logger.info("MINI_PROMPT_TRACE: ChatWidget injected \(enabledPrompts.count) mini-prompt(s) into FIRST user message: \(enabledPrompts.map { $0.name }.joined(separator: ", "))")
                 } else {
                     logger.debug("MINI_PROMPT_TRACE: ChatWidget miniPromptText was empty")
