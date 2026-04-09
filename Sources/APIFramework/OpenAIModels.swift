@@ -502,7 +502,7 @@ public struct SAMResponseMetadata: Content, Sendable {
 
 /// Information about the provider that fulfilled the request.
 public struct SAMProviderInfo: Content, Sendable {
-    /// Provider type (openai, anthropic, github_copilot, mlx, gguf, custom)
+    /// Provider type (openai, github_copilot, mlx, gguf, custom)
     public let type: String
 
     /// Provider display name

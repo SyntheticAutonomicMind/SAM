@@ -202,10 +202,10 @@ final class AIProviderTests: XCTestCase {
         let loadBalancer = RoundRobinLoadBalancer()
         
         let config1 = ProviderConfiguration(providerId: "provider1", providerType: .openai, models: ["model1"])
-        let config2 = ProviderConfiguration(providerId: "provider2", providerType: .anthropic, models: ["model2"])
+        let config2 = ProviderConfiguration(providerId: "provider2", providerType: .deepseek, models: ["model2"])
         
         let provider1 = OpenAIProvider(config: config1)
-        let provider2 = AnthropicProvider(config: config2)
+        let provider2 = DeepSeekProvider(config: config2)
         
         let providers: [any AIProvider] = [provider1, provider2]
         

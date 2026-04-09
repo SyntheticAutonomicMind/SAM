@@ -163,17 +163,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 continue
             }
 
-            /// CRITICAL: Preserve Claude batched tool results - these must NOT be merged
-            /// The __CLAUDE_BATCHED_TOOL_RESULTS__ marker MUST be at the start of content
-            /// for AnthropicMessageConverter to detect and convert to tool_result blocks
-            if message.role == "user",
-               let content = message.content,
-               content.hasPrefix("__CLAUDE_BATCHED_TOOL_RESULTS__") {
-                fixed.append(message)
-                lastRole = message.role
-                logger.debug("ALTERNATION_PRESERVE_BATCHED_TOOLS: Preserved Claude batched tool results (contentLen=\(content.count))")
-                continue
-            }
 
             /// Merge consecutive same-role messages
             if message.role == lastRole {
@@ -265,72 +254,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         return validated
     }
 
-    /// Batch consecutive tool result messages for Claude API
-    /// Claude Messages API requires ALL tool results from one iteration to be in a SINGLE user message
-    /// This function converts: [tool1, tool2, tool3] → [user_with_batched_tools]
-    /// Only used for Claude models to fix the tool result batching issue
-    func batchToolResultsForClaude(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
-        var processed: [OpenAIChatMessage] = []
-        var pendingToolResults: [(toolCallId: String, content: String)] = []
-        
-        for message in messages {
-            if message.role == "tool" {
-                /// Accumulate tool results
-                if let toolCallId = message.toolCallId {
-                    pendingToolResults.append((toolCallId, message.content ?? ""))
-                    logger.debug("CLAUDE_TOOL_BATCH: Accumulated tool result (id: \(toolCallId))")
-                }
-            } else {
-                /// Flush pending tool results before this message
-                if !pendingToolResults.isEmpty {
-                    /// Create a single user message with ALL tool results as metadata
-                    /// The AnthropicMessageConverter will convert these to tool_result content blocks
-                    logger.info("CLAUDE_TOOL_BATCH: Flushing \(pendingToolResults.count) tool results as batched metadata")
-                    
-                    /// Store tool results as JSON in the message content
-                    /// Format: Special marker that AnthropicMessageConverter can detect
-                    let batchedData = try? JSONSerialization.data(
-                        withJSONObject: pendingToolResults.map { ["tool_use_id": $0.toolCallId, "content": $0.content] },
-                        options: []
-                    )
-                    let batchedJson = batchedData.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-                    
-                    /// Create user message with special marker for batched tools
-                    let batchedMessage = OpenAIChatMessage(
-                        role: "user",
-                        content: "__CLAUDE_BATCHED_TOOL_RESULTS__\n\(batchedJson)"
-                    )
-                    processed.append(batchedMessage)
-                    pendingToolResults.removeAll()
-                }
-                
-                /// Add the current non-tool message
-                processed.append(message)
-            }
-        }
-        
-        /// Flush any remaining tool results at the end
-        if !pendingToolResults.isEmpty {
-            logger.info("CLAUDE_TOOL_BATCH: Flushing final \(pendingToolResults.count) tool results")
-            let batchedData = try? JSONSerialization.data(
-                withJSONObject: pendingToolResults.map { ["tool_use_id": $0.toolCallId, "content": $0.content] },
-                options: []
-            )
-            let batchedJson = batchedData.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-            
-            let batchedMessage = OpenAIChatMessage(
-                role: "user",
-                content: "__CLAUDE_BATCHED_TOOL_RESULTS__\n\(batchedJson)"
-            )
-            processed.append(batchedMessage)
-        }
-        
-        logger.debug("CLAUDE_TOOL_BATCH: Processed \(messages.count) → \(processed.count) messages")
-        return processed
-    }
-
-
-    // MARK: - Session Auto-Naming
 
     /// Extract session naming marker from AI response and rename the conversation
     /// Marker format: <!--session:{"title":"3-6 word summary"}-->
@@ -476,7 +399,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// Track if we've already fetched model capabilities for each provider type.
     private var hasAttemptedCapabilitiesFetch: [String: Bool] = [:]
 
-    /// Lazy fetch model capabilities from provider API on first use This ensures the provider is fully initialized before we attempt to fetch capabilities Supports: - GitHub Copilot: /models endpoint with max_input_tokens - OpenAI: /v1/models endpoint - Gemini: models.list API with inputTokenLimit - Anthropic: Uses hardcoded values (API doesn't expose).
+    /// Lazy fetch model capabilities from provider API on first use This ensures the provider is fully initialized before we attempt to fetch capabilities Supports: - GitHub Copilot: /models endpoint with max_input_tokens - OpenAI: /v1/models endpoint - Gemini: models.list API with inputTokenLimit - OpenRouter: /v1/models endpoint with context_length.
     func lazyFetchModelCapabilitiesIfNeeded(for model: String) async {
         /// Determine provider type from model name.
         let providerType: String
@@ -493,7 +416,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         } else if modelLower.contains("gemini") {
             providerType = "gemini"
         } else if modelLower.contains("claude") {
-            providerType = "anthropic"
+            /// Claude models are available via GitHub Copilot or OpenRouter (not direct Anthropic)
+            /// Let the Copilot or OpenRouter fetch handle capabilities
+            return
         } else if let providerTypeName = endpointManager.getProviderTypeForModel(model),
                   providerTypeName == "OpenRouterProvider" {
             /// OpenRouter model detected via provider registry.
@@ -532,11 +457,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     logger.debug("LAZY_FETCH: Fetched \(capabilities?.count ?? 0) model context sizes from OpenRouter")
                 }
 
-            case "anthropic":
-                /// Anthropic API doesn't expose model metadata - use hardcoded values.
-                logger.debug("LAZY_FETCH: Anthropic uses hardcoded context sizes (API doesn't expose)")
-                return
-
             default:
                 logger.debug("LAZY_FETCH: Unknown provider type '\(providerType)', skipping")
                 return
@@ -552,7 +472,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             logger.warning("LAZY_FETCH: Failed to fetch \(providerType) model capabilities: \(error) - using hardcoded fallbacks")
         }
     }
-/// **Architecture**: - **Model-Agnostic**: Works with MLX, OpenAI, GitHub Copilot, Anthropic - **Autonomous**: No user prompting needed between tool executions - **Safe**: Iteration limits prevent infinite loops - **Transparent**: Full tool execution history tracked.
+/// **Architecture**: - **Model-Agnostic**: Works with MLX, OpenAI, GitHub Copilot, OpenRouter - **Autonomous**: No user prompting needed between tool executions - **Safe**: Iteration limits prevent infinite loops - **Transparent**: Full tool execution history tracked.
 
     // MARK: - Streaming Tool Call Accumulation
 

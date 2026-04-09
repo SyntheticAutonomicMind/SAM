@@ -166,7 +166,7 @@ struct OverviewContent: View {
                 FeatureRow(icon: "checkmark.circle.fill", text: "OpenAI Chat Completions API compatible", color: .green)
                 FeatureRow(icon: "checkmark.circle.fill", text: "Streaming responses with Server-Sent Events", color: .green)
                 FeatureRow(icon: "checkmark.circle.fill", text: "MCP (Model Context Protocol) tool execution", color: .green)
-                FeatureRow(icon: "checkmark.circle.fill", text: "Multiple AI provider support (OpenAI, Anthropic, Google Gemini, GitHub Copilot, local models)", color: .green)
+                FeatureRow(icon: "checkmark.circle.fill", text: "Multiple AI provider support (OpenAI, Google Gemini, GitHub Copilot, OpenRouter, local models)", color: .green)
             }
 
             SectionHeader(title: "API Endpoints")
@@ -506,7 +506,7 @@ struct ModelsAPIContent: View {
             SectionHeader(title: "List Models")
             CodeBlock(code: "GET /v1/models")
 
-            Text("Returns all models from enabled providers (OpenAI, Anthropic, GitHub Copilot, local MLX models).")
+            Text("Returns all models from enabled providers (OpenAI, GitHub Copilot, Google Gemini, local MLX models).")
 
             SectionHeader(title: "Request Example")
             CodeBlock(code: """
@@ -525,10 +525,10 @@ struct ModelsAPIContent: View {
                   "owned_by": "openai"
                 },
                 {
-                  "id": "claude-3-5-sonnet-20241022",
+                  "id": "github_copilot/claude-sonnet-4",
                   "object": "model",
                   "created": 1677649963,
-                  "owned_by": "anthropic"
+                  "owned_by": "github_copilot"
                 },
                 {
                   "id": "copilot",

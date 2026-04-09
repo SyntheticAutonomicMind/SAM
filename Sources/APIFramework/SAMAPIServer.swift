@@ -1117,7 +1117,7 @@ AVAILABLE TOOLS:
         }
 
         /// CONDITIONAL TOOL INJECTION: Only inject tools into system prompt for LOCAL models
-        /// Remote models (OpenAI, Anthropic, GitHub Copilot) use native tools array from SharedConversationService
+        /// Remote models (OpenAI, GitHub Copilot) use native tools array from SharedConversationService
         /// Local models (GGUF/MLX via LlamaProvider/MLXProvider) need tools described in system prompt for tool calling
         /// But providers add their own tool schemas, so SAMAPIServer just triggers the flow
         let providerType = endpointManager.getProviderTypeForModel(enhancedRequest.model)
@@ -1484,7 +1484,6 @@ AVAILABLE TOOLS:
     private func mapProviderType(_ providerType: String) -> String {
         switch providerType {
         case "OpenAIProvider": return "openai"
-        case "AnthropicProvider": return "anthropic"
         case "GitHubCopilotProvider": return "github_copilot"
         case "DeepSeekProvider": return "deepseek"
         case "MLXProvider": return "mlx"
@@ -1499,7 +1498,6 @@ AVAILABLE TOOLS:
     private func getProviderDisplayName(_ providerType: String) -> String {
         switch providerType {
         case "OpenAIProvider": return "OpenAI"
-        case "AnthropicProvider": return "Anthropic"
         case "GitHubCopilotProvider": return "GitHub Copilot"
         case "DeepSeekProvider": return "DeepSeek"
         case "MLXProvider": return "MLX (Local)"
@@ -1515,7 +1513,6 @@ AVAILABLE TOOLS:
         // Return sanitized base URL without API keys
         let modelLower = model.lowercased()
         if modelLower.contains("gpt") { return "api.openai.com" }
-        if modelLower.contains("claude") && !modelLower.contains("copilot") { return "api.anthropic.com" }
         if modelLower.contains("deepseek") { return "api.deepseek.com" }
         if modelLower.contains("github_copilot") || model.hasPrefix("github_copilot/") { return "api.githubcopilot.com" }
         return nil
@@ -1666,7 +1663,7 @@ AVAILABLE TOOLS:
             promptCostPer1k = 0.0005
             completionCostPer1k = 0.0015
         }
-        // Anthropic pricing (approximate)
+        // Claude model pricing (approximate, via Copilot/OpenRouter)
         else if modelLower.contains("claude-3.5-sonnet") || modelLower.contains("claude-sonnet-4") {
             promptCostPer1k = 0.003
             completionCostPer1k = 0.015
@@ -3671,11 +3668,10 @@ AVAILABLE TOOLS:
         let modelWithoutPrefix = modelName
 
         /// Check each provider type to see if this model belongs to it
-        /// Priority order: github_copilot, openai, anthropic, deepseek, custom.
+        /// Priority order: github_copilot, openai, deepseek, custom.
         let providerPrefixes = [
             "github_copilot",
             "openai",
-            "anthropic",
             "deepseek",
             "custom"
         ]
@@ -3684,14 +3680,11 @@ AVAILABLE TOOLS:
             let prefixedModel = "\(prefix)/\(modelWithoutPrefix)"
             /// Check if this prefixed model matches any known models
             /// This is a simple heuristic - could be enhanced with actual model registry lookup.
-            if prefix == "github_copilot" && (modelWithoutPrefix.hasPrefix("gpt-") || modelWithoutPrefix.hasPrefix("o1")) {
+            if prefix == "github_copilot" && (modelWithoutPrefix.hasPrefix("gpt-") || modelWithoutPrefix.hasPrefix("o1") || modelWithoutPrefix.hasPrefix("claude-")) {
                 logger.debug("Normalized model '\(modelName)' → '\(prefixedModel)' (matched GitHub Copilot pattern)")
                 return prefixedModel
             } else if prefix == "openai" && (modelWithoutPrefix.hasPrefix("gpt-") || modelWithoutPrefix.hasPrefix("o1")) {
                 logger.debug("Normalized model '\(modelName)' → '\(prefixedModel)' (matched OpenAI pattern)")
-                return prefixedModel
-            } else if prefix == "anthropic" && modelWithoutPrefix.hasPrefix("claude-") {
-                logger.debug("Normalized model '\(modelName)' → '\(prefixedModel)' (matched Anthropic pattern)")
                 return prefixedModel
             } else if prefix == "deepseek" && modelWithoutPrefix.hasPrefix("deepseek-") {
                 logger.debug("Normalized model '\(modelName)' → '\(prefixedModel)' (matched DeepSeek pattern)")
