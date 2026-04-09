@@ -1,6 +1,39 @@
 {
   "releases": [
     {
+      "version": "20260409.1",
+      "release_date": "April 9, 2026",
+      "introduction": "This release closes a security hole in the agent sandbox, removes the deprecated Anthropic provider, and fixes a scroll glitch during streaming responses.",
+      "improvements": [
+        {
+          "id": "read-operation-authorization",
+          "icon": "lock.shield.fill",
+          "title": "File Read Authorization",
+          "description": "All file read operations now require the same authorization as write operations when accessing paths outside the working directory. Previously, agents could traverse the file system and read arbitrary files without permission. Read operations like listing directories, searching files, and reading file contents are now sandboxed to the conversation's working directory."
+        },
+        {
+          "id": "document-tool-authorization",
+          "icon": "doc.badge.lock.fill",
+          "title": "Document Tool Authorization",
+          "description": "The document import and creation tool now checks path authorization before accessing files. Previously, agents could import documents from anywhere on the file system without user approval."
+        },
+        {
+          "id": "remove-anthropic-provider",
+          "icon": "minus.circle.fill",
+          "title": "Removed Anthropic Provider",
+          "description": "The Anthropic direct API provider has been removed. Anthropic models remain available through OpenRouter and GitHub Copilot."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "scroll-clear-streaming",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Scroll Jump on Streaming Completion",
+          "description": "Fixed an issue where the conversation view could jump or clear unexpectedly when a streaming response finished."
+        }
+      ]
+    },
+    {
       "version": "20260408.1",
       "release_date": "April 8, 2026",
       "introduction": "This release fixes a bug where mini-prompts disappeared mid-conversation, and includes UI improvements for smoother scrolling and conversation navigation.",
