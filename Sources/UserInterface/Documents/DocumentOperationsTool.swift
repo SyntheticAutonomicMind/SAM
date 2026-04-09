@@ -179,6 +179,42 @@ public class DocumentOperationsTool: ConsolidatedMCP, ToolDisplayInfoProvider, @
             return validationError
         }
 
+        /// AUTHORIZATION CHECK: Verify path access before any operation.
+        let primaryPath: String? = {
+            if let path = parameters["path"] as? String { return path }
+            if let outputPath = parameters["output_path"] as? String { return outputPath }
+            if let filePath = parameters["filePath"] as? String { return filePath }
+            return nil
+        }()
+
+        if let path = primaryPath {
+            let operationKey = "document_operations.\(operation)"
+            let authResult = MCPAuthorizationGuard.checkPathAuthorization(
+                path: path,
+                workingDirectory: context.workingDirectory,
+                conversationId: context.conversationId,
+                operation: operationKey,
+                isUserInitiated: context.isUserInitiated
+            )
+
+            switch authResult {
+            case .allowed:
+                break
+            case .denied(let reason):
+                return operationError(operation, message: "Operation denied: \(reason)")
+            case .requiresAuthorization(let reason):
+                let authError = MCPAuthorizationGuard.authorizationError(
+                    operation: operationKey,
+                    reason: reason,
+                    suggestedPrompt: "May I \(operation) on \(path)?"
+                )
+                if let errorMsg = authError["error"] as? String {
+                    return operationError(operation, message: errorMsg)
+                }
+                return operationError(operation, message: "Authorization required for path: \(path)")
+            }
+        }
+
         switch operation {
         case "document_import":
             return await handleImport(parameters: parameters, context: context)
