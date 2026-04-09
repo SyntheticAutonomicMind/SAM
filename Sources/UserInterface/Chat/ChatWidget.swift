@@ -1278,6 +1278,18 @@ public struct ChatWidget: View {
                       newType == .toolExecution || newType == .thinking else { return }
                 performThrottledScroll(proxy: proxy, to: lastMessage)
             }
+            .onChange(of: messages.last?.isStreaming) { oldValue, newValue in
+                /// Streaming completion correction: when streaming ends, the layout
+                /// recomputes (fixedSize kicks in for the full message height).
+                /// Fire a delayed scroll to keep content visible after relayout.
+                if oldValue == true && newValue == false {
+                    guard scrollLockEnabled, let lastMessage = messages.last else { return }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(50))
+                        proxy.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+                    }
+                }
+            }
             .onChange(of: messages) { _, newMessages in
                 /// Cache tool hierarchy and prune stale message cache
                 cachedToolHierarchy = buildToolHierarchy(messages: newMessages)
@@ -1520,11 +1532,12 @@ public struct ChatWidget: View {
                                         )
                                     }
                                 }
-                                /// LAZYVSTACK RENDER FIX: Force intrinsic content height for non-streaming messages.
+                                /// LAZYVSTACK RENDER FIX: Force intrinsic content height for all messages.
                                 /// Without .fixedSize, LazyVStack may defer rendering and show empty placeholders.
-                                /// During streaming, skip .fixedSize to avoid excessive layout recalculations
-                                /// as content changes size rapidly.
-                                .fixedSize(horizontal: false, vertical: !message.isStreaming)
+                                /// Previously toggled based on isStreaming, but the transition from
+                                /// streaming -> non-streaming caused massive layout recomputation
+                                /// that cleared the visible window (scroll position lost during relayout).
+                                .fixedSize(horizontal: false, vertical: true)
                                 .frame(minHeight: 24)
                                 .id(viewID)
                             } else {
@@ -4540,7 +4553,6 @@ public struct ChatWidget: View {
         let providerMap: [String: String] = [
             "github_copilot": "GitHub Copilot",
             "openai": "OpenAI",
-            "anthropic": "Anthropic",
             "deepseek": "DeepSeek",
             "local": "Local",
             "mlx": "MLX"
