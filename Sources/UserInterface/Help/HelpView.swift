@@ -187,7 +187,7 @@ struct QuickStartContent: View {
 
             HelpSection_Group(title: "First Launch") {
                 HelpStep(number: 1, text: "Open SAM from your Applications folder")
-                HelpStep(number: 2, text: "Choose your AI provider (OpenAI, Anthropic, GitHub Copilot, or Local models)")
+                HelpStep(number: 2, text: "Choose your AI provider (OpenAI, GitHub Copilot, Google Gemini, or Local models)")
                 HelpStep(number: 3, text: "Configure your API key in Preferences (⌘,)")
                 HelpStep(number: 4, text: "Start chatting - SAM will guide you through its capabilities")
             }
@@ -511,19 +511,10 @@ struct ModelProvidersContent: View {
 
             HelpSection_Group(title: "GitHub Copilot") {
                 BulletPoint(text: "**GPT-4**: Access GPT-4 through your Copilot subscription")
-                BulletPoint(text: "**Claude 3.5 Sonnet**: Access Anthropic's models through Copilot")
+                BulletPoint(text: "**Claude 3.5 Sonnet**: Access Claude models through Copilot")
                 BulletPoint(text: "**O1 Series**: Advanced reasoning through Copilot")
                 BulletPoint(text: "**Setup**: Uses your GitHub Copilot subscription - requires authentication")
                 Text("Best for: Developers with Copilot access who want multiple models")
-                    .font(.callout).italic().foregroundColor(.secondary)
-            }
-
-            HelpSection_Group(title: "Anthropic/Claude") {
-                BulletPoint(text: "**Claude 3.5 Sonnet**: Excellent reasoning and coding (90k context)")
-                BulletPoint(text: "**Claude 4**: Latest generation with improved capabilities (200k context)")
-                BulletPoint(text: "**Claude 4.5 Sonnet**: Enhanced performance and accuracy (200k context)")
-                BulletPoint(text: "**Setup**: Add your Anthropic API key in Preferences → API Providers")
-                Text("Best for: Long documents, detailed analysis, nuanced conversations")
                     .font(.callout).italic().foregroundColor(.secondary)
             }
 
@@ -1211,7 +1202,7 @@ struct PrivacySecurityContent: View {
                     .background(Color.orange.opacity(0.1))
                     .cornerRadius(8)
 
-                Text("Cloud Providers (OpenAI, Anthropic, GitHub Copilot):")
+                Text("Cloud Providers (OpenAI, GitHub Copilot, Google Gemini):")
                     .fontWeight(.semibold)
                     .padding(.top, 8)
                 BulletPoint(text: "Data sent to provider's servers for processing")
@@ -2048,7 +2039,7 @@ struct PerformanceOptimizationContent: View {
                 Text("**Cloud Providers (Fastest Response):**")
                     .fontWeight(.semibold)
                 BulletPoint(text: "OpenAI GPT-4: Instant responses, no local processing")
-                BulletPoint(text: "Anthropic Claude: Fast, reliable, excellent quality")
+                BulletPoint(text: "Claude (via Copilot/OpenRouter): Fast, reliable, excellent quality")
                 BulletPoint(text: "GitHub Copilot: Optimized for code generation")
                 BulletPoint(text: "Trade-off: Requires internet, sends data to third party")
 
