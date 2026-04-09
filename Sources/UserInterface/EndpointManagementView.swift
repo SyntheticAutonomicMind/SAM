@@ -254,9 +254,6 @@ struct EndpointManagementView: View {
         case .openai:
             return "Get your API key from platform.openai.com"
 
-        case .anthropic:
-            return "Get your API key from console.anthropic.com"
-
         case .githubCopilot:
             return "Use your GitHub Copilot access token"
 
@@ -414,7 +411,6 @@ struct ProviderRowView: View {
     private var providerIcon: String {
         switch provider.providerType {
         case .openai: return "bubble.left"
-        case .anthropic: return "message"
         case .githubCopilot: return "arrow.triangle.branch"
         case .deepseek: return "magnifyingglass"
         case .gemini: return "globe"
@@ -861,9 +857,6 @@ struct ProviderConfigurationSheet: View {
         case .openai:
             return "Create an API key at platform.openai.com/api-keys"
 
-        case .anthropic:
-            return "Create an API key in your Anthropic Console"
-
         case .githubCopilot:
             return "Authenticate with GitHub to automatically get your Copilot token"
 
@@ -947,10 +940,6 @@ struct ProviderConfigurationSheet: View {
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
                 request.setValue("https://www.syntheticautonomicmind.org", forHTTPHeaderField: "HTTP-Referer")
                 request.setValue("SAM", forHTTPHeaderField: "X-Title")
-
-            case .anthropic:
-                request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-                request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
 
             case .githubCopilot:
                 // Use CopilotTokenStore to get the exchanged session token (tid=...)

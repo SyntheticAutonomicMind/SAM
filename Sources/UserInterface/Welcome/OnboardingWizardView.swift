@@ -135,7 +135,7 @@ struct OnboardingWizardView: View {
                 OnboardingPathCard(
                     icon: "cloud.fill",
                     title: "Use Cloud AI",
-                    description: "Connect to services like OpenAI, Claude, or GitHub Copilot",
+                    description: "Connect to services like OpenAI, Google Gemini, or GitHub Copilot",
                     benefits: [
                         "Most powerful models",
                         "Quick setup",
@@ -210,14 +210,6 @@ struct OnboardingWizardView: View {
                     difficulty: "Easy",
                     difficultyColor: .blue,
                     description: "Get a free trial API key from OpenAI"
-                )
-                
-                ProviderOptionRow(
-                    name: "Anthropic (Claude)",
-                    icon: "text.bubble.fill",
-                    difficulty: "Easy",
-                    difficultyColor: .blue,
-                    description: "Get an API key from Anthropic"
                 )
                 
                 ProviderOptionRow(

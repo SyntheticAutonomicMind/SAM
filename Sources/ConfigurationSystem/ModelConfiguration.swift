@@ -219,7 +219,7 @@ public class ModelConfigurationManager {
         }
 
         /// Fallback to hardcoded detection if config not available
-        /// This applies to direct Claude API calls (not through GitHub Copilot)
+        /// This applies to Claude models via OpenRouter or other providers
         return modelName.localizedCaseInsensitiveContains("claude") ||
                modelName.localizedCaseInsensitiveContains("sonnet") ||
                modelName.localizedCaseInsensitiveContains("haiku") ||

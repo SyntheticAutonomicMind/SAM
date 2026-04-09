@@ -20,7 +20,7 @@ extension Notification.Name {
     public static let providerRateLimitRetrying = Notification.Name("com.sam.provider.rateLimitRetrying")
 }
 
-/// Comprehensive endpoint manager for multi-provider AI integrations Handles routing requests to different AI providers (OpenAI, Anthropic, GitHub Copilot, DeepSeek, custom) with fallback chains, load balancing, and response normalization to OpenAI format.
+/// Comprehensive endpoint manager for multi-provider AI integrations Handles routing requests to different AI providers (OpenAI, GitHub Copilot, DeepSeek, custom) with fallback chains, load balancing, and response normalization to OpenAI format.
 @MainActor
 public class EndpointManager: ObservableObject {
     private let logger = Logging.Logger(label: "com.sam.endpointmanager")
@@ -204,7 +204,7 @@ public class EndpointManager: ObservableObject {
             return 200_000  // 200k for reasoning models
         }
         
-        // Anthropic models
+        // Claude models (via Copilot/OpenRouter)
         if normalized.contains("claude-3.5") || normalized.contains("claude-3-5") {
             return 200_000  // 200k
         }
@@ -565,7 +565,7 @@ public class EndpointManager: ObservableObject {
             do {
                 let providerModels = try await provider.getAvailableModels()
 
-                /// For remote providers (OpenAI, Anthropic, etc.), prefix models with normalized provider name For local providers, they already return provider/model format.
+                /// For remote providers (OpenAI, etc.), prefix models with normalized provider name For local providers, they already return provider/model format.
                 let providerType = provider.config.providerType
                 let shouldPrefixModels = ![.localLlama, .localMLX].contains(providerType)
 
@@ -837,15 +837,6 @@ public class EndpointManager: ObservableObject {
                 models: []
             )
 
-        case .anthropic:
-            return ProviderConfiguration(
-                providerId: "anthropic",
-                providerType: .anthropic,
-                isEnabled: false,
-                baseURL: "https://api.anthropic.com/v1",
-                models: []
-            )
-
         case .deepseek:
             return ProviderConfiguration(
                 providerId: "deepseek",
@@ -917,9 +908,6 @@ public class EndpointManager: ObservableObject {
         switch type {
         case .openai:
             return OpenAIProvider(config: config)
-
-        case .anthropic:
-            return AnthropicProvider(config: config)
 
         case .githubCopilot:
             return GitHubCopilotProvider(config: config)

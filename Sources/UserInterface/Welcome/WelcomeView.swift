@@ -66,7 +66,7 @@ struct WelcomeView: View {
                 /// Introduction (General, focused on SAM).
                 VStack(alignment: .leading, spacing: 16) {
 
-                    Text("SAM is a conversational AI assistant built for macOS with a focus on transparency and user control. Everything runs locally on your Mac. Your conversations stay on your machine, your data belongs to you, and you decide which AI providers to use. SAM supports multiple providers including OpenAI, GitHub Copilot, Claude, and local models. You get autonomous workflows, integrated tools, and deep macOS integration without tracking, telemetry, or vendor lock-in.")
+                    Text("SAM is a conversational AI assistant built for macOS with a focus on transparency and user control. Everything runs locally on your Mac. Your conversations stay on your machine, your data belongs to you, and you decide which AI providers to use. SAM supports multiple providers including OpenAI, GitHub Copilot, Google Gemini, and local models. You get autonomous workflows, integrated tools, and deep macOS integration without tracking, telemetry, or vendor lock-in.")
                         .font(.body)
                         .foregroundColor(.secondary)
 

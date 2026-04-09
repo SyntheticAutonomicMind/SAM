@@ -121,9 +121,6 @@ public struct ResponseNormalizer {
                 return openAIResponse
             }
 
-        case .anthropic:
-            return try normalizeAnthropicResponse(providerResponse, requestModel: requestModel, requestId: requestId)
-
         case .githubCopilot:
             return try normalizeGitHubCopilotResponse(providerResponse, requestModel: requestModel, requestId: requestId)
 
@@ -138,24 +135,6 @@ public struct ResponseNormalizer {
     }
 
     // MARK: - Provider-Specific Normalization
-
-    /// Normalize Anthropic Claude API responses to OpenAI format Anthropic uses a different response schema: - `content` array instead of single `message.content` - `stop_reason` instead of `finish_reason` - Different token counting structure This is currently a placeholder implementation.
-    private static func normalizeAnthropicResponse(_ response: Any, requestModel: String, requestId: String) throws -> ServerOpenAIChatResponse {
-        return ServerOpenAIChatResponse(
-            id: "chatcmpl-\(requestId)",
-            object: "chat.completion",
-            created: Int(Date().timeIntervalSince1970),
-            model: requestModel,
-            choices: [
-                OpenAIChatChoice(
-                    index: 0,
-                    message: OpenAIChatMessage(role: "assistant", content: "Anthropic response (normalized)"),
-                    finishReason: "stop"
-                )
-            ],
-            usage: ServerOpenAIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0)
-        )
-    }
 
     /// Normalize GitHub Copilot Chat responses to OpenAI format GitHub Copilot may use extended response fields not in the OpenAI spec.
     private static func normalizeGitHubCopilotResponse(_ response: Any, requestModel: String, requestId: String) throws -> ServerOpenAIChatResponse {

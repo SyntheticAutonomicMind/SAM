@@ -181,7 +181,6 @@ public struct MLXConfiguration: Codable, Equatable {
 /// Supported AI provider types.
 public enum ProviderType: String, CaseIterable, Codable {
     case openai = "openai"
-    case anthropic = "anthropic"
     case githubCopilot = "github-copilot"
     case deepseek = "deepseek"
     case gemini = "gemini"
@@ -194,7 +193,6 @@ public enum ProviderType: String, CaseIterable, Codable {
     public var displayName: String {
         switch self {
         case .openai: return "OpenAI"
-        case .anthropic: return "Anthropic"
         case .githubCopilot: return "GitHub Copilot"
         case .deepseek: return "DeepSeek"
         case .gemini: return "Google Gemini"
@@ -214,7 +212,6 @@ public enum ProviderType: String, CaseIterable, Codable {
     public var normalizedProviderName: String {
         switch self {
         case .openai: return "openai"
-        case .anthropic: return "anthropic"
         case .githubCopilot: return "github_copilot"
         case .deepseek: return "deepseek"
         case .gemini: return "gemini"
@@ -229,14 +226,13 @@ public enum ProviderType: String, CaseIterable, Codable {
     public var requiresApiKey: Bool {
         switch self {
         case .localLlama, .localMLX: return false
-        case .openai, .anthropic, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter, .custom: return true
+        case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter, .custom: return true
         }
     }
 
     public var defaultBaseURL: String? {
         switch self {
         case .openai: return "https://api.openai.com/v1"
-        case .anthropic: return "https://api.anthropic.com"
         case .githubCopilot: return "https://api.githubcopilot.com"
         case .deepseek: return "https://api.deepseek.com/v1"
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
@@ -250,10 +246,6 @@ public enum ProviderType: String, CaseIterable, Codable {
         switch self {
         case .openai:
             return ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"]
-
-        case .anthropic:
-            return ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku"]
-
         case .githubCopilot:
             return ["copilot-chat"]
 
@@ -282,10 +274,6 @@ public enum ProviderType: String, CaseIterable, Codable {
         switch self {
         case .openai:
             return "cpu"
-
-        case .anthropic:
-            return "a.circle.fill"
-
         case .githubCopilot:
             return "arrow.triangle.branch"
         case .deepseek:
@@ -313,10 +301,6 @@ public enum ProviderType: String, CaseIterable, Codable {
         switch self {
         case .openai:
             return .green
-
-        case .anthropic:
-            return .orange
-
         case .githubCopilot:
             return .purple
 

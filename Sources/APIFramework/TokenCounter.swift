@@ -185,7 +185,7 @@ public actor TokenCounter {
             return 4096
         }
 
-        /// Claude models - ACCURATE context sizes (not inflated fallbacks!) Based on Anthropic API specifications.
+        /// Claude models - ACCURATE context sizes (not inflated fallbacks!) Based on published specifications.
 
         /// Claude 3.5 Sonnet: 90k context (NOT 200k - that causes 400 errors!).
         if modelLower.contains("claude-3.5-sonnet") || modelLower.contains("claude-3-5-sonnet") {

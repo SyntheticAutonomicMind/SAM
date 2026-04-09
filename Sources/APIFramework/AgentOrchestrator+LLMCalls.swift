@@ -656,14 +656,8 @@ extension AgentOrchestrator {
         logger.debug("callLLM: Injecting MCP tools via SharedConversationService")
         let requestWithTools = await conversationService.injectMCPToolsIntoRequest(baseRequest)
 
-        /// CRITICAL: For Claude models, batch consecutive tool results into single user messages
-        /// Claude Messages API requires ALL tool results from one iteration in ONE user message
-        /// This fixes the tool result batching issue that caused workflow loops
+        /// Claude via Copilot/OpenRouter: no batching needed - proxies handle conversion
         var messagesToProcess = requestWithTools.messages
-        if modelLower.contains("claude") {
-            messagesToProcess = batchToolResultsForClaude(messagesToProcess)
-            logger.debug("callLLM: Applied Claude tool result batching")
-        }
 
         /// CRITICAL: Ensure message alternation for Claude API compatibility
         /// Claude requires strict user/assistant alternation with no empty messages
@@ -756,12 +750,8 @@ extension AgentOrchestrator {
                     /// Re-inject tools with compressed messages
                     let compressedRequestWithTools = await conversationService.injectMCPToolsIntoRequest(compressedBaseRequest)
 
-                    /// CRITICAL: For Claude models, batch consecutive tool results into single user messages
+                    /// Claude via Copilot/OpenRouter: no batching needed
                     var compressedMessagesToProcess = compressedRequestWithTools.messages
-                    if modelLower.contains("claude") {
-                        compressedMessagesToProcess = batchToolResultsForClaude(compressedMessagesToProcess)
-                        logger.debug("callLLM: Applied Claude tool result batching to compressed messages")
-                    }
 
                     /// CRITICAL: Ensure message alternation for Claude API compatibility
                     let fixedCompressedMessages = ensureMessageAlternation(compressedMessagesToProcess)
@@ -1566,22 +1556,8 @@ extension AgentOrchestrator {
 
         logger.debug("callLLMStreaming: Built complete message array with \(messages.count) messages (before alternation fix)")
 
-        /// CRITICAL: For Claude models via DIRECT Anthropic provider, batch consecutive tool results
-        /// Claude Messages API requires ALL tool results from one iteration in ONE user message
-        /// This fixes the tool result batching issue that caused workflow loops
-        /// 
-        /// IMPORTANT: Do NOT batch for GitHub Copilot + Claude!
-        /// GitHub Copilot's API handles Claude conversion internally and expects OpenAI format
-        /// Batching causes the marker to be buried in alternation merging
-        let isDirectAnthropicProvider = model.lowercased().hasPrefix("anthropic/")
-        let isClaudeModel = modelLower.contains("claude")
-        
-        if isClaudeModel && isDirectAnthropicProvider {
-            messages = batchToolResultsForClaude(messages)
-            logger.debug("callLLMStreaming: Applied Claude tool result batching for direct Anthropic provider")
-        } else if isClaudeModel {
-            logger.debug("callLLMStreaming: Skipping Claude batching (not direct Anthropic provider - proxy will handle conversion)")
-        }
+        /// Claude models via GitHub Copilot/OpenRouter don't need tool result batching -
+        /// those proxies handle Claude conversion internally and expect OpenAI format.
 
         /// CRITICAL: Fix message alternation BEFORE YARN compression
         /// Claude requires strict user/assistant alternation with no empty messages

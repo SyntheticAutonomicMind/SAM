@@ -213,7 +213,6 @@ struct ModelPickerView: View {
         case "github_copilot": return "GitHub Copilot"
         case "unsloth": return "Unsloth"
         case "openai": return "OpenAI"
-        case "anthropic": return "Anthropic"
         case "local": return "Local"
         case "mlx": return "MLX"
         default: return provider.capitalized
