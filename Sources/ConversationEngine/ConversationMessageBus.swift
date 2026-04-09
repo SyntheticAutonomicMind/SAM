@@ -260,7 +260,7 @@ public class ConversationMessageBus: ObservableObject {
         let updated = EnhancedMessage(
             id: current.id,
             type: current.type,
-            content: current.content.trimmingCharacters(in: .whitespacesAndNewlines), // Trim on completion
+            content: current.content, // Preserve streamed content as-is to avoid cache invalidation
             contentParts: current.contentParts,
             isFromUser: current.isFromUser,
             timestamp: current.timestamp,
@@ -305,7 +305,9 @@ public class ConversationMessageBus: ObservableObject {
         contentParts: [MessageContentPart]? = nil,
         toolCalls: [SimpleToolCall]? = nil,
         status: ToolStatus? = nil,
-        duration: TimeInterval? = nil
+        duration: TimeInterval? = nil,
+        performanceMetrics: MessagePerformanceMetrics? = nil,
+        processingTime: TimeInterval? = nil
     ) {
         guard let index = messageCache[id] else {
             logger.error("UPDATE_MESSAGE: Message not found id=\(id.uuidString.prefix(8))")
@@ -331,10 +333,10 @@ public class ConversationMessageBus: ObservableObject {
             toolMetadata: current.toolMetadata,
             toolCalls: toolCalls ?? current.toolCalls,
             toolCallId: current.toolCallId,
-            processingTime: current.processingTime,
+            processingTime: processingTime ?? current.processingTime,
             reasoningContent: current.reasoningContent,
             showReasoning: current.showReasoning,
-            performanceMetrics: current.performanceMetrics,
+            performanceMetrics: performanceMetrics ?? current.performanceMetrics,
             isStreaming: current.isStreaming,
             isToolMessage: current.isToolMessage,
             githubCopilotResponseId: current.githubCopilotResponseId,

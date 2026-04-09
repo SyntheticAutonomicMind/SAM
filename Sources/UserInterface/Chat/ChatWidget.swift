@@ -1279,14 +1279,15 @@ public struct ChatWidget: View {
                 performThrottledScroll(proxy: proxy, to: lastMessage)
             }
             .onChange(of: messages.last?.isStreaming) { oldValue, newValue in
-                /// Streaming completion correction: when streaming ends, the layout
-                /// recomputes (fixedSize kicks in for the full message height).
-                /// Fire a delayed scroll to keep content visible after relayout.
+                /// Streaming completion scroll: when streaming ends, layout recomputes
+                /// (ProgressView removed, metrics added, content re-parsed).
+                /// Scroll to bottom anchor after layout settles to keep content visible.
                 if oldValue == true && newValue == false {
-                    guard scrollLockEnabled, let lastMessage = messages.last else { return }
+                    guard scrollLockEnabled else { return }
                     Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(50))
-                        proxy.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+                        /// 150ms allows layout to settle after streaming->complete transition
+                        try? await Task.sleep(for: .milliseconds(150))
+                        proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
                     }
                 }
             }
@@ -4037,13 +4038,23 @@ public struct ChatWidget: View {
                         messageMetrics = nil
                     }
 
-                    /// FIXED: Use MessageBus to finalize streaming message
-                    /// completeStreamingMessage marks isStreaming=false, trims content, adds metrics
-                    activeConversation?.messageBus?.completeStreamingMessage(
-                        id: msgId,
-                        performanceMetrics: messageMetrics,
-                        processingTime: processingTime
-                    )
+                    /// Only finalize if still streaming (orchestrator may have already completed it)
+                    /// Calling completeStreamingMessage twice causes double layout disruption
+                    let currentMessage = messages[index]
+                    if currentMessage.isStreaming {
+                        activeConversation?.messageBus?.completeStreamingMessage(
+                            id: msgId,
+                            performanceMetrics: messageMetrics,
+                            processingTime: processingTime
+                        )
+                    } else if messageMetrics != nil {
+                        /// Message already completed by orchestrator - just add metrics
+                        activeConversation?.messageBus?.updateMessage(
+                            id: msgId,
+                            performanceMetrics: messageMetrics,
+                            processingTime: processingTime
+                        )
+                    }
 
                     let existing = messages[index]  // Read for voice/workflow checks
                     logger.debug("MESSAGE_LIFECYCLE: Finalized message \(assistantMessageId?.uuidString.prefix(8) ?? "nil") with \(existing.content.count) chars (count still: \(messages.count))")
