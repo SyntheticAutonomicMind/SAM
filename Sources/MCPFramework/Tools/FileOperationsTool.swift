@@ -220,14 +220,19 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             return validationError
         }
 
-        /// AUTHORIZATION CHECK using centralized guard Check authorization for all write operations based on path location.
-        let writeOperations = ["create_file", "replace_string", "multi_replace_string", "insert_edit", "rename_file", "delete_file"]
+        /// AUTHORIZATION CHECK using centralized guard.
+        /// Check authorization for ALL operations that access file paths.
+        /// Read operations outside the working directory are just as dangerous
+        /// as write operations - they allow agents to traverse the file system
+        /// and read arbitrary files (SSH keys, credentials, source code, etc.).
+        let pathFreeOperations = ["read_tool_result"]
         var isAuthorized = false
 
-        if writeOperations.contains(operation) {
+        if !pathFreeOperations.contains(operation) {
             let operationKey = "file_operations.\(operation)"
 
             /// Extract the primary file path for authorization check.
+            /// Cover ALL path parameter names used across MCP tools.
             let primaryPath: String? = {
                 if let filePath = parameters["filePath"] as? String {
                     return filePath
@@ -237,6 +242,24 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 }
                 if let oldPath = parameters["oldPath"] as? String {
                     return oldPath
+                }
+                if let rootPath = parameters["rootPath"] as? String {
+                    return rootPath
+                }
+                if let filePath = parameters["file_path"] as? String {
+                    return filePath
+                }
+                if let directory = parameters["directory"] as? String {
+                    return directory
+                }
+                if let workspacePath = parameters["workspace_path"] as? String {
+                    return workspacePath
+                }
+                /// Check array-style paths (filePaths) - authorize the first one
+                /// as a representative check (all should be in the same scope).
+                if let filePaths = parameters["filePaths"] as? [String],
+                   let first = filePaths.first {
+                    return first
                 }
                 return nil
             }()
@@ -267,7 +290,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                     let authError = MCPAuthorizationGuard.authorizationError(
                         operation: operationKey,
                         reason: reason,
-                        suggestedPrompt: "May I perform \(operation) on \(path)?"
+                        suggestedPrompt: "May I \(operation) on \(path)?"
                     )
                     if let errorMsg = authError["error"] as? String {
                         return operationError(operation, message: errorMsg)
@@ -277,7 +300,8 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             }
         }
 
-        /// Route to appropriate internal tool based on operation Resolve file paths against working directory for relative paths.
+        /// Route to appropriate internal tool based on operation.
+        /// Resolve file paths against working directory for relative paths.
         var resolvedParams = parameters
 
         /// Resolve common path parameters.
@@ -292,6 +316,15 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         }
         if let newPath = parameters["newPath"] as? String {
             resolvedParams["newPath"] = resolvePath(newPath, context: context)
+        }
+        if let rootPath = parameters["rootPath"] as? String {
+            resolvedParams["rootPath"] = resolvePath(rootPath, context: context)
+        }
+        if let filePath = parameters["file_path"] as? String {
+            resolvedParams["file_path"] = resolvePath(filePath, context: context)
+        }
+        if let workspacePath = parameters["workspace_path"] as? String {
+            resolvedParams["workspace_path"] = resolvePath(workspacePath, context: context)
         }
         if let filePaths = parameters["filePaths"] as? [String] {
             resolvedParams["filePaths"] = filePaths.map { resolvePath($0, context: context) }
