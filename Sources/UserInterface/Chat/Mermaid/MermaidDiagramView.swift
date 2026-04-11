@@ -24,6 +24,7 @@ struct MermaidDiagramView: View {
     @State private var isRendering = false
     @State private var lastRenderedCode: String = ""
     @State private var renderDebounceTask: Task<Void, Never>?
+    @State private var showingZoomOverlay = false
 
     /// Standard initializer (for UI)
     init(code: String, showBackground: Bool = true) {
@@ -157,12 +158,42 @@ struct MermaidDiagramView: View {
     }
 
     private func imageView(_ image: NSImage) -> some View {
-        Image(nsImage: image)
-            .resizable()
-            .interpolation(.high)
-            .aspectRatio(contentMode: .fit)
-            .frame(maxWidth: min(image.size.width, 560))
-            .padding(.vertical, 4)
+        ZStack(alignment: .topTrailing) {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: min(image.size.width, 560))
+                .padding(.vertical, 4)
+
+            // Zoom hint icon
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(5)
+                .background(.ultraThinMaterial)
+                .cornerRadius(4)
+                .padding(8)
+                .opacity(0.7)
+        }
+        .onTapGesture {
+            showingZoomOverlay = true
+        }
+        .onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .sheet(isPresented: $showingZoomOverlay) {
+            DiagramZoomOverlay(
+                mermaidCode: code,
+                initialImage: image,
+                isPresented: $showingZoomOverlay
+            )
+            .frame(minWidth: 800, minHeight: 600)
+        }
     }
 
     private func errorView(_ error: String) -> some View {

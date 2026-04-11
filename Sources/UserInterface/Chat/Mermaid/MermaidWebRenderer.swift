@@ -847,6 +847,77 @@ extension MermaidWebRenderer {
             return nil
         }
     }
+
+    /// Render mermaid code to SVG string via offscreen WKWebView.
+    /// Uses mermaid.js to render the diagram, then extracts the SVG markup from the DOM.
+    @MainActor
+    static func renderToSVG(code: String, width: CGFloat = 800, isDarkMode: Bool = false) async -> String? {
+        let logger = Logger(label: "com.sam.mermaid.webrenderer.svg")
+        logger.info("SVG render: width=\(width), darkMode=\(isDarkMode)")
+
+        let config = WKWebViewConfiguration()
+        let contentController = WKUserContentController()
+
+        let messageHandler = StaticRenderMessageHandler()
+        contentController.add(messageHandler, name: "mermaidReady")
+
+        config.userContentController = contentController
+        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: width, height: 2000), configuration: config)
+        webView.setValue(false, forKey: "drawsBackground")
+
+        objc_setAssociatedObject(webView, "messageHandler", messageHandler, .OBJC_ASSOCIATION_RETAIN)
+
+        let html = generateHTML(for: code, isDarkMode: isDarkMode)
+
+        let navigationSuccess: Bool = await withCheckedContinuation { continuation in
+            let navDelegate = StaticRenderNavigationDelegate { success in
+                continuation.resume(returning: success)
+            }
+            webView.navigationDelegate = navDelegate
+            objc_setAssociatedObject(webView, "navDelegate", navDelegate, .OBJC_ASSOCIATION_RETAIN)
+
+            if let resourcePath = Bundle.main.resourcePath {
+                let baseURL = URL(fileURLWithPath: resourcePath)
+                webView.loadHTMLString(html, baseURL: baseURL)
+            } else {
+                webView.loadHTMLString(html, baseURL: nil)
+            }
+        }
+
+        guard navigationSuccess else {
+            logger.warning("SVG render: navigation failed")
+            return nil
+        }
+
+        let renderSuccess = await messageHandler.waitForRender(timeout: 5.0)
+        if !renderSuccess {
+            logger.warning("SVG render: mermaid timed out or failed")
+        }
+
+        // Extract SVG markup from the DOM
+        do {
+            let result = try await webView.evaluateJavaScript("""
+                (function() {
+                    const svg = document.querySelector('#diagram-container svg');
+                    if (svg) {
+                        return svg.outerHTML;
+                    }
+                    return null;
+                })()
+            """)
+            if let svgString = result as? String {
+                logger.info("SVG extracted: \(svgString.count) chars")
+                return svgString
+            }
+            logger.warning("No SVG element found in DOM")
+            return nil
+        } catch {
+            logger.error("SVG extraction failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
 }
 
 /// Navigation delegate for static rendering
