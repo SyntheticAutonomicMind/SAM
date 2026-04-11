@@ -65,6 +65,14 @@
 	<string>SAM needs microphone access for voice input and wake word detection.</string>
 	<key>NSNetworkUsageDescription</key>
 	<string>Synthetic Autonomic Mind requires network access for web scraping, API calls, and content extraction.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>SAM uses Reminders to create, list, and manage reminders on your behalf when you ask.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>SAM uses Calendar to create events and check your schedule when you ask.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>SAM uses Contacts to search and manage your contacts when you ask.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>SAM uses Apple Events to interact with Notes and other apps when you ask.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
