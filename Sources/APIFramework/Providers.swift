@@ -1699,28 +1699,27 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
     /// Determines whether to use Responses API vs Chat Completions API.
     /// Uses supported_endpoints from the GitHub Copilot /models API response.
-    /// Models like codex only support /responses, while most models support /chat/completions.
-    /// Prefers Chat Completions when available (stable, well-tested path).
-    /// Only uses Responses API when model exclusively supports /responses.
+    /// Respects endpoint ordering from the API - the first relevant endpoint
+    /// (/responses or /chat/completions) is the model's preferred API.
+    /// This correctly routes models like gpt-5.4 that list /responses first,
+    /// avoiding max_tokens vs max_completion_tokens parameter mismatches.
     private func useResponsesApi(for model: String) -> Bool {
         let modelWithoutPrefix = model.components(separatedBy: "/").last ?? model
 
         /// Check cached endpoint data from /models API
         if let endpointsCache = Self.modelEndpointsCache,
            let endpoints = endpointsCache[modelWithoutPrefix] {
-            let hasResponses = endpoints.contains(.responses)
-            let hasChatCompletions = endpoints.contains(.chatCompletions)
 
-            /// Prefer Chat Completions when available - stable, well-tested path
-            if hasChatCompletions {
-                logger.debug("Model \(modelWithoutPrefix) supports Chat Completions (endpoints: \(endpoints)) - using /chat/completions")
-                return false
-            }
-
-            /// Only use Responses API when model exclusively supports it
-            if hasResponses {
-                logger.debug("Model \(modelWithoutPrefix) only supports Responses API - using /responses")
-                return true
+            /// Walk the endpoints array in order - first relevant endpoint wins
+            for endpoint in endpoints {
+                if endpoint == .responses {
+                    logger.debug("Model \(modelWithoutPrefix): using Responses API (first in supported_endpoints: \(endpoints))")
+                    return true
+                }
+                if endpoint == .chatCompletions {
+                    logger.debug("Model \(modelWithoutPrefix): using Chat Completions API (first in supported_endpoints: \(endpoints))")
+                    return false
+                }
             }
         }
 

@@ -330,6 +330,27 @@ public struct OpenAIFunctionCall: Content, Sendable {
         self.name = name
         self.arguments = arguments
     }
+
+    /// Custom decoder: handles arguments as either a JSON string (spec-required)
+    /// or a JSON object (some servers like llama.cpp send this instead).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+
+        /// Try decoding as String first (spec-compliant)
+        if let stringArgs = try? container.decode(String.self, forKey: .arguments) {
+            self.arguments = stringArgs
+        } else {
+            /// Fall back to decoding as JSON object and re-encoding to string
+            let objectArgs = try container.decode([String: AnyCodable].self, forKey: .arguments)
+            let data = try JSONSerialization.data(withJSONObject: objectArgs.mapValues { $0.value }, options: [])
+            self.arguments = String(data: data, encoding: .utf8) ?? "{}"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name, arguments
+    }
 }
 
 /// OpenAI-compatible chat completion response.

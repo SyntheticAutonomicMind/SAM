@@ -378,6 +378,39 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         return cleaned
     }
 
+    /// Remove duplicated trailing paragraphs from model responses.
+    /// Some models repeat the last N paragraphs within a single response,
+    /// producing doubled text. This detects suffix repetition by comparing
+    /// the last N paragraphs against the N before them.
+    func deduplicateParagraphs(in content: String) -> String {
+        guard !content.isEmpty else { return content }
+
+        /// Split into paragraphs (separated by one or more blank lines)
+        let paragraphs = content.components(separatedBy: "\n\n").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        guard paragraphs.count >= 2 else { return content }
+
+        /// Check for suffix repetition: do the last N paragraphs match the N before them?
+        let maxCheck = paragraphs.count / 2
+        for tailLen in stride(from: maxCheck, through: 1, by: -1) {
+            let tail = paragraphs.suffix(tailLen)
+            let before = paragraphs.dropLast(tailLen).suffix(tailLen)
+
+            guard tail.count == before.count else { continue }
+
+            let tailNormalized = tail.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let beforeNormalized = before.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+            if tailNormalized == Array(beforeNormalized) {
+                let deduplicated = Array(paragraphs.dropLast(tailLen)).joined(separator: "\n\n")
+                logger.debug("DEDUP_PARAGRAPHS: Removed \(tailLen) duplicated trailing paragraph(s)")
+                return deduplicated
+            }
+        }
+
+        return content
+    }
+
     // MARK: - IterationController Protocol
 
     /// Update the maximum iterations limit dynamically during execution
@@ -595,7 +628,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         toolName: String? = nil
     ) async -> Bool {
     /// Filter internal markers (preserve formatting/newlines) and store the clean response.
-    context.lastResponse = filterInternalMarkersNoTrim(from: rawResponse)
+    context.lastResponse = deduplicateParagraphs(in: filterInternalMarkersNoTrim(from: rawResponse))
         context.currentRoundLLMResponse = context.lastResponse
         if let fr = finishReason { context.lastFinishReason = fr }
 

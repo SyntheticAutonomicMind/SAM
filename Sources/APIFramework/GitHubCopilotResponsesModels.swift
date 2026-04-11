@@ -349,6 +349,23 @@ public struct ResponsesFunctionCallInput: Codable {
         self.arguments = arguments
         self.callId = callId
     }
+
+    /// Custom decoder: handles arguments as either a JSON string (spec-required)
+    /// or a JSON object (some servers send this instead).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.type = try container.decodeIfPresent(String.self, forKey: .type) ?? "function_call"
+        self.name = try container.decode(String.self, forKey: .name)
+        self.callId = try container.decode(String.self, forKey: .callId)
+
+        if let stringArgs = try? container.decode(String.self, forKey: .arguments) {
+            self.arguments = stringArgs
+        } else {
+            let objectArgs = try container.decode([String: AnyCodable].self, forKey: .arguments)
+            let data = try JSONSerialization.data(withJSONObject: objectArgs.mapValues { $0.value }, options: [])
+            self.arguments = String(data: data, encoding: .utf8) ?? "{}"
+        }
+    }
 }
 
 /// Responses API function call output input.
@@ -662,6 +679,23 @@ public struct ResponsesOutputItemDone: Codable {
         self.callId = callId
         self.name = name
         self.arguments = arguments
+    }
+
+    /// Custom decoder: handles arguments as either a JSON string or a JSON object.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.type = try container.decode(String.self, forKey: .type)
+        self.callId = try container.decodeIfPresent(String.self, forKey: .callId)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+
+        if let stringArgs = try? container.decodeIfPresent(String.self, forKey: .arguments) {
+            self.arguments = stringArgs
+        } else if let objectArgs = try? container.decode([String: AnyCodable].self, forKey: .arguments) {
+            let data = try JSONSerialization.data(withJSONObject: objectArgs.mapValues { $0.value }, options: [])
+            self.arguments = String(data: data, encoding: .utf8) ?? "{}"
+        } else {
+            self.arguments = nil
+        }
     }
 }
 
