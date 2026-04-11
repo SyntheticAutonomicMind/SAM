@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "20260411.1",
+      "release_date": "April 11, 2026",
+      "introduction": "This release adds interactive Mermaid diagrams - click any diagram to open a zoomable, pannable full-size viewer with high-resolution rendering and PNG export.",
+      "improvements": [
+        {
+          "id": "diagram-zoom-overlay",
+          "icon": "arrow.up.left.and.arrow.down.right",
+          "title": "Click-to-Enlarge Mermaid Diagrams",
+          "description": "Mermaid diagrams in conversations are now interactive. Click any diagram to open a full-size overlay with pinch-to-zoom, click-and-drag panning, and zoom controls. Diagrams re-render at double resolution for crisp detail when zoomed in. A small expand icon in the corner hints at the interaction."
+        },
+        {
+          "id": "diagram-png-export",
+          "icon": "square.and.arrow.down",
+          "title": "Export Diagrams as PNG, SVG, or Mermaid Source",
+          "description": "The diagram zoom overlay includes an export menu with three options: save as PNG for raster images, save as SVG for scalable vector graphics editable in tools like Inkscape or Draw.io, and copy the raw Mermaid source to your clipboard for pasting into other tools."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "streaming-completion-vanish",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Content Vanishing on Streaming Completion",
+          "description": "Fixed a regression where conversation content could disappear when a streaming response finished. This was a follow-up fix to the scroll system rewrite."
+        }
+      ]
+    },
+    {
       "version": "20260409.1",
       "release_date": "April 9, 2026",
       "introduction": "This release closes a security hole in the agent sandbox, removes the deprecated Anthropic provider, and fixes a scroll glitch during streaming responses.",
