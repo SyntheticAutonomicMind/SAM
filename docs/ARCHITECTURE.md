@@ -1,345 +1,284 @@
 # SAM Architecture
 
-High-level overview of how SAM is built today.
+**High-level overview of how SAM is built**
 
 ---
 
 ## Overview
 
-SAM is a native macOS application built with Swift 6 and SwiftUI. It is organized as a set of Swift Package Manager targets with clear subsystem boundaries for UI, AI orchestration, tools, memory, configuration, security, and voice.
+SAM is a native macOS application built with Swift 6.0 and SwiftUI. It follows a modular architecture with clear boundaries between subsystems, uses actor-based concurrency for thread safety, and is designed around the principle that your data stays on your machine.
 
-The system is designed around a few core ideas:
-
-- native macOS user experience
-- local-first data handling
-- provider flexibility
-- structured tool execution
-- strict concurrency discipline
+This document is a starting point for understanding SAM's design. For deep implementation details, see the files in [project-docs/](../project-docs/).
 
 ---
 
-## Top-Level Architecture
+## System Architecture
 
 ```mermaid
 graph TB
-    SAMApp["SAM App\nmain.swift + App"]
-    UI["UserInterface\nSwiftUI views, chat, settings, documents"]
-    API["APIFramework\nproviders, orchestrator, API server"]
-    MCP["MCPFramework\ntool registration and execution"]
-    CONV["ConversationEngine\nconversations, persistence, memory"]
-    CONFIG["ConfigurationSystem\npreferences, prompts, provider config"]
-    MLX["MLXIntegration\nlocal Apple Silicon inference"]
-    SHARED["SharedData\nshared topics and SQLite-backed shared state"]
-    SECURITY["SecurityFramework\nsecret redaction and authorization"]
-    VOICE["VoiceFramework\nspeech recognition and synthesis"]
-
-    SAMApp --> UI
-    SAMApp --> API
-    SAMApp --> MCP
-    SAMApp --> CONV
-    SAMApp --> CONFIG
-    SAMApp --> MLX
-    SAMApp --> SHARED
-    SAMApp --> SECURITY
-    SAMApp --> VOICE
-
-    UI --> CONV
-    UI --> API
+    UI["UserInterface<br/>ChatWidget - Preferences - Documents - Help - Search"]
+    API["APIFramework<br/>AgentOrchestrator - Providers - EndpointManager<br/>ToolCallExtractor - TokenCounter - SAMAPIServer"]
+    MCP["MCPFramework<br/>Tools - 8 consolidated"]
+    CONV["ConversationEngine<br/>Memory - VectorRAG"]
+    CONFIG["ConfigurationSystem<br/>Preferences - Prompts"]
+    MLX["MLXIntegration<br/>Local Models"]
+    VOICE["VoiceFramework<br/>TTS - STT"]
+    SHARED["SharedData<br/>SQLite"]
+    SECURITY["SecurityFramework<br/>Authorization - Secret Redaction"]
+    MAIN["SAM Application"]
+    
+    MAIN --> UI
+    MAIN --> API
+    MAIN --> MCP
+    MAIN --> CONV
+    MAIN --> CONFIG
+    MAIN --> MLX
+    MAIN --> VOICE
+    MAIN --> SHARED
+    MAIN --> SECURITY
+    
     API --> MCP
     API --> CONV
     API --> SECURITY
     MCP --> SECURITY
     CONV --> SHARED
-    CONV --> CONFIG
+    MCP --> CONFIG
 ```
 
 ---
 
-## Swift Package Targets
+## Module Overview
 
-SAM is organized into these primary targets:
+SAM is organized into eleven Swift modules (SPM targets), each with a clear responsibility:
 
-- `SAM`
-- `ConversationEngine`
-- `MLXIntegration`
-- `UserInterface`
-- `ConfigurationSystem`
-- `APIFramework`
-- `MCPFramework`
-- `SharedData`
-- `SecurityFramework`
-- `VoiceFramework`
+### SAM (Entry Point)
 
-This structure reflects the actual package definition in `Package.swift`.
+The application entry point. Contains `main.swift` (AppDelegate) and `App.swift` (SwiftUI App definition). Minimal code - just wires everything together.
 
----
+### UserInterface
 
-## Module Responsibilities
+SwiftUI views and components that make up the UI. Organized by feature area:
 
-### `SAM`
+| Area | What It Contains |
+|------|-----------------|
+| **Chat** | ChatWidget, message rendering, Mermaid diagrams, code blocks |
+| **Components** | Reusable UI components (agent todo list, etc.) |
+| **Documents** | Document viewer, import/export UI |
+| **Help** | Help windows, onboarding |
+| **LocalModels** | Model browser, download management UI |
+| **MiniPrompts** | Quick-action prompt templates |
+| **Performance** | Performance monitoring display |
+| **Preferences** | Settings panels (General, Voice, Providers, etc.) |
+| **Search** | Conversation search UI |
+| **Web** | Web content views |
+| **Welcome** | First-launch experience |
 
-Application entry point and top-level wiring.
+All UI code is `@MainActor` isolated for thread safety, following Swift 6 strict concurrency rules.
 
-Key responsibilities:
-- App startup
-- dependency construction
-- advanced tool factory injection
-- ALICE service injection
-- API server startup when enabled
+### APIFramework
 
-### `UserInterface`
+The largest module. Handles all AI communication, orchestration, and the local API server.
 
-The SwiftUI frontend.
+**Key Components:**
 
-Key areas include:
-- chat interface
-- tool cards
-- preferences
-- model management UI
-- document import/export UI
-- performance display
-- onboarding and help
+- **AgentOrchestrator** - The brain. Manages multi-step tool-calling workflows, context management, and autonomous task execution. Split across multiple files for organization:
+  - `AgentOrchestrator.swift` - Core orchestration loop
+  - `AgentOrchestrator+LLMCalls.swift` - AI provider communication
+  - `AgentOrchestrator+ToolExecution.swift` - Tool dispatch and result handling
+  - `AgentOrchestrator+ContextManagement.swift` - Context window management
 
-### `APIFramework`
+- **Providers** - Implementations for each AI provider:
+  - `Providers.swift` - OpenAI, Anthropic, GitHub Copilot
+  - `ExtendedProviders.swift` - DeepSeek, Google Gemini, MiniMax, Custom
+  - `OpenRouterProvider.swift` - OpenRouter multi-model gateway
+  - `ALICEProvider.swift` - ALICE image generation
+  - `MLXProvider.swift` - Local MLX models
+  - `LlamaProvider.swift` - Local llama.cpp models
+  - `OpenRouterProvider.swift` - OpenRouter multi-provider
 
-The orchestration and provider layer.
+- **EndpointManager** - Routes requests to the correct provider, manages model lists, handles authentication
+- **SAMAPIServer** - Local HTTP server (Vapor-based) for SAM-Web and external integrations
+- **ToolCallExtractor** - Parses tool calls from AI responses across different provider formats
+- **TokenCounter** - Tracks token usage for context management
 
-Key responsibilities:
-- request routing to providers
-- provider implementations
-- model capability handling
-- tool call extraction across response formats
-- API server for SAM-Web and integrations
-- multi-step orchestration through `AgentOrchestrator`
+### MCPFramework
 
-### `MCPFramework`
+The tool system. Implements the Model Context Protocol pattern where tools are registered, discovered, and executed by the AI.
 
-The tool execution layer.
+**Components:**
+- **ToolRegistry** - Central registry of all available tools
+- **Tools/** - Individual tool implementations (file operations, web, documents, math, etc.)
+- **Authorization/** - Path-based authorization for file access
+- **Internal/** - Sub-tools dispatched by consolidated tools
 
-Key responsibilities:
-- built-in tool registration
-- parameter validation
-- operation alias handling
-- execution dispatch
-- tool ordering and availability
+SAM exposes 8 consolidated tools to the AI, which internally dispatch to ~21 sub-tools. This keeps the tool interface clean for the AI while providing fine-grained functionality.
 
-### `ConversationEngine`
+### ConversationEngine
 
-Conversation lifecycle and persistence.
+Manages conversation lifecycle, persistence, and memory.
 
-Key responsibilities:
-- conversation storage
-- active conversation state
-- memory indexing and retrieval
-- context archival and recall
-- import/export support
+**Key Components:**
+- **ConversationManager** - Core conversation state, message handling, persistence
+- **ConversationModel** - Data model for conversations, settings, messages
+- **ConversationMessageBus** - Event-driven message routing
+- **VectorRAGService** - Semantic document search using vector embeddings
+- **ContextArchiveManager** - Context compression and archival
+- **ConversationImportExportService** - JSON/Markdown export
 
-### `ConfigurationSystem`
+### ConfigurationSystem
 
-Settings, provider configuration, and prompt management.
+Centralized settings and configuration management.
 
-Key responsibilities:
-- preferences persistence
-- provider configuration models
-- system prompt configuration
-- mini-prompt and supporting configuration data
+**Key Components:**
+- **ConfigurationManager** - JSON-based configuration with atomic writes
+- **SystemPromptConfiguration** - System prompt management and customization
+- **PersonalityManager** - Personality trait system
+- **PerformanceMonitor** - RSS, CPU, and inference tracking
+- **ChatSessionManager** - Session lifecycle management
+- **EndpointConfigurationModels** - Provider configuration models
+- **MiniPromptConfiguration** - Quick-action prompt templates
 
-### `MLXIntegration`
-
-Local-model support for Apple Silicon.
-
-Key responsibilities:
-- model loading
-- model cache management
-- Apple Silicon inference support
-- local model lifecycle coordination
-
-### `SharedData`
-
-Shared Topics and related cross-conversation state.
-
-### `SecurityFramework`
-
-Security-sensitive functionality.
-
-Key responsibilities:
-- secret redaction
-- authorization support
-- command and content safety helpers
-
-### `VoiceFramework`
-
-Speech and audio functionality.
-
-Key responsibilities:
-- speech recognition
-- speech synthesis
-- wake word and voice workflow support
-
----
-
-## Provider Architecture
-
-SAM currently supports these provider types:
-
-- `openai`
-- `github-copilot`
-- `deepseek`
-- `gemini`
-- `minimax`
-- `openrouter`
-- `local-llama`
-- `local-mlx`
-- `custom`
-
-Provider configuration lives in `ConfigurationSystem`, while provider implementations live in `APIFramework`.
-
-Important current-state note:
-- Direct Anthropic integration is not part of the current provider enum
-- Claude-family model access is expected to come through GitHub Copilot or OpenRouter where available
-
----
-
-## Tool Architecture
-
-SAM uses a consolidated tool model.
-
-### Built-in core tools
-
-Registered from `MCPFramework`:
-- `memory_operations`
-- `todo_operations`
-- `math_operations`
-- `image_generation`
-- `calendar_operations`
-- `contacts_operations`
-- `notes_operations`
-- `spotlight_search`
-- `weather_operations`
-
-### Advanced tools injected at startup
-
-Injected from `main.swift` through the advanced tools factory:
-- `web_operations`
-- `document_operations`
-- `file_operations`
-- `user_collaboration`
-
-This split exists to avoid circular dependencies while still exposing a unified tool surface to the orchestrator.
-
----
-
-## Tool Registration Flow
-
-```mermaid
-flowchart TD
-    A["App startup"] --> B["Create ConversationManager"]
-    B --> C["Create advanced tools factory in main.swift"]
-    C --> D["Inject factory into MCPManager"]
-    D --> E["Initialize builtin tools"]
-    E --> F["Create advanced tools on MainActor"]
-    F --> G["Register all available tools"]
-    G --> H["ConversationManager exposes available MCP tools"]
-    H --> I["UniversalToolRegistry presents tools to orchestrator and UI"]
+**Storage Layout:**
 ```
-
-This is the actual pattern used in the current code, and it matters because some documentation still describes the older static 8-tool picture as if it were the whole story.
-
----
-
-## Message and Tool Execution Flow
-
-```mermaid
-flowchart TD
-    U["User input"] --> UI["Chat UI"]
-    UI --> CM["ConversationManager"]
-    CM --> AO["AgentOrchestrator"]
-    AO --> P["Selected provider"]
-    P --> T{"Tool call?"}
-    T -- No --> R["Render response"]
-    T -- Yes --> EX["MCPManager executes tool"]
-    EX --> AO
-    AO --> R
-    R --> CM
-```
-
-At a high level:
-- the orchestrator builds context
-- the provider returns content and possibly tool calls
-- the tool system executes structured operations
-- results are fed back into the orchestrator
-- the final output is rendered and stored
-
----
-
-## Data Storage Layout
-
-Primary data lives under:
-
-```text
 ~/Library/Application Support/SAM/
-├── conversations/
-├── endpoints/
-├── preferences/
-├── system-prompts/
-├── backups/
-└── other app-managed state
+├── conversations/       # Conversation JSON files + vector databases
+├── system-prompts/      # Custom system prompt templates
+├── endpoints/           # API endpoint configurations
+├── preferences/         # Application preferences
+└── backups/            # Automatic configuration backups
 ```
 
-Additional working and cache locations include:
+### MLXIntegration
 
-```text
-~/SAM/                          # conversation and topic workspaces
-~/Library/Caches/sam-rewritten/models/
-~/Library/Caches/sam/images/
+Apple Silicon local model support using the MLX framework.
+
+- Model loading, caching, and lifecycle management
+- Metal GPU acceleration
+- Performance monitoring (tokens/sec, memory usage)
+- Automatic memory management and LRU eviction
+
+### VoiceFramework
+
+Speech recognition and text-to-speech.
+
+- **SpeechRecognitionService** - On-device speech recognition using Apple's Speech framework
+- **SpeechSynthesisService** - Text-to-speech with streaming support (speaks as text arrives)
+- **AudioDeviceManager** - Input/output device enumeration and selection
+- **VoiceManager** - Coordination between speech services
+- Wake word detection ("Hey SAM")
+
+### SharedData
+
+Cross-conversation data sharing via SQLite.
+
+- Shared Topics - Named workspaces that multiple conversations can access
+- Entry management with full CRUD operations
+- Optimistic locking for concurrent access
+- Per-topic file directories
+
+### SecurityFramework
+
+Authorization and security operations.
+
+- Path-based authorization for file access
+- Working directory enforcement
+- Tool permission management
+
+---
+
+## Data Flow
+
+### Message Processing
+
+```mermaid
+flowchart TD
+    A["User Input (text or voice)"] --> B["ChatWidget (UserInterface)"]
+    B --> C["ConversationManager"]
+    C -->|"Save message\nRetrieve memory/context"| D["AgentOrchestrator"]
+    D -->|"Build context window\nSend to AI"| E["AI Provider (cloud or local)"]
+    E -->|"Response (text or tool calls)"| F{"Tool calls?"}
+    F -->|"Yes"| G["MCPFramework\nExecute tools"]
+    G --> D
+    F -->|"No"| H["Stream to ChatWidget"]
+    H -->|"Render Markdown,\ncode blocks, Mermaid"| I["ConversationManager"]
+    I -->|"Save response\nUpdate vector embeddings"| J["Done"]
 ```
 
-API credentials are stored in the macOS Keychain.
+### Tool Execution
+
+```mermaid
+flowchart TD
+    A["AI response includes tool call"] --> B["ToolCallExtractor"]
+    B -->|"Parse name + parameters\nHandle provider formats"| C["ToolRegistry"]
+    C -->|"Look up consolidated tool\nRoute to sub-tool"| D{"Authorization Check"}
+    D -->|"Inside working dir"| E["Auto-approve"]
+    D -->|"Outside working dir"| F["Request user permission"]
+    E --> G["Execute Tool"]
+    F -->|"Approved"| G
+    G -->|"Return structured result"| H["AgentOrchestrator"]
+    H -->|"Include in next context\nAI decides next action"| I["Continue or respond"]
+```
 
 ---
 
 ## Concurrency Model
 
-SAM is built around Swift 6 concurrency rules.
+SAM uses Swift 6 strict concurrency:
 
-Key patterns:
-- `@MainActor` for UI-facing work
-- explicit actor isolation for shared async state
-- `Sendable` compliance at module boundaries
-- structured concurrency for coordinated async operations
+- **@MainActor** - All UI code and ViewModels
+- **Actors** - For shared mutable state across async boundaries
+- **Sendable** - All types crossing actor boundaries must be Sendable
+- **Structured concurrency** - TaskGroup for parallel operations
 
-This is a core architectural constraint, not a style preference.
-
----
-
-## API Server and Remote Access
-
-The local API server lives in `APIFramework` and supports SAM-Web plus other local-network integrations.
-
-Key characteristics:
-- token-based authentication
-- configurable port
-- optional remote access within the local network
-- conversation handling options for API-originated sessions
+This eliminates data races at compile time. The trade-off is ~211 Sendable-related warnings from third-party dependencies, which don't affect functionality.
 
 ---
 
-## Security Model in Architecture Terms
+## Build System
 
-Security is woven through the system rather than isolated to one place.
+SAM uses Swift Package Manager (SPM) with a Makefile wrapper:
 
-Examples:
-- file access authorization in tool flows
-- credential storage in Keychain
-- secret redaction before sending content to cloud providers
-- explicit tool enablement and user-controlled access patterns
+- **Package.swift** - Defines modules, dependencies, and build targets
+- **Makefile** - Wraps xcodebuild for debug/release builds, llama.cpp compilation, DMG creation, code signing, and notarization
+- **external/llama.cpp** - Git submodule compiled as a framework for local model support
 
 ---
 
-## See Also
+## Dependencies
 
-- [Security](SECURITY.md)
-- [Memory](MEMORY.md)
-- [Tools](TOOLS.md)
-- [Providers](PROVIDERS.md)
-- [project-docs/](../project-docs/)
+### First-Party (Apple)
+
+- SwiftUI, AppKit - UI framework
+- NaturalLanguage - Vector embeddings for semantic search
+- Speech - On-device speech recognition
+- CoreAudio - Audio device management
+- Metal - GPU acceleration for local models
+
+### Third-Party
+
+| Dependency | Purpose |
+|-----------|---------|
+| **mlx-swift** | Apple MLX framework for local models |
+| **mlx-swift-lm** | Language model support for MLX |
+| **swift-transformers** | Tokenization |
+| **llama.cpp** | Local model inference (GGUF format) |
+| **Vapor** | HTTP server for API and SAM-Web |
+| **SQLite.swift** | Database for conversations and shared data |
+| **Sparkle** | Auto-update framework |
+| **swift-log** | Structured logging |
+| **swift-markdown** | Markdown parsing |
+| **ZIPFoundation** | Archive operations |
+| **swift-crypto** | Cryptographic operations |
+
+---
+
+## Further Reading
+
+- [project-docs/API_FRAMEWORK.md](../project-docs/API_FRAMEWORK.md) - Deep dive into the API system
+- [project-docs/AGENT_ORCHESTRATOR.md](../project-docs/AGENT_ORCHESTRATOR.md) - Agent loop details
+- [project-docs/CONVERSATION_ENGINE.md](../project-docs/CONVERSATION_ENGINE.md) - Conversation system internals
+- [project-docs/MESSAGING_ARCHITECTURE.md](../project-docs/MESSAGING_ARCHITECTURE.md) - Message flow details
+- [project-docs/MLX_INTEGRATION.md](../project-docs/MLX_INTEGRATION.md) - MLX implementation
+- [project-docs/SOUND.md](../project-docs/SOUND.md) - Voice framework details
+- [project-docs/CONFIGURATION_SYSTEM.md](../project-docs/CONFIGURATION_SYSTEM.md) - Configuration internals
+- [project-docs/SECURITY_SPECIFICATION.md](../project-docs/SECURITY_SPECIFICATION.md) - Security model details
