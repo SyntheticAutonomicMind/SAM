@@ -1,6 +1,6 @@
 # Installing SAM
 
-**Everything you need to get SAM running on your Mac**
+Everything you need to get SAM running on your Mac.
 
 ---
 
@@ -10,129 +10,117 @@
 |------------|---------|-------------|
 | **macOS** | 14.0 (Sonoma) | 15.0+ (Sequoia) |
 | **Processor** | Intel or Apple Silicon | Apple Silicon (M1+) |
-| **RAM** | 8GB | 16GB+ (for local models) |
-| **Storage** | 500MB (app only) | 10GB+ (with local models) |
+| **RAM** | 8GB | 16GB+ for local models |
+| **Storage** | 500MB for the app | 10GB+ if you plan to use local models |
 
-**Apple Silicon vs Intel:**
-- Apple Silicon (M1/M2/M3/M4): Full feature support including MLX local models
-- Intel: Cloud providers and llama.cpp local models work fine, MLX is not available
+### Apple Silicon vs Intel
+
+- **Apple Silicon** - best experience overall, including MLX local models
+- **Intel** - cloud providers and `llama.cpp` local models work, but MLX is not available
 
 ---
 
 ## Installation Methods
 
-### Homebrew (Recommended)
+### Homebrew
 
-The simplest way to install and update SAM.
+SAM can be installed with Homebrew:
 
 ```bash
-# Add the SAM tap
 brew tap SyntheticAutonomicMind/homebrew-SAM
-
-# Install SAM
 brew install --cask sam
 ```
 
-**Updating:**
+To update later:
+
 ```bash
 brew upgrade --cask sam
 ```
 
-**Uninstalling:**
+To uninstall:
+
 ```bash
 brew uninstall --cask sam
 ```
 
 ### Direct Download
 
-1. Go to [GitHub Releases](https://github.com/SyntheticAutonomicMind/SAM/releases)
-2. Download the latest `.dmg` file
+1. Open [GitHub Releases](https://github.com/SyntheticAutonomicMind/SAM/releases)
+2. Download the latest `.dmg`
 3. Open the DMG
-4. Drag SAM.app to your Applications folder
+4. Drag `SAM.app` to your Applications folder
 5. Eject the DMG
 
-### First Launch (Important)
+---
 
-The first time you launch SAM, macOS Gatekeeper may block it:
+## First Launch
 
-1. **Right-click** SAM.app in Applications
-2. Select **Open** from the context menu
-3. Click **Open** in the dialog that appears
+The first time you open SAM, macOS may ask you to confirm that you want to run it.
 
-This is only needed once. After the first launch, SAM opens normally.
+1. Open `SAM.app` from Applications
+2. If Gatekeeper prompts, use **Right-click -> Open**
+3. Confirm the dialog
 
-**Why this happens:** macOS requires explicit user consent to run applications downloaded from the internet, even when they're code-signed and notarized. This is a standard macOS security feature.
+After the first launch, SAM should open normally.
 
 ---
 
 ## Initial Setup
 
-### 1. Choose an AI Provider
+### 1. Add an AI provider
 
-SAM needs at least one AI provider to function. On first launch:
+SAM needs at least one provider before it can respond.
 
-1. Open Settings (,)
+1. Open **Settings**
 2. Go to **AI Providers**
 3. Click **Add Provider**
-4. Choose your provider:
+4. Choose one of the supported providers:
+   - **OpenAI**
+   - **GitHub Copilot**
+   - **DeepSeek**
+   - **Google Gemini**
+   - **MiniMax**
+   - **OpenRouter**
+   - **Local MLX**
+   - **Local llama.cpp**
+   - **Custom OpenAI-compatible endpoint**
 
-**Quickest setup:** GitHub Copilot (if you have a subscription) - just sign in with your GitHub account, no API key needed.
+For setup details, see [Providers Guide](PROVIDERS.md).
 
-**Most flexible:** OpenAI or Anthropic - create an API key at their website and paste it in.
+### 2. Start a conversation
 
-**Most private:** Local MLX model - download a model and run it entirely on your Mac.
+Create a new conversation and start typing naturally. SAM saves conversations automatically.
 
-See [Providers Guide](PROVIDERS.md) for detailed setup instructions for each provider.
+### 3. Optional: enable voice features
 
-### 2. Start Chatting
+If you want hands-free interaction:
 
-Press N to create a new conversation and start typing. That's it.
+1. Open **Settings > Voice**
+2. Enable the wake word if desired
+3. Grant microphone access when macOS asks
+4. Enable text-to-speech if you want spoken responses
 
-### 3. Optional: Enable Voice
+### 4. Optional: enable the API server
 
-If you want hands-free control:
+If you want browser-based or remote access through SAM-Web:
 
-1. Go to Settings > Voice
-2. Enable the wake word ("Hey SAM")
-3. Grant microphone access when prompted
-4. Enable text-to-speech if you want SAM to speak responses
-
-### 4. Optional: Enable SAM-Web
-
-To access SAM from other devices on your network:
-
-1. Go to Settings > API Server
+1. Open **Settings > API Server**
 2. Enable the API server
-3. Note the API token
-4. Set up [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) on your network
+3. Copy the generated API token
+4. Configure [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web)
 
 ---
 
 ## Auto-Updates
 
-SAM checks for updates automatically using the Sparkle framework. When a new version is available, you'll see a notification with the option to update.
+SAM uses Sparkle for updates.
 
 ### Update Channels
 
-- **Stable** (default) - Production releases, tested and documented
-- **Development** - Pre-release builds with new features (opt-in in Settings > General)
+- **Stable** - default channel for production releases
+- **Development** - opt-in prerelease builds for faster access to new work
 
-### Disabling Auto-Updates
-
-If you prefer manual updates, you can disable auto-update checks in Settings > General.
-
----
-
-## Building from Source
-
-For developers who want to build SAM from source code, see [BUILDING.md](../BUILDING.md).
-
-**Quick start:**
-```bash
-git clone --recursive https://github.com/SyntheticAutonomicMind/SAM.git
-cd SAM
-make build-debug
-```
+You can change update preferences in **Settings > General**.
 
 ---
 
@@ -147,63 +135,75 @@ After installation, SAM stores data in these locations:
 | **Conversations** | `~/Library/Application Support/SAM/conversations/` |
 | **Working files** | `~/SAM/` |
 | **API keys** | macOS Keychain |
+| **Local models** | `~/Library/Caches/sam-rewritten/models/` |
+| **Generated ALICE images** | `~/Library/Caches/sam/images/` |
+
+---
+
+## Building from Source
+
+If you want to build SAM yourself, see [BUILDING.md](../BUILDING.md).
+
+Quick start:
+
+```bash
+git clone --recursive https://github.com/SyntheticAutonomicMind/SAM.git
+cd SAM
+make build-debug
+```
 
 ---
 
 ## Uninstalling SAM
 
-### Application Only
+### Remove the app
 
 - **Homebrew:** `brew uninstall --cask sam`
-- **Manual:** Drag SAM.app from Applications to the Trash
+- **Manual install:** move `SAM.app` to the Trash
 
-### Complete Removal (Including Data)
+### Remove all local data
 
-1. Remove the application (above)
-2. Delete configuration: `rm -rf ~/Library/Application\ Support/SAM/`
-3. Delete working files: `rm -rf ~/SAM/`
-4. Remove Keychain entries: Open Keychain Access, search for "syntheticautonomicmind", delete found items
+1. Delete `~/Library/Application Support/SAM/`
+2. Delete `~/SAM/`
+3. Remove SAM-related entries from Keychain Access if desired
 
 ---
 
-## Troubleshooting Installation
-
-### "SAM can't be opened because it is from an unidentified developer"
-
-Right-click the app and select Open. This overrides Gatekeeper for the first launch.
-
-### "SAM is damaged and can't be opened"
-
-This sometimes happens with downloads. Try:
-```bash
-xattr -cr /Applications/SAM.app
-```
-Then open normally.
+## Troubleshooting
 
 ### Homebrew install fails
 
-```bash
-# Update Homebrew first
-brew update
+Try refreshing Homebrew and the tap:
 
-# Remove and re-add the tap
+```bash
+brew update
 brew untap SyntheticAutonomicMind/homebrew-SAM
 brew tap SyntheticAutonomicMind/homebrew-SAM
-
-# Try again
 brew install --cask sam
 ```
 
-### SAM launches but shows a blank window
+### Gatekeeper blocks launch
 
-- Check that you're running macOS 14.0 or later
-- Try resetting preferences: `rm -rf ~/Library/Application\ Support/SAM/preferences/`
-- Relaunch SAM
+Use **Right-click -> Open** on first launch.
+
+### App appears damaged
+
+Try clearing quarantine attributes:
+
+```bash
+xattr -cr /Applications/SAM.app
+```
+
+### Blank window on launch
+
+- Confirm you are on macOS 14.0 or newer
+- Try resetting preferences under `~/Library/Application Support/SAM/`
+- Relaunch the app
 
 ---
 
 ## See Also
 
-- [User Guide](USER_GUIDE.md) - Getting started after installation
-- [Providers Guide](PROVIDERS.md) - Setting up AI providers
-- [Building from Source](../BUILDING.md) - Developer build instructions
+- [User Guide](USER_GUIDE.md)
+- [Providers Guide](PROVIDERS.md)
+- [Building from Source](../BUILDING.md)
