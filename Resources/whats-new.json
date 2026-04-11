@@ -1,6 +1,50 @@
 {
   "releases": [
     {
+      "version": "20260411.2",
+      "release_date": "April 11, 2026",
+      "introduction": "SAM now integrates with your Mac. Manage your calendar, reminders, contacts, and notes through natural conversation - plus search your entire file system with Spotlight and check the weather, all without leaving the chat. New privacy controls in Preferences let you enable or disable any tool individually.",
+      "improvements": [
+        {
+          "id": "calendar-reminders-tool",
+          "icon": "calendar.badge.plus",
+          "title": "Calendar & Reminders",
+          "description": "Ask SAM about your schedule and it checks your Apple Calendar directly. Create events with natural language like 'schedule a meeting tomorrow at 2pm', search for upcoming events, or manage your reminders - create them with due dates, set priorities, and mark them complete when you're done."
+        },
+        {
+          "id": "contacts-tool",
+          "icon": "person.crop.circle.badge.plus",
+          "title": "Contacts",
+          "description": "SAM can look up anyone in your address book. Ask 'what's John's phone number?' and it searches your Contacts app directly. It can also create new contacts and update existing ones with phone numbers, emails, and addresses."
+        },
+        {
+          "id": "notes-tool",
+          "icon": "note.text.badge.plus",
+          "title": "Apple Notes",
+          "description": "Your Apple Notes are now accessible through SAM. Search across all your notes by keyword, read their contents, create new notes in any folder, or append to existing ones. Great for saving research, meeting notes, or anything SAM helps you with directly into Notes."
+        },
+        {
+          "id": "spotlight-tool",
+          "icon": "magnifyingglass",
+          "title": "Spotlight File Search",
+          "description": "Find anything on your Mac through conversation. SAM uses Spotlight to search by filename, file type, or content. Ask it to find recent documents, search inside PDFs, or locate files by metadata - the same powerful search that powers Spotlight, available through natural language."
+        },
+        {
+          "id": "weather-tool",
+          "icon": "cloud.sun.fill",
+          "title": "Weather",
+          "description": "Ask SAM about the weather and get current conditions, multi-day forecasts, or hourly breakdowns for any city. Powered by the free Open-Meteo API with no API key or configuration required - just ask."
+        },
+        {
+          "id": "tool-privacy-controls",
+          "icon": "wrench.and.screwdriver",
+          "title": "Tool Privacy Controls",
+          "description": "You're in control of what SAM can access. A new Tools section in Preferences lets you enable or disable any tool individually. Tools that access personal data like your calendar, contacts, and notes are clearly marked with privacy indicators. Disabled tools are completely hidden from the AI and blocked from execution."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
       "version": "20260411.1",
       "release_date": "April 11, 2026",
       "introduction": "This release adds interactive Mermaid diagrams - click any diagram to open a zoomable, pannable full-size viewer with high-resolution rendering and PNG export.",

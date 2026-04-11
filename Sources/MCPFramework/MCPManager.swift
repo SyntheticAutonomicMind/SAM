@@ -108,6 +108,21 @@ public class MCPManager: ObservableObject {
             throw MCPError.toolNotFound(name)
         }
 
+        /// Check if the tool is disabled by the user
+        if let disabled = UserDefaults.standard.stringArray(forKey: "tools.disabledBuiltinTools"),
+           disabled.contains(resolvedName) {
+            logger.warning("Tool '\(resolvedName)' is disabled by user")
+            return MCPToolResult(
+                success: false,
+                output: MCPOutput(
+                    content: "Tool '\(resolvedName)' is disabled. The user has turned off this tool in Preferences > Tools.",
+                    mimeType: "text/plain",
+                    additionalData: [:]
+                ),
+                toolName: resolvedName
+            )
+        }
+
         /// Validate parameters.
         do {
             _ = try tool.validateParameters(resolvedParameters)
@@ -201,6 +216,13 @@ public class MCPManager: ObservableObject {
         }
         candidateTools.append(imageGenTool)
 
+        /// Add macOS integration tools.
+        candidateTools.append(CalendarTool())
+        candidateTools.append(ContactsTool())
+        candidateTools.append(NotesTool())
+        candidateTools.append(SpotlightTool())
+        candidateTools.append(WeatherTool())
+
         /// Add advanced tools via factory if available.
         if let createAdvancedTools = self.createAdvancedTools {
             logger.debug("Creating advanced tools via factory")
@@ -273,6 +295,13 @@ public class MCPToolRegistry {
 
         /// Math operations
         "math_operations",
+
+        /// macOS integration
+        "calendar_operations",
+        "contacts_operations",
+        "notes_operations",
+        "spotlight_search",
+        "weather_operations",
 
         /// Image generation (ALICE remote)
         "image_generation"
@@ -379,6 +408,45 @@ public class MCPToolRegistry {
 
         /// apply_patch - single operation tool
         "apply_patch": ("apply_patch", "patch"),
+
+        /// calendar_operations operations
+        "list_events": ("calendar_operations", "list_events"),
+        "create_event": ("calendar_operations", "create_event"),
+        "search_events": ("calendar_operations", "search_events"),
+        "delete_event": ("calendar_operations", "delete_event"),
+        "list_reminders": ("calendar_operations", "list_reminders"),
+        "create_reminder": ("calendar_operations", "create_reminder"),
+        "complete_reminder": ("calendar_operations", "complete_reminder"),
+        "delete_reminder": ("calendar_operations", "delete_reminder"),
+        "list_reminder_lists": ("calendar_operations", "list_reminder_lists"),
+
+        /// contacts_operations operations
+        "search_contacts": ("contacts_operations", "search_contacts"),
+        "get_contact": ("contacts_operations", "get_contact"),
+        "create_contact": ("contacts_operations", "create_contact"),
+        "update_contact": ("contacts_operations", "update_contact"),
+        "list_groups": ("contacts_operations", "list_groups"),
+        "search_group": ("contacts_operations", "search_group"),
+
+        /// notes_operations operations
+        "search_notes": ("notes_operations", "search_notes"),
+        "get_note": ("notes_operations", "get_note"),
+        "create_note": ("notes_operations", "create_note"),
+        "list_folders": ("notes_operations", "list_folders"),
+        "list_notes": ("notes_operations", "list_notes"),
+        "append_note": ("notes_operations", "append_note"),
+
+        /// spotlight_search operations
+        "search_files": ("spotlight_search", "search_files"),
+        "search_content": ("spotlight_search", "search_content"),
+        "search_metadata": ("spotlight_search", "search_metadata"),
+        "file_info": ("spotlight_search", "file_info"),
+        "recent_files": ("spotlight_search", "recent_files"),
+
+        /// weather_operations operations
+        "current_weather": ("weather_operations", "current"),
+        "weather_forecast": ("weather_operations", "forecast"),
+        "hourly_weather": ("weather_operations", "hourly"),
     ]
 
     public func registerTool(_ tool: any MCPTool, name: String) {
@@ -416,10 +484,21 @@ public class MCPToolRegistry {
         return Array(registeredTools.keys)
     }
 
-    /// Get all registered tools in consistent order CRITICAL: Returns tools in explicit order defined in toolOrder array This ensures system prompts are identical across requests for KV cache efficiency.
+    /// Get all registered tools in consistent order, excluding user-disabled tools.
+    /// Returns tools in explicit order defined in toolOrder array.
+    /// Checks UserDefaults for disabled tools list and filters them out.
     public func getToolsInOrder() -> [any MCPTool] {
+        let disabledTools: Set<String>
+        if let stored = UserDefaults.standard.stringArray(forKey: "tools.disabledBuiltinTools") {
+            disabledTools = Set(stored)
+        } else {
+            disabledTools = []
+        }
         return toolOrder.compactMap { toolName in
-            registeredTools[toolName]
+            if disabledTools.contains(toolName) {
+                return nil
+            }
+            return registeredTools[toolName]
         }
     }
 }
