@@ -1,29 +1,42 @@
 # AI Provider Guide
 
-**Setting up and configuring AI providers in SAM**
+Setting up and choosing AI providers in SAM.
 
 ---
 
 ## Overview
 
-SAM connects to AI providers to power its conversation and tool capabilities. You can use cloud providers, local models, or a mix of both. This guide covers setup, configuration, and best practices for each provider.
+SAM supports both cloud and local AI providers. You can configure one provider or several, then switch between them depending on the task.
+
+Current provider types in SAM:
+
+- **OpenAI**
+- **GitHub Copilot**
+- **DeepSeek**
+- **Google Gemini**
+- **MiniMax**
+- **OpenRouter**
+- **Local MLX**
+- **Local llama.cpp**
+- **Custom OpenAI-compatible endpoints**
+
+> Note: SAM does **not** currently expose a direct Anthropic provider. Claude-family models are available through providers such as GitHub Copilot and OpenRouter when those services offer them.
 
 ---
 
 ## Quick Comparison
 
-| Provider | Cost | Speed | Privacy | Best For |
-|----------|------|-------|---------|----------|
-| **OpenAI** | Pay-per-token | Fast | Cloud | General use, coding, creative writing |
-| **Anthropic** | Pay-per-token | Fast | Cloud | Long documents, reasoning, analysis |
-| **GitHub Copilot** | Subscription | Fast | Cloud | Developers with existing Copilot subscription |
-| **DeepSeek** | Pay-per-token (low cost) | Fast | Cloud | Budget-friendly general use |
-| **Google Gemini** | Pay-per-token | Fast | Cloud | Google ecosystem, multimodal |
-| **MiniMax** | Pay-per-token | Fast | Cloud | Cost-effective, large context |
-| **OpenRouter** | Varies by model | Varies | Cloud | Access to 100+ models |
-| **MLX (Local)** | Free | Varies | Full privacy | Offline use, sensitive data, Apple Silicon |
-| **llama.cpp (Local)** | Free | Varies | Full privacy | Offline use, Intel or Apple Silicon |
-| **Custom Endpoint** | Varies | Varies | Self-hosted | Self-hosted servers, Ollama, LM Studio |
+| Provider | Type | Best For | Notes |
+|----------|------|----------|-------|
+| **OpenAI** | Cloud | General use, coding, writing | Broad model support |
+| **GitHub Copilot** | Cloud | Existing Copilot subscribers | Access to multiple hosted models through GitHub |
+| **DeepSeek** | Cloud | Cost-sensitive coding and general use | OpenAI-compatible API |
+| **Google Gemini** | Cloud | Large context, multimodal use cases | Google-hosted models |
+| **MiniMax** | Cloud | Large context and lower-cost experimentation | Supports large context windows |
+| **OpenRouter** | Cloud | Access to many providers from one account | Unified gateway to many models |
+| **MLX** | Local | Apple Silicon offline use | Best local experience on Apple Silicon |
+| **llama.cpp** | Local | Offline use on Intel or Apple Silicon | Works with GGUF models |
+| **Custom** | Cloud or self-hosted | OpenAI-compatible services | Good for Ollama, LM Studio, vLLM, and similar systems |
 
 ---
 
@@ -31,302 +44,240 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ### OpenAI
 
-**What you get:** GPT-4o, GPT-4, GPT-3.5 Turbo, o1, o3 reasoning models
+Use OpenAI when you want straightforward hosted model access with broad compatibility.
 
-**Setup:**
-1. Create an account at [platform.openai.com](https://platform.openai.com)
-2. Go to API Keys and create a new key
-3. In SAM Settings > AI Providers, add OpenAI
+**Setup**
+1. Create an API key at [platform.openai.com](https://platform.openai.com)
+2. In SAM, open **Settings > AI Providers**
+3. Add **OpenAI**
 4. Paste your API key
-5. Select your default model
+5. Choose a default model
 
-**Model Recommendations:**
-- **GPT-4o** - Best overall balance of speed, quality, and cost
-- **GPT-3.5 Turbo** - Fast and cheap for simple tasks
-- **o1 / o3** - Reasoning models for complex logic and math (slower, more expensive)
-
-**Pricing:** See [openai.com/pricing](https://openai.com/pricing) for current rates.
-
----
-
-### Anthropic (Claude)
-
-**What you get:** Claude 4 Sonnet, Claude 4 Opus, Claude 3.5 Sonnet
-
-**Setup:**
-1. Create an account at [console.anthropic.com](https://console.anthropic.com)
-2. Go to API Keys and create a new key
-3. In SAM Settings > AI Providers, add Anthropic
-4. Paste your API key
-5. Select your default model
-
-**Model Recommendations:**
-- **Claude 4 Sonnet** - Best balance for most tasks
-- **Claude 4 Opus** - Maximum capability (more expensive)
-- **Claude 3.5 Sonnet** - Good quality at lower cost
-
-**Extended Thinking:** Claude models support extended thinking, which shows the AI's reasoning process step by step. SAM displays these thinking blocks in collapsible sections.
-
-**Long Context:** Claude supports context windows up to 200K tokens, making it excellent for analyzing long documents.
-
-**Pricing:** See [anthropic.com/pricing](https://anthropic.com/pricing) for current rates.
+**Good fit for**
+- General chat
+- Coding help
+- Writing and editing
+- Reliable hosted inference
 
 ---
 
 ### GitHub Copilot
 
-**What you get:** Access to GPT-4o, Claude 3.5 Sonnet, o1, and other models through your Copilot subscription.
+GitHub Copilot is a strong option if you already have a Copilot subscription.
 
-**Setup:**
-1. You need an active GitHub Copilot subscription (Individual, Business, or Enterprise)
-2. In SAM Settings > AI Providers, add GitHub Copilot
-3. Click "Sign in with GitHub"
-4. SAM uses the GitHub device flow - you'll see a code to enter on github.com
-5. After authorization, SAM automatically manages token refresh
+**Setup**
+1. Open **Settings > AI Providers**
+2. Add **GitHub Copilot**
+3. Sign in using GitHub device flow
+4. Let SAM complete authorization and token storage
 
-**How It Works:**
-- SAM authenticates via GitHub's device flow (no manual API key needed)
-- Tokens are refreshed automatically in the background
-- Available models depend on your Copilot subscription tier
-
-**Advantages:**
-- No separate API key or billing
-- Uses your existing Copilot subscription
-- Access to multiple model providers through one authentication
+**Notes**
+- No manual API key entry is required for the normal Copilot flow
+- SAM handles token refresh automatically
+- Available models depend on GitHub's current Copilot offerings and your subscription tier
+- Claude-family models may be accessible here depending on GitHub availability
 
 ---
 
 ### DeepSeek
 
-**What you get:** DeepSeek Chat, DeepSeek Coder
+DeepSeek provides an OpenAI-compatible hosted API and can be a cost-effective option.
 
-**Setup:**
-1. Create an account at [platform.deepseek.com](https://platform.deepseek.com)
-2. Create an API key
-3. In SAM Settings > AI Providers, add DeepSeek
-4. Paste your API key
+**Setup**
+1. Create an API key at [platform.deepseek.com](https://platform.deepseek.com)
+2. Add **DeepSeek** in SAM
+3. Paste your API key
+4. Choose a model
 
-**Model Recommendations:**
-- **DeepSeek Chat** - General conversation and tasks
-- **DeepSeek Coder** - Optimized for coding tasks
-
-**Advantages:**
-- Significantly lower cost than OpenAI or Anthropic
-- Good quality for the price
+**Good fit for**
+- General use
+- Coding tasks
+- Lower-cost cloud inference
 
 ---
 
 ### Google Gemini
 
-**What you get:** Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.0 Flash
+Gemini is useful when you want large context windows and Google-hosted models.
 
-**Setup:**
-1. Get an API key from [aistudio.google.com](https://aistudio.google.com)
-2. In SAM Settings > AI Providers, add Gemini
+**Setup**
+1. Get an API key from [Google AI Studio](https://aistudio.google.com)
+2. Add **Google Gemini** in SAM
 3. Paste your API key
-4. Select your default model
+4. Select a default model
 
-**Model Recommendations:**
-- **Gemini 2.5 Pro** - Top-tier reasoning and long context
-- **Gemini 2.5 Flash** - Fast and cost-effective
-- **Gemini 2.0 Flash** - Budget-friendly for simple tasks
-
-**Advantages:**
-- Large context windows (up to 1M tokens on some models)
-- Strong multimodal capabilities
-- Competitive pricing
+**Good fit for**
+- Long-context work
+- General reasoning
+- Multimodal model access where supported
 
 ---
 
 ### MiniMax
 
-**What you get:** MiniMax-M2.7, MiniMax-M2.5, and high-speed variants
+MiniMax is another hosted provider with large-context options.
 
-**Setup:**
-1. Create an account at [minimax.io](https://www.minimax.io)
-2. Create an API key
-3. In SAM Settings > AI Providers, add MiniMax
-4. Paste your API key
+**Setup**
+1. Create an account and API key through MiniMax
+2. Add **MiniMax** in SAM
+3. Paste your API key
+4. Pick your preferred model
 
-**Model Recommendations:**
-- **MiniMax-M2.7** - Latest model, best quality
-- **MiniMax-M2.7-highspeed** - Faster variant with slightly lower quality
-- **MiniMax-M2.5** - Previous generation, still capable
-
-**Advantages:**
-- 128K token context window
-- Competitive pricing
-- Good tool use capabilities
+**Good fit for**
+- Large-context conversations
+- Comparative provider testing
+- Cost/performance experimentation
 
 ---
 
 ### OpenRouter
 
-**What you get:** Access to 100+ models from multiple providers through a single API.
+OpenRouter gives SAM access to a broad catalog of hosted models through one API.
 
-**Setup:**
+**Setup**
 1. Create an account at [openrouter.ai](https://openrouter.ai)
-2. Create an API key
-3. In SAM Settings > AI Providers, add OpenRouter
+2. Generate an API key
+3. Add **OpenRouter** in SAM
 4. Paste your API key
-5. Browse available models
+5. Choose from available models
 
-**Advantages:**
-- One API key for dozens of providers
-- Try different models without separate accounts
-- Automatic routing and load balancing
-- Pay-per-token across all models
+**Notes**
+- OpenRouter may expose models from multiple upstream providers
+- SAM sends the required identification headers for OpenRouter requests
+- Claude-family models may be available here depending on OpenRouter's catalog
 
 ---
 
-## Local Models
+## Local Providers
 
-### MLX (Apple Silicon Only)
+### MLX
 
-**What you get:** Run language models directly on your Mac using Apple's MLX framework with Metal GPU acceleration.
+MLX is the best local experience on Apple Silicon.
 
-**Requirements:**
-- Apple Silicon Mac (M1, M2, M3, M4)
-- 8GB+ unified memory (16GB+ recommended)
+**Requirements**
+- Apple Silicon Mac
 - macOS 14.0+
+- Enough unified memory for the model you want to run
 
-**Setup:**
-1. In SAM Settings > AI Providers, click Add Provider
-2. Choose "Local MLX Model"
-3. Browse available models
-4. Click Download on your chosen model
-5. Wait for the download to complete
-6. The model is ready to use
+**Setup**
+1. Add **Local MLX** in **Settings > AI Providers**
+2. Browse available models
+3. Download the model you want
+4. Select it as your active provider
 
-**RAM Requirements:**
-| Model Size | Minimum RAM | Recommended RAM |
-|-----------|-------------|-----------------|
-| 1-3B parameters | 4GB | 8GB |
-| 7B parameters | 8GB | 16GB |
-| 13B parameters | 16GB | 32GB |
-| 30B+ parameters | 32GB | 64GB |
-| 70B parameters | 64GB | 96GB+ |
-
-**Performance Tips:**
-- Larger models are more capable but slower
-- Unified memory means the GPU shares RAM with the system
-- Close other memory-intensive apps for best performance
-- First generation is slower (model loading), subsequent ones are faster
-
-**Advantages:**
-- Complete privacy - nothing leaves your Mac
-- No internet connection needed after download
-- No per-token costs
-- Fast inference on Apple Silicon
+**Why use it**
+- Fully local inference
+- Strong Apple Silicon performance
+- Good privacy and offline capability
 
 ---
 
-### llama.cpp (Any Mac)
+### llama.cpp
 
-**What you get:** Run GGUF-format models on any Mac, including Intel.
+`llama.cpp` supports local GGUF models and works on both Apple Silicon and Intel Macs.
 
-**Requirements:**
-- Any Mac (Apple Silicon or Intel)
-- 8GB+ RAM
+**Requirements**
 - macOS 14.0+
+- Enough RAM for your chosen model
+- GGUF model files
 
-**Setup:**
-1. Download a GGUF model file (from Hugging Face or other sources)
-2. In SAM Settings > AI Providers, add llama.cpp
-3. Point to the model file location
-4. Configure context size and other parameters
+**Setup**
+1. Add **Local llama.cpp** in **Settings > AI Providers**
+2. Select or download a compatible model
+3. Configure model settings if needed
 
-**Advantages:**
-- Works on Intel Macs (unlike MLX)
-- Supports GGUF quantized models for lower memory usage
-- Wide model compatibility
-
-**Limitations:**
-- Generally slower than MLX on Apple Silicon
-- Manual model file management
+**Why use it**
+- Works on Intel Macs
+- Supports a wide range of local GGUF models
+- Good fallback when MLX is unavailable
 
 ---
 
-## Custom Endpoints
+## Custom OpenAI-Compatible Endpoints
 
-### OpenAI-Compatible Servers
+SAM can connect to any endpoint that speaks the OpenAI-compatible chat API.
 
-SAM can connect to any server that implements the OpenAI chat completions API. This includes:
+Examples include:
+- Ollama
+- LM Studio
+- text-generation-webui
+- vLLM
+- Self-hosted gateways and proxies
 
-- **Ollama** - `http://localhost:11434/v1`
-- **LM Studio** - `http://localhost:1234/v1`
-- **text-generation-webui** - `http://localhost:5000/v1`
-- **vLLM** - `http://localhost:8000/v1`
-- **Any OpenAI-compatible API**
+**Setup**
+1. Add **Custom** in **Settings > AI Providers**
+2. Enter the base URL
+3. Add authentication if required
+4. Configure model identifiers exposed by your server
 
-**Setup:**
-1. In SAM Settings > AI Providers, add a Custom provider
-2. Enter the endpoint URL
-3. Enter an API key if required (some local servers don't need one)
-4. Configure the model name
-5. Test the connection
+This is the most flexible option if you run your own infrastructure.
 
 ---
 
-## Managing Multiple Providers
+## Choosing the Right Provider
 
-### Switching Between Providers
+### Choose local if you want:
+- Maximum privacy
+- Offline access
+- No per-token billing
+- Sensitive work to stay on your machine
 
-You can have multiple providers configured simultaneously and switch between them:
-- Use the model selector in the toolbar to pick a different model/provider
-- Switch mid-conversation - the history carries forward
-- Each conversation remembers which model was last used
+### Choose cloud if you want:
+- Faster setup
+- Hosted model variety
+- Higher-end proprietary models
+- Less local resource usage
 
-### Strategy Recommendations
+### Choose hybrid if you want:
+- Local models for private work
+- Cloud models for heavier tasks
+- Flexibility by task type
 
-| Use Case | Recommended Approach |
-|----------|---------------------|
-| **Daily use** | Cloud provider (GPT-4o or Claude) for quality and speed |
-| **Sensitive content** | Local model (MLX) for complete privacy |
-| **Budget-conscious** | DeepSeek, MiniMax, or local models for routine tasks, GPT-4o for complex ones |
-| **Coding** | Claude or GPT-4o for best tool use, DeepSeek Coder for budget |
-| **Long documents** | Claude (200K context), Gemini (1M context), or local models with large context |
-| **Offline use** | Local models (MLX or llama.cpp) |
-| **Experimentation** | OpenRouter for access to many models |
+---
+
+## API Keys and Credentials
+
+SAM stores provider credentials in the macOS Keychain.
+
+That means:
+- Keys are not stored in plain text documentation or config files
+- Secrets stay local to your Mac
+- Provider setup can be managed from the SAM interface
 
 ---
 
 ## Troubleshooting
 
-### "Authentication failed"
-- Verify your API key is correct
-- For GitHub Copilot: try signing out and back in
-- Check that your account has billing configured (cloud providers)
+### A provider validates but fails later
 
-### "Model not found"
-- The model may have been renamed or deprecated
-- Refresh the model list in Settings
-- Check the provider's documentation for current model names
+Many providers are validated with basic configuration checks first. The real test is the first live request.
 
-### "Rate limited"
-- You've exceeded the provider's rate limits
-- Wait a moment and try again
-- Consider upgrading your plan or using a different provider
+Check:
+- API key is correct
+- Base URL is correct
+- Selected model exists for that provider
+- Network access is available
 
-### "Request too large"
-- Your conversation has exceeded the model's context window
-- Start a new conversation
-- Use a model with a larger context window
-- SAM's context management should handle this automatically, but very long conversations with many tool calls can hit limits
+### A local model is missing
 
-### Local model loading fails
-- Ensure you have enough free RAM
-- Try a smaller model
-- Check that the model file isn't corrupted (re-download if needed)
-- For MLX: verify you're on Apple Silicon
-- For llama.cpp: verify the file is in GGUF format
+Check:
+- The model finished downloading
+- Your Mac has enough RAM for it
+- The provider is enabled in Settings
+
+### Copilot sign-in fails
+
+Try signing out and reauthorizing through the device flow.
+
+### A model is offered by a service but not directly by SAM
+
+That usually means the model is accessed through an upstream provider like GitHub Copilot or OpenRouter rather than through a dedicated provider integration.
 
 ---
 
 ## See Also
 
-- [User Guide](USER_GUIDE.md) - Getting started with SAM
-- [Features](FEATURES.md) - Complete feature reference
-- [project-docs/API_FRAMEWORK.md](../project-docs/API_FRAMEWORK.md) - API implementation details
-- [project-docs/API_INTEGRATION_SPECIFICATION.md](../project-docs/API_INTEGRATION_SPECIFICATION.md) - Provider integration specification
-- [project-docs/MLX_INTEGRATION.md](../project-docs/MLX_INTEGRATION.md) - MLX implementation details
+- [Installation](INSTALLATION.md)
+- [User Guide](USER_GUIDE.md)
+- [Performance](PERFORMANCE.md)
+- [Security](SECURITY.md)

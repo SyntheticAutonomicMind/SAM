@@ -90,7 +90,7 @@ If the submodule update fails behind a proxy, ensure your Git credentials and pr
 
 ## Swift toolchain and SPM
 
-SAM uses Swift Package Manager (SPM). Ensure your Xcode installation includes a Swift toolchain compatible with `swift-tools-version: 5.9`.
+SAM uses Swift Package Manager (SPM). Ensure your Xcode installation includes a Swift toolchain compatible with `swift-tools-version: 6.0`.
 
 Check Swift version:
 
@@ -133,7 +133,7 @@ Watch the output for missing tool names. The script explicitly checks for `cmake
 1. Open a terminal and navigate to the repo root:
 
 ```bash
-cd /Users/andrew/repositories/SyntheticAutonomicMind/SAM
+cd /path/to/SAM
 ```
 
 2. Initialize submodules and fetch SPM packages:

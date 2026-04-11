@@ -1,265 +1,306 @@
 # SAM Tools Reference
 
-**What SAM can do autonomously with its built-in tools**
+What SAM can do autonomously with its built-in tool system.
 
 ---
 
 ## Overview
 
-SAM has 8 built-in tools that the AI uses to take action on your behalf. When you ask SAM to do something - read a file, search the web, create a document, calculate a mortgage payment - it selects the right tool and executes it automatically.
+SAM uses a consolidated tool system that lets the model take action instead of only replying with text. When a request requires external capabilities, SAM can call the appropriate tool, inspect the result, and continue working.
 
-You see what SAM is doing in real time through tool cards that appear in the conversation, showing the operation, parameters, and results.
+You see this activity through tool cards in the conversation UI.
 
 ---
 
 ## How Tools Work
 
-1. You describe what you want
-2. The AI decides which tool(s) to use
-3. SAM executes the tool and shows you a status card
-4. The AI reads the result and responds (or takes the next action)
+1. You ask SAM to do something
+2. SAM decides which tool or tools are needed
+3. The tool runs with structured parameters
+4. SAM reads the result and either responds or continues the workflow
 
-For complex tasks, SAM chains multiple tools together. It might search the web, read several pages, analyze the content, and write a summary - all in one flow.
-
-### Multi-Step Tasks
-
-When a task requires multiple steps, SAM creates a todo list to track progress:
-
-1. Breaks the task into steps
-2. Marks each step in-progress as it works
-3. Marks steps complete as they finish
-4. Reports results when done
-
-If something goes wrong, SAM adjusts its approach and retries rather than giving up.
+For multi-step work, SAM can chain tool calls together and track progress with a dedicated todo list.
 
 ---
 
-## Tool Reference
+## Current Tool Surface
 
-### File Operations
+The current built-in tool set includes:
 
-**What it does:** Read, write, search, and manage files on your Mac.
+- `user_collaboration`
+- `memory_operations`
+- `todo_operations`
+- `web_operations`
+- `document_operations`
+- `file_operations`
+- `math_operations`
+- `calendar_operations`
+- `contacts_operations`
+- `notes_operations`
+- `spotlight_search`
+- `weather_operations`
+- `image_generation`
 
-#### Reading Files
+Some tools are always present, while others depend on configuration or service availability.
 
-| Operation | Description | Example Use |
-|-----------|-------------|------------|
-| **Read file** | Read file content (full or partial) | "Read the first 50 lines of config.json" |
-| **List directory** | List files and folders | "Show me what's in my project folder" |
-| **Check errors** | Find compilation/lint errors | "Are there any errors in this Swift file?" |
-
-#### Searching Files
-
-| Operation | Description | Example Use |
-|-----------|-------------|------------|
-| **File search** | Find files by name pattern | "Find all .swift files in the project" |
-| **Grep search** | Search file contents (text or regex) | "Find everywhere that uses 'apiKey'" |
-| **Semantic search** | Find files by meaning | "Find the file that handles authentication" |
-| **Code usages** | Find all references to a symbol | "Where is `loadModel()` called?" |
-
-#### Writing Files
-
-| Operation | Description | Example Use |
-|-----------|-------------|------------|
-| **Create file** | Create a new file | "Create a README.md with project info" |
-| **Replace string** | Find and replace text | "Change all 'http://' to 'https://'" |
-| **Multi-replace** | Batch replacements across files | "Update the version number in all config files" |
-| **Insert edit** | Insert content at a location | "Add a new function after line 50" |
-| **Rename file** | Rename or move a file | "Rename output.txt to results.txt" |
-| **Delete file** | Delete a file or folder | "Remove the old backup directory" |
-| **Create directory** | Create a folder | "Create a 'reports' directory" |
-
-#### Authorization
-
-Files inside your SAM working directory (`~/SAM/`) are accessed freely. Files outside require your explicit permission.
+For example, `image_generation` only becomes available when an ALICE server is configured and reachable.
 
 ---
 
-### Web Operations
+## Collaboration and Planning
 
-**What it does:** Search the web, fetch pages, scrape content, and conduct research.
+### `user_collaboration`
 
-| Operation | Description | Best For |
-|-----------|-------------|---------|
-| **Research** | Multi-source research with synthesis | "Research the best practices for Swift concurrency" |
-| **Retrieve** | Recall previously stored research | "What did you find earlier about that topic?" |
-| **Web search** | Search engines (Google, Bing, DuckDuckGo) | "Search for Swift 6 release notes" |
-| **SerpAPI** | Specialized search (Amazon, eBay, TripAdvisor, Walmart, Yelp) | "Search Amazon for wireless keyboards under $50" |
-| **Scrape** | Full page rendering with JavaScript | "Get the content from this web app page" |
-| **Fetch** | Fast HTTP fetch (no JavaScript) | "Grab the text from this article URL" |
+Used when SAM needs to pause and ask you something directly.
 
-**Research** is the most powerful option. It:
-1. Searches multiple sources
-2. Fetches and reads relevant pages
-3. Synthesizes findings into a coherent summary
-4. Stores results in memory for later recall
+**Typical uses**
+- Clarifying ambiguous requests
+- Asking for approval before destructive actions
+- Requesting information only you know
+- Reporting blockers and asking how to proceed
 
----
+### `todo_operations`
 
-### Document Operations
+Used for multi-step tasks so SAM can plan, track, and surface progress.
 
-**What it does:** Import documents for analysis and create new documents.
+**Operations**
+- `read`
+- `write`
+- `update`
+- `add`
 
-#### Import
-
-| Format | What SAM Extracts |
-|--------|------------------|
-| **PDF** (.pdf) | Full text with layout awareness |
-| **Word** (.docx) | Text, headings, structure |
-| **Excel** (.xlsx) | Cell data, sheet names |
-| **Text** (.txt, .md, .csv) | Full content |
-
-Imported documents are indexed with vector embeddings for semantic search. You can then ask questions about the content naturally.
-
-#### Create
-
-| Format | What SAM Can Generate |
-|--------|----------------------|
-| **PDF** (.pdf) | Formatted reports and documents |
-| **Word** (.docx) | Editable documents |
-| **PowerPoint** (.pptx) | Slide presentations |
-
-Just describe what you want: "Create a PDF report summarizing our discussion" or "Make a PowerPoint with 5 slides about the project plan."
+This is how SAM keeps structured progress visible during longer workflows.
 
 ---
 
-### Memory Operations
+## Memory and Context
 
-**What it does:** Search and store information across conversations.
+### `memory_operations`
 
-| Operation | Description | Example Use |
-|-----------|-------------|------------|
-| **Search memory** | Semantic search across memories | "What did we discuss about the budget?" |
-| **Store memory** | Save information for later | "Remember that the deadline is March 15" |
-| **List collections** | See available memory collections | "What memory collections exist?" |
-| **Recall history** | Recall topic history | "Recall our recent discussions" |
+SAM's memory tool covers both per-conversation memory and longer-lived memory features.
 
-Memory search uses the same semantic matching as document search - find information by meaning, not just keywords.
+**Session memory operations**
+- `search_memory`
+- `store_memory`
+- `recall_history`
+- `list_collections`
 
----
+**Key-value working memory**
+- `store`
+- `retrieve`
+- `search_kv`
+- `list_keys`
+- `delete_key`
 
-### Todo Operations
+**Long-term memory operations**
+- `add_discovery`
+- `add_solution`
+- `add_pattern`
+- `ltm_stats`
+- `prune_ltm`
 
-**What it does:** Track multi-step tasks.
-
-| Operation | Description |
-|-----------|-------------|
-| **Read** | View current task list |
-| **Write** | Create or replace the task list |
-| **Update** | Mark tasks in-progress, complete, or blocked |
-| **Add** | Add new tasks to the list |
-
-The AI uses todos to organize complex work. When you ask SAM to do something with multiple steps, it creates a plan, works through it step by step, and marks items complete as it goes. You can see the progress in the conversation.
-
----
-
-### Math Operations
-
-**What it does:** Real computation using Python - not AI guessing.
-
-| Operation | Description | Example Use |
-|-----------|-------------|------------|
-| **Calculate** | Evaluate math expressions | "What's 2^32 - 1?" |
-| **Compute** | Run Python code for complex math | "Calculate the standard deviation of [3, 7, 8, 12, 14]" |
-| **Convert** | Unit conversions | "Convert 72°F to Celsius" |
-| **Formula** | Named financial/practical formulas | "What's the monthly payment on a $400K mortgage at 6.5%?" |
-
-#### Available Formulas
-
-| Formula | What It Calculates |
-|---------|-------------------|
-| `mortgage` | Monthly payment, total interest, amortization |
-| `compound_interest` | Future value with compound interest |
-| `tip` | Tip amount and total |
-| `bmi` | Body mass index |
-| `percentage` | Percentage calculations |
-| `markup` | Cost markup and margin |
-| `discount` | Discounted price and savings |
-| `area_circle` | Area of a circle |
-| `area_rectangle` | Area of a rectangle |
-| `volume_cylinder` | Volume of a cylinder |
-| `speed_distance_time` | Speed, distance, or time calculations |
-| `sales_tax` | Price with sales tax |
-| `gpa` | GPA / grade calculations |
-| `fuel_cost` | Trip fuel cost estimate |
-| `cooking` | Recipe scaling |
-| `retirement` | Retirement savings projections |
-| `debt_payoff` | Single debt payoff timeline |
-| `debt_strategy` | Multi-debt payoff plan (snowball or avalanche) |
-| `budget` | 50/30/20 budget analysis |
-| `loan_comparison` | Compare multiple loan options |
-| `savings_goal` | How long to reach a savings target |
-| `net_worth` | Assets minus liabilities |
-| `paycheck` | Net pay after taxes and deductions |
-| `inflation` | Future value adjusted for inflation |
-
-#### Unit Conversions
-
-| Category | Units |
-|----------|-------|
-| **Temperature** | Fahrenheit, Celsius, Kelvin |
-| **Length** | Miles, kilometers, feet, meters, inches, centimeters |
-| **Weight** | Pounds, kilograms, ounces, grams |
-| **Volume** | Gallons, liters, cups, milliliters |
-| **Speed** | mph, km/h, knots |
-| **Data** | Bytes, KB, MB, GB, TB |
-| **Time** | Seconds, minutes, hours, days |
-
-Every calculation is run through a real Python 3 interpreter. This eliminates the common AI problem of getting math wrong through estimation.
+This allows SAM to preserve conversational context, working notes, and learned patterns over time.
 
 ---
 
-### Image Generation
+## File and Document Work
 
-**What it does:** Generate images from text descriptions via a remote ALICE server.
+### `file_operations`
 
-| Operation | Description | Example Use |
-|-----------|-------------|------------|
-| **Generate** | Create an image from a text prompt | "Create an image of a mountain lake at sunset" |
+Used for reading, searching, and managing files.
 
-**Requirements:**
-- A running [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server on your network
-- ALICE server configured in SAM Settings
+**Read operations**
+- `read_file`
+- `list_dir`
+- `get_file_info`
+- `get_errors`
+- `read_tool_result`
 
-**Features:**
-- Automatic model discovery (detects models on your ALICE server)
-- Multiple model support (SD 1.5, SDXL, custom models)
-- Health monitoring (connection status in Settings)
-- Generated images appear directly in the conversation
+**Search operations**
+- `file_search`
+- `grep_search`
+- `semantic_search`
+- `list_usages`
 
-No local GPU is required. All image generation happens on the ALICE server.
+**Write and management operations**
+- `create_file`
+- `replace_string`
+- `multi_replace_string`
+- `insert_edit`
+- `rename_file`
+- `delete_file`
+
+**Authorization model**
+- Inside the working directory: auto-approved
+- Outside the working directory: requires authorization
+
+### `document_operations`
+
+Used for document import, document creation, and document inventory.
+
+**Operations**
+- `document_import`
+- `document_create`
+- `get_doc_info`
+
+**Current document creation formats**
+- `docx`
+- `pdf`
+- `txt`
+- `markdown`
+- `pptx`
+- `rtf`
+- `xlsx`
+
+Document import is designed to feed content into conversation memory and semantic retrieval.
 
 ---
 
-### User Collaboration
+## Web and Research
 
-**What it does:** Pauses the AI to ask you a question.
+### `web_operations`
 
-The AI uses this tool when it needs:
-- Clarification on an ambiguous request
-- Your choice between multiple valid approaches
-- Confirmation before a destructive operation (like deleting files)
-- Information that only you know
+Used for web search, retrieval, and structured research.
 
-When the AI uses this tool, you'll see its question in the conversation and can respond normally.
+**Operations**
+- `research`
+- `retrieve`
+- `web_search`
+- `scrape`
+- `fetch`
+- `serpapi` when SerpAPI is configured and available
+
+**Typical uses**
+- Current events and live information
+- Documentation lookup
+- Product and recommendation research
+- Pulling content from specific URLs
+
+The `research` flow is the most comprehensive path and is designed for synthesis across multiple sources.
 
 ---
 
-## Tool Cards
+## Computation and Images
 
-When SAM executes a tool, you see a tool card in the conversation showing:
-- **Tool name** and operation
-- **Parameters** being used
-- **Status** (running, complete, or failed)
-- **Result** (output or error)
+### `math_operations`
 
-Tool cards are collapsible - click to expand or collapse the details.
+Used for real math, conversions, and structured formulas.
+
+**Operations**
+- `calculate`
+- `compute`
+- `convert`
+- `formula`
+
+This tool uses Python-backed computation rather than model guesswork.
+
+### `image_generation`
+
+Used for generating images through ALICE.
+
+**Operations**
+- `generate`
+- `list_models`
+
+This tool requires a working ALICE server and becomes available only when the service is configured and reachable.
+
+---
+
+## macOS Integration Tools
+
+### `calendar_operations`
+
+Uses EventKit to work with calendars and reminders.
+
+**Calendar operations**
+- `list_events`
+- `create_event`
+- `search_events`
+- `delete_event`
+
+**Reminder operations**
+- `list_reminders`
+- `create_reminder`
+- `complete_reminder`
+- `delete_reminder`
+- `list_reminder_lists`
+
+### `contacts_operations`
+
+Uses the Contacts framework.
+
+**Operations**
+- `search`
+- `get_contact`
+- `create_contact`
+- `update_contact`
+- `list_groups`
+- `search_group`
+
+### `notes_operations`
+
+Works with Apple Notes.
+
+**Operations**
+- `search`
+- `get_note`
+- `create_note`
+- `list_folders`
+- `list_notes`
+- `append_note`
+
+### `spotlight_search`
+
+Uses macOS Spotlight for file and metadata search.
+
+**Operations**
+- `search`
+- `search_content`
+- `search_metadata`
+- `file_info`
+- `recent_files`
+
+### `weather_operations`
+
+Uses Open-Meteo and SAM's configured location information.
+
+**Operations**
+- `current`
+- `forecast`
+- `hourly`
+
+---
+
+## Tool Cards in the UI
+
+When SAM runs a tool, the conversation shows a tool card with:
+
+- Tool name
+- Operation
+- Parameters
+- Status
+- Result or failure output
+
+This keeps autonomous behavior visible and inspectable.
+
+---
+
+## Safety Model
+
+Tool use is constrained by:
+
+- File authorization boundaries
+- User collaboration checkpoints for sensitive work
+- Preferences-controlled capabilities
+- Service availability for optional integrations
+
+That means SAM can be useful without silently overreaching.
 
 ---
 
 ## See Also
 
-- [User Guide](USER_GUIDE.md) - Getting started with SAM
-- [Features](FEATURES.md) - Complete feature reference
-- [project-docs/MCP_TOOLS_SPECIFICATION.md](../project-docs/MCP_TOOLS_SPECIFICATION.md) - Technical tool specification
-- [project-docs/AGENT_ORCHESTRATOR.md](../project-docs/AGENT_ORCHESTRATOR.md) - How the AI orchestrates tool use
+- [Features](FEATURES.md)
+- [Memory](MEMORY.md)
+- [Security](SECURITY.md)
+- [User Guide](USER_GUIDE.md)

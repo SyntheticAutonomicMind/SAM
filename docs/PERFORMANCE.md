@@ -1,164 +1,165 @@
 # SAM Performance
 
-**Performance characteristics, resource usage, and optimization tips**
+Performance characteristics, resource expectations, and optimization guidance.
 
 ---
 
 ## Overview
 
-SAM is a native macOS application optimized for Apple Silicon. This document covers what to expect in terms of resource usage, how to monitor performance, and how to optimize for your hardware.
+SAM is a native macOS app, so its performance profile depends heavily on how you use it.
+
+The biggest variables are:
+- whether you use cloud or local models
+- model size
+- document usage
+- web/tool activity
+- hardware class, especially Apple Silicon vs Intel
 
 ---
 
 ## Resource Usage
 
-### Memory (RAM)
+### Memory usage
 
-SAM's memory usage depends heavily on your configuration:
+Typical RAM usage varies a lot by configuration.
 
 | Configuration | Typical RAM Usage |
 |--------------|------------------|
-| **Cloud providers only** | 150-300 MB |
-| **Cloud + documents** | 200-500 MB |
-| **Local 7B model (MLX)** | 5-8 GB |
-| **Local 13B model (MLX)** | 10-16 GB |
-| **Local 70B model (MLX)** | 40-70 GB |
+| Cloud providers only | 150MB-300MB |
+| Cloud + documents and memory-heavy workflows | 200MB-500MB |
+| Local 7B-class model | 5GB-8GB |
+| Local 13B-class model | 10GB-16GB |
+| Very large local models | much higher, depending on model size |
 
-**Why local models use so much RAM:** Language models must be loaded entirely into memory for inference. On Apple Silicon, this uses unified memory shared between CPU and GPU. The model weights dominate memory usage.
+Local inference dominates memory usage because model weights must be loaded into memory.
 
-### CPU Usage
+### Disk usage
 
-- **Idle:** Near zero - SAM uses no CPU when waiting for input
-- **Cloud AI response:** Minimal - mostly network I/O and rendering
-- **Local model inference:** High - one-time burst during generation, drops when complete
-- **Document import:** Brief spike during text extraction and embedding generation
+| Component | Typical Size |
+|-----------|--------------|
+| SAM app bundle | modest compared to model storage |
+| Conversations and metadata | grows with usage |
+| Per-conversation memory/vector data | depends on document and chat volume |
+| Local model cache | often the largest storage consumer |
 
-### Disk Space
+Local models are stored under:
 
-| Component | Size |
-|-----------|------|
-| **SAM.app** | ~60 MB |
-| **Conversations** | 10 KB - 1 MB each (varies by length) |
-| **Vector databases** | 1-50 MB per conversation (with documents) |
-| **Local models** | 2-70 GB each (depends on model size) |
+```text
+~/Library/Caches/sam-rewritten/models/
+```
 
-### Network
+### Network usage
 
-- **Cloud providers:** Varies with conversation length and model
-- **Local models:** Zero (completely offline)
-- **Update checks:** Minimal (periodic Sparkle appcast fetch)
-- **Web operations:** Only when explicitly requested
+- Local-only workflows: minimal to none
+- Cloud providers: depends on prompt and response volume
+- Web research: depends on searches and fetches you request
+- Update checks: small and periodic
+
+---
+
+## Hardware Guidance
+
+### Apple Silicon
+
+Apple Silicon provides the best local experience, especially with MLX.
+
+Best use cases:
+- local models
+- mixed local/cloud usage
+- voice plus local inference
+- document-heavy workflows with strong responsiveness
+
+### Intel Macs
+
+Intel remains usable for:
+- cloud providers
+- llama.cpp local models
+- general SAM usage without MLX
+
+If local inference matters a lot, Apple Silicon is the better experience.
+
+---
+
+## Local Model Expectations
+
+Local performance depends on:
+- model size
+- quantization
+- available RAM / unified memory
+- current system load
+- chosen engine (MLX vs llama.cpp)
+
+### General guidance
+
+- smaller models are faster and lighter
+- larger models may improve quality but increase latency and memory usage
+- MLX is usually the best option on Apple Silicon
+- llama.cpp is the fallback for Intel or GGUF-specific local workflows
 
 ---
 
 ## Performance Monitoring
 
-SAM includes built-in performance monitoring visible in the app:
+SAM includes built-in visibility into performance-related state, including things like:
+- memory usage
+- context usage
+- latency
+- local inference-related metrics where available
 
-### Available Metrics
-
-| Metric | What It Shows |
-|--------|-------------|
-| **RSS (Memory)** | Current resident set size - how much RAM SAM is using |
-| **Tokens/sec** | Inference speed for local models |
-| **Context usage** | How many tokens are used vs. the model's maximum |
-| **API latency** | Response time for cloud provider requests |
-
-### Viewing Performance
-
-Performance metrics are available in the app interface. Enable the performance display in Settings or through the conversation view options.
+This helps you understand whether a slowdown is coming from the model, the prompt size, the document workload, or the surrounding system.
 
 ---
 
-## Performance by Hardware
+## Performance Tips
 
-### Apple Silicon (M1/M2/M3/M4)
+### For cloud usage
 
-Best experience across the board:
+- keep conversations focused when possible
+- start a fresh conversation for a completely different subject
+- choose lighter models for simple work
 
-| Task | M1 | M2 | M3 | M4 |
-|------|----|----|----|----|
-| **Cloud AI chat** | Excellent | Excellent | Excellent | Excellent |
-| **Local 7B model** | Good (20-30 tok/s) | Good (25-40 tok/s) | Great (30-50 tok/s) | Great (35-60 tok/s) |
-| **Local 13B model** | Adequate (10-20 tok/s) | Good (15-25 tok/s) | Good (20-35 tok/s) | Great (25-40 tok/s) |
-| **Document import** | Fast | Fast | Fast | Fast |
-| **Voice recognition** | Real-time | Real-time | Real-time | Real-time |
+### For local usage
 
-*Token rates are approximate and vary by model, quantization, and context length.*
+- use smaller models when speed matters more than raw capability
+- close other heavy apps if you are short on RAM
+- prefer MLX on Apple Silicon
+- avoid oversized models for machines that do not have the headroom
 
-### Intel Macs
+### For document workflows
 
-| Task | Performance |
-|------|------------|
-| **Cloud AI chat** | Excellent (same as Apple Silicon) |
-| **Local llama.cpp** | Adequate (5-15 tok/s for 7B) |
-| **MLX models** | Not available |
-| **Document import** | Good |
-| **Voice recognition** | Real-time |
+- import only what you need for the current task when possible
+- very large documents increase indexing and retrieval work
+- structured text is generally easier to process than poor-quality scanned content
 
 ---
 
-## Optimization Tips
+## Context Size and Responsiveness
 
-### For Cloud Providers
+Longer context windows can improve continuity, but they also increase work for the model.
 
-1. **Keep conversations focused** - Long conversations with lots of context cost more tokens and are slower
-2. **Use appropriate models** - GPT-3.5 or DeepSeek for simple tasks, GPT-4o or Claude for complex ones
-3. **Start new conversations** for new topics - don't reuse conversations for unrelated tasks
+SAM manages this by:
+- trimming older context
+- recalling archived context when useful
+- avoiding unbounded prompt growth
 
-### For Local Models
-
-1. **Choose the right model size** - Bigger isn't always better. A well-tuned 7B model is faster and often sufficient
-2. **Use quantized models** - 4-bit quantization significantly reduces memory usage with minimal quality loss
-3. **Close other apps** - Free up unified memory for the model
-4. **Monitor memory pressure** - Activity Monitor shows if you're swapping to disk (very slow)
-5. **MLX over llama.cpp** on Apple Silicon - MLX is optimized for Apple's Metal GPU
-
-### For Documents
-
-1. **Smaller documents process faster** - Split very large documents if possible
-2. **PDF quality matters** - Scanned PDFs with poor OCR will produce poor search results
-3. **Text formats are fastest** - .txt and .md import almost instantly
-
-### General
-
-1. **Update SAM regularly** - Performance improvements ship in every release
-2. **Restart after long sessions** - If memory usage seems high, restart SAM to reclaim memory
-3. **Check Activity Monitor** - If SAM seems slow, check for memory pressure or other processes competing for resources
+That balance is important for keeping long-lived conversations usable.
 
 ---
 
-## Context Window Management
+## Practical Recommendations
 
-The context window is the total amount of text the AI can consider at once. SAM manages this automatically, but understanding it helps you get better results.
-
-### How Context Fills Up
-
-```
-Context Window (e.g., 128K tokens)
-┌──────────────────────────────────────┐
-│ System prompt (~2-5K)                │
-│ Tool definitions (~3-5K)             │
-│ Conversation history (grows)         │
-│ Document context (from RAG)          │
-│ Available space for response         │
-└──────────────────────────────────────┘
-```
-
-As conversations get longer, more of the context window is used by history. SAM's context archival system helps by archiving and summarizing older messages, but very long conversations eventually hit limits.
-
-### When Context Matters
-
-- **Short conversations:** No concerns - plenty of space
-- **Medium conversations (50-100 messages):** SAM compresses older messages automatically
-- **Long conversations (100+ messages):** Consider starting a new conversation for new topics
-- **Document-heavy conversations:** RAG retrieval is more efficient than stuffing the full document into context
+If you want the best overall experience:
+- use Apple Silicon
+- keep at least 16GB RAM available for local work
+- use local models for privacy-sensitive tasks
+- use cloud models when you want broader hosted capability
+- let SAM's memory and retrieval features do the heavy lifting instead of pasting huge context blocks manually
 
 ---
 
 ## See Also
 
-- [User Guide](USER_GUIDE.md) - Getting started with SAM
-- [Providers Guide](PROVIDERS.md) - Choosing the right provider for performance
-- [Memory System](MEMORY.md) - How context and memory management works
-- [Architecture](ARCHITECTURE.md) - Technical architecture overview
+- [Providers](PROVIDERS.md)
+- [Memory](MEMORY.md)
+- [Architecture](ARCHITECTURE.md)
+- [Installation](INSTALLATION.md)
