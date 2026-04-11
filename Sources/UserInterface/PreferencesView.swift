@@ -95,6 +95,9 @@ public struct PreferencesView: View {
         case .conversations:
             ConversationPreferencesView()
 
+        case .tools:
+            ToolPreferencesPane()
+
         case .sharedTopics:
             SharedDataPreferencesView()
 
@@ -316,6 +319,7 @@ public enum PreferencesSection: String, CaseIterable {
     case appearance = "Appearance"
     case sound = "Sound"
     case conversations = "Conversations"
+    case tools = "Tools"
     case sharedTopics = "Shared Topics"
     case systemPrompts = "System Prompts"
     case personalities = "Personalities"
@@ -332,6 +336,7 @@ public enum PreferencesSection: String, CaseIterable {
         case .appearance: return "paintbrush"
         case .sound: return "speaker.wave.2.fill"
         case .conversations: return "bubble.left.and.bubble.right"
+        case .tools: return "wrench.and.screwdriver"
         case .sharedTopics: return "tray.full"
         case .systemPrompts: return "doc.text"
         case .personalities: return "theatermasks"
@@ -350,6 +355,7 @@ public enum PreferencesSection: String, CaseIterable {
         case .appearance: return .purple
         case .sound: return .blue
         case .conversations: return .blue
+        case .tools: return .orange
         case .sharedTopics: return .mint
         case .systemPrompts: return .cyan
         case .personalities: return .pink
