@@ -201,9 +201,13 @@ public class ResearchSynthesizer {
                     /// Get supporting sources.
                     let supportingSources = insightResults.compactMap { result in
                         documents.first { $0.id == result.documentId }
-                    }.map { (doc: RAGDocument) in
-                        ResearchSource(
-                            url: URL(string: (doc.metadata["sourceURL"] as? String) ?? "")!,
+                    }.compactMap { (doc: RAGDocument) -> ResearchSource? in
+                        guard let urlString = doc.metadata["sourceURL"] as? String,
+                              let url = URL(string: urlString) else {
+                            return nil
+                        }
+                        return ResearchSource(
+                            url: url,
                             title: doc.title,
                             extractedAt: ISO8601DateFormatter().date(from: (doc.metadata["extractedAt"] as? String) ?? "") ?? Date(),
                             credibilityScore: 0.7
@@ -287,7 +291,7 @@ public class ResearchSynthesizer {
 
         /// Create a concise summary from the evidence.
         if evidence.count == 1 {
-            return evidence.first!
+            return evidence[0]
         }
 
         /// For multiple pieces of evidence, create a synthesized summary.

@@ -1159,10 +1159,12 @@ public class DocumentGenerator: @unchecked Sendable {
         }
 
         /// Fallback to ~/Downloads only if no working directory provided.
-        let downloadsURL = FileManager.default.urls(
+        guard let downloadsURL = FileManager.default.urls(
             for: .downloadsDirectory,
             in: .userDomainMask
-        ).first!
+        ).first else {
+            throw DocumentGeneratorError.invalidPath("Could not determine Downloads directory")
+        }
 
         return downloadsURL
     }
