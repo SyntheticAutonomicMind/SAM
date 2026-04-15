@@ -437,7 +437,10 @@ public actor RobotsChecker {
         }
 
         /// Fetch robots.txt.
-        let robotsURL = URL(string: "https://\(host)/robots.txt")!
+        guard let robotsURL = URL(string: "https://\(host)/robots.txt") else {
+            /// If we can't construct a valid robots.txt URL, assume access is allowed.
+            return true
+        }
 
         do {
             let robotsContent = try await fetchRobotsContent(from: robotsURL)

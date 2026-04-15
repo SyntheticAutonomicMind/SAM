@@ -258,7 +258,11 @@ public class HuggingFaceGGUFClient {
                 delegateRef = delegate
 
                 let delegateSession = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-                let downloadTask = delegateSession.downloadTask(with: URL(string: "\(baseURL)/\(repoId)/resolve/main/\(filename)")!)
+                guard let downloadURL = URL(string: "\(baseURL)/\(repoId)/resolve/main/\(filename)") else {
+                    continuation.resume(throwing: HFError.networkError("Invalid download URL for \(repoId)/\(filename)"))
+                    return
+                }
+                let downloadTask = delegateSession.downloadTask(with: downloadURL)
                 delegate.setDownloadTask(downloadTask)
                 downloadTask.resume()
             }
