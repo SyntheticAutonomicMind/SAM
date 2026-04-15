@@ -19,7 +19,7 @@ APP_BUNDLE_RELEASE = .build/Build/Products/Release/SAM.app
 .PHONY: all build clean test test-unit test-e2e test-all test-quick run help metallib llamacpp build-debug build-release
 .PHONY: sign sign-debug sign-release verify-signature notarize staple distribute production
 .PHONY: dist
-.PHONY: build-dev release-dev appcast-dev
+.PHONY: build-dev release-dev appcast-dev release
 
 # Default target
 all: build
@@ -316,6 +316,7 @@ help:
 	@echo "  staple         - Staple notarization ticket to app"
 	@echo "  distribute     - Create distribution package (sign + notarize + staple)"
 	@echo "  production     - Complete production build (build + sign + notarize)"
+	@echo "  release        - Bump version and tag (VERSION=YYYYMMDD.N)"
 	@echo ""
 	@echo "Usage Examples:"
 	@echo "  make build && make run"
@@ -523,6 +524,15 @@ production-sign-only:
 	@echo "   SUCCESS: Notarization ticket stapled"
 	@echo "   SUCCESS: Distribution DMG created"
 	@echo "   SUCCESS: appcast.xml updated"
+
+# Standardized release entry point (version bump + tag only, no build)
+release:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "ERROR: VERSION required"; \
+		echo "Usage: make release VERSION=YYYYMMDD.N"; \
+		exit 1; \
+	fi
+	@./scripts/release.sh $(VERSION)
 
 # Alias for distribute - builds, signs, notarizes, creates DMG, updates appcast.xml, and prepares production release
 production: 
