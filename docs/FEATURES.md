@@ -81,7 +81,7 @@ Each conversation stores its own UI state:
 - Access 100+ models from multiple providers through a single API
 - Automatic model routing and load balancing
 
-> **Note on Claude models:** SAM does not include a direct Anthropic provider. Claude-family models are available through GitHub Copilot (if your subscription includes them) and OpenRouter.
+> **Note on Claude models:** SAM does not include a direct Anthropic provider. Claude-family models are available through OpenRouter.
 
 ### Local Models
 
