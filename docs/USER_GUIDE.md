@@ -75,7 +75,7 @@ When you open SAM for the first time:
 
 1. **Set up an AI provider** - Open Settings (⌘,) and go to the AI Providers tab
 2. **Choose your provider:**
-   - **Cloud AI** - OpenAI, GitHub Copilot, DeepSeek, Google Gemini, MiniMax, or OpenRouter (Claude models available via GitHub Copilot and OpenRouter)
+   - **Cloud AI** - OpenAI, GitHub Copilot, DeepSeek, Google Gemini, MiniMax, or OpenRouter (Claude models available via OpenRouter)
    - **Local AI** - Download and run a model directly on your Mac (Apple Silicon recommended)
 3. **Enter your API key** (for cloud providers)
 4. **Start chatting** - Press ⌘N for a new conversation, type your message, and press Enter
@@ -128,7 +128,7 @@ SAM supports multiple AI providers. You can configure one or many and switch bet
 | Provider | Models | Notes |
 |----------|--------|-------|
 | **OpenAI** | GPT-4o, GPT-4, GPT-3.5, o1, o3 | Most popular, broad capabilities |
-| **Anthropic** | Via GitHub Copilot or OpenRouter | Claude models available through those providers |
+| **Anthropic** | Via OpenRouter | Claude models available through OpenRouter |
 | **GitHub Copilot** | GPT-4o, Claude 3.5, o1 | Requires GitHub Copilot subscription |
 | **DeepSeek** | DeepSeek Chat, DeepSeek Coder | Cost-effective, good for coding |
 | **Google Gemini** | Gemini 2.5 Pro/Flash, 2.0 Flash | Large context (up to 1M tokens) |

@@ -15,7 +15,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 | Provider | Cost | Speed | Privacy | Best For |
 |----------|------|-------|---------|----------|
 | **OpenAI** | Pay-per-token | Fast | Cloud | General use, coding, creative writing |
-| **Anthropic** | - | - | - | No direct provider. Use GitHub Copilot or OpenRouter for Claude models. |
+| **Anthropic** | - | - | - | No direct provider. Use OpenRouter for Claude models. |
 | **GitHub Copilot** | Subscription | Fast | Cloud | Developers with existing Copilot subscription |
 | **DeepSeek** | Pay-per-token (low cost) | Fast | Cloud | Budget-friendly general use |
 | **Google Gemini** | Pay-per-token | Fast | Cloud | Google ecosystem, multimodal |
@@ -53,7 +53,6 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 SAM does not include a direct Anthropic provider. Claude-family models are available through:
 
-- **GitHub Copilot** - If your subscription tier includes Claude models
 - **OpenRouter** - Access Claude 3.5 Sonnet, Claude 4, and others through OpenRouter's unified gateway
 
 ---
@@ -161,6 +160,9 @@ SAM does not include a direct Anthropic provider. Claude-family models are avail
 - Try different models without separate accounts
 - Automatic routing and load balancing
 - Pay-per-token across all models
+
+**Recommended Model for New Users:**
+- **minimax/minimax-m2.7** - Excellent all-around model with 1M token context, strong reasoning, and competitive pricing. A great starting point when using OpenRouter.
 
 ---
 
