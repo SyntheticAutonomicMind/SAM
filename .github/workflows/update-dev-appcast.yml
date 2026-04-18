@@ -45,6 +45,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          clean: true
 
       - name: Download ZIP from pre-release
         env:
