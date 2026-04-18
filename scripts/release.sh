@@ -40,8 +40,8 @@ if ! git diff --quiet HEAD 2>/dev/null; then
 fi
 
 # Check tag doesn't already exist
-if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-    echo "ERROR: Tag v$VERSION already exists"
+if git rev-parse "$VERSION" >/dev/null 2>&1; then
+    echo "ERROR: Tag $VERSION already exists"
     exit 1
 fi
 
@@ -61,10 +61,10 @@ git add Info.plist
 git commit -m "chore(release): bump version to $VERSION"
 
 # Create annotated tag
-git tag -a "v$VERSION" -m "SAM $VERSION"
+git tag -a "$VERSION" -m "SAM $VERSION"
 
 echo ""
-echo "Done. Version $VERSION committed and tagged as v$VERSION."
+echo "Done. Version $VERSION committed and tagged as $VERSION."
 echo ""
 echo "Next steps:"
 echo "  git push origin main --tags    # Push to trigger CI"
