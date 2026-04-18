@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "version": "20260418.1",
+      "release_date": "April 18, 2026",
+      "introduction": "This release overhauls local model performance with optimized Metal threading, flash attention, KV cache quantization, and fixes the crash-on-quit that affected llama.cpp models.",
+      "improvements": [
+        {
+          "id": "metal-thread-tuning",
+          "icon": "gauge.with.dots.needle.67percent",
+          "title": "Apple Silicon Thread Optimization",
+          "description": "Thread counts are now tuned specifically for Apple Silicon unified memory architecture. When all model layers run on the Metal GPU, CPU threads primarily marshal data - too many threads cause contention and slow things down. Prompt processing uses performance cores; generation uses fewer threads since the GPU handles the heavy compute."
+        },
+        {
+          "id": "flash-attention-kv-quant",
+          "icon": "memorychip",
+          "title": "Flash Attention & KV Cache Quantization",
+          "description": "Flash attention reduces memory usage by avoiding materializing the full attention matrix. KV cache is quantized to q8_0 (8-bit) for both key and value tensors, cutting cache memory roughly in half compared to f16 with minimal quality impact. Together these allow longer contexts in less memory."
+        },
+        {
+          "id": "stable-system-prompt",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Stable System Prompt for Cache Reuse",
+          "description": "Date and time have been moved from the system prompt into a per-message userContext block, keeping the system prompt identical across messages. For pure Transformer models (Llama, Gemma, Qwen2.5), this enables KV cache prefix reuse - subsequent messages only process new tokens instead of reprocessing the entire prompt."
+        },
+        {
+          "id": "mlx-eog-detection",
+          "icon": "stop.circle",
+          "title": "MLX End-of-Generation Detection",
+          "description": "MLX streaming now detects end-of-generation patterns (like <end_of_turn> for Gemma models) and stops cleanly instead of streaming hundreds of stop tokens as visible text."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "metal-crash-on-quit",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Crash on Quit with Local Models",
+          "description": "Fixed a crash caused by llama.cpp's Metal device residual sets not being empty during static destructor cleanup. The app now exits cleanly after saving conversations."
+        },
+        {
+          "id": "folder-manager-spam",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Excessive Disk I/O from Folder Manager",
+          "description": "The folder manager was being instantiated inside a SwiftUI view body, causing hundreds of redundant disk reads per session. Now cached as a single instance."
+        }
+      ]
+    },
+    {
       "version": "20260411.2",
       "release_date": "April 11, 2026",
       "introduction": "SAM now integrates with your Mac. Manage your calendar, reminders, contacts, and notes through natural conversation - plus search your entire file system with Spotlight and check the weather, all without leaving the chat. New privacy controls in Preferences let you enable or disable any tool individually.",
