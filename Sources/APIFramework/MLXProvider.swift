@@ -494,6 +494,15 @@ public class MLXProvider: AIProvider {
                     MLX.Memory.cacheLimit = metalCacheLimit
                     providerLogger.info("MLX_MEMORY: Set Metal cache limit to \(metalCacheLimit / 1024 / 1024)MB")
 
+                    /// Set MLX global memory limit to prevent swap thrashing.
+                    /// Reserve 4GB for OS + other apps, give the rest to MLX.
+                    /// On unified memory (Apple Silicon), this prevents the system from swapping.
+                    let physicalMemory = ProcessInfo.processInfo.physicalMemory
+                    let reservedForOS: UInt64 = 4 * 1024 * 1024 * 1024
+                    let mlxMemoryLimit = physicalMemory > reservedForOS ? Int(physicalMemory - reservedForOS) : Int(physicalMemory / 2)
+                    MLX.Memory.memoryLimit = mlxMemoryLimit
+                    providerLogger.info("MLX_MEMORY: Set global memory limit to \(mlxMemoryLimit / 1024 / 1024)MB (system RAM: \(physicalMemory / 1024 / 1024 / 1024)GB)")
+
                     /// PER-CONVERSATION KV CACHE Strategy: Each conversation gets its own persistent cache - System prompt (6000+ tokens with tools) cached automatically on first turn - Conversation history accumulated incrementally - Isolated per conversation for privacy Performance: - Turn 1: Full computation (~20-30s for cold start) - Turn 2+: Only new tokens computed (~5-10s, system prompt cached!) - Benefit: 6000+ token system prompt processed once, reused forever in conversation.
 
                     let conversationId = request.conversationId ?? "default"
@@ -619,12 +628,54 @@ public class MLXProvider: AIProvider {
                             /// Accumulate response text for tool call detection at end.
                             fullResponse += chunk.text
 
+                            /// STOP SEQUENCE DETECTION: Some models emit EOG as text tokens
+                            /// instead of special stop tokens (e.g., Gemma emits "<end_of_turn>").
+                            /// Detect these patterns and stop generation immediately.
+                            let eogPatterns = ["<end_of_turn>", "<|im_end|>", "<|endoftext|>", "</s>", "<|eot_id|>"]
+                            var hitEOG = false
+                            for pattern in eogPatterns {
+                                if fullResponse.hasSuffix(pattern) || chunk.text.contains(pattern) {
+                                    hitEOG = true
+                                    providerLogger.info("MLX_EOG_TEXT: Detected '\(pattern)' in stream, stopping generation")
+                                    break
+                                }
+                            }
+
+                            if hitEOG {
+                                /// Strip EOG patterns from the accumulated response before final emit.
+                                var cleanResponse = fullResponse
+                                for pattern in eogPatterns {
+                                    cleanResponse = cleanResponse.replacingOccurrences(of: pattern, with: "")
+                                }
+                                let finalChunk = ServerOpenAIChatStreamChunk(
+                                    id: "chatcmpl-\(UUID().uuidString)",
+                                    object: "chat.completion.chunk",
+                                    created: Int(Date().timeIntervalSince1970),
+                                    model: request.model,
+                                    choices: [
+                                        OpenAIChatStreamChoice(
+                                            index: 0,
+                                            delta: OpenAIChatDelta(role: nil, content: nil),
+                                            finishReason: "stop"
+                                        )
+                                    ]
+                                )
+                                continuation.yield(finalChunk)
+                                continuation.finish()
+                                return
+                            }
+
                             /// PROCESS CHUNK THROUGH THINK TAG FORMATTER Handles <think></think> tags with stateful buffering across chunks.
                             let (processedContent, _) = thinkFormatter.processChunk(chunk.text)
 
                             /// FILTER TOOL CALL MARKERS while streaming for clean UI Tool calls detected at end, but markers filtered during streaming Patterns: <function_call>, <tool_call>, [TOOL_CALLS], <function>.
                             var filteredText = processedContent
                             var skipChunk = false
+
+                            /// Strip EOG text patterns from individual chunks.
+                            for pattern in eogPatterns {
+                                filteredText = filteredText.replacingOccurrences(of: pattern, with: "")
+                            }
 
                             /// Actually remove tool call markers from content before streaming Previous code just set skipChunk flag but didn't filter the text itself This caused tags to appear in UI even when skipping was intended.
 

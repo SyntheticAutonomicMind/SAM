@@ -23,7 +23,7 @@ public class MLXModelCache: @unchecked Sendable {
         guard let userCacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             throw MLXCacheError.initializationFailed("Could not find user cache directory")
         }
-        modelsDirectory = userCacheDir.appendingPathComponent("sam-rewritten/models")
+        modelsDirectory = userCacheDir.appendingPathComponent("sam/models")
 
         guard let directory = modelsDirectory else {
             throw MLXCacheError.initializationFailed("Failed to create models directory path")

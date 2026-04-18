@@ -127,39 +127,42 @@ public enum RAMProfile: String, Codable, CaseIterable {
     public var mlxConfiguration: MLXConfiguration {
         switch self {
         case .conservative:
-            /// 8GB RAM: Aggressive KV quantization, limited cache Context: 4096 total (3072 usable after tool overhead).
+            /// 8GB RAM: q8 KV quantization preserves quality, limited cache.
+            /// Context: 4096 total (3072 usable after tool overhead).
             return MLXConfiguration(
-                kvBits: 4,
+                kvBits: 8,
                 kvGroupSize: 64,
                 quantizedKVStart: 0,
                 maxKVSize: 4096,
                 topP: 0.95,
                 temperature: 0.8,
                 repetitionPenalty: 1.1,
-                repetitionContextSize: 20,
+                repetitionContextSize: 64,
                 contextLength: 4096,
                 maxTokens: 1024,
-                prefillStepSize: 256
+                prefillStepSize: 512
             )
 
         case .moderate:
-            /// 16GB RAM: Moderate KV quantization Context: 8192 total (7168 usable after tool overhead).
+            /// 16GB RAM: q8 KV quantization, generous context.
+            /// Context: 8192 total (7168 usable after tool overhead).
             return MLXConfiguration(
-                kvBits: 4,
+                kvBits: 8,
                 kvGroupSize: 64,
                 quantizedKVStart: 0,
                 maxKVSize: 8192,
                 topP: 0.95,
                 temperature: 0.8,
                 repetitionPenalty: 1.1,
-                repetitionContextSize: 20,
+                repetitionContextSize: 64,
                 contextLength: 8192,
-                maxTokens: 1024,
+                maxTokens: 2048,
                 prefillStepSize: 512
             )
 
         case .balanced:
-            /// 24GB RAM: Light KV quantization, large cache Context: 16384 total (15360 usable after tool overhead).
+            /// 24GB RAM: q8 KV quantization for RAM savings, large cache.
+            /// Context: 16384 total (15360 usable after tool overhead).
             return MLXConfiguration(
                 kvBits: 8,
                 kvGroupSize: 64,
@@ -168,30 +171,32 @@ public enum RAMProfile: String, Codable, CaseIterable {
                 topP: 0.95,
                 temperature: 0.8,
                 repetitionPenalty: 1.1,
-                repetitionContextSize: 20,
+                repetitionContextSize: 128,
                 contextLength: 16384,
-                maxTokens: 2048,
-                prefillStepSize: 1024
-            )
-
-        case .aggressive:
-            /// 32GB RAM: No KV quantization, unlimited cache Context: 32768 total (31744 usable after tool overhead).
-            return MLXConfiguration(
-                kvBits: nil,
-                kvGroupSize: 64,
-                quantizedKVStart: 0,
-                maxKVSize: nil,
-                topP: 0.95,
-                temperature: 0.8,
-                repetitionPenalty: 1.1,
-                repetitionContextSize: 20,
-                contextLength: 32768,
                 maxTokens: 4096,
                 prefillStepSize: 1024
             )
 
+        case .aggressive:
+            /// 32GB RAM: q8 KV to save RAM for larger context windows.
+            /// Context: 32768 total (31744 usable after tool overhead).
+            return MLXConfiguration(
+                kvBits: 8,
+                kvGroupSize: 64,
+                quantizedKVStart: 0,
+                maxKVSize: nil,
+                topP: 0.95,
+                temperature: 0.8,
+                repetitionPenalty: 1.1,
+                repetitionContextSize: 256,
+                contextLength: 32768,
+                maxTokens: 8192,
+                prefillStepSize: 2048
+            )
+
         case .maximum:
-            /// 64GB+ RAM: Maximum quality, no quantization Context: 65536 total (64512 usable after tool overhead).
+            /// 64GB+ RAM: No KV quantization for maximum quality.
+            /// Context: 32768 (most models train at 32k, 64k wastes RAM).
             return MLXConfiguration(
                 kvBits: nil,
                 kvGroupSize: 64,
@@ -200,8 +205,8 @@ public enum RAMProfile: String, Codable, CaseIterable {
                 topP: 0.95,
                 temperature: 0.8,
                 repetitionPenalty: 1.1,
-                repetitionContextSize: 20,
-                contextLength: 65536,
+                repetitionContextSize: 256,
+                contextLength: 32768,
                 maxTokens: 8192,
                 prefillStepSize: 2048
             )
@@ -263,21 +268,8 @@ public struct LlamaConfiguration: Codable, Equatable {
     /// Optimized for 8GB-16GB RAM.
     public static var memoryOptimized: LlamaConfiguration {
         LlamaConfiguration(
-            nGpuLayers: 20,
-            nCtx: 4096,
-            nBatch: 256,
-            topP: 0.95,
-            temperature: 0.8,
-            repetitionPenalty: 1.1,
-            maxTokens: 512
-        )
-    }
-
-    /// Balanced for 16GB-24GB RAM.
-    public static var balanced: LlamaConfiguration {
-        LlamaConfiguration(
             nGpuLayers: -1,
-            nCtx: 8192,
+            nCtx: 4096,
             nBatch: 512,
             topP: 0.95,
             temperature: 0.8,
@@ -286,11 +278,11 @@ public struct LlamaConfiguration: Codable, Equatable {
         )
     }
 
-    /// High performance for 32GB+ RAM.
-    public static var highPerformance: LlamaConfiguration {
+    /// Balanced for 16GB-24GB RAM.
+    public static var balanced: LlamaConfiguration {
         LlamaConfiguration(
             nGpuLayers: -1,
-            nCtx: 16384,
+            nCtx: 8192,
             nBatch: 1024,
             topP: 0.95,
             temperature: 0.8,
@@ -299,16 +291,29 @@ public struct LlamaConfiguration: Codable, Equatable {
         )
     }
 
+    /// High performance for 32GB+ RAM.
+    public static var highPerformance: LlamaConfiguration {
+        LlamaConfiguration(
+            nGpuLayers: -1,
+            nCtx: 32768,
+            nBatch: 1024,
+            topP: 0.95,
+            temperature: 0.8,
+            repetitionPenalty: 1.1,
+            maxTokens: 4096
+        )
+    }
+
     /// Maximum for 64GB+ RAM.
     public static var maximum: LlamaConfiguration {
         LlamaConfiguration(
             nGpuLayers: -1,
             nCtx: 32768,
-            nBatch: 2048,
+            nBatch: 1024,
             topP: 0.95,
             temperature: 0.8,
             repetitionPenalty: 1.1,
-            maxTokens: 4096
+            maxTokens: 8192
         )
     }
 }
@@ -327,12 +332,12 @@ extension RAMProfile {
         case .balanced:
             return LlamaConfiguration(
                 nGpuLayers: -1,
-                nCtx: 16384,
+                nCtx: 32768,
                 nBatch: 1024,
                 topP: 0.95,
                 temperature: 0.8,
                 repetitionPenalty: 1.1,
-                maxTokens: 2048
+                maxTokens: 4096
             )
 
         case .aggressive:

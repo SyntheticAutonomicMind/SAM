@@ -240,11 +240,50 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     }
 
     /// Returns current date formatted for prompts.
+    /// Cached date string, refreshed per-minute to keep system prompt stable.
+    /// Moving date/time from system prompt to userContext block enables KV cache
+    /// prefix reuse for local inference (llama.cpp, MLX).
+    private nonisolated(unsafe) static var _cachedDateString: String?
+    private nonisolated(unsafe) static var _cachedDateMinute: Int?
+
     internal static func getCurrentDateString() -> String {
+        let now = Date()
+        let calendar = Calendar.current
+        let currentMinute = calendar.component(.minute, from: now)
+
+        if _cachedDateString != nil && _cachedDateMinute == currentMinute {
+            return _cachedDateString!
+        }
+
         let formatter = DateFormatter()
         formatter.dateStyle = .long
         formatter.timeStyle = .none
-        return formatter.string(from: Date())
+        let result = formatter.string(from: now)
+        _cachedDateString = result
+        _cachedDateMinute = currentMinute
+        return result
+    }
+
+    /// Build the userContext block for prepending to user messages.
+    /// Contains date/time and location - everything that changes between messages.
+    /// Cached per-minute for stability.
+    public static func buildUserContextBlock() -> String {
+        let now = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let datetime = formatter.string(from: now)
+
+        let calendar = Calendar.current
+        let dayName: String = {
+            let f = DateFormatter()
+            f.dateFormat = "EEEE"
+            return f.string(from: now)
+        }()
+        let dateString = getCurrentDateString()
+
+        var context = "**Current Date/Time:** \(datetime) (\(dayName), \(dateString))\n"
+        context += "- This is informational context only - do not reference or repeat in your responses"
+        return context
     }
 
     /// Returns effective location from UserDefaults (thread-safe, no MainActor required).
@@ -879,7 +918,7 @@ private static func buildSAMSpecificPatterns() -> String {
                 // PRIORITY 1 - CRITICAL OPERATIONAL
                 SystemPromptComponent(
                     title: "Current Date Context",
-                    content: Self.buildCurrentDateContext(),
+                    content: "Current date and time are provided in each user message for accuracy.",
                     isEnabled: true,
                     order: 0
                 ),
@@ -983,7 +1022,7 @@ private static func buildSAMSpecificPatterns() -> String {
             components: [
                 SystemPromptComponent(
                     title: "Current Date",
-                    content: Self.buildCurrentDateContext(),
+                    content: "Current date and time are provided in each user message for accuracy.",
                     isEnabled: true,
                     order: 0
                 ),

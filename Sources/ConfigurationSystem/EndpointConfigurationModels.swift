@@ -129,39 +129,39 @@ public struct MLXConfiguration: Codable, Equatable {
         self.prefillStepSize = prefillStepSize
     }
 
-    /// Optimized configuration for memory-constrained systems (8GB RAM) Uses 4-bit KV cache quantization to reduce memory usage by ~75%.
+    /// Optimized configuration for memory-constrained systems (8GB RAM). Uses q8 KV cache quantization for quality with good memory savings.
     public static var memoryOptimized: MLXConfiguration {
         MLXConfiguration(
-            kvBits: 4,
+            kvBits: 8,
             kvGroupSize: 64,
             quantizedKVStart: 0,
             maxKVSize: 4096,
             topP: 0.95,
             temperature: 0.8,
             repetitionPenalty: 1.1,
-            repetitionContextSize: 20,
+            repetitionContextSize: 64,
             contextLength: 4096,
-            maxTokens: 512
+            maxTokens: 1024
         )
     }
 
-    /// Balanced configuration for systems with adequate RAM (16GB-24GB) Uses 4-bit KV cache quantization for better quality with moderate memory savings.
+    /// Balanced configuration for systems with adequate RAM (16GB-24GB). Uses q8 KV cache quantization.
     public static var balanced: MLXConfiguration {
         MLXConfiguration(
-            kvBits: 4,
+            kvBits: 8,
             kvGroupSize: 64,
             quantizedKVStart: 0,
-            maxKVSize: 8192,
+            maxKVSize: nil,
             topP: 0.95,
             temperature: 0.8,
             repetitionPenalty: 1.1,
-            repetitionContextSize: 20,
+            repetitionContextSize: 128,
             contextLength: 16384,
-            maxTokens: 2048
+            maxTokens: 4096
         )
     }
 
-    /// High quality configuration for systems with ample RAM (32GB+) No KV cache quantization for maximum quality.
+    /// High quality configuration for systems with ample RAM (32GB+). No KV cache quantization for maximum quality.
     public static var highQuality: MLXConfiguration {
         MLXConfiguration(
             kvBits: nil,
@@ -170,10 +170,10 @@ public struct MLXConfiguration: Codable, Equatable {
             maxKVSize: nil,
             topP: 0.95,
             temperature: 0.8,
-            repetitionPenalty: 1.05,
-            repetitionContextSize: 20,
+            repetitionPenalty: 1.1,
+            repetitionContextSize: 256,
             contextLength: 32768,
-            maxTokens: 4096
+            maxTokens: 8192
         )
     }
 }

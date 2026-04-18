@@ -122,8 +122,7 @@ public class ModelListManager: ObservableObject {
             let chatModelsOnly = uniqueModelIds.filter { modelId in
                 let baseId = modelId.split(separator: "/").last.map(String.init) ?? modelId
                 let isNonChatModel = baseId.hasPrefix("imagen-") ||
-                                   baseId.hasPrefix("veo-") ||
-                                   baseId.hasPrefix("gemma-")
+                                   baseId.hasPrefix("veo-")
                 
                 if isNonChatModel {
                     logger.debug("Filtering non-chat model from picker: \(modelId)")

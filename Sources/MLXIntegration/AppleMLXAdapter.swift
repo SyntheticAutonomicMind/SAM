@@ -265,7 +265,7 @@ public class AppleMLXAdapter {
         messages: [Message],
         tools: [ToolSpec]? = nil,
         cache: [KVCache]? = nil,
-        maxTokens: Int = 512,
+        maxTokens: Int = 2048,
         temperature: Float = 0.8,
         topP: Float = 0.95,
         repetitionPenalty: Float? = 1.1,
@@ -506,8 +506,8 @@ public class AppleMLXAdapter {
         tokenizer: Tokenizer,
         messages: [Message],
         tools: [ToolSpec]? = nil,
-        maxTokens: Int = 512,
-        temperature: Float = 0.7
+        maxTokens: Int = 2048,
+        temperature: Float = 0.8
     ) async throws -> String {
         logger.debug("Starting text generation with Apple's model")
 

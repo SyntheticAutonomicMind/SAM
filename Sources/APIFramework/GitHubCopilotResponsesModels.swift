@@ -30,6 +30,15 @@ public enum ModelSupportedEndpoint: String, Codable {
     case chatCompletions = "/chat/completions"
     case responses = "/responses"
     case messages = "/v1/messages"
+    case wsResponses = "ws:/responses"
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = ModelSupportedEndpoint(rawValue: rawValue) ?? .unknown
+    }
+
+    case unknown = "_unknown"
 }
 
 /// GitHub Copilot model information.
