@@ -20,7 +20,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     // MARK: - Bug #3: Reference to ConversationManager for cleanup
     weak var conversationManager: ConversationManager?
-    weak var endpointManager: EndpointManager?
+    /// STRONG reference to prevent premature deallocation during app termination.
+    /// SwiftUI view hierarchy may tear down before applicationWillTerminate fires,
+    /// causing weak references to be nil when cleanup runs.
+    var endpointManager: EndpointManager?
 
     override init() {
         super.init()
@@ -107,27 +110,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         /// Ensure all pending conversation saves complete before app exits.
         conversationManager?.cleanup()
 
-        /// Unload all local models to prevent Metal resource cleanup crashes.
-        /// Use a semaphore to block until cleanup completes.
-        if let manager = endpointManager {
-            let semaphore = DispatchSemaphore(value: 0)
-            Task {
-                await manager.cleanup()
-                semaphore.signal()
-            }
-            /// Wait up to 5 seconds for cleanup to complete.
-            _ = semaphore.wait(timeout: .now() + 5.0)
-        }
-        
-        /// NOTE: We do NOT call llama_backend_free() here because:
-        /// 1. Metal resources may not be fully deallocated even after unload() completes
-        /// 2. LlamaContext deinit may not have run yet (Swift actor cleanup timing)
-        /// 3. Calling llama_backend_free() while Metal resources exist causes crashes:
-        ///    "GGML_ASSERT([rsets->data count] == 0) failed"
-        /// 4. The OS will clean up all resources when the process exits anyway
-        /// 
-        /// Previous approach (calling llamaBackendCleanup here) caused crashes on exit
-        /// when models were loaded. Letting OS handle cleanup is safer and more reliable.
+        /// CRASH FIX: llama.cpp's ggml_metal_device_free asserts that residual sets are empty,
+        /// but they aren't after normal usage. This is a known llama.cpp issue:
+        /// https://github.com/ggml-org/llama.cpp/pull/17869
+        ///
+        /// Calling _exit(0) skips C++ static destructors entirely, avoiding the crash.
+        /// The OS reclaims all resources (GPU buffers, memory, file handles) on process exit.
+        /// Conversation data is already saved above.
+        ///
+        /// We cannot use llama_free/llama_model_free/llama_backend_free to prevent this because
+        /// the Metal residual sets persist regardless. Async cleanup also deadlocks because
+        /// applicationWillTerminate is synchronous and blocking the main thread.
+        _exit(0)
     }
 
     // MARK: - Window Frame Persistence

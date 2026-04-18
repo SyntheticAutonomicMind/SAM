@@ -402,7 +402,13 @@ public class LlamaProvider: AIProvider {
                     continuation.yield(finalChunk)
 
                     /// Clear context for next request.
-                    await context.clear()
+                    /// Preserve KV cache for prefix reuse on next message.
+                    /// Only safe for non-recurrent (pure Transformer) models.
+                    if await !context.hasRecurrentState {
+                        await context.resetGeneration()
+                    } else {
+                        await context.clear()
+                    }
 
                     continuation.finish()
 
@@ -488,7 +494,7 @@ public class LlamaProvider: AIProvider {
         await context.cancel()
 
         providerLogger.info("UNLOAD_MODEL: Freeing llama.cpp context and model resources")
-        await context.clear()
+        await context.destroy()
 
         /// OPTIMIZATION: Clear conversation caches on model unload.
         clearAllConversationCaches()

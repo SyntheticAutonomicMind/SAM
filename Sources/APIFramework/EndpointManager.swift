@@ -1517,6 +1517,11 @@ extension EndpointManager: ConversationEngine.AIProviderProtocol {
         }
 
         logger.info("CLEANUP: Provider cleanup complete")
+
+        /// Free llama.cpp backend after all contexts are destroyed.
+        /// Prevents ggml_metal_device_free crash on exit.
+        LlamaContext.freeBackend()
+        logger.info("CLEANUP: llama.cpp backend freed")
     }
 }
 

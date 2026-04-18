@@ -69,6 +69,13 @@ actor LlamaContext {
 
     /// Cancellation flag - set to true to abort generation.
     private var isCancelled: Bool = false
+    /// Whether this model uses recurrent/hybrid state (Mamba/SSM layers).
+    /// KV cache prefix reuse is unsafe for these models because the RS buffer
+    /// cannot be partially cleared.
+    var hasRecurrentState: Bool {
+        return llama_model_is_recurrent(model) || llama_model_is_hybrid(model)
+    }
+    private nonisolated(unsafe) var isDestroyed: Bool = false
 
     /// Performance tracking.
     private var generationStartTime: Date?
@@ -77,6 +84,9 @@ actor LlamaContext {
     /// Accumulated text for text-based EOG detection.
     /// Some models generate EOG tokens as text instead of special tokens.
     private var accumulatedText: String = ""
+
+    /// KV cache reuse: store previous prompt tokens to find common prefix.
+    private var previousPromptTokens: [llama_token] = []
 
     /// Max tokens limit for generation (set before calling completion_loop).
     /// This is the actual limit for how many tokens to generate, separate from context size.
@@ -120,16 +130,19 @@ actor LlamaContext {
     deinit {
         llamaLogger.info("LlamaContext deinit: Cleaning up resources")
         
-        /// Free resources in the correct order (inverse of allocation)
-        /// Do NOT call llama_backend_free() here - it should only be called once at app shutdown
-        /// See AppDelegate.applicationWillTerminate() for global cleanup
-        
-        llama_sampler_free(sampling)
-        llama_batch_free(batch)
-        llama_free(context)
-        llama_model_free(model)
+        if !isDestroyed {
+            llama_sampler_free(sampling)
+            llama_batch_free(batch)
+            llama_free(context)
+            llama_model_free(model)
+        }
         
         llamaLogger.info("LlamaContext cleaned up successfully")
+    }
+
+    /// Call at app shutdown after all contexts are destroyed.
+    public static func freeBackend() {
+        llama_backend_free()
     }
 
     // MARK: - Factory Method
@@ -262,26 +275,15 @@ actor LlamaContext {
     ) -> (promptThreads: Int32, generationThreads: Int32) {
         let modelSizeGB = modelSize / (1024*1024*1024)
 
-        // Prompt processing: Use ALL available cores (batch processing benefits from parallelism)
-        let promptThreads = max(1, totalCores - 1)  // Leave 1 for OS
-
-        // Token generation: Adjust based on model size
-        // Smaller models: more threads (compute-bound)
-        // Larger models: fewer threads (memory bandwidth-bound)
-        let genThreads: Int
-        if modelSizeGB >= 40 {
-            // 70B models: Limited by memory bandwidth, not compute
-            genThreads = min(4, totalCores / 2)
-            llamaLogger.info("THREAD_COUNT: Large model (>=40GB), gen_threads=\(genThreads)")
-        } else if modelSizeGB >= 20 {
-            // 30B models: Moderate parallelism
-            genThreads = min(8, (totalCores * 2) / 3)
-            llamaLogger.info("THREAD_COUNT: Medium model (20-40GB), gen_threads=\(genThreads)")
-        } else {
-            // 7B models: Can benefit from high parallelism
-            genThreads = min(12, totalCores - 2)
-            llamaLogger.info("THREAD_COUNT: Small model (<20GB), gen_threads=\(genThreads)")
-        }
+        // On Apple Silicon with Metal GPU offload (all layers on GPU):
+        // - CPU threads mostly marshal data to/from GPU, not doing compute
+        // - Too many threads causes contention and HURTS performance
+        // - Generation (single token): 1-2 threads (GPU-bound, not CPU-bound)
+        // - Prompt (batch): performance cores only (moderate parallelism helps batch prep)
+        let perfCores = max(1, totalCores / 2)  // Apple Silicon: ~half cores are performance
+        let promptThreads = min(perfCores, 8)
+        let genThreads = min(perfCores, 4)
+        llamaLogger.info("THREAD_COUNT: Model \(modelSizeGB)GB, perfCores=\(perfCores)")
 
         llamaLogger.info("THREAD_COUNT: Final threads - prompt=\(promptThreads), generation=\(genThreads) (total_cores=\(totalCores))")
 
@@ -377,10 +379,11 @@ actor LlamaContext {
         llamaLogger.info("Using adaptive threads: prompt=\(promptThreads), generation=\(generationThreads) (total_cores=\(totalCores))")
 
         var ctx_params = llama_context_default_params()
-        ctx_params.n_ctx = UInt32(n_ctx)
-        ctx_params.n_batch = UInt32(n_batch)
-        ctx_params.n_threads = promptThreads           // Used for prompt evaluation
-        ctx_params.n_threads_batch = generationThreads  // Used for token generation
+       ctx_params.n_ctx = UInt32(n_ctx)
+       ctx_params.n_batch = UInt32(n_batch)
+        ctx_params.n_ubatch = UInt32(min(n_batch, 512)) // Physical micro-batch size for better memory locality
+        ctx_params.n_threads = generationThreads        // Single-token generation (memory-bandwidth bound, fewer threads)
+        ctx_params.n_threads_batch = promptThreads      // Batch/prompt processing (compute-bound, more threads)
 
         /// CRITICAL FIX: Explicitly initialize samplers to NULL to prevent segfault
         /// Recent llama.cpp versions validate sampler chains during context init.
@@ -389,10 +392,25 @@ actor LlamaContext {
         ctx_params.samplers = nil
         ctx_params.n_samplers = 0
 
-        /// PERFORMANCE: Offload KV cache to GPU (LMStudio "Offload KV Cache to GPU") This stores the key/value cache on GPU instead of CPU RAM Dramatically improves performance for long contexts.
+        /// PERFORMANCE: Flash Attention - significantly reduces memory usage and improves speed.
+        /// Uses optimized attention kernels that avoid materializing the full attention matrix.
+        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED
+
+        /// PERFORMANCE: KV cache quantization - q8_0 for both K and V tensors.
+        /// Reduces KV cache memory by ~50% vs f16 with minimal quality loss.
+        /// Equivalent to --cache-type-k q8_0 --cache-type-v q8_0 in llama-server.
+        ctx_params.type_k = GGML_TYPE_Q8_0
+        ctx_params.type_v = GGML_TYPE_Q8_0
+
+        /// PERFORMANCE: Offload KV cache to GPU (LMStudio "Offload KV Cache to GPU").
+        /// Stores the key/value cache on GPU instead of CPU RAM.
         ctx_params.offload_kqv = true
 
-        llamaLogger.info("SUCCESS: PERFORMANCE_OPTIMIZATIONS: mmap=true, mlock=true, offload_kqv=true (KV cache on GPU)")
+        /// PERFORMANCE: Enable full SWA cache for sliding window attention models.
+        /// Prevents quality degradation with models like Gemma, Mistral that use SWA.
+        ctx_params.swa_full = true
+
+        llamaLogger.info("SUCCESS: PERFORMANCE_OPTIMIZATIONS: mmap=true, mlock=true, offload_kqv=true, flash_attn=true, kv_type=q8_0, swa_full=true, ubatch=\(ctx_params.n_ubatch)")
 
         let context = llama_init_from_model(model, ctx_params)
         guard let context else {
@@ -445,19 +463,67 @@ actor LlamaContext {
         tokens_list = tokenize(text: text, add_bos: true)
         temporary_invalid_cchars = []
 
-        /// Clear KV cache before each new completion Without this, llama.cpp fails with "sequence positions remain consecutive" error because it thinks sequence 0 already has tokens from previous request Use llama_memory_seq_rm with positions -1 to -1 to clear entire sequence.
-        let memory = llama_get_memory(context)
-        _ = llama_memory_seq_rm(memory, 0, -1, -1)
-
         /// Reset completion state.
         is_done = false
         n_decode = 0
-        n_cur = 0
         accumulatedText = ""
 
         /// Start performance tracking.
         generationStartTime = Date()
         tokensGenerated = 0
+
+        /// KV cache prefix reuse: find how many tokens match the previous prompt.
+        /// This avoids reprocessing the system prompt + tools on every message.
+        /// NOTE: Prefix reuse is disabled for hybrid Mamba/Transformer models (qwen35, etc.)
+        /// because their recurrent state (RS buffer) cannot be partially cleared.
+        /// The RS buffer tracks state across all positions and becomes inconsistent
+        /// after llama_memory_seq_rm, causing decode failures.
+        let hasRecurrentState = llama_model_is_recurrent(model) || llama_model_is_hybrid(model)
+        var commonPrefix = 0
+        if !hasRecurrentState {
+            let minLen = min(previousPromptTokens.count, tokens_list.count)
+            while commonPrefix < minLen && previousPromptTokens[commonPrefix] == tokens_list[commonPrefix] {
+                commonPrefix += 1
+            }
+        }
+
+        if commonPrefix == 0 && previousPromptTokens.count > 0 {
+            /// Diagnostic: show first divergent tokens to understand why prefix matching fails
+            let prevFirst = previousPromptTokens.prefix(10).map { String($0) }.joined(separator: ",")
+            let currFirst = tokens_list.prefix(10).map { String($0) }.joined(separator: ",")
+            llamaLogger.warning("KV_CACHE_DEBUG: Prefix mismatch at token 0! prev_count=\(previousPromptTokens.count) curr_count=\(tokens_list.count)")
+            llamaLogger.warning("KV_CACHE_DEBUG: prev_first10=[\(prevFirst)]")
+            llamaLogger.warning("KV_CACHE_DEBUG: curr_first10=[\(currFirst)]")
+            /// Find first difference
+            let diagLen = min(100, min(previousPromptTokens.count, tokens_list.count))
+            for i in 0..<diagLen {
+                if previousPromptTokens[i] != tokens_list[i] {
+                    llamaLogger.warning("KV_CACHE_DEBUG: First difference at token \(i)")
+                    break
+                }
+            }
+        } else if commonPrefix > 0 && commonPrefix < previousPromptTokens.count {
+            llamaLogger.info("KV_CACHE_DEBUG: Partial match \(commonPrefix)/\(previousPromptTokens.count), divergence at token \(commonPrefix)")
+        }
+
+        let memory = llama_get_memory(context)
+        if commonPrefix > 0 {
+            /// Remove only the tokens AFTER the common prefix from KV cache.
+            _ = llama_memory_seq_rm(memory, 0, Int32(commonPrefix), -1)
+            n_cur = Int32(commonPrefix)
+            llamaLogger.info("KV_CACHE_REUSE: Reusing \(commonPrefix) of \(previousPromptTokens.count) cached tokens, processing \(tokens_list.count - commonPrefix) new tokens")
+        } else {
+            /// No common prefix - clear entire cache.
+            _ = llama_memory_seq_rm(memory, 0, -1, -1)
+            n_cur = 0
+            llamaLogger.info("KV_CACHE_REUSE: No prefix match, processing all \(tokens_list.count) tokens")
+        }
+
+        /// Store tokens for next call's prefix comparison.
+        previousPromptTokens = tokens_list
+
+        /// Skip ahead to only process new tokens.
+        let startIndex = Int(n_cur)
 
         let n_ctx = llama_n_ctx(context)
         let estimatedOutputTokens = min(maxTokensLimit, 4096)  /// Estimate for KV cache planning
@@ -470,12 +536,12 @@ actor LlamaContext {
         }
 
         /// Process prompt in batches if it exceeds batch size batch was initialized with batchSize (2048), but prompt might be larger Need to decode in chunks to avoid overflow.
-        llamaLogger.info("Processing prompt with \(tokens_list.count) tokens, batch_size=\(batchSize)")
+        llamaLogger.info("Processing prompt with \(tokens_list.count - startIndex) new tokens (of \(tokens_list.count) total), batch_size=\(batchSize)")
 
         /// Adaptive batch sizing based on prompt length and context capacity The crash occurs when KV cache runs out of memory slots Root cause: Processing large prompts (8611 tokens) exhausts KV cache after 2 batches Solution: Reduce batch size dynamically when approaching context limits.
 
         let maxContextTokens = Int32(contextSize)
-        var tokenIndex = 0
+        var tokenIndex = startIndex
         var consecutiveDecodeFailures = 0
         let maxConsecutiveFailures = 3
 
@@ -689,9 +755,26 @@ actor LlamaContext {
         maxTokensLimit = limit
     }
 
+    /// Explicitly free all Metal/llama resources. Call before app exit to avoid
+    /// static destructor crashes in ggml_metal_device_free.
+    func destroy() {
+        llamaLogger.info("LlamaContext destroy: Explicitly freeing all resources")
+        previousPromptTokens = []
+        llama_sampler_free(sampling)
+        llama_batch_free(batch)
+        llama_free(context)
+        llama_model_free(model)
+        /// Nil out the pointers so deinit doesn't double-free.
+        /// (These are let properties in the actor, so we use a flag instead.)
+        isDestroyed = true
+        llamaLogger.info("LlamaContext destroy: Resources freed successfully")
+    }
+
     func clear() {
+        guard !isDestroyed else { return }
         tokens_list.removeAll()
         temporary_invalid_cchars.removeAll()
+        previousPromptTokens.removeAll()
 
         /// Reset position tracking - critical for conversation switching.
         n_cur = 0

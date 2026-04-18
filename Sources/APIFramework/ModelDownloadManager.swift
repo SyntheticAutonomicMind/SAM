@@ -34,6 +34,7 @@ public class ModelDownloadManager: ObservableObject {
     @Published public var availableModels: [HFModel] = []
     @Published public var installedModels: [LocalModel] = []
     @Published public var downloadProgress: [String: Double] = [:]
+    private var lastLoggedPercent: [String: Int] = [:]
     @Published public var isSearching: Bool = false
     @Published public var isDownloading: Bool = false
     @Published public var errorMessage: String?
@@ -249,6 +250,7 @@ public class ModelDownloadManager: ObservableObject {
         downloadTasks.removeValue(forKey: modelId)
         downloadCancelHandlers.removeValue(forKey: modelId)
         downloadProgress.removeValue(forKey: modelId)
+        lastLoggedPercent.removeValue(forKey: modelId)
     }
 
     /// Get all files that should be downloaded together with a given file.
@@ -504,9 +506,11 @@ public class ModelDownloadManager: ObservableObject {
                     onProgress: { [weak self] progress in
                         Task { @MainActor in
                             self?.downloadProgress[modelId] = progress
-                            /// Log progress updates every 10%.
+                            /// Log progress updates at each 10% milestone (only once per milestone).
                             let percent = Int(progress * 100)
-                            if percent % 10 == 0 {
+                            let lastLogged = self?.lastLoggedPercent[modelId] ?? -1
+                            if percent % 10 == 0 && percent != lastLogged {
+                                self?.lastLoggedPercent[modelId] = percent
                                 downloadLogger.info("UI progress update: \(modelId) = \(percent)%")
                             }
                         }

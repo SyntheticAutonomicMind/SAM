@@ -195,6 +195,7 @@ public struct ChatWidget: View {
 
     /// Todo list manager (shared singleton)
     @ObservedObject private var todoManager = TodoManager.shared
+    private let cachedFolderManager = FolderManager()
 
     /// Memory management - Session Intelligence.
     @State private var showingMemoryPanel = false
@@ -414,6 +415,7 @@ public struct ChatWidget: View {
                         conversation.performanceMetrics = Array(conversation.performanceMetrics.suffix(100))
                     }
                 }
+
             }
 
             /// Cancel active tasks when switching conversations.
@@ -3078,6 +3080,12 @@ public struct ChatWidget: View {
         }
 
         /// FEATURE: Inject user location context if configured
+        /// FEATURE: Inject date/time context for KV cache stability.
+        /// Date/time is in userContext (not system prompt) so the system prompt
+        /// stays static across messages, enabling KV cache prefix reuse.
+        let dateContext = SystemPromptConfiguration.buildUserContextBlock()
+        injectedContexts.append(dateContext)
+
         if let locationContext = LocationManager.shared.getLocationContext() {
             injectedContexts.append(locationContext)
             logger.debug("Injected location context into user message")
@@ -4964,10 +4972,14 @@ public struct ChatWidget: View {
                 NotificationCenter.default.post(name: .createFolder, object: nil)
             }
 
-            if let folderManager = try? FolderManager() {
-                if !folderManager.folders.isEmpty {
-                    Divider()
-                    ForEach(folderManager.folders, id: \.id) { folder in
+            /// Use shared FolderManager from environment instead of creating new instance on every render.
+            /// Creating FolderManager() in a view body causes 800+ disk reads per session.
+            /// Reuse a single cached FolderManager instead of creating one per render.
+            /// The Menu body re-evaluates on every render pass, so FolderManager() was being
+            /// called hundreds of times, each hitting disk.
+            if !cachedFolderManager.folders.isEmpty {
+                Divider()
+                ForEach(cachedFolderManager.folders, id: \.id) { folder in
                         Button(action: {
                             conversationManager.assignFolder(folder.id, to: [conversation.id])
                         }) {
@@ -4985,7 +4997,6 @@ public struct ChatWidget: View {
                     }
                 }
             }
-        }
 
         if conversation.folderId != nil {
             Button("Remove from Folder") {
