@@ -3079,18 +3079,14 @@ public struct ChatWidget: View {
             }
         }
 
-        /// FEATURE: Inject user location context if configured
-        /// FEATURE: Inject date/time context for KV cache stability.
-        /// Date/time is in userContext (not system prompt) so the system prompt
-        /// stays static across messages, enabling KV cache prefix reuse.
-        /// Conversation ID is included in userContext for reference.
-        let dateContext = SystemPromptConfiguration.buildUserContextBlock(conversationId: activeConversation?.id)
-        injectedContexts.append(dateContext)
-
-        if let locationContext = LocationManager.shared.getLocationContext() {
-            injectedContexts.append(locationContext)
-            logger.debug("Injected location context into user message")
-        }
+        /// FEATURE: Inject userContext block for KV cache stability.
+        /// Contains date/time, user info, location, and conversation ID.
+        /// All dynamic per-message content is in userContext to keep system prompt static.
+        let userContext = SystemPromptConfiguration.buildUserContextBlock(
+            conversationId: activeConversation?.id,
+            location: LocationManager.shared.getEffectiveLocation()
+        )
+        injectedContexts.append(userContext)
 
         /// FEATURE: Auto-import attached files into conversation memory BEFORE sending user message
         /// This ensures agent knows files are already available when it receives the message

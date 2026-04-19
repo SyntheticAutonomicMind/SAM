@@ -612,17 +612,14 @@ private struct SimpleToolCall {
 
                 """ // RELEASE mode: strong confidentiality directive
 
-            /// Build conversation metadata section.
+            /// Build conversation metadata section (DEPRECATED - moved to userContext).
+            /// Conversation ID is now in userContext for better KV cache optimization.
+            /// Only keep message count here since that's informational.
             var conversationMetadata = ""
             if let conversationId = request.conversationId {
                 conversationMetadata = """
 
-                CONVERSATION CONTEXT:
-                - Conversation ID: \(conversationId)
-                - Message Count: \(request.messages.count)
-                - Session Active: true
-
-                When asked about this conversation's ID or metadata, provide this information directly.
+                Session metadata: \(request.messages.count) messages in this session.
 
                 """
             }
@@ -647,6 +644,32 @@ AVAILABLE TOOLS:
                 content: fullSystemPrompt
             )
             messages.insert(systemMessage, at: 0)
+
+            /// Add userContext to the last user message (includes all dynamic user info for KV cache optimization).
+            /// Dynamic content: date/time, user name, language, location, conversation ID.
+            if let conversationIdString = request.conversationId,
+               let conversationId = UUID(uuidString: conversationIdString) {
+                let location = SystemPromptConfiguration.getEffectiveLocationFromDefaults()
+                let userContext = SystemPromptConfiguration.buildUserContextBlock(
+                    conversationId: conversationId,
+                    userName: SystemPromptConfiguration.getUserName(),
+                    language: SystemPromptConfiguration.getUserLanguage(),
+                    location: location
+                )
+                if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
+                    var lastUserMessage = messages[lastUserIndex]
+                    let existingContent = lastUserMessage.content ?? ""
+                    let newContent = existingContent + "\n\n<userContext>\n\(userContext)\n</userContext>"
+                    messages[lastUserIndex] = OpenAIChatMessage(
+                        id: lastUserMessage.id,
+                        role: lastUserMessage.role,
+                        content: newContent,
+                        toolCalls: lastUserMessage.toolCalls,
+                        toolCallId: lastUserMessage.toolCallId,
+                        reasoningContent: lastUserMessage.reasoningContent
+                    )
+                }
+            }
         }
 
         /// Return enhanced request with tool-aware system prompt.
