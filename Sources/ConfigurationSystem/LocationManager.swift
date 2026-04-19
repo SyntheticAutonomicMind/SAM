@@ -48,6 +48,28 @@ public class LocationManager: NSObject, ObservableObject {
         }
     }
 
+    /// Precise location latitude (from Core Location)
+    @Published public var preciseLatitude: Double? {
+        didSet {
+            if let lat = preciseLatitude {
+                UserDefaults.standard.set(lat, forKey: "user.preciseLatitude")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "user.preciseLatitude")
+            }
+        }
+    }
+
+    /// Precise location longitude (from Core Location)
+    @Published public var preciseLongitude: Double? {
+        didSet {
+            if let lon = preciseLongitude {
+                UserDefaults.standard.set(lon, forKey: "user.preciseLongitude")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "user.preciseLongitude")
+            }
+        }
+    }
+
     /// Location authorization status
     @Published public var authorizationStatus: CLAuthorizationStatus = .notDetermined
 
@@ -70,8 +92,10 @@ public class LocationManager: NSObject, ObservableObject {
 
         super.init()
 
-        // Load cached precise location string
+        // Load cached precise location string and coordinates
         self.preciseLocationString = UserDefaults.standard.string(forKey: "user.preciseLocationString")
+        self.preciseLatitude = UserDefaults.standard.object(forKey: "user.preciseLatitude") as? Double
+        self.preciseLongitude = UserDefaults.standard.object(forKey: "user.preciseLongitude") as? Double
 
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyKilometer // City-level accuracy
@@ -102,6 +126,16 @@ public class LocationManager: NSObject, ObservableObject {
     public func getLocationContext() -> String? {
         guard let location = getEffectiveLocation() else { return nil }
         return "User's location: \(location)"
+    }
+
+    /// Get the effective coordinates for weather/LLM operations.
+    /// Returns lat/lon from precise location if available, otherwise nil.
+    /// Note: General location requires geocoding (handled by caller).
+    public func getEffectiveCoordinates() -> (latitude: Double, longitude: Double)? {
+        if usePreciseLocation, let lat = preciseLatitude, let lon = preciseLongitude {
+            return (latitude: lat, longitude: lon)
+        }
+        return nil
     }
 
     /// Request location permission from the user
@@ -139,6 +173,10 @@ public class LocationManager: NSObject, ObservableObject {
     // MARK: - Private Methods
 
     private func reverseGeocode(_ location: CLLocation) {
+        // Store coordinates alongside the location string
+        preciseLatitude = location.coordinate.latitude
+        preciseLongitude = location.coordinate.longitude
+
         geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, error in
             Task { @MainActor in
                 guard let self = self else { return }
@@ -192,6 +230,9 @@ extension LocationManager: CLLocationManagerDelegate {
 
         Task { @MainActor in
             logger.debug("Received location update: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+            // Store coordinates for direct access (bypasses geocoding)
+            self.preciseLatitude = location.coordinate.latitude
+            self.preciseLongitude = location.coordinate.longitude
             reverseGeocode(location)
         }
     }
