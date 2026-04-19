@@ -265,9 +265,10 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     }
 
     /// Build the userContext block for prepending to user messages.
-    /// Contains date/time and location - everything that changes between messages.
+    /// Contains date/time, location, and conversation ID - everything that changes between messages.
     /// Cached per-minute for stability.
-    public static func buildUserContextBlock() -> String {
+    /// - Parameter conversationId: Optional conversation UUID to include in context
+    public static func buildUserContextBlock(conversationId: UUID? = nil) -> String {
         let now = Date()
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
@@ -283,6 +284,11 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
 
         var context = "**Current Date/Time:** \(datetime) (\(dayName), \(dateString))\n"
         context += "- This is informational context only - do not reference or repeat in your responses"
+
+        if let convId = conversationId {
+            context += "\n- Conversation ID: \(convId.uuidString)"
+        }
+
         return context
     }
 

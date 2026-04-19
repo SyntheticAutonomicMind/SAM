@@ -3083,7 +3083,8 @@ public struct ChatWidget: View {
         /// FEATURE: Inject date/time context for KV cache stability.
         /// Date/time is in userContext (not system prompt) so the system prompt
         /// stays static across messages, enabling KV cache prefix reuse.
-        let dateContext = SystemPromptConfiguration.buildUserContextBlock()
+        /// Conversation ID is included in userContext for reference.
+        let dateContext = SystemPromptConfiguration.buildUserContextBlock(conversationId: activeConversation?.id)
         injectedContexts.append(dateContext)
 
         if let locationContext = LocationManager.shared.getLocationContext() {
