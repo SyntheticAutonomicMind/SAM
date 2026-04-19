@@ -98,16 +98,23 @@ public class DeepSeekProvider: AIProvider {
                 choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
             ))
         } else {
-            // No tool calls - stream text content as before
-            let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-            for word in words {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
-                ))
+            // Preserve newlines for proper markdown rendering
+            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmedLine.isEmpty else { continue }
+                
+                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                for (index, word) in words.enumerated() {
+                    let suffix = index < words.count - 1 ? " " : "\n"
+                    chunks.append(ServerOpenAIChatStreamChunk(
+                        id: response.id,
+                        object: "chat.completion.chunk",
+                        created: response.created,
+                        model: response.model,
+                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
+                    ))
+                }
             }
 
             chunks.append(ServerOpenAIChatStreamChunk(
@@ -803,16 +810,23 @@ public class MiniMaxProvider: AIProvider {
                 choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
             ))
         } else {
-            // No tool calls - stream text content as before
-            let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-            for word in words {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
-                ))
+            // Preserve newlines for proper markdown rendering
+            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmedLine.isEmpty else { continue }
+                
+                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                for (index, word) in words.enumerated() {
+                    let suffix = index < words.count - 1 ? " " : "\n"
+                    chunks.append(ServerOpenAIChatStreamChunk(
+                        id: response.id,
+                        object: "chat.completion.chunk",
+                        created: response.created,
+                        model: response.model,
+                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
+                    ))
+                }
             }
 
             chunks.append(ServerOpenAIChatStreamChunk(
@@ -1222,16 +1236,23 @@ public class CustomProvider: AIProvider {
                 choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
             ))
         } else {
-            // No tool calls - stream text content as before
-            let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-            for word in words {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
-                ))
+            // Preserve newlines for proper markdown rendering
+            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmedLine.isEmpty else { continue }
+                
+                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                for (index, word) in words.enumerated() {
+                    let suffix = index < words.count - 1 ? " " : "\n"
+                    chunks.append(ServerOpenAIChatStreamChunk(
+                        id: response.id,
+                        object: "chat.completion.chunk",
+                        created: response.created,
+                        model: response.model,
+                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
+                    ))
+                }
             }
 
             chunks.append(ServerOpenAIChatStreamChunk(
@@ -1678,17 +1699,24 @@ public class GeminiProvider: AIProvider {
             }
         }
 
-        /// Stream text content if present
+        /// Stream text content - preserve newlines for markdown
         if let content = choice.message.content, !content.isEmpty {
-            let words = content.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-            for word in words {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + " "))]
-                ))
+            let lines = content.components(separatedBy: .newlines)
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmedLine.isEmpty else { continue }
+                
+                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                for (index, word) in words.enumerated() {
+                    let suffix = index < words.count - 1 ? " " : "\n"
+                    chunks.append(ServerOpenAIChatStreamChunk(
+                        id: response.id,
+                        object: "chat.completion.chunk",
+                        created: response.created,
+                        model: response.model,
+                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
+                    ))
+                }
             }
         }
 
@@ -2107,6 +2135,518 @@ public class GeminiProvider: AIProvider {
 
     public func unload() async {
         /// No-op for remote providers.
+    }
+}
+
+// MARK: - Ollama Cloud Provider
+
+/// Ollama Cloud provider for cloud-hosted Ollama models.
+@MainActor
+public class OllamaCloudProvider: AIProvider {
+    public let identifier: String
+    public let config: ProviderConfiguration
+    private let logger = Logger(label: "com.sam.api.ollamaCloud")
+
+    public init(config: ProviderConfiguration) {
+        self.identifier = config.providerId
+        self.config = config
+        logger.debug("Ollama Cloud Provider initialized")
+    }
+
+    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    if Task.isCancelled {
+                        self.logger.debug("TASK_CANCELLED: Ollama Cloud request cancelled before start")
+                        continuation.finish()
+                        return
+                    }
+
+                    let response = try await self.processChatCompletion(request)
+                    let chunks = self.convertToStreamChunks(response)
+
+                    for chunk in chunks {
+                        if Task.isCancelled {
+                            self.logger.debug("TASK_CANCELLED: Ollama Cloud streaming cancelled")
+                            continuation.finish()
+                            return
+                        }
+
+                        continuation.yield(chunk)
+                        try await Task.sleep(nanoseconds: 50_000_000)
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
+        guard let choice = response.choices.first else { return [] }
+        var chunks: [ServerOpenAIChatStreamChunk] = []
+
+        chunks.append(ServerOpenAIChatStreamChunk(
+            id: response.id,
+            object: "chat.completion.chunk",
+            created: response.created,
+            model: response.model,
+            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
+        ))
+
+        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
+            for toolCall in toolCalls {
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(
+                        index: 0,
+                        delta: OpenAIChatDelta(
+                            content: nil,
+                            toolCalls: [
+                                OpenAIToolCall(
+                                    id: toolCall.id,
+                                    type: "function",
+                                    function: OpenAIFunctionCall(
+                                        name: toolCall.function.name,
+                                        arguments: toolCall.function.arguments
+                                    )
+                                )
+                            ]
+                        )
+                    )]
+                ))
+            }
+
+            chunks.append(ServerOpenAIChatStreamChunk(
+                id: response.id,
+                object: "chat.completion.chunk",
+                created: response.created,
+                model: response.model,
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
+            ))
+        } else {
+            // Preserve newlines for proper markdown rendering
+            // Split by lines, then split words, rejoin with newlines
+            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmedLine.isEmpty else { continue }
+                
+                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                for (index, word) in words.enumerated() {
+                    let suffix = index < words.count - 1 ? " " : "\n"
+                    chunks.append(ServerOpenAIChatStreamChunk(
+                        id: response.id,
+                        object: "chat.completion.chunk",
+                        created: response.created,
+                        model: response.model,
+                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
+                    ))
+                }
+            }
+
+            chunks.append(ServerOpenAIChatStreamChunk(
+                id: response.id,
+                object: "chat.completion.chunk",
+                created: response.created,
+                model: response.model,
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
+            ))
+        }
+
+        return chunks
+    }
+
+    public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
+        let requestId = UUID().uuidString
+        logger.debug("Processing chat completion via Ollama Cloud API [req:\(requestId.prefix(8))]")
+
+        guard let apiKey = config.apiKey else {
+            throw ProviderError.authenticationFailed("Ollama Cloud API key not configured")
+        }
+
+        guard let baseURL = config.baseURL ?? ProviderType.ollamaCloud.defaultBaseURL else {
+            throw ProviderError.invalidConfiguration("Ollama Cloud base URL not configured")
+        }
+
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw ProviderError.invalidConfiguration("Invalid Ollama Cloud base URL: \(baseURL)")
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let modelForAPI = request.model.contains("/")
+            ? request.model.components(separatedBy: "/").last ?? request.model
+            : request.model
+
+        let requestBody: [String: Any] = [
+            "model": modelForAPI,
+            "messages": request.messages.map { message in
+                [
+                    "role": message.role,
+                    "content": message.content
+                ]
+            },
+            "max_tokens": max(request.maxTokens ?? config.maxTokens ?? 4096, 2048),
+            "temperature": request.temperature ?? config.temperature ?? 0.7,
+            "stream": false
+        ]
+
+        do {
+            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        } catch {
+            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
+        }
+
+        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
+        urlRequest.timeoutInterval = max(configuredTimeout, 300)
+
+        logger.debug("Sending request to Ollama Cloud API [req:\(requestId.prefix(8))]")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ProviderError.networkError("Invalid response type")
+            }
+
+            logger.debug("Ollama Cloud API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
+
+            guard 200...299 ~= httpResponse.statusCode else {
+                if let errorData = String(data: data, encoding: .utf8) {
+                    logger.error("Ollama Cloud API error [req:\(requestId.prefix(8))]: \(errorData)")
+                }
+                throw ProviderError.networkError("Ollama Cloud API returned status \(httpResponse.statusCode)")
+            }
+
+            let openAIResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
+            logger.debug("Successfully processed Ollama Cloud response [req:\(requestId.prefix(8))]")
+
+            return openAIResponse
+
+        } catch let error as ProviderError {
+            throw error
+        } catch {
+            logger.error("Ollama Cloud API request failed [req:\(requestId.prefix(8))]: \(error)")
+            throw ProviderError.networkError("Network error: \(error.localizedDescription)")
+        }
+    }
+
+    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
+        let models = config.models.map { modelId in
+            ServerOpenAIModel(
+                id: modelId,
+                object: "model",
+                created: Int(Date().timeIntervalSince1970),
+                ownedBy: "ollama"
+            )
+        }
+
+        return ServerOpenAIModelsResponse(
+            object: "list",
+            data: models
+        )
+    }
+
+    public func supportsModel(_ model: String) -> Bool {
+        return config.models.contains(model) || model.contains("ollama")
+    }
+
+    public func validateConfiguration() async throws -> Bool {
+        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
+            throw ProviderError.authenticationFailed("Ollama Cloud API key is required")
+        }
+
+        return true
+    }
+
+    public func loadModel() async throws -> ModelCapabilities {
+        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
+    }
+
+    public func getLoadedStatus() async -> Bool {
+        return false
+    }
+
+    public func unload() async {
+        // No-op for remote providers.
+    }
+}
+
+// MARK: - Z.AI Provider
+
+/// Z.AI provider with rate limit handling and thinking parameter support.
+@MainActor
+public class ZAIProvider: AIProvider {
+    public let identifier: String
+    public let config: ProviderConfiguration
+    private let logger = Logger(label: "com.sam.api.zai")
+
+    /// Whether this is the coding variant
+    private let isCodingPlan: Bool
+
+    public init(config: ProviderConfiguration) {
+        self.identifier = config.providerId
+        self.config = config
+        self.isCodingPlan = config.providerType == .zaiCoding
+        logger.debug("Z.AI Provider initialized (coding: \(isCodingPlan))")
+    }
+
+    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    if Task.isCancelled {
+                        self.logger.debug("TASK_CANCELLED: Z.AI request cancelled before start")
+                        continuation.finish()
+                        return
+                    }
+
+                    let response = try await self.processChatCompletion(request)
+                    let chunks = self.convertToStreamChunks(response)
+
+                    for chunk in chunks {
+                        if Task.isCancelled {
+                            self.logger.debug("TASK_CANCELLED: Z.AI streaming cancelled")
+                            continuation.finish()
+                            return
+                        }
+
+                        continuation.yield(chunk)
+                        try await Task.sleep(nanoseconds: 50_000_000)
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
+        guard let choice = response.choices.first else { return [] }
+        var chunks: [ServerOpenAIChatStreamChunk] = []
+
+        chunks.append(ServerOpenAIChatStreamChunk(
+            id: response.id,
+            object: "chat.completion.chunk",
+            created: response.created,
+            model: response.model,
+            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
+        ))
+
+        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
+            for toolCall in toolCalls {
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(
+                        index: 0,
+                        delta: OpenAIChatDelta(
+                            content: nil,
+                            toolCalls: [
+                                OpenAIToolCall(
+                                    id: toolCall.id,
+                                    type: "function",
+                                    function: OpenAIFunctionCall(
+                                        name: toolCall.function.name,
+                                        arguments: toolCall.function.arguments
+                                    )
+                                )
+                            ]
+                        )
+                    )]
+                ))
+            }
+
+            chunks.append(ServerOpenAIChatStreamChunk(
+                id: response.id,
+                object: "chat.completion.chunk",
+                created: response.created,
+                model: response.model,
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
+            ))
+        } else {
+            // Preserve newlines for proper markdown rendering
+            // Split by lines, then split words, rejoin with newlines
+            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+            for line in lines {
+                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmedLine.isEmpty else { continue }
+                
+                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                for (index, word) in words.enumerated() {
+                    let suffix = index < words.count - 1 ? " " : "\n"
+                    chunks.append(ServerOpenAIChatStreamChunk(
+                        id: response.id,
+                        object: "chat.completion.chunk",
+                        created: response.created,
+                        model: response.model,
+                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
+                    ))
+                }
+            }
+
+            chunks.append(ServerOpenAIChatStreamChunk(
+                id: response.id,
+                object: "chat.completion.chunk",
+                created: response.created,
+                model: response.model,
+                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
+            ))
+        }
+
+        return chunks
+    }
+
+    public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
+        let requestId = UUID().uuidString
+        logger.debug("Processing chat completion via Z.AI API [req:\(requestId.prefix(8))]")
+
+        guard let apiKey = config.apiKey else {
+            throw ProviderError.authenticationFailed("Z.AI API key not configured")
+        }
+
+        guard let baseURL = config.baseURL ?? (isCodingPlan ? ProviderType.zaiCoding.defaultBaseURL : ProviderType.zai.defaultBaseURL) else {
+            throw ProviderError.invalidConfiguration("Z.AI base URL not configured")
+        }
+
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw ProviderError.invalidConfiguration("Invalid Z.AI base URL: \(baseURL)")
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let modelForAPI = request.model.contains("/")
+            ? request.model.components(separatedBy: "/").last ?? request.model
+            : request.model
+
+        // Z.AI uses max_completion_tokens (not max_tokens)
+        var requestBody: [String: Any] = [
+            "model": modelForAPI,
+            "messages": request.messages.map { message in
+                [
+                    "role": message.role,
+                    "content": message.content
+                ]
+            },
+            // Z.AI recommended sampling defaults
+            "temperature": request.temperature ?? config.temperature ?? 1.0,
+            "top_p": 0.95,
+            "stream": false
+        ]
+
+        // Z.AI uses max_completion_tokens
+        if let maxTokens = request.maxTokens ?? config.maxTokens {
+            requestBody["max_completion_tokens"] = max(maxTokens, 2048)
+        } else {
+            requestBody["max_completion_tokens"] = 4096
+        }
+
+        // Enable thinking parameter for chain-of-thought (Z.AI specific)
+        requestBody["thinking"] = ["type": "enabled"]
+
+        do {
+            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        } catch {
+            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
+        }
+
+        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
+        urlRequest.timeoutInterval = max(configuredTimeout, 300)
+
+        logger.debug("Sending request to Z.AI API [req:\(requestId.prefix(8))]")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ProviderError.networkError("Invalid response type")
+            }
+
+            logger.debug("Z.AI API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
+
+            // Handle error responses
+            guard 200...299 ~= httpResponse.statusCode else {
+                if let errorData = String(data: data, encoding: .utf8) {
+                    logger.error("Z.AI API error [req:\(requestId.prefix(8))]: \(errorData)")
+                    // Check for Z.AI specific rate limit codes
+                    if errorData.contains("1302") || errorData.contains("1303") || errorData.contains("1305") {
+                        throw ProviderError.rateLimitExceeded("Z.AI rate limit exceeded")
+                    }
+                    if errorData.contains("1308") {
+                        throw ProviderError.quotaExceeded("Z.AI usage limit exceeded")
+                    }
+                }
+                throw ProviderError.networkError("Z.AI API returned status \(httpResponse.statusCode)")
+            }
+
+            let openAIResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
+            logger.debug("Successfully processed Z.AI response [req:\(requestId.prefix(8))]")
+
+            return openAIResponse
+
+        } catch let error as ProviderError {
+            throw error
+        } catch {
+            logger.error("Z.AI API request failed [req:\(requestId.prefix(8))]: \(error)")
+            throw ProviderError.networkError("Network error: \(error.localizedDescription)")
+        }
+    }
+
+    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
+        let models = config.models.map { modelId in
+            ServerOpenAIModel(
+                id: modelId,
+                object: "model",
+                created: Int(Date().timeIntervalSince1970),
+                ownedBy: "zai"
+            )
+        }
+
+        return ServerOpenAIModelsResponse(
+            object: "list",
+            data: models
+        )
+    }
+
+    public func supportsModel(_ model: String) -> Bool {
+        return config.models.contains(model) || model.lowercased().contains("glm")
+    }
+
+    public func validateConfiguration() async throws -> Bool {
+        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
+            throw ProviderError.authenticationFailed("Z.AI API key is required")
+        }
+
+        return true
+    }
+
+    public func loadModel() async throws -> ModelCapabilities {
+        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
+    }
+
+    public func getLoadedStatus() async -> Bool {
+        return false
+    }
+
+    public func unload() async {
+        // No-op for remote providers.
     }
 }
 
