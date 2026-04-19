@@ -1,9 +1,40 @@
 {
   "releases": [
     {
-      "version": "20260419.1",
+      "version": "20260419.2",
       "release_date": "April 19, 2026",
-      "introduction": "Two new cloud AI providers are now available, Ollama Cloud and zAI. Configure them in Settings to get started.",
+      "introduction": "System prompt is now fully cacheable - dynamic content like date, time, user info, and location are now in the userContext block, enabling better KV cache reuse. Weather tool also gets precise GPS coordinates when available.",
+      "improvements": [
+        {
+          "id": "unified-usercontext",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Unified userContext Block",
+          "description": "Date/time, user name, language, location, and conversation ID have been consolidated into a single userContext block in every user message. This keeps the system prompt identical across messages, enabling KV cache prefix reuse for faster inference."
+        },
+        {
+          "id": "precise-weather-coords",
+          "icon": "location.fill",
+          "title": "Precise Coordinates for Weather",
+          "description": "When precise location is enabled, GPS coordinates are now included in userContext. Weather tool uses these directly instead of geocoding, providing more accurate weather data for your exact location."
+        },
+        {
+          "id": "weather-tool-update",
+          "icon": "cloud.sun.fill",
+          "title": "Weather Tool Improvements",
+          "description": "Weather tool description updated to clearly guide agents on using coordinates from userContext, with fallback to training data or city name format."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "coords-persistence",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Coordinates Not Persisting",
+          "description": "Precise location coordinates now persist correctly to UserDefaults, ensuring they're available even after app restart."
+        }
+      ]
+    },
+    {
+      "version": "20260419.1",
       "improvements": [
         {
           "id": "ollama-cloud-provider",
