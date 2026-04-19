@@ -261,19 +261,23 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     }
 
     /// Build the userContext block for prepending to user messages.
-    /// Contains all dynamic per-message content: date/time, location, user info, conversation ID.
+    /// Contains all dynamic per-message content: date/time, location, coordinates, user info, conversation ID.
     /// Moved from system prompt to enable KV cache prefix reuse.
     /// Cached per-minute for stability.
     /// - Parameters:
     ///   - conversationId: Optional conversation UUID to include in context
     ///   - userName: User's display name (optional, uses default if not provided)
     ///   - language: User's preferred language (optional, uses default if not provided)
-    ///   - location: User's location context (optional)
+    ///   - location: User's location string (optional, e.g., "Austin, TX")
+    ///   - latitude: User's latitude (optional, for weather tools)
+    ///   - longitude: User's longitude (optional, for weather tools)
     public static func buildUserContextBlock(
         conversationId: UUID? = nil,
         userName: String? = nil,
         language: String? = nil,
-        location: String? = nil
+        location: String? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil
     ) -> String {
         let now = Date()
         let formatter = DateFormatter()
@@ -298,6 +302,11 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         // Location if provided
         if let loc = location, !loc.isEmpty {
             context += "**Location:** \(loc)\n"
+        }
+
+        // Coordinates if provided (for weather/tools)
+        if let lat = latitude, let lon = longitude {
+            context += "**Coordinates:** \(lat), \(lon)\n"
         }
 
         // Conversation ID if provided

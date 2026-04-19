@@ -11,20 +11,26 @@ public class WeatherTool: ConsolidatedMCP, @unchecked Sendable {
     public let name = "weather_operations"
 
     public let description = """
-    Get weather information using the Open-Meteo API (free, no API key needed).
-    Uses SAM's configured location or accepts coordinates/city name.
+    Get weather using Open-Meteo API (free, no API key).
 
     OPERATIONS:
-    • current - Get current weather conditions (optional: latitude, longitude, city)
-    • forecast - Get weather forecast (optional: latitude, longitude, city, days)
-    • hourly - Get hourly forecast for today (optional: latitude, longitude, city, hours)
+    • current - Current conditions
+    • forecast - Daily forecast (default: 7 days, max: 16)
+    • hourly - Hourly forecast (default: 24 hours)
 
-    Location Resolution (in order of priority):
-    1. Explicit latitude/longitude parameters
-    2. City name (geocoded via Open-Meteo)
-    3. SAM's configured location from Preferences
+    PARAMETERS:
+    • latitude: Location latitude (REQUIRED - use userContext **Coordinates:** if available)
+    • longitude: Location longitude (REQUIRED - use userContext **Coordinates:** if available)
+    • city: Fallback if coordinates unavailable (e.g., "Orlando, FL, US")
+    • days: Forecast days (forecast only)
+    • hours: Forecast hours (hourly only)
 
-    Temperature is returned in both Fahrenheit and Celsius.
+    LOCATION FALLBACK ORDER:
+    1. userContext **Coordinates:** (e.g., "28.5325, -81.1393") - PREFERRED
+    2. Training data for approximate coordinates
+    3. City name with country (e.g., "Orlando, FL, US")
+
+    Returns temperature in Fahrenheit and Celsius.
     """
 
     public var supportedOperations: [String] {
