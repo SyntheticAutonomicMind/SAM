@@ -262,6 +262,7 @@ public struct OpenAIChatMessage: Content, Sendable {
     public let content: String?
     public let toolCalls: [OpenAIToolCall]?
     public let toolCallId: String?
+    public let reasoningContent: String?  // Used by llama.cpp servers that put reasoning in separate field
 
     /// Standard message constructor (backward compatible).
     public init(role: String, content: String) {
@@ -270,6 +271,7 @@ public struct OpenAIChatMessage: Content, Sendable {
         self.content = content
         self.toolCalls = nil
         self.toolCallId = nil
+        self.reasoningContent = nil
     }
 
     /// Tool calling constructor (future use).
@@ -279,6 +281,7 @@ public struct OpenAIChatMessage: Content, Sendable {
         self.content = content
         self.toolCalls = toolCalls
         self.toolCallId = nil
+        self.reasoningContent = nil
     }
 
     /// Tool result constructor (future use).
@@ -288,21 +291,24 @@ public struct OpenAIChatMessage: Content, Sendable {
         self.content = content
         self.toolCalls = nil
         self.toolCallId = toolCallId
+        self.reasoningContent = nil
     }
     
     /// Message constructor with ID for stateful marker tracking.
-    public init(id: String?, role: String, content: String?, toolCalls: [OpenAIToolCall]? = nil, toolCallId: String? = nil) {
+    public init(id: String?, role: String, content: String?, toolCalls: [OpenAIToolCall]? = nil, toolCallId: String? = nil, reasoningContent: String? = nil) {
         self.id = id
         self.role = role
         self.content = content
         self.toolCalls = toolCalls
         self.toolCallId = toolCallId
+        self.reasoningContent = reasoningContent
     }
 
     enum CodingKeys: String, CodingKey {
         case id, role, content
         case toolCalls = "tool_calls"
         case toolCallId = "tool_call_id"
+        case reasoningContent = "reasoning_content"
     }
 }
 

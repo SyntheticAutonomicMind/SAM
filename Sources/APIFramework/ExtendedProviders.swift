@@ -51,8 +51,49 @@ public class DeepSeekProvider: AIProvider {
     }
 
     private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else { return [] }
+        guard let choice = response.choices.first else {
+            logger.debug("convertToStreamChunks: No choices in response, returning empty")
+            return []
+        }
         var chunks: [ServerOpenAIChatStreamChunk] = []
+
+        // Get content and reasoning content from the message
+        var mainContent = choice.message.content ?? ""
+        let reasoningContent = choice.message.reasoningContent
+
+        logger.debug("convertToStreamChunks: content=\(mainContent.prefix(100))..., reasoningContent=\(reasoningContent?.prefix(100) ?? "nil")")
+
+        // Process reasoning content through ThinkTagFormatter like LlamaProvider does
+        var formatter = ThinkTagFormatter(hideThinking: false)
+
+        // If reasoning content exists and content is empty, use reasoning as thinking tool message
+        // This handles llama.cpp servers that put content in reasoning_content field
+        if let reasoning = reasoningContent, !reasoning.isEmpty {
+            // Format reasoning through ThinkTagFormatter
+            let (formattedReasoning, _) = formatter.processChunk(reasoning)
+            let flushedReasoning = formatter.flushBuffer()
+            let fullReasoning = formattedReasoning + flushedReasoning
+
+            if !fullReasoning.isEmpty {
+                // Yield reasoning as a thinking tool message to trigger thinking card UI
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: nil))],
+                    isToolMessage: true,
+                    toolName: "thinking",
+                    toolDetails: [fullReasoning]
+                ))
+            }
+
+            // If there's also main content, keep it for later (after thinking)
+            if mainContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // If content was empty and we had reasoning, the thinking IS the response
+                // Don't add empty content, the thinking was the response
+            }
+        }
 
         chunks.append(ServerOpenAIChatStreamChunk(
             id: response.id,
@@ -88,7 +129,7 @@ public class DeepSeekProvider: AIProvider {
                     )]
                 ))
             }
-            
+
             // Final chunk with finish_reason="tool_calls"
             chunks.append(ServerOpenAIChatStreamChunk(
                 id: response.id,
@@ -99,11 +140,11 @@ public class DeepSeekProvider: AIProvider {
             ))
         } else {
             // Preserve newlines for proper markdown rendering
-            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+            let lines = mainContent.components(separatedBy: .newlines)
             for line in lines {
                 let trimmedLine = line.trimmingCharacters(in: .whitespaces)
                 guard !trimmedLine.isEmpty else { continue }
-                
+
                 let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
                 for (index, word) in words.enumerated() {
                     let suffix = index < words.count - 1 ? " " : "\n"
@@ -763,8 +804,49 @@ public class MiniMaxProvider: AIProvider {
 
     /// Fallback: Convert non-streaming response to chunks (used for error recovery).
     private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else { return [] }
+        guard let choice = response.choices.first else {
+            logger.debug("convertToStreamChunks: No choices in response, returning empty")
+            return []
+        }
         var chunks: [ServerOpenAIChatStreamChunk] = []
+
+        // Get content and reasoning content from the message
+        var mainContent = choice.message.content ?? ""
+        let reasoningContent = choice.message.reasoningContent
+
+        logger.debug("convertToStreamChunks: content=\(mainContent.prefix(100))..., reasoningContent=\(reasoningContent?.prefix(100) ?? "nil")")
+
+        // Process reasoning content through ThinkTagFormatter like LlamaProvider does
+        var formatter = ThinkTagFormatter(hideThinking: false)
+
+        // If reasoning content exists and content is empty, use reasoning as thinking tool message
+        // This handles llama.cpp servers that put content in reasoning_content field
+        if let reasoning = reasoningContent, !reasoning.isEmpty {
+            // Format reasoning through ThinkTagFormatter
+            let (formattedReasoning, _) = formatter.processChunk(reasoning)
+            let flushedReasoning = formatter.flushBuffer()
+            let fullReasoning = formattedReasoning + flushedReasoning
+
+            if !fullReasoning.isEmpty {
+                // Yield reasoning as a thinking tool message to trigger thinking card UI
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: nil))],
+                    isToolMessage: true,
+                    toolName: "thinking",
+                    toolDetails: [fullReasoning]
+                ))
+            }
+
+            // If there's also main content, keep it for later (after thinking)
+            if mainContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // If content was empty and we had reasoning, the thinking IS the response
+                // Don't add empty content, the thinking was the response
+            }
+        }
 
         chunks.append(ServerOpenAIChatStreamChunk(
             id: response.id,
@@ -800,7 +882,7 @@ public class MiniMaxProvider: AIProvider {
                     )]
                 ))
             }
-            
+
             // Final chunk with finish_reason="tool_calls"
             chunks.append(ServerOpenAIChatStreamChunk(
                 id: response.id,
@@ -811,11 +893,11 @@ public class MiniMaxProvider: AIProvider {
             ))
         } else {
             // Preserve newlines for proper markdown rendering
-            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+            let lines = mainContent.components(separatedBy: .newlines)
             for line in lines {
                 let trimmedLine = line.trimmingCharacters(in: .whitespaces)
                 guard !trimmedLine.isEmpty else { continue }
-                
+
                 let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
                 for (index, word) in words.enumerated() {
                     let suffix = index < words.count - 1 ? " " : "\n"
@@ -1189,8 +1271,49 @@ public class CustomProvider: AIProvider {
     }
 
     private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else { return [] }
+        guard let choice = response.choices.first else {
+            logger.debug("convertToStreamChunks: No choices in response, returning empty")
+            return []
+        }
         var chunks: [ServerOpenAIChatStreamChunk] = []
+
+        // Get content and reasoning content from the message
+        var mainContent = choice.message.content ?? ""
+        let reasoningContent = choice.message.reasoningContent
+
+        logger.debug("convertToStreamChunks: content=\(mainContent.prefix(100))..., reasoningContent=\(reasoningContent?.prefix(100) ?? "nil")")
+
+        // Process reasoning content through ThinkTagFormatter like LlamaProvider does
+        var formatter = ThinkTagFormatter(hideThinking: false)
+
+        // If reasoning content exists and content is empty, use reasoning as thinking tool message
+        // This handles llama.cpp servers that put content in reasoning_content field
+        if let reasoning = reasoningContent, !reasoning.isEmpty {
+            // Format reasoning through ThinkTagFormatter
+            let (formattedReasoning, _) = formatter.processChunk(reasoning)
+            let flushedReasoning = formatter.flushBuffer()
+            let fullReasoning = formattedReasoning + flushedReasoning
+
+            if !fullReasoning.isEmpty {
+                // Yield reasoning as a thinking tool message to trigger thinking card UI
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: nil))],
+                    isToolMessage: true,
+                    toolName: "thinking",
+                    toolDetails: [fullReasoning]
+                ))
+            }
+
+            // If there's also main content, keep it for later (after thinking)
+            if mainContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // If content was empty and we had reasoning, the thinking IS the response
+                // Don't add empty content, the thinking was the response
+            }
+        }
 
         chunks.append(ServerOpenAIChatStreamChunk(
             id: response.id,
@@ -1226,7 +1349,7 @@ public class CustomProvider: AIProvider {
                     )]
                 ))
             }
-            
+
             // Final chunk with finish_reason="tool_calls"
             chunks.append(ServerOpenAIChatStreamChunk(
                 id: response.id,
@@ -1237,11 +1360,11 @@ public class CustomProvider: AIProvider {
             ))
         } else {
             // Preserve newlines for proper markdown rendering
-            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+            let lines = mainContent.components(separatedBy: .newlines)
             for line in lines {
                 let trimmedLine = line.trimmingCharacters(in: .whitespaces)
                 guard !trimmedLine.isEmpty else { continue }
-                
+
                 let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
                 for (index, word) in words.enumerated() {
                     let suffix = index < words.count - 1 ? " " : "\n"
@@ -1297,18 +1420,62 @@ public class CustomProvider: AIProvider {
         }
 
         /// Create request body (OpenAI-compatible format).
-        let requestBody: [String: Any] = [
+        var requestBody: [String: Any] = [
             "model": request.model,
-            "messages": request.messages.map { message in
-                [
+            "messages": request.messages.map { message -> [String: Any] in
+                var msgDict: [String: Any] = [
                     "role": message.role,
-                    "content": message.content
+                    "content": message.content ?? ""
                 ]
+
+                // Include tool_calls if present (assistant messages with tool calls)
+                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
+                    msgDict["tool_calls"] = toolCalls.map { tc -> [String: Any] in
+                        return [
+                            "id": tc.id,
+                            "type": "function",
+                            "function": [
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments ?? "{}"
+                            ]
+                        ]
+                    }
+                }
+
+                // Include tool_call_id for tool result messages
+                if let toolCallId = message.toolCallId {
+                    msgDict["tool_call_id"] = toolCallId
+                }
+
+                return msgDict
             },
             "max_tokens": request.maxTokens ?? config.maxTokens ?? 2048,
             "temperature": request.temperature ?? config.temperature ?? 0.7,
             "stream": false
         ]
+
+        // Include tools if provided (required for llama.cpp servers to generate tool calls)
+        if let tools = request.tools, !tools.isEmpty {
+            requestBody["tools"] = tools.map { tool -> [String: Any] in
+                let parameters: Any
+                if let parametersData = tool.function.parametersJson.data(using: .utf8),
+                   let parsedParameters = try? JSONSerialization.jsonObject(with: parametersData) {
+                    parameters = parsedParameters
+                } else {
+                    parameters = [:]
+                }
+
+                return [
+                    "type": tool.type,
+                    "function": [
+                        "name": tool.function.name,
+                        "description": tool.function.description,
+                        "parameters": parameters
+                    ]
+                ]
+            }
+            logger.debug("CustomProvider: Including \(tools.count) tools in request")
+        }
 
         do {
             urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
