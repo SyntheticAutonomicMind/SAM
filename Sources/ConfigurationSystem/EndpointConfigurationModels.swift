@@ -188,6 +188,9 @@ public enum ProviderType: String, CaseIterable, Codable {
     case openrouter = "openrouter"
     case localLlama = "local-llama"
     case localMLX = "local-mlx"
+    case ollamaCloud = "ollama-cloud"
+    case zai = "zai"
+    case zaiCoding = "zai-coding"
     case custom = "custom"
 
     public var displayName: String {
@@ -200,6 +203,9 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .openrouter: return "OpenRouter"
         case .localLlama: return "Local Models (llama.cpp)"
         case .localMLX: return "Local Models (MLX)"
+        case .ollamaCloud: return "Ollama Cloud"
+        case .zai: return "Z.AI (Chat)"
+        case .zaiCoding: return "Z.AI (Coding)"
         case .custom: return "Custom"
         }
     }
@@ -219,6 +225,9 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .openrouter: return "openrouter"
         case .localLlama: return "llama"
         case .localMLX: return "mlx"
+        case .ollamaCloud: return "ollama_cloud"
+        case .zai: return "zai"
+        case .zaiCoding: return "zai_coding"
         case .custom: return "custom"
         }
     }
@@ -226,7 +235,7 @@ public enum ProviderType: String, CaseIterable, Codable {
     public var requiresApiKey: Bool {
         switch self {
         case .localLlama, .localMLX: return false
-        case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter, .custom: return true
+        case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter, .ollamaCloud, .zai, .zaiCoding, .custom: return true
         }
     }
 
@@ -238,6 +247,9 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
         case .minimax: return "https://api.minimax.io/v1"
         case .openrouter: return "https://openrouter.ai/api/v1"
+        case .ollamaCloud: return "https://ollama.com/v1"
+        case .zai: return "https://api.z.ai/api/paas/v4"
+        case .zaiCoding: return "https://api.z.ai/api/coding/paas/v4"
         case .localLlama, .localMLX, .custom: return nil
         }
     }
@@ -265,6 +277,12 @@ public enum ProviderType: String, CaseIterable, Codable {
             return []
         case .localMLX:
             return []
+        case .ollamaCloud:
+            return ["gemma4:31b", "llama3.1:70b", "qwen2.5:72b"]
+        case .zai:
+            return ["glm-5.1", "glm-4.9"]
+        case .zaiCoding:
+            return ["glm-5.1", "glm-4.9"]
         case .custom:
             return []
         }
@@ -292,6 +310,12 @@ public enum ProviderType: String, CaseIterable, Codable {
             return "laptopcomputer"
         case .localMLX:
             return "flame"
+        case .ollamaCloud:
+            return "cloud"
+        case .zai:
+            return "z.circle.fill"
+        case .zaiCoding:
+            return "z.circle.fill"
         case .custom:
             return "network"
         }
@@ -321,6 +345,12 @@ public enum ProviderType: String, CaseIterable, Codable {
 
         case .localMLX:
             return .orange
+        case .ollamaCloud:
+            return .gray
+        case .zai:
+            return .yellow
+        case .zaiCoding:
+            return .yellow
 
         case .custom:
             return .secondary

@@ -1,6 +1,32 @@
 {
   "releases": [
     {
+      "version": "20260419.1",
+      "release_date": "April 19, 2026",
+      "introduction": "Two new cloud AI providers are now available, Ollama Cloud and zAI. Configure them in Settings to get started.",
+      "improvements": [
+        {
+          "id": "ollama-cloud-provider",
+          "icon": "cloud",
+          "title": "Ollama Cloud",
+          "description": "Access hosted Ollama models directly. Great if you want the power of Ollama without running it yourself."
+        },
+        {
+          "id": "zai-provider",
+          "icon": "z.circle",
+          "title": "Z.AI",
+          "description": "A new option for chat and coding tasks. Includes support for chain-of-thought reasoning on supported models, which can help with complex problem-solving."
+        },
+        {
+          "id": "markdown-streaming-fix",
+          "icon": "text.alignleft",
+          "title": "Fixed Markdown Formatting",
+          "description": "Responses from cloud providers now display with proper line breaks, so headers, lists, and code blocks render correctly instead of running together."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
       "version": "20260418.1",
       "release_date": "April 18, 2026",
       "introduction": "This release overhauls local model performance with optimized Metal threading, flash attention, KV cache quantization, and fixes the crash-on-quit that affected llama.cpp models.",

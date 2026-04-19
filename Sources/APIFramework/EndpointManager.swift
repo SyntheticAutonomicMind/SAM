@@ -893,6 +893,39 @@ public class EndpointManager: ObservableObject {
                 models: []
             )
 
+        case .ollamaCloud:
+            return ProviderConfiguration(
+                providerId: "ollama-cloud",
+                providerType: .ollamaCloud,
+                isEnabled: false,
+                baseURL: "https://ollama.com/v1",
+                models: ["gemma4:31b", "llama3.1:70b", "qwen2.5:72b"],
+                maxTokens: 131072,
+                temperature: 0.7
+            )
+
+        case .zai:
+            return ProviderConfiguration(
+                providerId: "zai",
+                providerType: .zai,
+                isEnabled: false,
+                baseURL: "https://api.z.ai/api/paas/v4",
+                models: ["glm-5.1", "glm-4.9"],
+                maxTokens: 131072,
+                temperature: 1.0
+            )
+
+        case .zaiCoding:
+            return ProviderConfiguration(
+                providerId: "zai-coding",
+                providerType: .zaiCoding,
+                isEnabled: false,
+                baseURL: "https://api.z.ai/api/coding/paas/v4",
+                models: ["glm-5.1", "glm-4.9"],
+                maxTokens: 131072,
+                temperature: 1.0
+            )
+
         case .custom:
             return ProviderConfiguration(
                 providerId: "custom",
@@ -939,6 +972,15 @@ public class EndpointManager: ObservableObject {
             logger.error("ENDPOINT_ERROR: Local MLX providers must be added via LocalModelManager.addLocalModelProvider()")
             logger.error("ENDPOINT_ERROR: Skipping this provider - please reconfigure through Preferences UI")
             return nil
+
+        case .ollamaCloud:
+            return OllamaCloudProvider(config: config)
+
+        case .zai:
+            return ZAIProvider(config: config)
+
+        case .zaiCoding:
+            return ZAIProvider(config: config)
 
         case .custom:
             return CustomProvider(config: config)

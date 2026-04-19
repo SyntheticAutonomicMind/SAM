@@ -275,6 +275,15 @@ struct EndpointManagementView: View {
         case .localMLX:
             return "No API key required - MLX models loaded from ~/Library/Caches/SAM/models"
 
+        case .ollamaCloud:
+            return "Get your API key from ollama.com/cloud"
+
+        case .zai:
+            return "Get your API key from api.z.ai"
+
+        case .zaiCoding:
+            return "Get your API key from api.z.ai/coding"
+
         case .custom:
             return "Enter the API key for your custom provider"
         }
@@ -418,6 +427,9 @@ struct ProviderRowView: View {
         case .openrouter: return "arrow.triangle.merge"
         case .localLlama: return "laptopcomputer"
         case .localMLX: return "flame"
+        case .ollamaCloud: return "cloud"
+        case .zai: return "z.circle"
+        case .zaiCoding: return "z.circle"
         case .custom: return "gear"
         }
     }
@@ -878,6 +890,15 @@ struct ProviderConfigurationSheet: View {
         case .localMLX:
             return "No API key required for MLX models - models are loaded from ~/Library/Caches/SAM/models"
 
+        case .ollamaCloud:
+            return "Get your API key fromollama.com/cloud - hosted Ollama models with API access"
+
+        case .zai:
+            return "Get your API key from api.z.ai - Z.AI chat models with thinking support"
+
+        case .zaiCoding:
+            return "Get your API key from api.z.ai - Z.AI coding models with thinking support"
+
         case .custom:
             return "Enter the API key provided by your custom endpoint"
         }
@@ -955,8 +976,8 @@ struct ProviderConfigurationSheet: View {
                 /// Gemini uses API key as query parameter (already added to URL above)
                 break
 
-            case .localLlama, .localMLX:
-                /// No authentication required for local providers.
+            case .localLlama, .localMLX, .ollamaCloud, .zai, .zaiCoding:
+                /// No authentication required for local providers and Ollama Cloud, Z.AI use Bearer tokens.
                 break
             }
         }

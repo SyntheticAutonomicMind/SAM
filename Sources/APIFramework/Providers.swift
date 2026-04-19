@@ -72,20 +72,26 @@ public class OpenAIProvider: AIProvider {
             )]
         ))
 
-        /// Split content into words for streaming simulation.
-        let words = (choice.message.content ?? "").components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-
-        for word in words {
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(
-                    index: 0,
-                    delta: OpenAIChatDelta(content: word + " ")
-                )]
-            ))
+        /// Preserve newlines for proper markdown rendering
+        let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
+        for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmedLine.isEmpty else { continue }
+            
+            let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            for (index, word) in words.enumerated() {
+                let suffix = index < words.count - 1 ? " " : "\n"
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(
+                        index: 0,
+                        delta: OpenAIChatDelta(content: word + suffix)
+                    )]
+                ))
+            }
         }
 
         /// Final chunk.
