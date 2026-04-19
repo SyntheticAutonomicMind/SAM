@@ -143,14 +143,10 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
             .joined(separator: "\n")
     }
 
-    /// Builds SAM core identity with user personalization.
+    /// Builds SAM core identity. User info moved to userContext block for KV cache optimization.
     private static func buildSAMCoreIdentity() -> String {
-        let userName = getUserName()
-        let languageName = getUserLanguage()
-
         return """
         Your name is SAM which stands for Synthetic Autonomic Mind.  You are an advanced AI assistant that is focused on being helpful and accurate.
-        USER: \(userName) | LANGUAGE: \(languageName)
 
         CRITICAL - USER INSTRUCTIONS ALWAYS TAKE PRIORITY:
         - If the user provides specific output format requirements, templates, or formatting instructions, follow them EXACTLY - they override ALL default formatting guidelines below
@@ -176,7 +172,7 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     }
 
     /// Get user name from preferences or system default.
-    private static func getUserName() -> String {
+    public static func getUserName() -> String {
         /// Check UserDefaults for configured name first.
         if let configuredName = UserDefaults.standard.string(forKey: "userName"),
            !configuredName.isEmpty {
@@ -196,7 +192,7 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     }
 
     /// Get user language preference from system locale.
-    private static func getUserLanguage() -> String {
+    public static func getUserLanguage() -> String {
         /// Check UserDefaults for configured language first.
         if let configuredLanguage = UserDefaults.standard.string(forKey: "userLanguage"),
            !configuredLanguage.isEmpty {
@@ -265,10 +261,20 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     }
 
     /// Build the userContext block for prepending to user messages.
-    /// Contains date/time, location, and conversation ID - everything that changes between messages.
+    /// Contains all dynamic per-message content: date/time, location, user info, conversation ID.
+    /// Moved from system prompt to enable KV cache prefix reuse.
     /// Cached per-minute for stability.
-    /// - Parameter conversationId: Optional conversation UUID to include in context
-    public static func buildUserContextBlock(conversationId: UUID? = nil) -> String {
+    /// - Parameters:
+    ///   - conversationId: Optional conversation UUID to include in context
+    ///   - userName: User's display name (optional, uses default if not provided)
+    ///   - language: User's preferred language (optional, uses default if not provided)
+    ///   - location: User's location context (optional)
+    public static func buildUserContextBlock(
+        conversationId: UUID? = nil,
+        userName: String? = nil,
+        language: String? = nil,
+        location: String? = nil
+    ) -> String {
         let now = Date()
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
@@ -283,18 +289,30 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         let dateString = getCurrentDateString()
 
         var context = "**Current Date/Time:** \(datetime) (\(dayName), \(dateString))\n"
-        context += "- This is informational context only - do not reference or repeat in your responses"
 
-        if let convId = conversationId {
-            context += "\n- Conversation ID: \(convId.uuidString)"
+        // User info
+        let effectiveUserName = userName ?? getUserName()
+        let effectiveLanguage = language ?? getUserLanguage()
+        context += "**User:** \(effectiveUserName) | **Language:** \(effectiveLanguage)\n"
+
+        // Location if provided
+        if let loc = location, !loc.isEmpty {
+            context += "**Location:** \(loc)\n"
         }
+
+        // Conversation ID if provided
+        if let convId = conversationId {
+            context += "**Conversation ID:** \(convId.uuidString)"
+        }
+
+        context += "\n- This is informational context only - do not reference or repeat in your responses"
 
         return context
     }
 
     /// Returns effective location from UserDefaults (thread-safe, no MainActor required).
     /// Checks precise location first, then general location.
-    internal static func getEffectiveLocationFromDefaults() -> String? {
+    public static func getEffectiveLocationFromDefaults() -> String? {
         let usePrecise = UserDefaults.standard.bool(forKey: "user.usePreciseLocation")
 
         // If precise location is enabled and we have a cached value, use it
@@ -354,17 +372,12 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         return context
     }
 
-    /// Builds simplified core identity.
+    /// Builds simplified core identity. User info moved to userContext block for KV cache optimization.
     private static func buildCoreIdentity() -> String {
-        let userName = getUserName()
-        let languageName = getUserLanguage()
-
         return """
         ## Core Identity
 
         **SAM** (Synthetic Autonomic Mind) — an advanced AI assistant that is helpful, accurate, and honest.
-
-        **USER:** \(userName) | **LANGUAGE:** \(languageName)
 
         **Core Principles:**
         - Always provide verifiable information.
@@ -1037,7 +1050,6 @@ private static func buildSAMSpecificPatterns() -> String {
                     title: "Identity",
                     content: """
                     You are SAM, an AI assistant. Be helpful, accurate, and direct.
-                    User: \(getUserName()) | Language: \(getUserLanguage())
                     """,
                     isEnabled: true,
                     order: 1
