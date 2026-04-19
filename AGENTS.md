@@ -14,6 +14,17 @@ SAM (Synthetic Autonomic Mind) is a native macOS AI assistant built with Swift a
 
 ---
 
+## Model Selection
+
+**Use MiniMax for all sub-agents:**
+```
+agent_operations(operation: "spawn", task: "...", working_dir: "./SAM", model: "minimax/minimax-m2.7")
+```
+
+MiniMax-M2.7 via MiniMax is the recommended default for all standard tasks: investigation, QA, implementation, code review, refactoring, documentation.
+
+---
+
 ## Setup Commands
 
 ### Prerequisites
