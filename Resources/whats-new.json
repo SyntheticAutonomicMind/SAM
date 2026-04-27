@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "20260427.1",
+      "release_date": "April 27, 2026",
+      "introduction": "Tool calling now works across all providers. A shared request builder ensures every OpenAI-compatible provider sends tool definitions and preserves tool state correctly, so agents can search the web, read files, and use all MCP tools regardless of which provider or model you choose.",
+      "improvements": [
+        {
+          "id": "shared-request-builder",
+          "icon": "wrench.and.screwdriver",
+          "title": "Tool Calling for All Providers",
+          "description": "OpenAI, DeepSeek, Ollama Cloud, OpenRouter, and Z.AI now properly send tool definitions and preserve tool call history in multi-turn conversations. Previously, these providers stripped messages down to just role and content, making tool calls impossible regardless of what the system prompt asked for."
+        },
+        {
+          "id": "system-prompt-tool-bias-v17",
+          "icon": "text.bubble",
+          "title": "Improved Tool-Use Prompts",
+          "description": "Conversational Mode now explicitly requires tool use for real-world and verifiable questions. The completion definition includes tool data gathering as a prerequisite, and the GATHER then ANALYZE workflow applies to both modes. An anti-narration rule discourages models from saying they'll use tools without actually calling them."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
       "version": "20260419.2",
       "release_date": "April 19, 2026",
       "introduction": "System prompt is now fully cacheable - dynamic content like date, time, user info, and location are now in the userContext block, enabling better KV cache reuse. Weather tool also gets precise GPS coordinates when available.",
