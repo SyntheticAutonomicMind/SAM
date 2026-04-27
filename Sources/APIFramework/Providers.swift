@@ -137,20 +137,8 @@ public class OpenAIProvider: AIProvider {
             ? request.model.components(separatedBy: "/").last ?? request.model
             : request.model
 
-        /// Create request body.
-        let requestBody: [String: Any] = [
-            "model": modelForAPI,
-            "messages": request.messages.map { message in
-                [
-                    "role": message.role,
-                    "content": message.content
-                ]
-            },
-            /// CRITICAL: Ensure max_tokens is at least 2048 to prevent truncated responses
-            "max_tokens": max(request.maxTokens ?? config.maxTokens ?? 4096, 2048),
-            "temperature": request.temperature ?? config.temperature ?? 0.7,
-            "stream": false
-        ]
+        /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
+        var requestBody = request.buildOpenAICompatibleRequestBody()
 
         do {
             urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)

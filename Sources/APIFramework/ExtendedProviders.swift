@@ -192,19 +192,8 @@ public class DeepSeekProvider: AIProvider {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        /// Create request body.
-        let requestBody: [String: Any] = [
-            "model": request.model,
-            "messages": request.messages.map { message in
-                [
-                    "role": message.role,
-                    "content": message.content
-                ]
-            },
-            "max_tokens": request.maxTokens ?? config.maxTokens ?? 2048,
-            "temperature": request.temperature ?? config.temperature ?? 0.7,
-            "stream": false
-        ]
+        /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
+        let requestBody = request.buildOpenAICompatibleRequestBody()
 
         do {
             urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
@@ -212,8 +201,7 @@ public class DeepSeekProvider: AIProvider {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
 
-        /// Set timeout (5 minutes minimum for tool-enabled requests, especially 7B models).
-        /// Even if config specifies lower timeout, enforce 300s minimum to prevent timeouts.
+        /// Set timeout (5 minutes minimum for tool-enabled requests).
         let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
         urlRequest.timeoutInterval = max(configuredTimeout, 300)
 
@@ -2455,18 +2443,8 @@ public class OllamaCloudProvider: AIProvider {
             ? request.model.components(separatedBy: "/").last ?? request.model
             : request.model
 
-        let requestBody: [String: Any] = [
-            "model": modelForAPI,
-            "messages": request.messages.map { message in
-                [
-                    "role": message.role,
-                    "content": message.content
-                ]
-            },
-            "max_tokens": max(request.maxTokens ?? config.maxTokens ?? 4096, 2048),
-            "temperature": request.temperature ?? config.temperature ?? 0.7,
-            "stream": false
-        ]
+        /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
+        let requestBody = request.buildOpenAICompatibleRequestBody(modelOverride: modelForAPI)
 
         do {
             urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
@@ -2703,22 +2681,18 @@ public class ZAIProvider: AIProvider {
             ? request.model.components(separatedBy: "/").last ?? request.model
             : request.model
 
-        // Z.AI uses max_completion_tokens (not max_tokens)
-        var requestBody: [String: Any] = [
-            "model": modelForAPI,
-            "messages": request.messages.map { message in
-                [
-                    "role": message.role,
-                    "content": message.content
-                ]
-            },
-            // Z.AI recommended sampling defaults
-            "temperature": request.temperature ?? config.temperature ?? 1.0,
-            "top_p": 0.95,
-            "stream": false
-        ]
+        /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
+        /// Z.AI uses max_completion_tokens (not max_tokens) and has specific sampling defaults.
+        var requestBody = request.buildOpenAICompatibleRequestBody(
+            modelOverride: modelForAPI,
+            temperatureOverride: request.temperature ?? config.temperature ?? 1.0,
+            extraFields: [
+                "top_p": 0.95
+            ]
+        )
 
-        // Z.AI uses max_completion_tokens
+        // Z.AI uses max_completion_tokens instead of max_tokens
+        requestBody.removeValue(forKey: "max_tokens")
         if let maxTokens = request.maxTokens ?? config.maxTokens {
             requestBody["max_completion_tokens"] = max(maxTokens, 2048)
         } else {

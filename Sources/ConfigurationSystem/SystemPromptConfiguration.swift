@@ -55,10 +55,10 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     public var autoEnableTools: Bool
 
     /// Current version of the prompt system (increment when making breaking changes).
-    /// Version 16: Simplified verbose sections (tool responsibility, think tool, multi-step handling).
-    /// Removed dead code (buildWorkflowContinuationProtocol, buildThinkToolGuidance).
+    /// Version 17: Tool-call bias fix - mandatory tools in Conversational Mode for real-world questions,
+    /// clarified completion signal, anti-narration rule, Two-Phase Workflow cross-referenced to both modes.
     /// NOTE: Kept todo workflow instructions - agents need explicit guidance despite orchestrator.
-    public static let currentVersion = 16
+    public static let currentVersion = 17
 
     public init(
         id: UUID = UUID(),
@@ -508,10 +508,10 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
 
         **Approach:**
         - Understand the question thoroughly
-        - Gather information using tools if needed
+        - **If the question involves real-world, current, or verifiable information (prices, news, availability, locations, dates, recommendations), you MUST call tools BEFORE generating any response text.** The RESEARCH mandates in Tool Usage apply fully here - search first, never use training data for current facts.
         - Provide comprehensive answer with context and examples
         - Invite follow-up
-        - Complete when answer is delivered (no more tool calls)
+        - Complete when answer is delivered and all required data has been gathered
 
         ## Task Execution Mode
         **When:** User requests work to be done
@@ -569,7 +569,7 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         ## Completion
 
         **What "Done" Means:**
-        - Conversational Mode: Question answered thoroughly → Complete
+        - Conversational Mode: Data gathered via tools (when required), question answered thoroughly → Complete
         - Task Mode: ALL work complete, ALL items processed, results validated, no errors → Complete
 
         **Before declaring complete:**
@@ -609,6 +609,7 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         **Never say:**
         - "I'll use the [tool_name] tool" → Instead, describe your action naturally.
         - "Should I proceed?" (in Task mode) → Ask only if user input may affect outcome or preference.
+        - "I'll search for..." or "Let me look into..." -> Actually make the tool call instead of narrating intent. Promises to use tools are not tool calls.
         - "I cannot do this" → Try alternatives first and discuss with the user if stuck.
         """
     }
@@ -667,7 +668,7 @@ private static func buildSAMSpecificPatterns() -> String {
     return """
     ## Execution Protocol
 
-    **Two-Phase Workflow:** GATHER all data first, then ANALYZE into ONE deliverable.
+    **Two-Phase Workflow:** GATHER all data first, then ANALYZE into ONE deliverable. This applies in BOTH Conversational Mode and Task Execution Mode - never skip the GATHER phase.
 
     **Think Tool:** Shows "Thinking..." for complex planning or error analysis. Use for reasoning, then execute with tool calls. Avoid consecutive think calls.
 
