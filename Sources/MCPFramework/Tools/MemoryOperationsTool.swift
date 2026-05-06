@@ -56,6 +56,13 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     - No results? Lower threshold: 0.3 -> 0.2 -> 0.15
 
     NOTE: For todo list management, use the 'todo_operations' tool instead.
+
+    LARGE RESULTS: When search_memory returns results larger than 8KB, the content is
+    automatically persisted and a [TOOL_RESULT_STORED] marker is returned with a preview.
+    To access the full content, use:
+    file_operations(operation: "read_tool_result", toolCallId: "call_abc123", offset: 0, length: 8192)
+    Always check the first chunk for a complete answer before reading more.
+    NOTE: For todo list management, use the 'todo_operations' tool instead.
     """
 
     public var supportedOperations: [String] {

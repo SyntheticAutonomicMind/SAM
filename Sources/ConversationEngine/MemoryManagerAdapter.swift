@@ -15,9 +15,13 @@ public class MemoryManagerAdapter: MemoryManagerProtocol, @unchecked Sendable {
     }
 
     public func searchMemories(query: String, limit: Int, similarityThreshold: Double? = nil, conversationId: UUID? = nil) async throws -> [any MemoryEntry] {
-        /// Cap threshold to 0.3 maximum, default to 0.15 Voyage AI embeddings produce scores of 0.15-0.25 for relevant document chunks AI assistants sometimes pass unreasonably high thresholds (e.g., 0.8) which filter out ALL results Cap at 0.3 to prevent this failure mode while still allowing some flexibility.
-        let requestedThreshold = similarityThreshold ?? 0.15
-        let threshold = min(requestedThreshold, 0.3)
+        /// Cap threshold to 0.5 maximum, default to 0.2
+        /// Document/RAG embeddings typically score 0.15-0.35 for relevant content.
+        /// Conversation memory typically scores 0.3-0.6.
+        /// AI assistants sometimes pass unreasonably high thresholds (e.g., 0.8) which filter out ALL results.
+        /// Cap at 0.5 to prevent this failure mode while allowing higher thresholds for precise searches.
+        let requestedThreshold = similarityThreshold ?? 0.2
+        let threshold = min(requestedThreshold, 0.5)
 
         /// Use retrieveRelevantMemories() directly (same as UI) This bypasses the VectorRAGService.semanticSearch() complexity and uses the proven UI code path UI uses: memoryManager.retrieveRelevantMemories(for: query, conversationId: id, limit: 10, similarityThreshold: 0.2).
         if let conversationId = conversationId {
