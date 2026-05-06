@@ -439,6 +439,7 @@ class OfficeDocumentProcessor: DocumentProcessor, @unchecked Sendable {
     }
 
     /// Extract text from Word document (.docx).
+    /// Uses proper <w:p> paragraph boundary tracking instead of sentence-ending punctuation heuristics.
     private func extractWordDocument(from archive: Archive, metadata: inout [String: String]) async throws -> String {
         /// Word documents store main content in word/document.xml.
         guard let documentEntry = archive["word/document.xml"] else {
@@ -456,45 +457,38 @@ class OfficeDocumentProcessor: DocumentProcessor, @unchecked Sendable {
         /// Parse XML document.
         let xmlDoc = try XMLDocument(data: documentXML)
 
-        /// Word uses namespace: http://schemas.openxmlformats.org/wordprocessingml/2006/main We need to register the namespace prefix for XPath queries.
-        if let rootElement = xmlDoc.rootElement() {
-            /// Check if namespace is defined.
-            for namespace in rootElement.namespaces ?? [] {
-                if namespace.stringValue == "http://schemas.openxmlformats.org/wordprocessingml/2006/main" {
-                    /// Namespace exists, we can use it.
-                    break
-                }
-            }
-        }
-
-        /// Extract all text nodes - try with namespace prefix first, fallback to local name.
-        var textNodes: [XMLNode] = []
+        /// Extract paragraph elements using <w:p> boundaries.
+        /// Each <w:p> element represents one paragraph in the document.
+        /// Inside each <w:p>, <w:r> elements contain runs of text, and <w:t> elements hold the actual text.
+        var paragraphNodes: [XMLNode] = []
         do {
-            textNodes = try xmlDoc.nodes(forXPath: "//w:t")
+            paragraphNodes = try xmlDoc.nodes(forXPath: "//w:p")
         } catch {
-            /// Fallback: try without namespace prefix (some docs may not use it).
-            textNodes = try xmlDoc.nodes(forXPath: "//*[local-name()='t']")
+            /// Fallback: try without namespace prefix.
+            paragraphNodes = try xmlDoc.nodes(forXPath: "//*[local-name()='p']")
         }
 
         var paragraphs: [String] = []
-        var currentParagraph = ""
 
-        /// Extract text while attempting to preserve paragraph structure Note: This is simplified - full formatting would require tracking <w:p> (paragraph) boundaries.
-        for textNode in textNodes {
-            if let textContent = textNode.stringValue {
-                currentParagraph += textContent
-
-                /// Check if we hit end of paragraph (simplified heuristic) In reality, we'd track parent <w:p> elements.
-                if textContent.hasSuffix(".") || textContent.hasSuffix("!") || textContent.hasSuffix("?") {
-                    paragraphs.append(currentParagraph)
-                    currentParagraph = ""
-                }
+        for paragraphNode in paragraphNodes {
+            /// Skip table paragraphs - tables are extracted separately below.
+            if isInsideTable(paragraphNode) {
+                continue
             }
-        }
 
-        /// Add any remaining text.
-        if !currentParagraph.isEmpty {
-            paragraphs.append(currentParagraph)
+            /// Extract all <w:t> text nodes within this paragraph.
+            var textNodes: [XMLNode] = []
+            do {
+                textNodes = try paragraphNode.nodes(forXPath: ".//w:t")
+            } catch {
+                textNodes = try paragraphNode.nodes(forXPath: ".//*[local-name()='t']")
+            }
+
+            let paragraphText = textNodes.compactMap { $0.stringValue }.joined()
+
+            if !paragraphText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                paragraphs.append(paragraphText)
+            }
         }
 
         /// Extract table content (<w:tbl> elements).
@@ -510,18 +504,11 @@ class OfficeDocumentProcessor: DocumentProcessor, @unchecked Sendable {
             metadata["tableCount"] = String(tableNodes.count)
             logger.debug("Found \(tableNodes.count) tables in document")
 
-            /// Extract table text.
+            /// Extract table text with row/column structure.
             for tableNode in tableNodes {
-                var tableCells: [XMLNode] = []
-                do {
-                    tableCells = try tableNode.nodes(forXPath: ".//w:t")
-                } catch {
-                    /// Fallback: try without namespace prefix.
-                    tableCells = try tableNode.nodes(forXPath: ".//*[local-name()='t']")
-                }
-                let tableText = tableCells.compactMap { $0.stringValue }.joined(separator: " | ")
+                let tableText = extractTableText(from: tableNode)
                 if !tableText.isEmpty {
-                    paragraphs.append("[Table: \(tableText)]")
+                    paragraphs.append(tableText)
                 }
             }
         }
@@ -530,6 +517,79 @@ class OfficeDocumentProcessor: DocumentProcessor, @unchecked Sendable {
         metadata["paragraphCount"] = String(paragraphs.count)
 
         return paragraphs.joined(separator: "\n\n")
+    }
+
+    /// Check if a paragraph node is inside a table element.
+    private func isInsideTable(_ node: XMLNode) -> Bool {
+        var current = node.parent
+        while let parent = current {
+            if let element = parent as? XMLElement {
+                let localName = element.localName ?? element.name ?? ""
+                if localName == "tbl" || element.name == "w:tbl" {
+                    return true
+                }
+            }
+            current = parent.parent
+        }
+        return false
+    }
+
+    /// Extract table text preserving row/column structure.
+    private func extractTableText(from tableNode: XMLNode) -> String {
+        var rows: [[String]] = []
+
+        /// Extract row elements.
+        var rowNodes: [XMLNode] = []
+        if let nodes = try? tableNode.nodes(forXPath: ".//w:tr"), !nodes.isEmpty {
+            rowNodes = nodes
+        } else if let nodes = try? tableNode.nodes(forXPath: ".//*[local-name()='tr']") {
+            rowNodes = nodes
+        }
+
+        for rowNode in rowNodes {
+            var cells: [String] = []
+
+            /// Extract cell elements within this row.
+            var cellNodes: [XMLNode] = []
+            if let nodes = try? rowNode.nodes(forXPath: ".//w:tc"), !nodes.isEmpty {
+                cellNodes = nodes
+            } else if let nodes = try? rowNode.nodes(forXPath: ".//*[local-name()='tc']") {
+                cellNodes = nodes
+            }
+
+            for cellNode in cellNodes {
+                /// Extract text nodes within this cell.
+                var textNodes: [XMLNode] = []
+                if let nodes = try? cellNode.nodes(forXPath: ".//w:t"), !nodes.isEmpty {
+                    textNodes = nodes
+                } else if let nodes = try? cellNode.nodes(forXPath: ".//*[local-name()='t']") {
+                    textNodes = nodes
+                }
+
+                let cellText = textNodes.compactMap { $0.stringValue }.joined()
+                cells.append(cellText)
+            }
+
+            if !cells.isEmpty {
+                rows.append(cells)
+            }
+        }
+
+        if rows.isEmpty {
+            return ""
+        }
+
+        /// Format as pipe-delimited table.
+        var lines: [String] = []
+        if let headers = rows.first {
+            lines.append(headers.joined(separator: " | "))
+            lines.append(String(repeating: "-", count: lines.first?.count ?? 20))
+        }
+        for row in rows.dropFirst() {
+            lines.append(row.joined(separator: " | "))
+        }
+
+        return "[Table]\n" + lines.joined(separator: "\n")
     }
 
     /// Extract text from Excel spreadsheet (.xlsx) preserving row/column structure.

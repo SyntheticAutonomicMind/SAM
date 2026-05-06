@@ -1831,10 +1831,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     let sanitizedResult = SecurityPipeline.sanitizeToolOutput(execution.result)
 
                     let processedContent = toolResultStorage.processToolResult(
-                        toolCallId: execution.toolCallId,
-                        content: sanitizedResult,
-                        conversationId: conversationId
-                    )
+                       toolCallId: execution.toolCallId,
+                       content: sanitizedResult,
+                       conversationId: conversationId,
+                       modelName: context.model
+                   )
 
                     context.internalMessages.append(OpenAIChatMessage(
                         role: "tool",

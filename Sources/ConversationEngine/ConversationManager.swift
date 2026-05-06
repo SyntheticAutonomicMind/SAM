@@ -1423,7 +1423,10 @@ public class ConversationManager: ObservableObject {
         let context = MCPExecutionContext(
             conversationId: conversation.id,
             userId: "user",
-            metadata: ["conversationTitle": conversation.title],
+            metadata: [
+               "conversationTitle": conversation.title,
+               "modelName": conversation.settings.selectedModel
+           ],
             toolCallId: toolCallId,
             isExternalAPICall: isExternalAPICall,
             isUserInitiated: isUserInitiated,

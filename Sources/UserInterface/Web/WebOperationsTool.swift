@@ -138,6 +138,12 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
 
         SUCCESS: {"operation": "scrape", "url": "https://example.com"}
 
+        LARGE RESULTS: When research/scrape/fetch returns content larger than 8KB, the result is
+        automatically persisted and a [TOOL_RESULT_STORED] marker is returned with a preview.
+        To access the full content, use:
+        file_operations(operation: "read_tool_result", toolCallId: "call_abc123", offset: 0, length: 8192)
+        Always check the first chunk for a complete answer before reading more.
+
         RESEARCH WORKFLOW for recommendations:
         1. Use serpapi (if available) with domain-specific engine first (yelp for restaurants, tripadvisor for hotels, etc.)
         2. Use research with depth=comprehensive to gather broad data

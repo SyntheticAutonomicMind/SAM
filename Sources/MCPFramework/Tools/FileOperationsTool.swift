@@ -11,55 +11,69 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     File operations: read, search, write, and manage workspace files.
 
     AUTHORIZATION:
-    • Inside working directory: AUTO-APPROVED
-    • Outside working directory: Requires user_collaboration
-    • Relative paths: Auto-resolve to working directory
+    -  Inside session directory: AUTO-APPROVED
+    -  Outside session directory: Requires authorization (path security policy)
 
-    === READ (4 ops) ===
-    • read_file - Read file with optional line range (filePath, offset, limit)
-    • list_dir - List directory contents (path)
-    • get_file_info - Get file metadata, size, type (filePath)
-    • get_errors - Get compilation/lint errors (filePaths)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ READ (5 operations) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    -  read_file - Read file content with optional line range
+       Parameters: path (required), start_line (optional), end_line (optional)
+    -  list_dir - List directory contents
+       Parameters: path (required), recursive (optional, default: false)
+    -  file_exists - Check if file or directory exists
+       Parameters: path (required)
+    -  get_file_info - Get file metadata (size, type, modified time)
+       Parameters: path (required)
+    -  get_errors - Get compilation/lint errors for file (Perl-specific)
+       Parameters: path (required), paths (optional, array of paths)
 
-    === SEARCH (4 ops) ===
-    • file_search - Find files by glob pattern (query, e.g., '**/*.swift')
-    • grep_search - Text search with regex (query, isRegexp, includePattern)
-    • semantic_search - AI-powered code search (query)
-    • list_usages - Find all references to symbol (symbolName)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SEARCH (4 operations) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    -  file_search - Find files matching pattern
+       Parameters: pattern (required), directory (optional, default: .)
+    -  grep_search - Search file contents with regex
+       Parameters: query (required), pattern (optional), is_regex (optional)
+    -  semantic_search - Hybrid keyword + symbol search across codebase
+       Parameters: query (required), scope (optional)
+       Note: Extracts keywords from query, searches code files, ranks by relevance.
+             Boosts files containing matching function/class definitions.
+             Good for finding "where is X implemented?" or "files about Y"
+    -  read_tool_result - Read persisted large tool results in chunks
+       Use when tool response contains [TOOL_RESULT_STORED] marker.
+       Parameters: toolCallId (required), offset (optional, default: 0), length (optional, default: dynamic based on model context, max: 32768)
 
-    === WRITE (6 ops, auto-approved inside working dir) ===
-    • create_file - Create new file (filePath, content)
-    • replace_string - Replace text in file (filePath, oldString, newString)
-    • multi_replace_string - Multiple replacements (filePath, replacements)
-    • insert_edit - Insert/replace at line number (filePath, lineNumber, newText)
-    • rename_file - Rename or move file (oldPath, newPath)
-    • delete_file - Delete file (filePath)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ WRITE (8 operations) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    -  create_file - Create new file with content
+       Parameters: path (required), content (required)
+    -  write_file - Overwrite existing file
+       Parameters: path (required), content (required)
+    -  append_file - Append content to file
+       Parameters: path (required), content (required)
+    -  replace_string - Find and replace text in file
+       Parameters: path (required), old_string (required), new_string (required)
+    -  multi_replace_string - Batch replace operations across multiple files
+       Parameters: replacements (required, array of {path, old_string, new_string})
+    -  insert_at_line - Insert content at specific line number
+       Parameters: path (required), line (required), content (required)
+    -  delete_file - Delete file or directory
+       Parameters: path (required), recursive (optional, for directories)
+    -  rename_file - Rename or move file
+       Parameters: old_path (required), new_path (required)
 
-    WHEN TO USE:
-    - Reading/editing code files
-    - Searching codebase for patterns
-    - Creating/modifying workspace files
-    - Getting file metadata and document info
-
-    WHEN NOT TO USE:
-    - Web content (use web_operations)
-
-    EXAMPLES:
-    SUCCESS: {"operation": "read_file", "filePath": "/path/to/file.swift"}
-    SUCCESS: {"operation": "grep_search", "query": "func.*test", "isRegexp": true, "includePattern": "**/*.swift"}
-    SUCCESS: {"operation": "create_file", "filePath": "test.txt", "content": "Hello"}
-    SUCCESS: {"operation": "get_file_info", "filePath": "document.pdf"}
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    IMPORTANT: When a tool returns [TOOL_RESULT_STORED], use read_tool_result to access the full content.
+    Example: file_operations(operation: "read_tool_result", toolCallId: "call_abc123", offset: 0, length: 8192)
     """
 
     public var supportedOperations: [String] {
         return [
             /// Read operations (4)
+            /// Read operations (5)
             "read_file", "list_dir", "get_file_info", "get_errors", "read_tool_result",
             /// Search operations (4)
             "file_search", "grep_search", "semantic_search", "list_usages",
             /// Write operations (6)
-            "create_file", "replace_string", "multi_replace_string",
-            "insert_edit", "rename_file", "delete_file"
+            /// Write operations (8)
+            "create_file", "write_file", "append_file", "replace_string", "multi_replace_string",
+            "insert_at_line", "rename_file", "delete_file", "create_directory"
         ]
     }
 

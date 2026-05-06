@@ -3659,6 +3659,9 @@ AVAILABLE TOOLS:
         } catch ToolResultStorageError.resultNotFound(let toolCallId) {
             logger.warning("Tool result not found: \(toolCallId)")
             throw Abort(.notFound, reason: "Tool result not found: \(toolCallId)")
+        } catch ToolResultStorageError.resultNotFoundWithSuggestions(let toolCallId, let suggestions) {
+            logger.warning("Tool result not found: \(toolCallId), suggestions: \(suggestions)")
+            throw Abort(.notFound, reason: "Tool result not found: \(toolCallId)\n\nDid you mean one of these?\n\(suggestions)")
 
         } catch ToolResultStorageError.invalidOffset(let offset, let totalLength) {
             logger.warning("Invalid offset: \(offset) for result with length \(totalLength)")

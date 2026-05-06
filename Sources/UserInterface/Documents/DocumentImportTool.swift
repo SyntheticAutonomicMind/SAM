@@ -31,7 +31,7 @@ public class DocumentImportTool: MCPTool, @unchecked Sendable {
             ),
             "max_length": MCPToolParameter(
                 type: .integer,
-                description: "Maximum length of content to return in response (default: 500 chars). Full content is always stored in memory regardless of this limit. Use memory_search to query document content.",
+                description: "Maximum length of content to return in response (default: 8000 chars). Full content is always stored in memory regardless of this limit. Use memory_search to query document content.",
                 required: false
             )
         ]
@@ -174,7 +174,7 @@ public class DocumentImportTool: MCPTool, @unchecked Sendable {
             }
         }
 
-        let maxLength = parameters["max_length"] as? Int ?? 500
+        let maxLength = parameters["max_length"] as? Int ?? 8000
 
         logger.debug("Document import request: url='\(urlString)', maxLength=\(maxLength), conversationId=\(context.conversationId?.uuidString ?? "nil")")
 
