@@ -4,6 +4,7 @@
       "version": "20260506.1",
       "release_date": "May 6, 2026",
       "introduction": "Tool result retrieval is now more robust. Chunks dynamically size based on model context window, ultra-long lines wrap before persisting, and fuzzy matching recovers results from IDs with minor typos.",
+      "highlights": [],
       "improvements": [],
       "bugfixes": [
         {
@@ -81,6 +82,7 @@
     },
     {
       "version": "20260419.1",
+      "release_date": "April 19, 2026",
       "improvements": [
         {
           "id": "ollama-cloud-provider",
