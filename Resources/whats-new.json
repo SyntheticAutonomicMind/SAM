@@ -45,7 +45,8 @@
           "description": "Conversational Mode now explicitly requires tool use for real-world and verifiable questions. The completion definition includes tool data gathering as a prerequisite, and the GATHER then ANALYZE workflow applies to both modes. An anti-narration rule discourages models from saying they'll use tools without actually calling them."
         }
       ],
-      "bugfixes": []
+      "bugfixes": [],
+      "highlights": []
     },
     {
       "version": "20260419.2",
@@ -78,7 +79,8 @@
           "title": "Fixed Coordinates Not Persisting",
           "description": "Precise location coordinates now persist correctly to UserDefaults, ensuring they're available even after app restart."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260419.1",
@@ -103,7 +105,8 @@
           "description": "Responses from cloud providers now display with proper line breaks, so headers, lists, and code blocks render correctly instead of running together."
         }
       ],
-      "bugfixes": []
+      "bugfixes": [],
+      "highlights": []
     },
     {
       "version": "20260418.1",
@@ -148,7 +151,8 @@
           "title": "Fixed Excessive Disk I/O from Folder Manager",
           "description": "The folder manager was being instantiated inside a SwiftUI view body, causing hundreds of redundant disk reads per session. Now cached as a single instance."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260411.2",
@@ -192,7 +196,8 @@
           "description": "You're in control of what SAM can access. A new Tools section in Preferences lets you enable or disable any tool individually. Tools that access personal data like your calendar, contacts, and notes are clearly marked with privacy indicators. Disabled tools are completely hidden from the AI and blocked from execution."
         }
       ],
-      "bugfixes": []
+      "bugfixes": [],
+      "highlights": []
     },
     {
       "version": "20260411.1",
@@ -219,7 +224,8 @@
           "title": "Fixed Content Vanishing on Streaming Completion",
           "description": "Fixed a regression where conversation content could disappear when a streaming response finished. This was a follow-up fix to the scroll system rewrite."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260409.1",
@@ -252,7 +258,8 @@
           "title": "Fixed Scroll Jump on Streaming Completion",
           "description": "Fixed an issue where the conversation view could jump or clear unexpectedly when a streaming response finished."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260408.1",
@@ -273,7 +280,8 @@
           "title": "Fixed Mini-Prompts Disappearing Mid-Conversation",
           "description": "Mini-prompts are now injected directly into user messages at API call time, so agents act on them immediately instead of treating them as background context. When you enable a mini-prompt mid-conversation, it's persisted once as a hidden message for continuity and injected ephemerally on every turn for attention."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260404.1",
@@ -306,7 +314,8 @@
           "title": "Fixed MiniMax Connection Errors",
           "description": "Fixed a bug where MiniMax conversations would fail with an 'invalid chat setting' error. The issue was caused by sending multiple system messages in the API request - MiniMax requires exactly one. All system context is now consolidated into a single message."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260331.1",
@@ -345,7 +354,8 @@
           "title": "Fixed Community Model Compatibility",
           "description": "Some community-quantized models (such as 4-bit variants) were missing configuration needed for conversation formatting. SAM now detects this and applies a compatible format automatically."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260330.1",
@@ -366,7 +376,8 @@
           "title": "Fixed Table Border Alignment",
           "description": "Table borders now correctly wrap the table content instead of stretching to the edge of the message bubble."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260316.2",
@@ -411,7 +422,8 @@
           "title": "Fixed System Prompt for New Models",
           "description": "System prompts and agent instructions are now correctly sent to all models. Previously, some newer models would ignore the system prompt entirely, leading to generic responses without SAM's personality or capabilities."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260316.1",
@@ -456,7 +468,8 @@
           "title": "Fixed Message Ordering Issues",
           "description": "Fixed a bug where tool responses could cause messages to merge incorrectly, leading to malformed API requests. Multi-step agent workflows are now more reliable."
         }
-      ]
+      ],
+      "highlights": []
     },
     {
       "version": "20260313.3",
@@ -624,13 +637,13 @@
           "id": "openrouter-provider",
           "icon": "arrow.triangle.merge",
           "title": "OpenRouter Support",
-          "description": "SAM now has built-in OpenRouter support. Configure your OpenRouter API key in Preferences -> Endpoints to access over 400 AI models from every major provider — DeepSeek, Qwen, Mistral, Llama, and more — through a single unified API."
+          "description": "SAM now has built-in OpenRouter support. Configure your OpenRouter API key in Preferences -> Endpoints to access over 400 AI models from every major provider \u2014 DeepSeek, Qwen, Mistral, Llama, and more \u2014 through a single unified API."
         },
         {
           "id": "status-bar",
           "icon": "circle.fill",
           "title": "Status Bar",
-          "description": "A new status bar at the bottom of the chat window keeps you informed. When idle it shows \"Ready.\" When SAM is working, an animated spinner appears with a description of what SAM is doing — generating, thinking, running a tool, or waiting after a rate limit."
+          "description": "A new status bar at the bottom of the chat window keeps you informed. When idle it shows \"Ready.\" When SAM is working, an animated spinner appears with a description of what SAM is doing \u2014 generating, thinking, running a tool, or waiting after a rate limit."
         }
       ],
       "improvements": [
@@ -644,13 +657,13 @@
           "id": "openrouter-streaming",
           "icon": "bolt.fill",
           "title": "Real-Time Response Streaming",
-          "description": "OpenRouter responses now stream in real-time — you see tokens appear as they are generated instead of waiting for the entire response. This makes conversations with long-running models like DeepSeek R1 feel much more responsive."
+          "description": "OpenRouter responses now stream in real-time \u2014 you see tokens appear as they are generated instead of waiting for the entire response. This makes conversations with long-running models like DeepSeek R1 feel much more responsive."
         },
         {
           "id": "rate-limit-handling",
           "icon": "arrow.clockwise",
           "title": "Smarter Rate Limit Handling",
-          "description": "When a provider hits its rate limit, SAM automatically retries with exponential backoff (4s, 8s, 16s…). The status bar shows a live countdown so you always know what is happening rather than wondering if SAM is stuck."
+          "description": "When a provider hits its rate limit, SAM automatically retries with exponential backoff (4s, 8s, 16s\u2026). The status bar shows a live countdown so you always know what is happening rather than wondering if SAM is stuck."
         }
       ],
       "bugfixes": [
@@ -1162,13 +1175,13 @@
           "id": "dev-channel-support",
           "icon": "hammer.fill",
           "title": "Development Channel Support",
-          "description": "SAM now supports automatic nightly development builds for early access to features and fixes. Enable 'Receive development updates' in Preferences → General to receive automated pre-release builds (marked as -dev.1, -dev.2, etc.) when changes are available. Development builds are created nightly at 2 AM UTC when changes are pushed, with the last 7 builds kept available. Perfect for users who want to help test new features before stable releases."
+          "description": "SAM now supports automatic nightly development builds for early access to features and fixes. Enable 'Receive development updates' in Preferences \u2192 General to receive automated pre-release builds (marked as -dev.1, -dev.2, etc.) when changes are available. Development builds are created nightly at 2 AM UTC when changes are pushed, with the last 7 builds kept available. Perfect for users who want to help test new features before stable releases."
         },
         {
           "id": "api-token-auth",
           "icon": "key.fill",
           "title": "API Token Authentication for External Access",
-          "description": "SAM's REST API now supports token-based authentication for secure external access. Generate API tokens in Preferences → Advanced → Security, then use them in HTTP headers (Authorization: Bearer <token>) to access SAM's chat completions, tool calls, and other endpoints from external scripts, automation tools, or custom integrations. Tokens can be revoked at any time for security."
+          "description": "SAM's REST API now supports token-based authentication for secure external access. Generate API tokens in Preferences \u2192 Advanced \u2192 Security, then use them in HTTP headers (Authorization: Bearer <token>) to access SAM's chat completions, tool calls, and other endpoints from external scripts, automation tools, or custom integrations. Tokens can be revoked at any time for security."
         }
       ],
       "bugfixes": [
@@ -1291,7 +1304,7 @@
           "id": "api-reference-update",
           "icon": "book.fill",
           "title": "Complete API Reference Documentation",
-          "description": "Help → API Reference now includes comprehensive documentation for all 20 endpoints, including new autonomous workflow, tool interaction, and model management APIs. All parameters verified against implementation with examples and detailed descriptions."
+          "description": "Help \u2192 API Reference now includes comprehensive documentation for all 20 endpoints, including new autonomous workflow, tool interaction, and model management APIs. All parameters verified against implementation with examples and detailed descriptions."
         }
       ]
     },
@@ -1348,7 +1361,7 @@
           "id": "workflow-guidance-improvement",
           "icon": "text.quote",
           "title": "Workflow Guidance Improved",
-          "description": "Changed aggressive guidance from 'If tool results contain enough information → RESPOND NOW' to 'ANALYZE the data to address the user's specific request. Complete that task with the data you have.' Encourages proper analysis instead of premature responses."
+          "description": "Changed aggressive guidance from 'If tool results contain enough information \u2192 RESPOND NOW' to 'ANALYZE the data to address the user's specific request. Complete that task with the data you have.' Encourages proper analysis instead of premature responses."
         },
         {
           "id": "false-no-tools-warning",
