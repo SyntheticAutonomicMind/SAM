@@ -1,1 +1,1904 @@
-{"releases":[{"icon":"wrench.and.screwdriver","version":"20260506.1","introduction":"Tool result retrieval is now more robust. Chunks dynamically size based on model context window, ultra-long lines wrap before persisting, and fuzzy matching recovers results from IDs with minor typos.","bugfixes":[{"description":"Tool result data now dynamically sizes retrieval chunks based on model context window, ensuring large results remain accessible even with smaller context models.","id":"dynamic-chunk-sizing","icon":"arrow.down.circle.fill","title":"Fixed Tool Result Retrieval for Small Context Models"},{"description":"Ultra-long lines in tool results now wrap before persisting, preventing database errors when processing content like long URLs or code with minimal line breaks.","id":"line-wrapping","icon":"arrow.down.circle.fill","title":"Fixed Database Errors from Long Lines"},{"icon":"arrow.down.circle.fill","title":"Improved Tool Result Recovery","description":"Tool result IDs with typos now fuzzy-match using Levenshtein distance, recovering results that would have failed with minor spelling mistakes.","id":"fuzzy-result-matching"}],"release_date":"May 6, 2026","id":"tool-result-retrieval","improvements":[]},{"bugfixes":[],"introduction":"Tool calling now works across all providers. A shared request builder ensures every OpenAI-compatible provider sends tool definitions and preserves tool state correctly, so agents can search the web, read files, and use all MCP tools regardless of which provider or model you choose.","release_date":"April 27, 2026","id":"shared-request-builder","improvements":[{"id":"shared-request-builder","description":"OpenAI, DeepSeek, Ollama Cloud, OpenRouter, and Z.AI now properly send tool definitions and preserve tool call history in multi-turn conversations. Previously, these providers stripped messages down to just role and content, making tool calls impossible regardless of what the system prompt asked for.","title":"Tool Calling for All Providers"}],"icon":"wrench.and.screwdriver","version":"20260427.1"},{"version":"20260419.2","icon":"arrow.triangle.2.circlepath","introduction":"System prompt is now fully cacheable - dynamic content like date, time, user info, and location are now in the userContext block, enabling better KV cache reuse. Weather tool also gets precise GPS coordinates when available.","bugfixes":[{"icon":"arrow.down.circle.fill","title":"Fixed Coordinates Not Persisting","description":"Precise location coordinates now persist correctly to UserDefaults, ensuring they're available even after app restart.","id":"coords-persistence"}],"improvements":[{"id":"precise-weather-coords","description":"When precise location is enabled, GPS coordinates are now included in userContext. Weather tool uses these directly instead of geocoding, providing more accurate weather data for your exact location.","title":"Precise Coordinates for Weather"},{"id":"unified-usercontext","description":"Date/time, user name, language, location, and conversation ID have been consolidated into a single userContext block in every user message. This keeps the system prompt identical across messages, enabling KV cache prefix reuse for faster inference.","title":"Unified userContext Block"},{"description":"Weather tool description updated to clearly guide agents on using coordinates from userContext, with fallback to training data or city name format.","id":"weather-tool-update","title":"Weather Tool Improvements"}],"release_date":"April 19, 2026","id":"unified-usercontext"}]}
+{
+  "releases": [
+    {
+      "version": "20260506.1",
+      "release_date": "May 6, 2026",
+      "introduction": "Tool result retrieval is now more robust. Chunks dynamically size based on model context window, ultra-long lines wrap before persisting, and fuzzy matching recovers results from IDs with minor typos.",
+      "improvements": [],
+      "bugfixes": [
+        {
+          "id": "dynamic-chunk-sizing",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Tool Result Retrieval for Small Context Models",
+          "description": "Tool result data now dynamically sizes retrieval chunks based on model context window, ensuring large results remain accessible even with smaller context models."
+        },
+        {
+          "id": "line-wrapping",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Database Errors from Long Lines",
+          "description": "Ultra-long lines in tool results now wrap before persisting, preventing database errors when processing content like long URLs or code with minimal line breaks."
+        },
+        {
+          "id": "fuzzy-result-matching",
+          "icon": "arrow.down.circle.fill",
+          "title": "Improved Tool Result Recovery",
+          "description": "Tool result IDs with typos now fuzzy-match using Levenshtein distance, recovering results that would have failed with minor spelling mistakes."
+        }
+      ]
+    },
+    {
+      "version": "20260427.1",
+      "release_date": "April 27, 2026",
+      "introduction": "Tool calling now works across all providers. A shared request builder ensures every OpenAI-compatible provider sends tool definitions and preserves tool state correctly, so agents can search the web, read files, and use all MCP tools regardless of which provider or model you choose.",
+      "improvements": [
+        {
+          "id": "shared-request-builder",
+          "icon": "wrench.and.screwdriver",
+          "title": "Tool Calling for All Providers",
+          "description": "OpenAI, DeepSeek, Ollama Cloud, OpenRouter, and Z.AI now properly send tool definitions and preserve tool call history in multi-turn conversations. Previously, these providers stripped messages down to just role and content, making tool calls impossible regardless of what the system prompt asked for."
+        },
+        {
+          "id": "system-prompt-tool-bias-v17",
+          "icon": "text.bubble",
+          "title": "Improved Tool-Use Prompts",
+          "description": "Conversational Mode now explicitly requires tool use for real-world and verifiable questions. The completion definition includes tool data gathering as a prerequisite, and the GATHER then ANALYZE workflow applies to both modes. An anti-narration rule discourages models from saying they'll use tools without actually calling them."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
+      "version": "20260419.2",
+      "release_date": "April 19, 2026",
+      "introduction": "System prompt is now fully cacheable - dynamic content like date, time, user info, and location are now in the userContext block, enabling better KV cache reuse. Weather tool also gets precise GPS coordinates when available.",
+      "improvements": [
+        {
+          "id": "unified-usercontext",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Unified userContext Block",
+          "description": "Date/time, user name, language, location, and conversation ID have been consolidated into a single userContext block in every user message. This keeps the system prompt identical across messages, enabling KV cache prefix reuse for faster inference."
+        },
+        {
+          "id": "precise-weather-coords",
+          "icon": "location.fill",
+          "title": "Precise Coordinates for Weather",
+          "description": "When precise location is enabled, GPS coordinates are now included in userContext. Weather tool uses these directly instead of geocoding, providing more accurate weather data for your exact location."
+        },
+        {
+          "id": "weather-tool-update",
+          "icon": "cloud.sun.fill",
+          "title": "Weather Tool Improvements",
+          "description": "Weather tool description updated to clearly guide agents on using coordinates from userContext, with fallback to training data or city name format."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "coords-persistence",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Coordinates Not Persisting",
+          "description": "Precise location coordinates now persist correctly to UserDefaults, ensuring they're available even after app restart."
+        }
+      ]
+    },
+    {
+      "version": "20260419.1",
+      "improvements": [
+        {
+          "id": "ollama-cloud-provider",
+          "icon": "cloud",
+          "title": "Ollama Cloud",
+          "description": "Access hosted Ollama models directly. Great if you want the power of Ollama without running it yourself."
+        },
+        {
+          "id": "zai-provider",
+          "icon": "z.circle",
+          "title": "Z.AI",
+          "description": "A new option for chat and coding tasks. Includes support for chain-of-thought reasoning on supported models, which can help with complex problem-solving."
+        },
+        {
+          "id": "markdown-streaming-fix",
+          "icon": "text.alignleft",
+          "title": "Fixed Markdown Formatting",
+          "description": "Responses from cloud providers now display with proper line breaks, so headers, lists, and code blocks render correctly instead of running together."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
+      "version": "20260418.1",
+      "release_date": "April 18, 2026",
+      "introduction": "This release overhauls local model performance with optimized Metal threading, flash attention, KV cache quantization, and fixes the crash-on-quit that affected llama.cpp models.",
+      "improvements": [
+        {
+          "id": "metal-thread-tuning",
+          "icon": "gauge.with.dots.needle.67percent",
+          "title": "Apple Silicon Thread Optimization",
+          "description": "Thread counts are now tuned specifically for Apple Silicon unified memory architecture. When all model layers run on the Metal GPU, CPU threads primarily marshal data - too many threads cause contention and slow things down. Prompt processing uses performance cores; generation uses fewer threads since the GPU handles the heavy compute."
+        },
+        {
+          "id": "flash-attention-kv-quant",
+          "icon": "memorychip",
+          "title": "Flash Attention & KV Cache Quantization",
+          "description": "Flash attention reduces memory usage by avoiding materializing the full attention matrix. KV cache is quantized to q8_0 (8-bit) for both key and value tensors, cutting cache memory roughly in half compared to f16 with minimal quality impact. Together these allow longer contexts in less memory."
+        },
+        {
+          "id": "stable-system-prompt",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Stable System Prompt for Cache Reuse",
+          "description": "Date and time have been moved from the system prompt into a per-message userContext block, keeping the system prompt identical across messages. For pure Transformer models (Llama, Gemma, Qwen2.5), this enables KV cache prefix reuse - subsequent messages only process new tokens instead of reprocessing the entire prompt."
+        },
+        {
+          "id": "mlx-eog-detection",
+          "icon": "stop.circle",
+          "title": "MLX End-of-Generation Detection",
+          "description": "MLX streaming now detects end-of-generation patterns (like <end_of_turn> for Gemma models) and stops cleanly instead of streaming hundreds of stop tokens as visible text."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "metal-crash-on-quit",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Crash on Quit with Local Models",
+          "description": "Fixed a crash caused by llama.cpp's Metal device residual sets not being empty during static destructor cleanup. The app now exits cleanly after saving conversations."
+        },
+        {
+          "id": "folder-manager-spam",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Excessive Disk I/O from Folder Manager",
+          "description": "The folder manager was being instantiated inside a SwiftUI view body, causing hundreds of redundant disk reads per session. Now cached as a single instance."
+        }
+      ]
+    },
+    {
+      "version": "20260411.2",
+      "release_date": "April 11, 2026",
+      "introduction": "SAM now integrates with your Mac. Manage your calendar, reminders, contacts, and notes through natural conversation - plus search your entire file system with Spotlight and check the weather, all without leaving the chat. New privacy controls in Preferences let you enable or disable any tool individually.",
+      "improvements": [
+        {
+          "id": "calendar-reminders-tool",
+          "icon": "calendar.badge.plus",
+          "title": "Calendar & Reminders",
+          "description": "Ask SAM about your schedule and it checks your Apple Calendar directly. Create events with natural language like 'schedule a meeting tomorrow at 2pm', search for upcoming events, or manage your reminders - create them with due dates, set priorities, and mark them complete when you're done."
+        },
+        {
+          "id": "contacts-tool",
+          "icon": "person.crop.circle.badge.plus",
+          "title": "Contacts",
+          "description": "SAM can look up anyone in your address book. Ask 'what's John's phone number?' and it searches your Contacts app directly. It can also create new contacts and update existing ones with phone numbers, emails, and addresses."
+        },
+        {
+          "id": "notes-tool",
+          "icon": "note.text.badge.plus",
+          "title": "Apple Notes",
+          "description": "Your Apple Notes are now accessible through SAM. Search across all your notes by keyword, read their contents, create new notes in any folder, or append to existing ones. Great for saving research, meeting notes, or anything SAM helps you with directly into Notes."
+        },
+        {
+          "id": "spotlight-tool",
+          "icon": "magnifyingglass",
+          "title": "Spotlight File Search",
+          "description": "Find anything on your Mac through conversation. SAM uses Spotlight to search by filename, file type, or content. Ask it to find recent documents, search inside PDFs, or locate files by metadata - the same powerful search that powers Spotlight, available through natural language."
+        },
+        {
+          "id": "weather-tool",
+          "icon": "cloud.sun.fill",
+          "title": "Weather",
+          "description": "Ask SAM about the weather and get current conditions, multi-day forecasts, or hourly breakdowns for any city. Powered by the free Open-Meteo API with no API key or configuration required - just ask."
+        },
+        {
+          "id": "tool-privacy-controls",
+          "icon": "wrench.and.screwdriver",
+          "title": "Tool Privacy Controls",
+          "description": "You're in control of what SAM can access. A new Tools section in Preferences lets you enable or disable any tool individually. Tools that access personal data like your calendar, contacts, and notes are clearly marked with privacy indicators. Disabled tools are completely hidden from the AI and blocked from execution."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
+      "version": "20260411.1",
+      "release_date": "April 11, 2026",
+      "introduction": "This release adds interactive Mermaid diagrams - click any diagram to open a zoomable, pannable full-size viewer with high-resolution rendering and PNG export.",
+      "improvements": [
+        {
+          "id": "diagram-zoom-overlay",
+          "icon": "arrow.up.left.and.arrow.down.right",
+          "title": "Click-to-Enlarge Mermaid Diagrams",
+          "description": "Mermaid diagrams in conversations are now interactive. Click any diagram to open a full-size overlay with pinch-to-zoom, click-and-drag panning, and zoom controls. Diagrams re-render at double resolution for crisp detail when zoomed in. A small expand icon in the corner hints at the interaction."
+        },
+        {
+          "id": "diagram-png-export",
+          "icon": "square.and.arrow.down",
+          "title": "Export Diagrams as PNG, SVG, or Mermaid Source",
+          "description": "The diagram zoom overlay includes an export menu with three options: save as PNG for raster images, save as SVG for scalable vector graphics editable in tools like Inkscape or Draw.io, and copy the raw Mermaid source to your clipboard for pasting into other tools."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "streaming-completion-vanish",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Content Vanishing on Streaming Completion",
+          "description": "Fixed a regression where conversation content could disappear when a streaming response finished. This was a follow-up fix to the scroll system rewrite."
+        }
+      ]
+    },
+    {
+      "version": "20260409.1",
+      "release_date": "April 9, 2026",
+      "introduction": "This release closes a security hole in the agent sandbox, removes the deprecated Anthropic provider, and fixes a scroll glitch during streaming responses.",
+      "improvements": [
+        {
+          "id": "read-operation-authorization",
+          "icon": "lock.shield.fill",
+          "title": "File Read Authorization",
+          "description": "All file read operations now require the same authorization as write operations when accessing paths outside the working directory. Previously, agents could traverse the file system and read arbitrary files without permission. Read operations like listing directories, searching files, and reading file contents are now sandboxed to the conversation's working directory."
+        },
+        {
+          "id": "document-tool-authorization",
+          "icon": "doc.badge.lock.fill",
+          "title": "Document Tool Authorization",
+          "description": "The document import and creation tool now checks path authorization before accessing files. Previously, agents could import documents from anywhere on the file system without user approval."
+        },
+        {
+          "id": "remove-anthropic-provider",
+          "icon": "minus.circle.fill",
+          "title": "Removed Anthropic Provider",
+          "description": "The Anthropic direct API provider has been removed. Anthropic models remain available through OpenRouter and GitHub Copilot."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "scroll-clear-streaming",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Scroll Jump on Streaming Completion",
+          "description": "Fixed an issue where the conversation view could jump or clear unexpectedly when a streaming response finished."
+        }
+      ]
+    },
+    {
+      "version": "20260408.1",
+      "release_date": "April 8, 2026",
+      "introduction": "This release fixes a bug where mini-prompts disappeared mid-conversation, and includes UI improvements for smoother scrolling and conversation navigation.",
+      "improvements": [
+        {
+          "id": "scroll-system-rewrite",
+          "icon": "arrow.up.arrow.down.circle.fill",
+          "title": "Rewritten Scroll System",
+          "description": "The conversation scroll system has been completely rewritten to fix content jumping off-screen. Conversations now scroll to the newest message and auto-focus the input field when opened."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "mini-prompt-mid-conversation",
+          "icon": "brain.head.profile.fill",
+          "title": "Fixed Mini-Prompts Disappearing Mid-Conversation",
+          "description": "Mini-prompts are now injected directly into user messages at API call time, so agents act on them immediately instead of treating them as background context. When you enable a mini-prompt mid-conversation, it's persisted once as a hidden message for continuity and injected ephemerally on every turn for attention."
+        }
+      ]
+    },
+    {
+      "version": "20260404.1",
+      "release_date": "April 4, 2026",
+      "introduction": "This release adds security protections against prompt injection and credential leakage, fixes MiniMax AI compatibility, and preserves reasoning quality in multi-step agent workflows.",
+      "improvements": [
+        {
+          "id": "prompt-injection-protection",
+          "icon": "shield.lefthalf.filled",
+          "title": "Prompt Injection Protection",
+          "description": "SAM now filters invisible Unicode characters from custom instructions and file content before they reach the AI. Attackers can embed hidden instructions using zero-width characters, BiDi overrides, and Unicode tag blocks that are invisible to users but readable by AI models. SAM strips all of these before processing."
+        },
+        {
+          "id": "credential-redaction",
+          "icon": "eye.slash.fill",
+          "title": "Automatic Credential Redaction",
+          "description": "When SAM reads files and sends their contents to an AI provider, sensitive values are automatically redacted. API keys, tokens, passwords in connection strings, and personal information like SSNs and credit card numbers are replaced with placeholders before leaving your device."
+        },
+        {
+          "id": "minimax-think-roundtrip",
+          "icon": "brain.head.profile.fill",
+          "title": "MiniMax Reasoning Preservation",
+          "description": "MiniMax reasoning content is now preserved during multi-step tool workflows. Previously, thinking output was stripped before being sent back to the model, which could degrade response quality in longer agent sessions."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "minimax-2013-fix",
+          "icon": "m.circle.fill",
+          "title": "Fixed MiniMax Connection Errors",
+          "description": "Fixed a bug where MiniMax conversations would fail with an 'invalid chat setting' error. The issue was caused by sending multiple system messages in the API request - MiniMax requires exactly one. All system context is now consolidated into a single message."
+        }
+      ]
+    },
+    {
+      "version": "20260331.1",
+      "release_date": "March 31, 2026",
+      "introduction": "This release brings significant performance and memory improvements to local AI models, along with support for the latest Qwen 3.5 models.",
+      "improvements": [
+        {
+          "id": "mlx-performance",
+          "icon": "gauge.open.with.lines.needle.33percent.badge.arrow.up",
+          "title": "Faster Local Model Inference",
+          "description": "Upgraded the local inference engine with up to 35% faster token generation and optimized prompt processing that scales to your hardware. Conversations start faster, especially with longer system prompts."
+        },
+        {
+          "id": "qwen35-support",
+          "icon": "cpu.fill",
+          "title": "Qwen 3.5 Model Support",
+          "description": "SAM now supports Qwen 3.5 models, including the new hybrid attention architecture. Download Qwen 3.5 models directly from SAM's model manager."
+        },
+        {
+          "id": "memory-efficiency",
+          "icon": "memorychip.fill",
+          "title": "Lower Memory Usage",
+          "description": "Local models now release GPU memory immediately when unloaded or when switching between models. Memory estimates for large models are also more accurate, so SAM won't try to load models that don't fit."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "duplicate-system-prompt",
+          "icon": "doc.on.doc.fill",
+          "title": "Fixed Duplicate System Prompt",
+          "description": "Fixed an issue where the system prompt could be sent twice to local models, wasting context window space and slowing down responses."
+        },
+        {
+          "id": "missing-chat-template",
+          "icon": "text.bubble.fill",
+          "title": "Fixed Community Model Compatibility",
+          "description": "Some community-quantized models (such as 4-bit variants) were missing configuration needed for conversation formatting. SAM now detects this and applies a compatible format automatically."
+        }
+      ]
+    },
+    {
+      "version": "20260330.1",
+      "release_date": "March 30, 2026",
+      "introduction": "This release adds MiniMax as a first-class AI provider with full streaming and tool support, and fixes table rendering in conversations.",
+      "improvements": [
+        {
+          "id": "minimax-provider",
+          "icon": "m.circle.fill",
+          "title": "MiniMax AI Provider",
+          "description": "SAM now supports MiniMax AI, featuring models with up to 200,000 token context windows and 128,000 token output support. Includes real-time streaming, full tool/agent support, and reasoning display. Configure your MiniMax API key in Preferences to get started."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "table-border-fix",
+          "icon": "tablecells",
+          "title": "Fixed Table Border Alignment",
+          "description": "Table borders now correctly wrap the table content instead of stretching to the edge of the message bubble."
+        }
+      ]
+    },
+    {
+      "version": "20260316.2",
+      "release_date": "March 16, 2026",
+      "introduction": "This release adds support for the latest GPT models, overhauls diagram rendering for better quality and offline use, and fixes several agent reliability issues.",
+      "improvements": [
+        {
+          "id": "gpt-5-4-support",
+          "icon": "cpu.fill",
+          "title": "GPT-5.4 & New Model Support",
+          "description": "SAM now supports GPT-5.4 and other models that use OpenAI's newer Responses API. These models are automatically detected from your GitHub Copilot subscription and work with all of SAM's tools and agent capabilities."
+        },
+        {
+          "id": "mermaid-rendering",
+          "icon": "chart.bar.doc.horizontal.fill",
+          "title": "Improved Diagram Rendering",
+          "description": "Diagrams now render using a bundled engine instead of loading from the internet, so they appear faster and work offline. Rendering respects your light/dark theme setting, and diagrams are properly sized instead of stretching to fill the window."
+        },
+        {
+          "id": "more-diagram-types",
+          "icon": "square.grid.3x3.fill",
+          "title": "More Diagram Types",
+          "description": "SAM can now generate over 20 diagram types including state diagrams, ER diagrams, Sankey flow charts, Kanban boards, packet diagrams, block diagrams, and C4 architecture diagrams - in addition to the existing flowcharts, sequence diagrams, Gantt charts, pie charts, and more."
+        },
+        {
+          "id": "diagram-in-documents",
+          "icon": "doc.richtext.fill",
+          "title": "Diagrams in Exported Documents",
+          "description": "When you export a conversation as PDF, Word, or PowerPoint, any diagrams are now rendered as high-quality images in the document. Previously, exports would show the raw diagram code instead of the rendered visual."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "tool-execution-responses-api",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Fixed Agent Tool Execution",
+          "description": "Fixed a bug where the agent would recognize tool calls but never execute them when using certain models. The agent now correctly runs tools and continues multi-step workflows on all supported models."
+        },
+        {
+          "id": "system-prompt-responses",
+          "icon": "text.bubble.fill",
+          "title": "Fixed System Prompt for New Models",
+          "description": "System prompts and agent instructions are now correctly sent to all models. Previously, some newer models would ignore the system prompt entirely, leading to generic responses without SAM's personality or capabilities."
+        }
+      ]
+    },
+    {
+      "version": "20260316.1",
+      "release_date": "March 16, 2026",
+      "introduction": "This release improves GitHub Copilot authentication reliability, adds CSV/TSV support with stronger data accuracy guarantees, and fixes agent tool reliability issues.",
+      "improvements": [
+        {
+          "id": "csv-tsv-import",
+          "icon": "tablecells.fill",
+          "title": "CSV & TSV File Import",
+          "description": "SAM can now import CSV and TSV files directly. Headers are auto-detected, delimiters are identified automatically, and quoted fields are parsed correctly. Spreadsheet data is also now imported with its row and column structure preserved - previously, all cells were collapsed into a single line."
+        },
+        {
+          "id": "data-integrity",
+          "icon": "checkmark.shield.fill",
+          "title": "Stricter Data Accuracy for Numbers",
+          "description": "SAM now enforces a zero-tolerance policy against fabricating financial and numerical data. When you import a spreadsheet or CSV, SAM reads the actual values from your file before answering questions - it should not not estimate, approximate, or fill in numbers from memory.  As always, SAM's content is AI generated it should always be verified manually."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "copilot-auth-reliability",
+          "icon": "key.fill",
+          "title": "GitHub Copilot Auth Reliability",
+          "description": "Fixed three related authentication issues: Copilot providers created via device flow now load correctly on startup. Token refresh now properly uses the new token instead of the expired one. Mid-stream 401 errors are now recovered automatically, so Copilot keeps working without prompting you to re-authenticate."
+        },
+        {
+          "id": "image-gen-health-check",
+          "icon": "photo.badge.checkmark.fill",
+          "title": "Smarter Image Generation Handling",
+          "description": "SAM now checks if ALICE is reachable before offering image generation. Previously, the agent would repeatedly attempt image generation even when the server was unavailable, wasting time and context."
+        },
+        {
+          "id": "tool-error-feedback",
+          "icon": "exclamationmark.bubble.fill",
+          "title": "Better Tool Error Recovery",
+          "description": "When the agent makes a bad tool call, error messages now correctly identify the problem and provide the right fix. The agent also stops retrying tools that are genuinely broken instead of looping on them."
+        },
+        {
+          "id": "conversation-alternation-fix",
+          "icon": "bubble.left.and.bubble.right.fill",
+          "title": "Fixed Message Ordering Issues",
+          "description": "Fixed a bug where tool responses could cause messages to merge incorrectly, leading to malformed API requests. Multi-step agent workflows are now more reliable."
+        }
+      ]
+    },
+    {
+      "version": "20260313.3",
+      "release_date": "March 13, 2026",
+      "highlights": [
+        {
+          "id": "alice-image-generation",
+          "icon": "photo.fill",
+          "title": "Image Generation Moves to ALICE",
+          "description": "SAM's built-in Stable Diffusion has been replaced by ALICE - a dedicated image generation server that runs on your own hardware. ALICE supports any Stable Diffusion model (SD 1.5, SDXL, FLUX), runs on NVIDIA, AMD, and Apple Silicon GPUs, and includes a web gallery for managing your creations. Connect SAM to ALICE from Preferences > ALICE, or use ALICE standalone at github.com/SyntheticAutonomicMind/ALICE."
+        },
+        {
+          "id": "accurate-math",
+          "icon": "function",
+          "title": "Accurate Math & Calculations",
+          "description": "SAM now uses a dedicated calculation engine for all math - no more approximations or rounding errors. Includes 21 built-in formulas for everyday tasks: tips, mortgages, BMI, compound interest, loan payments, recipe scaling, retirement projections, and more. Unit conversions across 8 categories (temperature, weight, distance, currency, and others) are also handled automatically."
+        },
+        {
+          "id": "smarter-research",
+          "icon": "magnifyingglass",
+          "title": "Smarter Web Research",
+          "description": "When you ask SAM for recommendations - restaurants, products, hotels - it now searches domain-specific sources (Yelp, Amazon, TripAdvisor), visits individual pages for real data, and cross-references across multiple sources. You get structured comparisons with verified ratings, prices, hours, and direct links instead of summaries from memory."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "alice-preferences",
+          "icon": "paintbrush.fill",
+          "title": "ALICE Setup in Preferences",
+          "description": "New Preferences pane for connecting to ALICE. Test your connection, check server health, browse available models, and manage API keys. ALICE auto-discovers your installed models when connected."
+        },
+        {
+          "id": "redesigned-bottom-bar",
+          "icon": "rectangle.bottomhalf.filled",
+          "title": "Redesigned Bottom Bar",
+          "description": "Model picker, system prompt selector, and local model load/eject controls are now in the bottom bar for quick access. No more hunting through menus to switch models or load a local model."
+        },
+        {
+          "id": "sidebar-date-grouping",
+          "icon": "sidebar.left",
+          "title": "Date-Grouped Sidebar",
+          "description": "Conversations are organized by date - Today, Yesterday, This Week, and older groups - with relative timestamps so you can find recent chats at a glance."
+        },
+        {
+          "id": "auto-growing-input",
+          "icon": "text.alignleft",
+          "title": "Auto-Growing Text Input",
+          "description": "The message input field expands as you type multi-line messages, giving you more room for longer prompts without manual resizing."
+        },
+        {
+          "id": "smaller-faster",
+          "icon": "bolt.fill",
+          "title": "Smaller & Faster",
+          "description": "SAM's codebase has been significantly streamlined - unused modules removed, tools consolidated, and internal logic simplified. The result is faster builds, a smaller app, and a more responsive agent."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "faster-conversation-switching",
+          "icon": "bolt.horizontal.fill",
+          "title": "Faster Conversation Switching",
+          "description": "Switching between conversations is now near-instant. Previously, clicking a conversation could take 1-2 seconds due to redundant model scanning and provider rebuilds happening on every switch."
+        },
+        {
+          "id": "agent-reliability",
+          "icon": "arrow.triangle.branch",
+          "title": "More Reliable Agent Behavior",
+          "description": "Redesigned the agent's work loop for better reliability. SAM now decides naturally when a task is complete instead of relying on complex internal rules. Added detection for repetitive tool calls that could cause the agent to get stuck."
+        },
+        {
+          "id": "ci-release-uploads",
+          "icon": "arrow.up.circle.fill",
+          "title": "Fixed Release Uploads",
+          "description": "Release downloads are now uploaded reliably for large files. Development builds are now weekly instead of daily."
+        },
+        {
+          "id": "shell-injection-fix",
+          "icon": "lock.shield.fill",
+          "title": "Security Fix",
+          "description": "Fixed a potential security issue in the automated release pipeline."
+        }
+      ]
+    },
+    {
+      "version": "20260303.1",
+      "release_date": "March 3, 2026",
+      "introduction": "This release upgrades SAM's local model support with 20+ new architectures, adds smart download management that verifies file integrity and skips already-downloaded models, and improves Shared Topics reliability.",
+      "highlights": [
+        {
+          "id": "expanded-local-models",
+          "icon": "cpu.fill",
+          "title": "20+ New Local Model Architectures",
+          "description": "Updated MLX runtime to support many more model families: GLM-4, MiniCPM, NemotronH, DeepSeek V3, Falcon H1, SmolLM 3, Qwen3-Next, Exaone 4, and more. If a model didn't load before, try it again."
+        },
+        {
+          "id": "smart-downloads",
+          "icon": "arrow.down.circle.fill",
+          "title": "Smart Model Downloads",
+          "description": "SAM now verifies downloaded model files using SHA-256 checksums from Hugging Face. Already-downloaded files with matching checksums are skipped instead of re-downloaded. Corrupted or incomplete files are automatically detected and re-fetched."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "gguf-split-auto-download",
+          "icon": "square.split.1x2.fill",
+          "title": "Automatic Split Model Downloads",
+          "description": "When downloading a split GGUF model (multiple parts), clicking download on any single part now automatically downloads all remaining parts. Previously, you had to click download on each part individually."
+        },
+        {
+          "id": "llamacpp-update",
+          "icon": "bolt.fill",
+          "title": "Updated llama.cpp Engine",
+          "description": "The local GGUF inference engine has been updated to the latest release with performance improvements and expanded model compatibility."
+        },
+        {
+          "id": "shared-topic-context",
+          "icon": "bubble.left.and.bubble.right.fill",
+          "title": "Improved Shared Topics",
+          "description": "Shared Topics now correctly provide context from other conversations in the topic when starting a new conversation. Fixed an issue where new conversations could miss relevant context from the topic."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "copilot-token-recovery",
+          "icon": "key.fill",
+          "title": "Automatic Token Recovery",
+          "description": "Fixed an issue where expired GitHub Copilot session tokens could cause persistent authentication errors. SAM now automatically refreshes the token and retries the request."
+        },
+        {
+          "id": "duplicate-topics",
+          "icon": "doc.on.doc.fill",
+          "title": "Fixed Duplicate Topics",
+          "description": "Fixed an issue where duplicate Shared Topics could be created, leading to confused context. Topic creation is now properly deduplicated."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "mlx-dependency-update",
+          "content": "Updated mlx-swift 0.29.1->0.30.6, mlx-swift-lm 2.29.2->2.30.6, swift-transformers->1.1.9, llama.cpp->b8192. Breaking API changes: ModelTypeRegistry.createModel() now takes Data instead of URL. ToolSpec/Message typealiases changed from [String: Any] to [String: any Sendable]. Note: Qwen 3.5 (model_type: qwen3_5) not yet supported upstream - hybrid linear attention + Mamba SSM architecture."
+        },
+        {
+          "id": "download-checksum-implementation",
+          "content": "Added HuggingFaceGGUFClient.getFileTree() to fetch /api/models/{repoId}/tree/main for LFS SHA256 hashes. verifySHA256() streams files in 1MB chunks via CryptoKit. ModelDownloadManager caches file tree per-repo, checks isFileAlreadyDownloaded() before each download, verifies post-download. getRelatedFiles() extended with GGUF split pattern (-NNNNN-of-NNNNN.gguf) detection."
+        }
+      ]
+    },
+    {
+      "version": "20260220.2",
+      "release_date": "February 20, 2026",
+      "introduction": "This release adds native OpenRouter support with 400+ AI models, upgrades GitHub Copilot authentication to unlock the full 42+ model catalog, adds a status bar, and improves streaming and rate limit handling. Important: Existing GitHub Copilot users must remove and re-add their provider in Preferences.",
+      "highlights": [
+        {
+          "id": "copilot-reauth",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Action Required: Re-add GitHub Copilot Provider",
+          "description": "Due to an authentication upgrade, existing GitHub Copilot users must remove their current provider and add a new one in Preferences -> Endpoints. You will be prompted to sign in with GitHub again. This is a one-time action that unlocks access to 42+ models."
+        },
+        {
+          "id": "full-model-catalog",
+          "icon": "cpu.fill",
+          "title": "42+ GitHub Copilot Models",
+          "description": "SAM now uses GitHub's official Copilot authentication, giving you access to the full model catalog: Claude Opus 4.6, Claude Sonnet 4.6, Gemini 3 Pro, GPT-5.2, GPT-5.1 Codex, Grok, and many more. Previously only 8 base GPT models were available."
+        },
+        {
+          "id": "openrouter-provider",
+          "icon": "arrow.triangle.merge",
+          "title": "OpenRouter Support",
+          "description": "SAM now has built-in OpenRouter support. Configure your OpenRouter API key in Preferences -> Endpoints to access over 400 AI models from every major provider — DeepSeek, Qwen, Mistral, Llama, and more — through a single unified API."
+        },
+        {
+          "id": "status-bar",
+          "icon": "circle.fill",
+          "title": "Status Bar",
+          "description": "A new status bar at the bottom of the chat window keeps you informed. When idle it shows \"Ready.\" When SAM is working, an animated spinner appears with a description of what SAM is doing — generating, thinking, running a tool, or waiting after a rate limit."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "copilot-token-exchange",
+          "icon": "key.fill",
+          "title": "Automatic Copilot Token Exchange",
+          "description": "SAM now automatically exchanges your GitHub token for a Copilot session token on first use. This happens transparently and enables access to premium models based on your Copilot subscription."
+        },
+        {
+          "id": "openrouter-streaming",
+          "icon": "bolt.fill",
+          "title": "Real-Time Response Streaming",
+          "description": "OpenRouter responses now stream in real-time — you see tokens appear as they are generated instead of waiting for the entire response. This makes conversations with long-running models like DeepSeek R1 feel much more responsive."
+        },
+        {
+          "id": "rate-limit-handling",
+          "icon": "arrow.clockwise",
+          "title": "Smarter Rate Limit Handling",
+          "description": "When a provider hits its rate limit, SAM automatically retries with exponential backoff (4s, 8s, 16s…). The status bar shows a live countdown so you always know what is happening rather than wondering if SAM is stuck."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "provider-model-refresh",
+          "icon": "arrow.clockwise",
+          "title": "Model List Refresh on Login",
+          "description": "When adding a GitHub Copilot provider, the model list now correctly shows all available models immediately after signing in, instead of requiring an app restart."
+        },
+        {
+          "id": "openrouter-markdown-rendering",
+          "icon": "text.alignleft",
+          "title": "Fixed Response Formatting",
+          "description": "Responses from OpenRouter models were appearing as one unformatted block of text with no line breaks, headers, or code blocks. Real streaming now preserves all markdown formatting correctly."
+        },
+        {
+          "id": "openrouter-context-size",
+          "icon": "memorychip",
+          "title": "Fixed Context Window Detection",
+          "description": "OpenRouter models were incorrectly limited to 8,192 tokens because SAM did not know their actual context window sizes. SAM now fetches real context sizes from the OpenRouter API on first use, allowing models with 32K, 128K, or larger contexts to work correctly."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "auth-upgrade",
+          "content": "Switched from custom OAuth App (Ov23lix5mfpW4hHM7y9G) to GitHub's official Copilot Plugin GitHub App (Iv1.b507a08c87ecfe98). Scope reduced from 'read:user copilot' to 'read:user' - Copilot access is via /copilot_internal/v2/token exchange. Exchange endpoint requires GET (not POST) for GitHub App tokens. CopilotTokenStore.getCopilotToken() now auto-exchanges on first use. EndpointManagementView.fetchModelsFromProvider() uses CopilotTokenStore for GitHub Copilot authentication."
+        },
+        {
+          "id": "openrouter-implementation",
+          "content": "Added OpenRouterProvider.swift with SSE streaming via URLSession.bytes(), HTTP-Referer and X-Title headers, and proper 429/401 error classification. Added 'openrouter' ProviderType, wired into EndpointManager. fetchModelCapabilities() fetches context_length from /v1/models top_provider block. lazyFetchModelCapabilitiesIfNeeded() now handles 'openrouter' via EndpointManager.getFirstProvider(ofType:). AgentOrchestrator rate limit retry loops now post providerRateLimitHit/providerRateLimitRetrying notifications."
+        },
+        {
+          "id": "status-bar-implementation",
+          "content": "Added statusBar computed property to ChatWidget (always visible, 20px height). Uses .task modifier for 10fps braille animation. busyStatusText updated via onChange(of: processingStatus). Idle shows green dot + 'Ready.'. Busy shows spinner + context text (Generating/Thinking/Running: <tool>/Rate limited countdown)."
+        }
+      ]
+    },
+    {
+      "version": "20260217.1",
+      "release_date": "February 17, 2026",
+      "introduction": "This release brings major voice interaction improvements with natural conversation flow and customizable wake words.",
+      "highlights": [
+        {
+          "id": "conversation-mode",
+          "icon": "waveform.circle.fill",
+          "title": "Conversation Mode",
+          "description": "After SAM responds, you can now speak follow-up questions without repeating the wake word. SAM listens for your reply for a configurable duration (default 8 seconds) before returning to wake word mode."
+        },
+        {
+          "id": "custom-wake-words",
+          "icon": "ear.fill",
+          "title": "Customizable Wake Words",
+          "description": "Add your own wake words in Sound preferences! Say 'Hey SAM', 'Hello Assistant', or whatever phrase works best for you. Add, remove, and reset wake words to your preference."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "toolbar-picker-fix",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Model Picker Layout",
+          "description": "Fixed a layout issue with the model picker in the toolbar that could cause visual inconsistencies."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "relay-mode-implementation",
+          "content": "VoiceManager now has enterRelayMode() that transitions to activeListening with a configurable timeout (voice.conversationTimeout UserDefaults key). After SAM speaks, it enters relay mode instead of waitingForWakeWord. Timeout fires handleConversationTimeout() which returns to wake word detection. Timeout is cancelled when transcription is received."
+        },
+        {
+          "id": "wake-word-configuration",
+          "content": "WakeWordDetector.swift now reads from UserDefaults (voice.wakeWords key) with static methods loadWakeWords(), saveWakeWords(), resetToDefaults(). VoiceManager.reloadWakeWords() triggers detector reload. SoundPreferencesPane has new Wake Words section with add/remove/reset UI."
+        }
+      ]
+    },
+    {
+      "version": "20260215.1",
+      "release_date": "February 15, 2026",
+      "introduction": "This release fixes issues with Claude model workflows, adds session cost tracking with persistence, and improves agent reliability.",
+      "highlights": [
+        {
+          "id": "workflow-fix",
+          "icon": "arrow.triangle.2.circlepath.circle.fill",
+          "title": "Fixed Agent Workflow Loops",
+          "description": "Resolved an issue where agent workflows would stop unexpectedly when using Claude models. Agents now properly continue through multi-step tasks."
+        },
+        {
+          "id": "cost-tracking",
+          "icon": "creditcard.fill",
+          "title": "Session Cost Tracking",
+          "description": "New cost tracking panel in the chat toolbar shows your session usage: total requests, tokens, and premium vs free breakdown by model. Cost data is saved per conversation and persists across app restarts."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "empty-args-fix",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Tool Call Parsing",
+          "description": "Fixed an issue where certain tool calls were being skipped during multi-step workflows."
+        },
+        {
+          "id": "prompt-discovery-fix",
+          "icon": "list.bullet.rectangle.fill",
+          "title": "Prompt Discovery Tools",
+          "description": "The list_system_prompts and list_mini_prompts tools now work correctly. Previously they would fail with 'Failed to parse response' errors."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "copilot-user-api",
+          "icon": "person.badge.clock.fill",
+          "title": "Faster Quota Display",
+          "description": "Your GitHub Copilot quota is now fetched when SAM starts, so usage information appears immediately."
+        },
+        {
+          "id": "tool-error-guidance",
+          "icon": "lightbulb.fill",
+          "title": "Better Error Messages",
+          "description": "When tool calls fail, agents now receive clearer instructions to help them fix the problem and continue working."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "empty-arguments-fix",
+          "content": "AgentOrchestrator tool call parsing now handles empty string arguments (returned for tools with no params). Previously JSONSerialization.jsonObject failed on '' causing the entire tool call to be skipped. Now creates tool call with empty {} arguments."
+        },
+        {
+          "id": "cost-tracking-persistence",
+          "content": "Cost tracking data (performanceMetrics) is persisted per conversation in ConversationModel. Metrics are saved when switching conversations and restored on load. Uses onMetricsRecorded callback in PerformanceMonitor for real-time updates. Panel state (showingCostTrackingPanel) follows the same pattern as other panels."
+        },
+        {
+          "id": "cost-tracking-view",
+          "content": "Added CostTrackingView.swift with compact/detailed views for session costs. Uses PerformanceMonitor.generateSessionCostStatistics() for per-model breakdown. Refreshes on appear, metrics change, and 2-second timer for duration updates."
+        },
+        {
+          "id": "tool-error-guidance",
+          "content": "Added ToolErrorGuidance.swift that categorizes errors (missing required, invalid operation, JSON parse, etc.) and provides category-specific fix instructions with tool examples. Integrated into MCPManager for validation and execution errors."
+        },
+        {
+          "id": "copilot-user-api-client",
+          "content": "Added CopilotUserAPI.swift with actor-based CopilotUserAPIClient that fetches from GET https://api.github.com/copilot_internal/user. Uses 'token <token>' auth format, 5-minute cache TTL, and Sendable response types."
+        },
+        {
+          "id": "prompt-discovery-direct-access",
+          "content": "ListSystemPromptsTool and ListMiniPromptsTool now access SystemPromptManager.shared and MiniPromptManager.shared directly instead of calling the HTTP API. Fixes auth issues and reduces complexity."
+        }
+      ]
+    },
+    {
+      "version": "20260213.1",
+      "release_date": "February 13, 2026",
+      "introduction": "This release fixes a critical system prompt bug that caused SAM to use training data instead of researching current information.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "training-data-loophole-fix",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Training Data Fallback",
+          "description": "SAM now properly uses tools to verify current information instead of relying on training data. Previously, weak language in the system prompt (\"Do NOT rely solely on training data\") created a loophole where SAM would output information from memory and only verify when corrected. Now SAM MUST use tools FIRST before responding with any current information (recipes, prices, URLs, product details, etc.)."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": [
+        {
+          "id": "system-prompt-training-data-prohibition",
+          "content": "buildCoreIdentity() now explicitly prohibits training data usage with \"TRAINING DATA IS PROHIBITED\" instead of \"Do NOT rely solely on training data\". Aligns with buildToolUsage() RESEARCH-FIRST principle. Removes loophole where models could use training data first if they planned to verify later."
+        }
+      ]
+    },
+    {
+      "version": "20260206.1",
+      "release_date": "February 6, 2026",
+      "introduction": "This release fixes important conversation reliability issues, especially for users who use mini-prompts to customize SAM's behavior.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "message-ordering-fix",
+          "icon": "arrow.up.arrow.down.circle.fill",
+          "title": "Fixed Message Order in Database",
+          "description": "Messages now appear in the correct order in your conversation history. Previously, under certain conditions, a user message could appear after the assistant's response in the database, even though it displayed correctly in the chat."
+        },
+        {
+          "id": "mini-prompt-repetition-fix",
+          "icon": "repeat.circle.fill",
+          "title": "Mini-Prompts No Longer Repeat",
+          "description": "Mini-prompts (custom instructions) are now sent to the AI only once per conversation instead of being included in every message. This saves context space and prevents potential confusion."
+        },
+        {
+          "id": "mini-prompt-state-management",
+          "icon": "gearshape.2.fill",
+          "title": "Smart Mini-Prompt Handling",
+          "description": "SAM now properly handles when you enable, disable, or change mini-prompts mid-conversation. When you enable a mini-prompt after starting a conversation, it will be sent to the AI immediately. If you disable then re-enable a mini-prompt, it will be sent again as expected."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": [
+        {
+          "id": "message-sync-fix",
+          "content": "ConversationMessageBus now syncs user messages immediately (like tool messages) to prevent race conditions. AgentOrchestrator reads conversation.messages which must be up-to-date before API call construction."
+        },
+        {
+          "id": "mini-prompt-injection-logic",
+          "content": "ChatWidget injects mini-prompts only on first user message (MessageBus count == 0). MiniPromptReminderInjector tracks injected sets per conversation and detects changes. State is cleared when enabledMiniPromptIds becomes empty, enabling proper re-injection on re-enable."
+        },
+        {
+          "id": "mini-prompt-debug-logging",
+          "content": "Added comprehensive MINI_PROMPT_TRACE logging throughout injection flow: ChatWidget first message checks, shouldInjectReminder decision logic, formatMiniPromptReminder calls, and recordInjection state updates."
+        }
+      ]
+    },
+    {
+      "version": "20260127.1",
+      "release_date": "January 27, 2026",
+      "introduction": "This release includes a new application icon, important stability fixes, and code quality improvements.",
+      "highlights": [
+        {
+          "id": "new-app-icon",
+          "icon": "app.badge",
+          "title": "New Application Icon",
+          "description": "SAM has a new, modern application icon."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "exit-crash-fix",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Crash on Exit",
+          "description": "SAM no longer crashes when you quit the app while a local model is loaded. The cleanup process now lets the operating system handle resource deallocation safely."
+        },
+        {
+          "id": "whats-new-bugfixes",
+          "icon": "doc.text.fill",
+          "title": "Fixed What's New Display",
+          "description": "The What's New panel now displays all release information correctly."
+        },
+        {
+          "id": "crash-prevention",
+          "icon": "exclamationmark.shield.fill",
+          "title": "Improved Error Handling",
+          "description": "Fixed several edge cases that could cause crashes during startup or when working with local models. SAM now handles missing files and initialization errors more gracefully."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "better-diagnostics",
+          "icon": "waveform.path.ecg",
+          "title": "Improved Diagnostic Logging",
+          "description": "Log messages are now more consistent and organized, making it easier to troubleshoot issues."
+        },
+        {
+          "id": "code-quality",
+          "icon": "hammer.fill",
+          "title": "Code Quality Improvements",
+          "description": "Eliminated duplicate code, standardized error handling patterns, and improved internal code organization for better long-term maintainability."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "exit-cleanup-fix",
+          "content": "Removed llama_backend_free() call from applicationWillTerminate to prevent Metal resource assertion failures. Now relies on OS cleanup during process exit, eliminating race condition between Swift actor cleanup and manual resource deallocation."
+        },
+        {
+          "id": "error-handling-refactor",
+          "content": "Replaced try! and force unwraps with proper do-catch blocks and optional binding. Added initializationFailed error case to MLXModelCache. SharedTopicManager and TerminalOperationsTool now handle initialization failures gracefully."
+        },
+        {
+          "id": "logger-standardization",
+          "content": "All logger labels standardized to com.sam.{module}.{component} format across ConfigurationSystem (5 files), APIFramework (5 files), ConversationEngine (2 files), MLXIntegration (2 files), StableDiffusionIntegration (3 files), UserInterface (8 files), and SAM (1 file)."
+        },
+        {
+          "id": "documentation-cleanup",
+          "content": "Converted TODO comments to proper documentation. Future enhancement comments now clearly marked to distinguish from actual incomplete work."
+        }
+      ]
+    },
+    {
+      "version": "20260125.1",
+      "release_date": "January 25, 2026",
+      "introduction": "This release significantly improves markdown rendering, especially for complex nested lists and numbered items.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "nested-list-rendering",
+          "icon": "list.bullet.indent",
+          "title": "Fixed Nested List Parsing",
+          "description": "Nested lists now render correctly with proper hierarchy detection. SAM understands indentation levels and only breaks list items when encountering markers at the same or higher level. This fixes issues where nested content was incorrectly split into separate list items."
+        },
+        {
+          "id": "numbered-list-alignment",
+          "icon": "list.number",
+          "title": "Improved Numbered List Alignment",
+          "description": "Ordered lists now have dynamic width calculation based on the number of digits, ensuring proper alignment for lists with 10+ items. No more misaligned text when you have double-digit or triple-digit list numbers."
+        },
+        {
+          "id": "list-indent-spacing",
+          "icon": "increase.indent",
+          "title": "Better List Indentation",
+          "description": "Nested list items now use improved spacing (24pt instead of 20pt) for better visual hierarchy and readability. Complex multi-level lists are now easier to scan and understand at a glance."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": [
+        {
+          "id": "markdown-parser-improvements",
+          "content": "MarkdownASTParser now uses indentation-aware list item detection. List markers only terminate items when at same or higher level (less indentation), allowing proper nesting of block elements within list items."
+        },
+        {
+          "id": "dynamic-list-layout",
+          "content": "MarkdownViewRenderer now calculates dynamic frame widths for ordered list markers based on digit count (9.0pt per character + 4pt padding) to handle lists of any size."
+        }
+      ]
+    },
+    {
+      "version": "20260121.1",
+      "release_date": "January 21, 2026",
+      "introduction": "This release resolves critical stability issues affecting model loading, downloads, and app termination. Multi-part model handling is now robust with automatic retry capabilities.",
+      "highlights": [],
+      "bugfixes": [
+        {
+          "id": "model-load-crash",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Model Loading Crash (SIGSEGV)",
+          "description": "Resolved a critical crash that occurred when loading models. The issue was caused by uninitialized sampler parameters in llama.cpp context initialization. Models now load reliably without segmentation faults."
+        },
+        {
+          "id": "multipart-model-validation",
+          "icon": "checkmark.circle.fill",
+          "title": "Intelligent Multi-Part Model Handling",
+          "description": "SAM now correctly validates multi-part models (like Qwen2.5-Coder 14B with 6 safetensors files). Incomplete downloads are skipped and won't appear in your models list. The model picker only shows complete, ready-to-use models."
+        },
+        {
+          "id": "download-retry-logic",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Automatic Download Retries",
+          "description": "Downloads now automatically retry up to 3 times with smart exponential backoff (2s, 4s, 8s delays) when transient network issues occur. Temporary connection glitches no longer cause failed downloads."
+        },
+        {
+          "id": "app-termination-crash",
+          "icon": "power",
+          "title": "Fixed App Termination Metal Crash",
+          "description": "Resolved Metal device resource assertion failures that could occur when quitting SAM after using local models. GPU resources are now properly cleaned up during app exit in the correct order."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": [
+        {
+          "id": "backend-cleanup-ordering",
+          "content": "Moved llama_backend_free() from per-context cleanup to single app-termination cleanup to prevent multiple deallocation attempts and Metal resource conflicts."
+        }
+      ]
+    },
+    {
+      "version": "20260120.1",
+      "release_date": "January 20, 2026",
+      "introduction": "This release adds powerful API server capabilities for terminal-based AI assistants and fixes critical stability issues with model lifecycle management.",
+      "highlights": [
+        {
+          "id": "clio-integration",
+          "icon": "terminal.fill",
+          "title": "CLIO Integration - SAM as Your API Backend",
+          "description": "SAM now works as a fully-featured OpenAI-compatible API server for external tools like CLIO (Command Line Intelligence Orchestrator). Terminal-based AI assistants can use SAM as their LLM backend with per-request proxy mode, model capability discovery (token limits, billing metadata), and support for large tool schemas. Perfect for pair programming in the terminal while leveraging SAM's multi-provider AI support."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "metal-cleanup-crash",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed App Termination Crashes",
+          "description": "Resolved Metal resource cleanup crashes that could occur when quitting SAM. The app now properly unloads models during shutdown, preventing GPU-related crashes on termination."
+        },
+        {
+          "id": "dependency-actor-isolation",
+          "icon": "arrow.triangle.branch",
+          "title": "Fixed Dependency Compatibility Issues",
+          "description": "Pinned SQLite.swift dependency to resolve trait incompatibility errors and fixed actor isolation warnings in MLX model creation. This ensures stable builds and proper concurrency handling for local models."
+        },
+        {
+          "id": "proxy-tool-preservation",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Fixed Proxy Mode Tool Handling",
+          "description": "Corrected tool schema preservation in API proxy mode, ensuring external AI tools like CLIO receive complete tool definitions without corruption. Tools now pass through correctly with their full parameters."
+        },
+        {
+          "id": "copilot-session-continuity",
+          "icon": "arrow.triangle.2.circlepath.circle.fill",
+          "title": "Fixed GitHub Copilot Session Continuity",
+          "description": "Resolved session handling issues that could interrupt GitHub Copilot conversations when using subagents. Copilot now maintains proper context across complex multi-turn interactions."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": []
+    },
+    {
+      "version": "20260117.1",
+      "release_date": "January 17, 2026",
+      "introduction": "This release improves diagram rendering, adds powerful codebase learning capabilities, expands web integration features, and fixes critical stability issues.",
+      "highlights": [
+        {
+          "id": "mermaid-improvements",
+          "icon": "chart.bar.doc.horizontal",
+          "title": "Beautiful Diagrams That Just Work",
+          "description": "Diagrams in your conversations now render beautifully and correctly. Flowcharts automatically route around obstacles with smart spacing. Sequence diagrams understand all arrow styles. Bar and XY charts display your data elegantly. Mind maps show complete hierarchies at a glance. Create professional visualizations right in your chats."
+        },
+        {
+          "id": "codebase-ingest",
+          "icon": "folder.badge.gearshape",
+          "title": "Teach SAM Your Entire Codebase",
+          "description": "Import whole projects into SAM's memory with one command. SAM learns your code structure, file organization, and patterns - then uses that knowledge to give you better answers about your project. Works with any programming language, automatically skips build files and dependencies, and smartly limits imports to keep things fast."
+        },
+        {
+          "id": "web-ui-endpoints",
+          "icon": "globe",
+          "title": "Share Conversations with Web Tools",
+          "description": "New features let web-based tools access your SAM conversations and prompts. Build custom dashboards, integrate with browser extensions, or connect SAM to your favorite web apps seamlessly."
+        },
+        {
+          "id": "rag-searchable-metadata",
+          "icon": "magnifyingglass.circle",
+          "title": "Smarter Memory Search",
+          "description": "SAM can now find content by filename and location. Ask \"What's in ChatWidget.swift?\" or \"Show me PDFs about sales\" and SAM knows exactly where to look in its memory. Works for code files, documents, web pages, and conversation history."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "editor-race-condition",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Chat Window Freezes",
+          "description": "Resolved an issue where changing personality settings could cause the chat window to freeze or fail to load. The editor now starts smoothly every time."
+        },
+        {
+          "id": "auth-storage-fix",
+          "icon": "key.fill",
+          "title": "API Tokens Now Save Reliably",
+          "description": "Fixed problems with API token storage that could prevent SAM from remembering your credentials between sessions. Tokens are now saved securely and load correctly every time you launch SAM."
+        },
+        {
+          "id": "sd-model-dynamic",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Image Model List Auto-Refreshes",
+          "description": "The Stable Diffusion model picker now updates automatically when you download new models. No more restarting SAM to see your new image generation models."
+        },
+        {
+          "id": "collab-persistence",
+          "icon": "pin.fill",
+          "title": "Collaboration Responses Saved",
+          "description": "During long conversations with complex tasks, SAM will now remember your approval responses at checkpoints, preventing work from being lost if the session gets interrupted."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "prompt-refactor",
+          "icon": "text.alignleft",
+          "title": "Cleaner Internal Architecture",
+          "description": "Reorganized how SAM builds its internal prompts for better performance and easier future improvements."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "commit-workflow",
+          "content": "Improved commit message workflow to prevent text encoding issues in multi-line commit messages."
+        }
+      ]
+    },
+    {
+      "version": "20260113.1",
+      "release_date": "January 13, 2026",
+      "introduction": "This release introduces LoRA fine-tuning capabilities, allowing you to train custom adapters that specialize local models on your own knowledge domains without modifying the base model weights.",
+      "highlights": [
+        {
+          "id": "lora-training",
+          "icon": "brain.head.profile",
+          "title": "LoRA Fine-Tuning for Local Models",
+          "description": "SAM now supports training custom LoRA adapters to specialize local MLX models on specific knowledge domains. Export conversations or documents as training data, configure parameters like rank, alpha, learning rate, and epochs, then train adapters that enhance your models with domain-specific knowledge. Trained adapters appear as selectable models in the picker and can be used immediately for inference. Training is performed on-device using Apple's MLX framework for optimal performance on Apple Silicon."
+        },
+        {
+          "id": "training-data-export",
+          "icon": "square.and.arrow.up",
+          "title": "Conversation & Document Export for Training",
+          "description": "Export your conversations and documents as structured training data in JSONL format with automatic chat template formatting. Choose from multiple document chunking strategies (paragraph, sentence, token-based) and control PII detection. Training data exports include conversation memories and can be used directly with the LoRA training system."
+        }
+      ],
+      "bugfixes": [],
+      "improvements": [
+        {
+          "id": "ui-button-spacing",
+          "icon": "ruler",
+          "title": "Refined UI Button Spacing and Consistency",
+          "description": "Standardized spacing, padding, and icon sizes across all UI controls. Model, Prompt, and Personality pickers now have identical padding (8px horizontal), button icons are consistently 20x20 points, and HStack spacing matches throughout the toolbar. This creates a more visually harmonious and polished interface."
+        },
+        {
+          "id": "split-model-support",
+          "icon": "doc.on.doc",
+          "title": "Support for Split Model Files",
+          "description": "LoRA training now properly validates base models stored in split file format (model-00001-of-00002.safetensors), ensuring compatibility with larger models that exceed file size limits."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "silicon-studio-credit",
+          "content": "LoRA training implementation inspired by [Silicon Studio](https://github.com/rileycleavenger/Silicon-Studio) - a native macOS app for LLM fine-tuning with MLX."
+        }
+      ]
+    },
+    {
+      "version": "20260110.1",
+      "release_date": "January 10, 2026",
+      "introduction": "This release introduces support for automated development channel updates, implements API token authentication for external integrations, and fixes critical issues with local MLX models and minimal prompt responses.",
+      "highlights": [
+        {
+          "id": "dev-channel-support",
+          "icon": "hammer.fill",
+          "title": "Development Channel Support",
+          "description": "SAM now supports automatic nightly development builds for early access to features and fixes. Enable 'Receive development updates' in Preferences → General to receive automated pre-release builds (marked as -dev.1, -dev.2, etc.) when changes are available. Development builds are created nightly at 2 AM UTC when changes are pushed, with the last 7 builds kept available. Perfect for users who want to help test new features before stable releases."
+        },
+        {
+          "id": "api-token-auth",
+          "icon": "key.fill",
+          "title": "API Token Authentication for External Access",
+          "description": "SAM's REST API now supports token-based authentication for secure external access. Generate API tokens in Preferences → Advanced → Security, then use them in HTTP headers (Authorization: Bearer <token>) to access SAM's chat completions, tool calls, and other endpoints from external scripts, automation tools, or custom integrations. Tokens can be revoked at any time for security."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "local-mlx-picker-fix",
+          "icon": "cpu.fill",
+          "title": "Local MLX Models Now Appear in Picker",
+          "description": "Fixed critical regression where local MLX models (like Qwen3-4B) disappeared from model picker after updating to 20260108.1. Issue occurred because model registry was storing paths to tokenizer files instead of the actual model.safetensors file, causing the MLX provider filter to fail. System now correctly registers only primary model files and prioritizes model.safetensors during scans. Existing corrupted registries will auto-heal on next launch."
+        },
+        {
+          "id": "minimal-prompt-response-fix",
+          "icon": "bubble.left.and.bubble.right.fill",
+          "title": "Local Models No Longer Fail on Minimal Prompts",
+          "description": "Fixed issue where local models (MLX/GGUF) would not return responses when given very short or minimal prompts. System now properly handles minimal context scenarios and ensures local models generate appropriate responses even with brief input."
+        }
+      ],
+      "improvements": [],
+      "developer_notes": []
+    },
+    {
+      "version": "20260108.1",
+      "release_date": "January 8, 2026",
+      "introduction": "Major release featuring a brand new first-time setup wizard that guides you through configuring SAM, whether you prefer cloud AI or local models. Also includes a complete redesign of Local Models preferences and critical bug fixes for model downloads.",
+      "highlights": [
+        {
+          "id": "onboarding-wizard",
+          "icon": "sparkles",
+          "title": "Welcome Wizard for First-Time Setup",
+          "description": "New users are greeted with a guided onboarding experience that makes getting started effortless. The wizard detects if you have no models or providers configured, then helps you choose your path: Cloud AI (OpenAI, Anthropic, Google, etc.) or Local Models (GGUF/MLX running on your Mac). For local models, the wizard recommends models based on your RAM (8GB, 16GB, or 32GB+) and can download them directly without leaving the setup flow."
+        },
+        {
+          "id": "wizard-direct-downloads",
+          "icon": "arrow.down.app.fill",
+          "title": "Download Models During Setup",
+          "description": "The onboarding wizard can download local models directly from HuggingFace while you wait. Choose from RAM-optimized recommendations (Qwen3-4B for 8GB Macs, Qwen3-8B for 16GB+), see model details (size, context window), and start downloading immediately. Progress indicators show download status, making first-time setup smooth and guided."
+        },
+        {
+          "id": "local-models-redesign",
+          "icon": "square.split.3x1.fill",
+          "title": "Local Models Preferences Redesigned",
+          "description": "Complete redesign with 3 organized tabs: Installed Models (with filtering and sorting), Download (with improved search), and Settings (storage and optimization). The new layout makes it much easier to browse, download, and manage your GGUF, MLX, and Stable Diffusion models."
+        },
+        {
+          "id": "improved-model-search",
+          "icon": "magnifyingglass.circle.fill",
+          "title": "Better Model Search Results",
+          "description": "Search now returns up to 100 results (up from 30) and 'All Models' filter correctly shows GGUF, MLX, and Stable Diffusion models together. Find the models you need more easily."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "mlx-download-fix",
+          "icon": "arrow.down.circle.fill",
+          "title": "MLX Model Downloads Fixed",
+          "description": "Fixed 'No safetensors file found in model' error when downloading MLX models from onboarding wizard. System now properly fetches full model details before starting download."
+        },
+        {
+          "id": "default-model-fallback",
+          "icon": "gear",
+          "title": "Default Model Selection Improved",
+          "description": "Preferences no longer shows 'gpt-4' as default when no API provider is configured. Empty default now matches actual behavior, eliminating confusion for users without OpenAI keys."
+        },
+        {
+          "id": "remote-providers-naming",
+          "icon": "cloud.fill",
+          "title": "Consistent Remote Providers Naming",
+          "description": "Renamed 'API Endpoints' to 'Remote Providers' throughout UI for consistency. Tab label and section headers now match."
+        },
+        {
+          "id": "github-billing-cache-fix",
+          "icon": "creditcard.fill",
+          "title": "GitHub Copilot Billing Display Fixed",
+          "description": "Fixed caching issues that prevented billing data from updating properly. GitHub Copilot usage and billing information now displays correctly."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "ram-based-recommendations",
+          "icon": "memorychip.fill",
+          "title": "Smart RAM-Based Model Recommendations",
+          "description": "The onboarding wizard recommends models based on your Mac's available RAM. 8GB systems get Qwen3-4B (3GB, 16k context), 16GB systems get Qwen3-8B (6GB, 32k context), and 32GB+ systems get larger options. No guesswork about which model will run on your hardware."
+        },
+        {
+          "id": "cloud-provider-guidance",
+          "icon": "cloud.fill",
+          "title": "Cloud Provider Setup Guidance",
+          "description": "If you choose cloud AI, the wizard shows all available providers (OpenAI, Anthropic, Google, xAI, Mistral, etc.) with difficulty ratings and links to get API keys. Makes it clear which providers are easiest to set up and where to find your credentials."
+        },
+        {
+          "id": "installed-models-filtering",
+          "icon": "slider.horizontal.3",
+          "title": "Installed Models Filtering and Sorting",
+          "description": "New Installed Models tab includes filters (All/GGUF/MLX/Stable Diffusion) and sorting options (Name/Size/Date Added). Quickly find specific models in your collection."
+        },
+        {
+          "id": "download-tab-organization",
+          "icon": "arrow.down.app.fill",
+          "title": "Organized Download Tab",
+          "description": "New Download tab features clear search controls, filter dropdowns (All/GGUF/MLX/SD/Q4/Q5/Q8), and helpful context about 16k+ context window requirements. Better organized than the previous single-scroll interface."
+        },
+        {
+          "id": "settings-tab-storage",
+          "icon": "internaldrive.fill",
+          "title": "Settings Tab with Storage Info",
+          "description": "New Settings tab combines model optimization controls with storage information. View cache location, calculate total storage used, and access model directories easily."
+        },
+        {
+          "id": "wizard-integration",
+          "icon": "arrow.triangle.branch",
+          "title": "Seamless Wizard Integration",
+          "description": "The onboarding wizard appears automatically when needed and integrates smoothly with SAM's main interface. Once you've configured a provider or downloaded a model, the wizard disappears and you see the normal welcome screen."
+        },
+        {
+          "id": "onboarding-progress-indicators",
+          "icon": "chart.line.uptrend.xyaxis",
+          "title": "Download Progress in Onboarding",
+          "description": "Onboarding wizard now shows percentage-based progress bars when downloading models. Visual feedback makes the setup process more transparent."
+        },
+        {
+          "id": "api-reference-update",
+          "icon": "book.fill",
+          "title": "Complete API Reference Documentation",
+          "description": "Help → API Reference now includes comprehensive documentation for all 20 endpoints, including new autonomous workflow, tool interaction, and model management APIs. All parameters verified against implementation with examples and detailed descriptions."
+        }
+      ]
+    },
+    {
+      "version": "20260107.1",
+      "release_date": "January 7, 2026",
+      "introduction": "Critical release fixing Claude model context loss and infinite loops. This release resolves three major bugs affecting agent workflow quality: tool result trimming causing infinite loops, delta mode sending incomplete context to Claude, and duplicate message alternation losing tool results. Additionally fixes false 'no tools' warnings and improves workflow guidance.",
+      "highlights": [
+        {
+          "id": "claude-context-loss-fix",
+          "icon": "brain.fill",
+          "title": "Claude Context Loss Fixed",
+          "description": "Fixed critical bug where Claude models received only tool results without conversation history. When stateful marker wasn't found, delta mode incorrectly sent only 4 internal messages instead of full conversation history (e.g., 19 messages). Claude now receives complete context, eliminating 'this is the FIRST message' errors and memory issues."
+        },
+        {
+          "id": "infinite-loop-elimination",
+          "icon": "arrow.triangle.2.circlepath.circle.fill",
+          "title": "Infinite Tool Loop Eliminated",
+          "description": "Fixed infinite loop where agents repeatedly called the same tool. Root cause: 16KB payload limit was trimming tool results before they reached the LLM, causing the agent to retry endlessly. Payload limit now only applies to Claude models (32KB) and preserves message pairs together."
+        },
+        {
+          "id": "github-copilot-claude-batching",
+          "icon": "chevron.left.forwardslash.chevron.right",
+          "title": "GitHub Copilot + Claude Format Handling",
+          "description": "Disabled Claude-specific tool result batching for GitHub Copilot provider. GitHub Copilot's API handles Claude conversion internally and expects OpenAI format. Only direct Anthropic provider uses batching, preventing format conflicts and alternation issues."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "delta-mode-context-loss",
+          "icon": "chevron.left.chevron.right",
+          "title": "Delta Mode Context Loss Fixed",
+          "description": "When stateful marker wasn't found in conversation, system logged 'sending full history' but still used delta-only mode. Added useDeltaMode flag that only enables delta mode when marker is successfully found, preventing context loss."
+        },
+        {
+          "id": "payload-limit-tool-trimming",
+          "icon": "scissors",
+          "title": "Payload Size Limit Tool Trimming Fixed",
+          "description": "16KB payload limit was applied to ALL models, causing tool results to be trimmed before reaching the LLM. Now only enforced for Claude models (32KB limit) and improved trimming logic keeps message pairs together (assistant+toolcalls with corresponding tool_result)."
+        },
+        {
+          "id": "double-alternation-merging",
+          "icon": "arrow.left.arrow.right",
+          "title": "Double Message Alternation Eliminated",
+          "description": "Messages were being alternated/merged twice: once in AgentOrchestrator.ensureMessageAlternation() and again in GitHubCopilotProvider.enforceMessageAlternation(). Removed duplicate alternation from provider, keeping orchestrator version with better logging."
+        },
+        {
+          "id": "claude-batching-provider-specific",
+          "icon": "server.rack",
+          "title": "Claude Tool Batching Made Provider-Specific",
+          "description": "batchToolResultsForClaude now only runs for direct Anthropic provider (anthropic/*). GitHub Copilot provider (github_copilot/claude-*) skips batching since the proxy handles conversion internally, preventing marker burial in alternation."
+        },
+        {
+          "id": "workflow-guidance-improvement",
+          "icon": "text.quote",
+          "title": "Workflow Guidance Improved",
+          "description": "Changed aggressive guidance from 'If tool results contain enough information → RESPOND NOW' to 'ANALYZE the data to address the user's specific request. Complete that task with the data you have.' Encourages proper analysis instead of premature responses."
+        },
+        {
+          "id": "false-no-tools-warning",
+          "icon": "exclamationmark.triangle",
+          "title": "False 'No Tools' Warning Eliminated",
+          "description": "Fixed premature reset of lastIterationHadToolResults causing false 'Agent executed no tools in iteration X' warnings. System now correctly tracks tool execution state across iterations, only warning when genuinely stuck."
+        },
+        {
+          "id": "operation-deduplication",
+          "icon": "arrow.triangle.merge",
+          "title": "Web Operations Deduplication Added",
+          "description": "WebOperationsTool now prevents calling the same operation with identical parameters multiple times. Reduces wasted API calls and improves efficiency when agents retry unnecessarily."
+        },
+        {
+          "id": "diagnostic-message-logging",
+          "icon": "doc.text.magnifyingglass",
+          "title": "Comprehensive Diagnostic Logging Added",
+          "description": "Added detailed logging to ensureMessageAlternation showing input/output message arrays with roles, sizes, tool info, and each filtering/merging decision. Critical for debugging message transformation bugs."
+        }
+      ],
+      "known_issues": [
+        {
+          "id": "mindmap-children-not-rendering",
+          "icon": "diagram.tree",
+          "title": "Mindmap Children Not Rendering",
+          "description": "Mindmap shows only root node. Children are parsed correctly but have layout/positioning issues preventing display. Recursive rendering exists but child nodes render outside visible frame bounds."
+        }
+      ]
+    },
+    {
+      "version": "20260106.1",
+      "release_date": "January 6, 2026",
+      "introduction": "This release delivers comprehensive Mermaid diagram improvements with 9 bug fixes across multiple diagram types. Critical parser contamination issues resolved, and problematic diagram types temporarily disabled to ensure stability.",
+      "highlights": [
+        {
+          "id": "mermaid-comprehensive-fixes",
+          "icon": "chart.bar.doc.horizontal.fill",
+          "title": "9 Mermaid Diagram Rendering Fixes",
+          "description": "Fixed critical bugs in bar charts, flowcharts, xy-charts, class diagrams, and mindmaps. Improved arrow rendering, parser accuracy, and cross-diagram isolation."
+        },
+        {
+          "id": "cross-diagram-contamination",
+          "icon": "exclamationmark.shield.fill",
+          "title": "Cross-Diagram Contamination Eliminated",
+          "description": "Fixed critical bug where class diagrams were contaminated with state diagram nodes. Parser now correctly distinguishes '-->' (state transitions) from '--' (class associations), preventing syntax from one diagram type affecting another."
+        },
+        {
+          "id": "read-tool-loop-prevention",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Read Tool Result Loop Prevention",
+          "description": "Added efficiency guidance to prevent agents from repeatedly calling read_tool_result. Tool now includes clear guidance: 'Use sparingly - most tools return output directly. Only needed when tool signals more data available.'"
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "bar-chart-rendering",
+          "icon": "chart.bar.fill",
+          "title": "Bar Chart Rendering Fixed",
+          "description": "Fixed bar chart value text rendering. Values now display correctly above bars using proper SwiftUI text rendering instead of attempting to use non-existent NSAttributedString API."
+        },
+        {
+          "id": "flowchart-arrows-invisible",
+          "icon": "arrow.right",
+          "title": "Flowchart Arrows Now Visible",
+          "description": "Arrow heads were invisible due to using .stroke() on closed paths. Changed to .fill() for proper rendering. Arrows with .closeSubpath() now display correctly."
+        },
+        {
+          "id": "xy-chart-axis-labels",
+          "icon": "chart.xyaxis.line",
+          "title": "XY Chart Axis Labels Fixed",
+          "description": "Axis labels were clipped and invisible. Added proper padding (.padding(.vertical, 20)) to ensure labels render within visible bounds."
+        },
+        {
+          "id": "class-diagram-arrows",
+          "icon": "arrow.triangle.branch",
+          "title": "Class Diagram Relationship Arrows Fixed",
+          "description": "Changed relationship arrows from .stroke() to .fill() for visibility. Inheritance, composition, and association arrows now render correctly."
+        },
+        {
+          "id": "class-diagram-contamination",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Class Diagram Contamination Eliminated",
+          "description": "State diagram syntax ('Idle --> Loading') was being parsed as class relationships due to substring matching. Parser now checks for '-->' before '--', preventing cross-diagram contamination."
+        },
+        {
+          "id": "mindmap-label-extraction",
+          "icon": "brain.head.profile",
+          "title": "Mindmap Label Extraction Fixed",
+          "description": "Mindmap nodes with shape syntax like 'root((Project))' displayed raw syntax instead of labels. Parser now correctly extracts 'Project' by finding first '(' and last ')' then stripping inner parentheses."
+        },
+        {
+          "id": "state-er-disabled",
+          "icon": "eye.slash.fill",
+          "title": "State and ER Diagrams Temporarily Disabled",
+          "description": "State and ER diagrams have rendering issues and are disabled until fixes are implemented. Removed from system prompt (SystemPromptConfiguration.swift) and parser returns .unsupported for these types to prevent rendering attempts."
+        },
+        {
+          "id": "read-tool-efficiency",
+          "icon": "speedometer",
+          "title": "Read Tool Result Efficiency Improved",
+          "description": "Added usage guidance to prevent unnecessary read_tool_result calls. Tool description now includes: 'Use sparingly. Most tools return all output directly in their response.'"
+        },
+        {
+          "id": "barchart-parser-mismatch",
+          "icon": "chart.bar.xaxis",
+          "title": "Bar Chart Parser/Prompt Mismatch Fixed",
+          "description": "System prompt advertised 'barChart' syntax but parser only recognized 'bar'. Updated parser to accept both 'barChart' and 'bar' for consistency with documentation."
+        }
+      ],
+      "known_issues": [
+        {
+          "id": "mindmap-children-not-rendering",
+          "icon": "diagram.tree",
+          "title": "Mindmap Children Not Rendering",
+          "description": "Mindmap shows only root node. Children are parsed correctly but have layout/positioning issues preventing display. Recursive rendering exists but child nodes render outside visible frame bounds."
+        }
+      ]
+    },
+    {
+      "version": "20260105.1",
+      "release_date": "January 5, 2026",
+      "introduction": "This release fixes a todo workflow regression affecting web research and completes SerpAPI search engine support. System prompt optimization reduces duplication while maintaining behavioral effectiveness.",
+      "highlights": [
+        {
+          "id": "research-first-principle",
+          "icon": "magnifyingglass.circle.fill",
+          "title": "Research-First Principle Enforced",
+          "description": "Fixed regression where agents using todo lists would generate fake URLs or product listings from training data instead of using web research tools. Todo workflow reminders now align with system prompt to enforce research-first behavior."
+        },
+        {
+          "id": "all-serpapi-engines-working",
+          "icon": "globe.badge.chevron.backward",
+          "title": "All 7 SerpAPI Engines Working",
+          "description": "Complete validation and fixes for all search engines. Amazon, Walmart, and Yelp now work correctly with proper parameter handling and result parsing. Each engine configured per official SerpAPI documentation."
+        },
+        {
+          "id": "system-prompt-optimization",
+          "icon": "doc.text.magnifyingglass",
+          "title": "System Prompt Optimized",
+          "description": "Reduced system prompt duplication by 14% while maintaining effectiveness. Clearer hierarchy between high-level context and detailed guidance, with research-first principle as authoritative source."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "agents-hallucinating-urls",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Todo Workflow Research Regression Fixed",
+          "description": "Fixed regression where todo workflow reminders conflicted with system prompt, causing agents to generate fake URLs from training data. TodoReminderInjector now defers to system prompt's research-first behavior."
+        },
+        {
+          "id": "amazon-search-400-error",
+          "icon": "cart.fill.badge.minus",
+          "title": "Amazon Search Fixed",
+          "description": "Resolved 400 error by using correct 'k' parameter instead of 'query'. Amazon product searches now return 20+ results with prices and links."
+        },
+        {
+          "id": "walmart-zero-results",
+          "icon": "building.2.fill",
+          "title": "Walmart Parsing Fixed",
+          "description": "Fixed parser to use 'product_page_url' instead of 'link' field and extract prices from nested structure. Walmart searches now return 10 products correctly."
+        },
+        {
+          "id": "yelp-auto-location",
+          "icon": "location.fill",
+          "title": "Yelp Auto-Location",
+          "description": "Yelp searches now automatically use your configured location from preferences. No need to manually specify location for local business searches."
+        },
+        {
+          "id": "todo-workflow-alignment",
+          "icon": "list.bullet.rectangle",
+          "title": "Todo Workflow Instructions Restored",
+          "description": "Reverted removal of todo workflow section from system prompt after testing revealed agents need static instructions as educational foundation. Runtime reminders supplement but don't replace base guidance."
+        }
+      ]
+    },
+    {
+      "version": "20260104.1",
+      "release_date": "January 4, 2026",
+      "introduction": "This release improves workflow reliability through better todo tracking, continuation logic, and error handling. Agents now complete multi-step tasks more reliably.",
+      "highlights": [
+        {
+          "id": "todo-workflow-reliability",
+          "icon": "checkmark.circle.fill",
+          "title": "More Reliable Todo Workflow",
+          "description": "Fixed issues where agents would skip marking todos in-progress or completed. Workflows now properly track all tasks from start to finish."
+        },
+        {
+          "id": "context-aware-guidance",
+          "icon": "lightbulb.fill",
+          "title": "Smarter Continuation Guidance",
+          "description": "Agents receive better instructions based on workflow state. The system now adapts guidance depending on whether todos exist and what tools were just used."
+        },
+        {
+          "id": "web-research-improvements",
+          "icon": "globe",
+          "title": "Cleaner Web Research Results",
+          "description": "Web research now handles partial failures gracefully. If some sources work and others fail, you see results from successful sources instead of an error."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "workflow-early-stop",
+          "icon": "arrow.forward.circle.fill",
+          "title": "Workflows No Longer Stop Early",
+          "description": "Fixed issue where workflows would stop prematurely when todos were incomplete. The system now properly detects incomplete work and continues until all tasks are done."
+        },
+        {
+          "id": "response-loops",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Agent Repetition Eliminated",
+          "description": "Agents no longer repeat the same response multiple times. Improved intervention system prevents loops and keeps workflows moving forward."
+        },
+        {
+          "id": "planning-loop-detection",
+          "icon": "list.bullet.circle.fill",
+          "title": "Planning Loop Detection Improved",
+          "description": "Marking todos as completed is now correctly recognized as progress, not planning. Prevents false loop detection during normal workflow."
+        },
+        {
+          "id": "streaming-duplicate-cards",
+          "icon": "square.on.square",
+          "title": "No More Duplicate Tool Cards",
+          "description": "Tool cards no longer appear twice in the UI when using streaming mode. Fixed message creation logic to avoid duplication."
+        }
+      ]
+    },
+    {
+      "version": "20260103.1",
+      "release_date": "January 3, 2026",
+      "introduction": "This release resolves bugs with Claude models, simplifies agent workflows, and improves image generation by adding fine grained config scale control.",
+      "highlights": [
+        {
+          "id": "claude-production-ready",
+          "icon": "checkmark.seal.fill",
+          "title": "Claude Model Issues Resolved",
+          "description": "Claude models now complete complex multi-tool workflows. Fixed infinite loops, tool result handling, and context management."
+        },
+        {
+          "id": "simplified-architecture",
+          "icon": "gearshape.2.fill",
+          "title": "Simplified Agent Architecture",
+          "description": "Completely removed the old LoopDetector system and simplified AgentOrchestrator workflow. Agents now work more reliably with cleaner, more maintainable code. No more mysterious edge cases or complex loop detection needed."
+        },
+        {
+          "id": "decimal-cfg-scale",
+          "icon": "slider.horizontal.3",
+          "title": "Fine-Grained Image Generation Control",
+          "description": "CFG scale now accepts decimal values like 5.9 or 7.5 for precise control over how closely images follow your prompts. Perfect for finding the sweet spot between creativity and adherence. Use the stepper for 0.1 increments or type exact values."
+        },
+        {
+          "id": "github-copilot-stability",
+          "icon": "bolt.shield.fill",
+          "title": "Corrected GitHub Copilot Integration Bugs",
+          "description": "Eliminated all known GitHub Copilot API errors through careful message formatting, role ordering, and delta mode fixes. Conversations now flow smoothly without unexpected 400 errors or message slicing issues."
+        },
+        {
+          "id": "consistent-tool-results",
+          "icon": "doc.plaintext.fill",
+          "title": "Smarter Tool Result Previews",
+          "description": "All tools now show you the first 8KB of results immediately, so models can see actual content before deciding whether to read more. Prevents unnecessary read_tool_result calls and makes workflows more efficient."
+        },
+        {
+          "id": "better-release-notes",
+          "icon": "doc.richtext.fill",
+          "title": "Better Release Notes",
+          "description": "Release notes now display in HTML format through the Sparkle updater. See what's new in an easier-to-read format with proper formatting and organization."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "claude-no-more-loops",
+          "icon": "arrow.triangle.2.circlepath.circle.badge.checkmark.fill",
+          "title": "Claude No Longer Loops Infinitely",
+          "description": "Fixed the frustrating issue where Claude would call the same tool 25+ times. Root causes were: missing context re-injection, seeing preview markers without actual data, and choosing the wrong web search tool. All fixed."
+        },
+        {
+          "id": "api-errors-gone",
+          "icon": "xmark.seal.fill",
+          "title": "GitHub Copilot API Errors Eliminated",
+          "description": "No more 'at least one message required' or role validation errors. Fixed message slicing edge cases, proper role ordering, delta mode activation logic, and whitespace handling."
+        },
+        {
+          "id": "tools-show-real-data",
+          "icon": "doc.text.magnifyingglass",
+          "title": "Tool Results Show Actual Content",
+          "description": "Web operations and other tools now use the standard preview system that shows the first 8KB of actual content. Previously some tools only showed storage markers, causing models to call read_tool_result unnecessarily."
+        },
+        {
+          "id": "auto-update-version-logic",
+          "icon": "arrow.clockwise.circle.fill",
+          "title": "Auto-Update Version Comparison Fixed",
+          "description": "Sparkle updater now correctly compares date-based versions (YYYYMMDD.N format). Previously it compared them as strings which could miss updates."
+        }
+      ]
+    },
+    {
+      "version": "20251230.1",
+      "release_date": "December 30, 2025",
+      "introduction": "This comprehensive update adds Google Gemini API support with full pricing visibility, Session Intelligence toolbar for real-time agent activity tracking, significant terminal improvements, and critical bug fixes for message persistence, document imports, and long conversations.",
+      "highlights": [
+        {
+          "id": "message-persistence-fix",
+          "icon": "checkmark.shield.fill",
+          "title": "Message Disappearance Bug Fixed",
+          "description": "Resolved critical bug where messages would vanish after streaming completed when conversations had incomplete todo lists. AUTO_CONTINUE now respects workflow mode settings."
+        },
+        {
+          "id": "double-debounce-fix",
+          "icon": "clock.arrow.2.circlepath",
+          "title": "Faster Message Persistence",
+          "description": "Eliminated double debounce delay that caused up to 1 second before messages were written to disk. Messages now persist within 500ms, reducing risk of data loss on crashes."
+        },
+        {
+          "id": "session-intelligence-toolbar",
+          "icon": "brain",
+          "title": "Session Intelligence Toolbar",
+          "description": "New toolbar provides real-time visibility into agent intelligence activity. Track archive recalls, memory searches, and YaRN compressions as they happen, plus view active token counts and archived context statistics."
+        },
+        {
+          "id": "gemini-api-support",
+          "icon": "sparkles",
+          "title": "Google Gemini API Integration",
+          "description": "Full support for Google Gemini models with automatic metadata discovery, pricing display, and rate limit notifications. Gemini models now show accurate context sizes and costs in the UI."
+        },
+        {
+          "id": "terminal-auto-restart",
+          "icon": "terminal.fill",
+          "title": "Terminal Auto-Restart on Directory Change",
+          "description": "Terminal now automatically restarts when switching shared topics, ensuring the terminal is always in the correct directory. Running processes are gracefully terminated and the session is recreated with a clean state."
+        },
+        {
+          "id": "document-import-path-fix",
+          "icon": "doc.text.fill",
+          "title": "Document Import Path Resolution Fixed",
+          "description": "Agents can now correctly import documents using relative paths like 'book/file.md' without encountering authorization errors. Paths are properly resolved against the workspace directory."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "workflow-mode-respect",
+          "icon": "slider.horizontal.3",
+          "title": "Workflow Mode Awareness",
+          "description": "AUTO_CONTINUE feature now correctly checks workflow mode settings before removing messages, preventing unintended message deletion in normal chat mode."
+        },
+        {
+          "id": "optimized-save-path",
+          "icon": "arrow.down.doc.fill",
+          "title": "Optimized Save Architecture",
+          "description": "MessageBus now bypasses redundant debounce layer when saving to disk, maintaining streaming efficiency while improving data reliability."
+        },
+        {
+          "id": "intelligence-telemetry",
+          "icon": "chart.bar.fill",
+          "title": "Real-Time Intelligence Telemetry",
+          "description": "Session Intelligence toolbar tracks and displays live counters for archive recalls (recall_history tool), memory searches (RAG queries), and YaRN compression events. Provides complete visibility into agent's knowledge access patterns."
+        },
+        {
+          "id": "per-conversation-tokens",
+          "icon": "number.circle.fill",
+          "title": "Accurate Per-Conversation Token Counts",
+          "description": "Active token counts now calculated from actual conversation messages instead of global YaRN state, showing precise token usage for each conversation."
+        },
+        {
+          "id": "compact-stats-layout",
+          "icon": "square.grid.2x2.fill",
+          "title": "Space-Efficient Statistics Display",
+          "description": "Intelligence Activity section uses a compact 2x3 grid layout showing archive recalls, memory searches, compressions, active tokens, archived chunks, and archived tokens in minimal space."
+        },
+        {
+          "id": "terminal-dead-session-recovery",
+          "icon": "arrow.clockwise",
+          "title": "Terminal Session Recovery",
+          "description": "Terminal now detects when shell processes exit (e.g., after 'exit' or 'logout') and automatically restarts the session when Reset is clicked, eliminating 'errno 5' errors."
+        },
+        {
+          "id": "gemini-pricing-display",
+          "icon": "dollarsign.circle.fill",
+          "title": "Gemini Cost Visibility",
+          "description": "All Gemini models now display pricing information ($X/$Y/1M format) with helpful tooltips explaining input/output costs per million tokens."
+        },
+        {
+          "id": "gemini-rate-limits",
+          "icon": "clock.fill",
+          "title": "Rate Limit Notifications",
+          "description": "When Gemini rate limits are hit, SAM now shows an alert with the retry countdown instead of silently waiting."
+        },
+        {
+          "id": "non-chat-model-filtering",
+          "icon": "line.3.horizontal.decrease.circle.fill",
+          "title": "Smart Model Filtering",
+          "description": "Image and video generation models (Imagen, Veo) are automatically filtered from the chat picker. These will be integrated with Stable Diffusion UI in future updates."
+        },
+        {
+          "id": "workspace-file-access",
+          "icon": "folder.fill",
+          "title": "Improved Workspace File Access",
+          "description": "Document import operations now use consistent path resolution, ensuring agents have seamless access to files within their designated workspace."
+        }
+      ]
+    },
+    {
+      "version": "20251227.1",
+      "release_date": "December 27, 2025",
+      "introduction": "This update fixes critical issues affecting long conversations and the automatic update system. SAM now properly handles conversations with hundreds of messages and won't incorrectly suggest updates when you're already on the latest version.",
+      "highlights": [
+        {
+          "id": "yarn-compression-fix",
+          "icon": "arrow.down.square.fill",
+          "title": "Long Conversation Support Fixed",
+          "description": "Resolved token limit errors in extended conversations. YARN compression now properly reduces message sizes by 60-70%, allowing conversations to continue without interruption."
+        },
+        {
+          "id": "accurate-token-counting",
+          "icon": "number.square.fill",
+          "title": "Improved Token Estimation",
+          "description": "Token counts now use the actual tokenizer instead of character-based approximations, providing estimates accurate to within 5-10% of model limits."
+        },
+        {
+          "id": "sparkle-versioning-fix",
+          "icon": "arrow.clockwise.circle.fill",
+          "title": "Update Detection Corrected",
+          "description": "Fixed an issue where the update checker would prompt for updates even when already on the current version."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "github-copilot-limits",
+          "icon": "checkmark.shield.fill",
+          "title": "Model Limit Compliance",
+          "description": "Requests to GitHub Copilot and other providers now respect model context limits, with automatic conversation compression when needed."
+        }
+      ]
+    },
+    {
+      "version": "20251225.1",
+      "release_date": "December 25, 2025",
+      "introduction": "This update brings major improvements to CivitAI model browsing with smarter caching, multi-page loading, and fixed API authentication. Browse thousands of Stable Diffusion models efficiently without hammering the API.",
+      "highlights": [
+        {
+          "id": "civitai-caching",
+          "icon": "square.stack.3d.up.fill",
+          "title": "Smart Model Catalog Caching",
+          "description": "Model catalogs now cache locally for 24 hours. Instant loading on subsequent visits, drastically reduced API requests, and better overall performance."
+        },
+        {
+          "id": "multi-page-loading",
+          "icon": "arrow.down.to.line.circle.fill",
+          "title": "Multi-Page Model Loading",
+          "description": "Automatically loads up to 1,000 checkpoint models across 10 pages. No more seeing just the first 100 - explore the full catalog."
+        },
+        {
+          "id": "civitai-auth-fix",
+          "icon": "key.fill",
+          "title": "Fixed CivitAI Authentication",
+          "description": "API authentication now uses proper query parameters. Eliminates rate limiting issues and ensures reliable model browsing with your API key."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "cursor-pagination",
+          "icon": "arrow.left.and.right.circle.fill",
+          "title": "Cursor-Based Pagination",
+          "description": "Reliable pagination using CivitAI's cursor system. No more failures beyond page 20 - navigate through thousands of models smoothly."
+        },
+        {
+          "id": "cache-refresh",
+          "icon": "arrow.clockwise.circle.fill",
+          "title": "Manual Cache Refresh",
+          "description": "New Refresh button clears cache and reloads from API. Get the latest models on demand while benefiting from caching most of the time."
+        },
+        {
+          "id": "concurrency-safe",
+          "icon": "bolt.shield.fill",
+          "title": "Swift 6 Concurrency",
+          "description": "Full Sendable conformance for thread-safe model data. Actor-isolated caching prevents data races and ensures reliable operation."
+        }
+      ]
+    },
+    {
+      "version": "20251221.1",
+      "release_date": "December 21, 2025",
+      "introduction": "Welcome to SAM - Synthetic Autonomic Mind! SAM is a native macOS AI assistant built to work *with* you, not just *for* you. Designed for privacy, SAM keeps your conversations and data on your Mac while giving you access to powerful AI capabilities: multi-provider support, voice interaction, local image generation, document analysis, and intelligent tools. Say \"Hey SAM\" to go hands-free, or type naturally - you're always in control.",
+      "highlights": [
+        {
+          "id": "native-macos",
+          "icon": "apple.logo",
+          "title": "Native macOS Experience",
+          "description": "Beautiful SwiftUI interface designed specifically for Mac. Fast, responsive, and follows macOS design guidelines perfectly."
+        },
+        {
+          "id": "privacy-first",
+          "icon": "lock.shield.fill",
+          "title": "Privacy You Can Trust",
+          "description": "All conversations and data stay on your Mac. Works with local AI models by default. Cloud AI providers only when you choose."
+        },
+        {
+          "id": "voice-control",
+          "icon": "waveform",
+          "title": "Full Voice Control",
+          "description": "Say \"Hey SAM\" for hands-free operation. Complete voice input and natural text-to-speech output. Works offline with local models."
+        },
+        {
+          "id": "multi-provider",
+          "icon": "cloud.fill",
+          "title": "Multi-Provider AI Support",
+          "description": "Choose from OpenAI, Anthropic, Google, DeepSeek, GitHub Copilot, or run models locally with MLX and GGUF. Switch providers anytime."
+        },
+        {
+          "id": "local-image-gen",
+          "icon": "photo.on.rectangle.angled",
+          "title": "Local Image Generation",
+          "description": "Create beautiful images with Stable Diffusion running entirely on your Mac. No subscriptions, no cloud uploads, just your imagination."
+        },
+        {
+          "id": "intelligent-tools",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "14 Integrated Tools",
+          "description": "File management, web research with citations, image generation, document analysis, shell commands, and more. Real work, not just conversation."
+        },
+        {
+          "id": "document-intelligence",
+          "icon": "doc.text.fill",
+          "title": "Document Analysis",
+          "description": "Upload PDFs, Word docs, text files, and more. Ask questions, get summaries, extract insights. Your documents become searchable knowledge."
+        },
+        {
+          "id": "semantic-memory",
+          "icon": "brain.head.profile",
+          "title": "Smart Memory System",
+          "description": "Create Shared Topics to connect conversations around projects. Find anything by meaning with semantic search, not just keywords."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "personality-system",
+          "icon": "theatermasks.fill",
+          "title": "24 Personalities",
+          "description": "From friendly and professional to creative and technical. Choose the tone that fits your task, or create custom personalities."
+        },
+        {
+          "id": "project-workspaces",
+          "icon": "folder.fill",
+          "title": "Project Organization",
+          "description": "Keep everything organized in ~/SAM/{project-name}/ folders. Generated images, downloads, and outputs automatically organized."
+        },
+        {
+          "id": "automatic-updates",
+          "icon": "arrow.down.circle.fill",
+          "title": "Automatic Updates",
+          "description": "Integrated Sparkle framework for seamless updates. Check for Updates menu keeps SAM current with the latest features and fixes."
+        }
+      ]
+    }
+  ]
+}
