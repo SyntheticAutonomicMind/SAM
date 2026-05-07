@@ -156,7 +156,6 @@ jobs:
           gh release create "${VERSION}" \
             --title "SAM ${VERSION}" \
             --notes-file "$NOTES_FILE" \
-            --generate-notes \
             "dist/SAM-${VERSION}.dmg" \
             "dist/SAM-${VERSION}.zip" \
             "dist/SAM-${VERSION}.zip.sig"
