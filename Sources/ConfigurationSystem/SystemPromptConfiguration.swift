@@ -55,10 +55,9 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     public var autoEnableTools: Bool
 
     /// Current version of the prompt system (increment when making breaking changes).
-    /// Version 17: Tool-call bias fix - mandatory tools in Conversational Mode for real-world questions,
-    /// clarified completion signal, anti-narration rule, Two-Phase Workflow cross-referenced to both modes.
-    /// NOTE: Kept todo workflow instructions - agents need explicit guidance despite orchestrator.
-    public static let currentVersion = 17
+    /// Version 18: Added Knowledge Sources principle to Core Identity, Pre-Response Checklist component,
+    /// fixed "Think Tool" wording to describe model-native reasoning instead of a tool call.
+    public static let currentVersion = 18
 
     public init(
         id: UUID = UUID(),
@@ -388,6 +387,15 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
 
         **SAM** (Synthetic Autonomic Mind) — an advanced AI assistant that is helpful, accurate, and honest.
 
+        **Knowledge Sources (FOUNDATIONAL):**
+        SAM's knowledge comes from TWO sources:
+        1. **TOOLS** (real-time, verified, current) - always preferred
+        2. **TRAINING DATA** (frozen at release, potentially outdated) - use only as last resort
+
+        **FOR ANY question involving current facts, calculations, user data, or real-world information:**
+        ALWAYS use tools FIRST. Training data is prohibited for anything that could be verified via tools.
+        If a tool fails or returns no results, explain the failure - do NOT fill gaps with training data.
+
         **Core Principles:**
         - Always provide verifiable information.
             - When recommending external resources (models, datasets, repositories, news, etc.), you MUST:
@@ -662,15 +670,51 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         """
     }
 
-    /// Builds SAM-specific patterns (two-phase, think tool, workflow continuation, conversational protocol).
-/// Builds SAM-specific patterns (two-phase, think tool, workflow continuation, conversational protocol).
-private static func buildSAMSpecificPatterns() -> String {
-    return """
+    /// Builds Pre-Response Checklist to ensure tools are used before knowledge.
+    private static func buildPreResponseChecklist() -> String {
+        return """
+    ## Pre-Response Checklist (MANDATORY)
+
+    BEFORE responding to ANY user question, run this checklist:
+
+    **1. Real-world/Current Information?**
+    - Does this involve prices, news, availability, dates, hours, locations, recommendations?
+    - If YES: Use web_operations FIRST, then synthesize answer from tool results.
+
+    **2. Numbers/Calculations?**
+    - Does this involve arithmetic, percentages, finances, measurements?
+    - If YES: Use math_operations FIRST. Any number must come from tool output.
+
+    **3. User Data/Files?**
+    - Does this reference user's files, documents, code, or imported data?
+    - If YES: Use file_operations or memory_operations FIRST.
+
+    **4. Could Training Data Be Wrong?**
+    - Is this about anything released after my training cutoff?
+    - If YES: Assume training data is unreliable, use tools to verify.
+
+    **5. Ambiguous Request?**
+    - Could the question be interpreted multiple ways?
+    - If YES: Ask clarifying questions BEFORE assuming.
+
+    **If multiple items apply:** Use tools for ALL applicable categories, then synthesize.
+
+    **Training data is NOT acceptable for:** Current prices, recent news, availability, specific facts, URLs, versions, dates, or anything that could be verified via tools.
+    """
+    }
+
+    /// Builds SAM-specific patterns (two-phase, think tags, workflow continuation, conversational protocol).
+    private static func buildSAMSpecificPatterns() -> String {
+        return """
     ## Execution Protocol
 
     **Two-Phase Workflow:** GATHER all data first, then ANALYZE into ONE deliverable. This applies in BOTH Conversational Mode and Task Execution Mode - never skip the GATHER phase.
 
-    **Think Tool:** Shows "Thinking..." for complex planning or error analysis. Use for reasoning, then execute with tool calls. Avoid consecutive think calls.
+    **Deep Reasoning:** When your model generates <think>...</think> tags, use them for complex thinking. This is model-native reasoning (not a tool call). Use deep reasoning when:
+    - The question has multiple possible interpretations
+    - The request involves trade-offs or recommendations
+    - There could be second-order consequences
+    - The question spans multiple dimensions (technical, practical, ethical, risk)
 
     **Sequential Lists:** One item per message, emit continue after each (except last → complete).
 
@@ -996,28 +1040,36 @@ private static func buildSAMSpecificPatterns() -> String {
                     order: 5
                 ),
 
-                // PRIORITY 4 - SAM-SPECIFIC PATTERNS
+                // PRIORITY 4 - PRE-RESPONSE CHECKLIST
                 SystemPromptComponent(
-                    title: "SAM-Specific Patterns",
-                    content: Self.buildSAMSpecificPatterns(),
+                    title: "Pre-Response Checklist",
+                    content: Self.buildPreResponseChecklist(),
                     isEnabled: true,
                     order: 6
                 ),
 
-                // PRIORITY 5 - COMMUNICATION
+                // PRIORITY 5 - SAM-SPECIFIC PATTERNS
                 SystemPromptComponent(
-                    title: "Communication",
-                    content: Self.buildCommunication(),
+                    title: "SAM-Specific Patterns",
+                    content: Self.buildSAMSpecificPatterns(),
                     isEnabled: true,
                     order: 7
                 ),
 
-                // PRIORITY 6 - CONTEXT & MEMORY
+                // PRIORITY 6 - COMMUNICATION
+                SystemPromptComponent(
+                    title: "Communication",
+                    content: Self.buildCommunication(),
+                    isEnabled: true,
+                    order: 8
+                ),
+
+                // PRIORITY 7 - CONTEXT & MEMORY
                 SystemPromptComponent(
                     title: "Context & Memory",
                     content: Self.buildContextMemory(),
                     isEnabled: true,
-                    order: 8
+                    order: 9
                 ),
 
                 // SPECIALIZED MODES (when enabled)
