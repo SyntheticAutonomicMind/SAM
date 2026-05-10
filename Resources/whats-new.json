@@ -1,8 +1,8 @@
 {
   "releases": [
     {
-      "version": "20260910.1",
-      "release_date": "September 10, 2026",
+      "version": "20260510.1",
+      "release_date": "May 10, 2026",
       "introduction": "SAM now prioritizes real-time tools over training data when answering questions about current information. The AI checks live data sources first and only falls back to training data when tools fail.",
       "highlights": [],
       "improvements": [
