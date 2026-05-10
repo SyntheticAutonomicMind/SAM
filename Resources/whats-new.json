@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "20260910.1",
+      "release_date": "September 10, 2026",
+      "introduction": "SAM now prioritizes real-time tools over training data when answering questions about current information. The AI checks live data sources first and only falls back to training data when tools fail.",
+      "highlights": [],
+      "improvements": [
+        {
+          "id": "tool-priority-over-training",
+          "icon": "brain.head.profile.fill",
+          "title": "Prioritizes Tools Over Training Data",
+          "description": "For questions about current facts - prices, news, availability, hours, locations, or anything that could change - SAM now uses real-time tools first and treats training data as a last resort. If a tool fails, you'll hear about it instead of getting potentially outdated answers."
+        },
+        {
+          "id": "pre-response-checklist",
+          "icon": "checklist",
+          "title": "Structured Response Checklist",
+          "description": "Before answering any question, SAM now runs through a checklist to determine if tools should be used. This ensures consistent, verifiable answers for real-world information, calculations, file access, and user data."
+        },
+        {
+          "id": "deep-reasoning-description",
+          "icon": "lightbulb.fill",
+          "title": "Deep Reasoning for Complex Problems",
+          "description": "When your model generates internal reasoning tags (like <think>), SAM describes this as built-in reasoning rather than a separate tool call. This applies to complex questions with multiple interpretations, trade-offs, or second-order consequences."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
       "version": "20260506.1",
       "release_date": "May 6, 2026",
       "introduction": "Tool result retrieval is now more robust. Chunks dynamically size based on model context window, ultra-long lines wrap before persisting, and fuzzy matching recovers results from IDs with minor typos.",
