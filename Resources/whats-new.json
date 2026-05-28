@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "20260528.1",
+      "release_date": "May 28, 2026",
+      "introduction": "Conversations now verify facts the same way tasks do. SAM restructures its response flow so tool use is the default for any real-world question, not a conditional afterthought you can skip in casual discussion.",
+      "highlights": [],
+      "improvements": [
+        {
+          "id": "conversational-tool-priority",
+          "icon": "bubble.left.and.bubble.right.fill",
+          "title": "Conversations Verify Before Answering",
+          "description": "Conversational Mode now follows a numbered sequence: assess whether the question involves real-world info, call tools first if it does, then synthesize. Previously this was a conditional bullet point that models could skip in casual discussions. Now it's step 1."
+        },
+        {
+          "id": "mode-check-checklist",
+          "icon": "checklist",
+          "title": "Mode Check in Pre-Response Checklist",
+          "description": "A new item 0 in the pre-response checklist explicitly states that conversational and discussion modes do not relax any verification rules. All checklist items apply regardless of conversation style."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
       "version": "20260510.1",
       "release_date": "May 10, 2026",
       "introduction": "SAM now prioritizes real-time tools over training data when answering questions about current information. The AI checks live data sources first and only falls back to training data when tools fail.",
