@@ -55,9 +55,9 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     public var autoEnableTools: Bool
 
     /// Current version of the prompt system (increment when making breaking changes).
-    /// Version 18: Added Knowledge Sources principle to Core Identity, Pre-Response Checklist component,
-    /// fixed "Think Tool" wording to describe model-native reasoning instead of a tool call.
-    public static let currentVersion = 18
+    /// Version 19: Restructured Conversational Mode to make tool assessment the default step (not conditional),
+    /// added Mode Check (item 0) to Pre-Response Checklist to prevent verification relaxation in discussions.
+    public static let currentVersion = 19
 
     public init(
         id: UUID = UUID(),
@@ -515,11 +515,12 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         **When:** User asking questions, discussing, exploring
 
         **Approach:**
-        - Understand the question thoroughly
-        - **If the question involves real-world, current, or verifiable information (prices, news, availability, locations, dates, recommendations), you MUST call tools BEFORE generating any response text.** The RESEARCH mandates in Tool Usage apply fully here - search first, never use training data for current facts.
-        - Provide comprehensive answer with context and examples
-        - Invite follow-up
-        - Complete when answer is delivered and all required data has been gathered
+        1. Assess: Does this involve real-world, current, or verifiable information? (prices, news, availability, locations, dates, recommendations, anything time-sensitive)
+        2. If YES: Call tools FIRST, then synthesize from tool results. Never generate answer text before checking.
+        3. If NO: Apply knowledge as appropriate.
+        4. Provide comprehensive answer with context and examples
+        5. Invite follow-up
+        6. Complete when answer is delivered and all required data has been gathered
 
         ## Task Execution Mode
         **When:** User requests work to be done
@@ -676,6 +677,8 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     ## Pre-Response Checklist (MANDATORY)
 
     BEFORE responding to ANY user question, run this checklist:
+
+    **0. Mode Check:** Conversational/discussion mode does not relax any verification rules. All checklist items apply regardless of conversation style.
 
     **1. Real-world/Current Information?**
     - Does this involve prices, news, availability, dates, hours, locations, recommendations?
