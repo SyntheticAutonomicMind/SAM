@@ -172,29 +172,176 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     // MARK: - Authorization
 
-    private func requestAccess(for entityType: EKEntityType) async -> Bool {
-        do {
-            if #available(macOS 14.0, *) {
-                return try await eventStore.requestFullAccessToEvents()
-            } else {
-                return try await eventStore.requestAccess(to: entityType)
-            }
-        } catch {
-            logger.error("EventKit access denied for \(entityType == .event ? "events" : "reminders"): \(error)")
-            return false
+    /// Check current calendar authorization status without prompting.
+    @available(macOS 14.0, *)
+    private func calendarAuthStatus() -> EKAuthorizationStatus {
+        return EKEventStore.authorizationStatus(for: .event)
+    }
+
+    /// Check current reminder authorization status without prompting.
+    @available(macOS 14.0, *)
+    private func reminderAuthStatus() -> EKAuthorizationStatus {
+        return EKEventStore.authorizationStatus(for: .reminder)
+    }
+
+    /// Human-readable description of an EKAuthorizationStatus.
+    private func authStatusDescription(_ status: EKAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "notDetermined (permission never requested)"
+        case .restricted: return "restricted (parental controls or MDM)"
+        case .denied: return "denied (user explicitly denied)"
+        case .authorized: return "authorized (legacy access)"
+        case .fullAccess: return "fullAccess (full read/write granted)"
+        default: return "unknown (rawValue: \(status.rawValue))"
         }
     }
 
-    private func requestReminderAccess() async -> Bool {
-        do {
-            if #available(macOS 14.0, *) {
-                return try await eventStore.requestFullAccessToReminders()
-            } else {
-                return try await eventStore.requestAccess(to: .reminder)
+    /// Request calendar access, checking current status first.
+    /// Returns a result with detailed error info on failure.
+    @MainActor
+    private func requestAccess(for entityType: EKEntityType) async -> MCPToolResult? {
+        if #available(macOS 14.0, *) {
+            let status = EKEventStore.authorizationStatus(for: .event)
+            logger.info("Calendar authorization status: \(authStatusDescription(status))")
+
+            switch status {
+            case .fullAccess, .authorized:
+                // Already granted, no need to request again
+                return nil  // nil means "proceed, access is granted"
+            case .denied, .restricted:
+                // Cannot prompt again - user must change in System Settings
+                logger.warning("Calendar access \(authStatusDescription(status)), cannot re-prompt")
+                return MCPToolResult(success: false, output: MCPOutput(content: """
+                Calendar access \(authStatusDescription(status)).
+                To grant access: Open System Settings > Privacy & Security > Calendars, then enable SAM (com.fewtarius.syntheticautonomicmind).
+                If SAM is not listed, click the + button to add it from /Applications/SAM.app.
+                """))
+            case .notDetermined:
+                // First time - show the system prompt
+                do {
+                    let granted = try await eventStore.requestFullAccessToEvents()
+                    if !granted {
+                        logger.warning("User declined calendar access prompt")
+                        return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access was declined. To enable later: System Settings > Privacy & Security > Calendars > enable SAM."))
+                    }
+                    return nil  // Success
+                } catch {
+                    logger.error("Calendar access request failed: \(error)")
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access request failed: \(error.localizedDescription). Grant access in System Settings > Privacy & Security > Calendars."))
+                }
+            default:
+                // Unknown status - try requesting
+                do {
+                    let granted = try await eventStore.requestFullAccessToEvents()
+                    if !granted {
+                        return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access denied. Grant access in System Settings > Privacy & Security > Calendars."))
+                    }
+                    return nil
+                } catch {
+                    logger.error("Calendar access request failed: \(error)")
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access request failed: \(error.localizedDescription)."))
+                }
             }
-        } catch {
-            logger.error("EventKit reminder access denied: \(error)")
-            return false
+        } else {
+            // macOS 13 and earlier
+            let status = EKEventStore.authorizationStatus(for: entityType)
+            switch status {
+            case .authorized:
+                return nil
+            case .denied, .restricted:
+                return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access \(authStatusDescription(status)). Grant access in System Preferences > Security & Privacy > Privacy > Calendars."))
+            case .notDetermined:
+                do {
+                    let granted = try await eventStore.requestAccess(to: entityType)
+                    if !granted {
+                        return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access was declined."))
+                    }
+                    return nil
+                } catch {
+                    logger.error("Calendar access request failed: \(error)")
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access request failed: \(error.localizedDescription)."))
+                }
+            default:
+                do {
+                    let granted = try await eventStore.requestAccess(to: entityType)
+                    if !granted {
+                        return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access denied."))
+                    }
+                    return nil
+                } catch {
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access request failed: \(error.localizedDescription)."))
+                }
+            }
+        }
+    }
+
+    /// Request reminders access, checking current status first.
+    @MainActor
+    private func requestReminderAccess() async -> MCPToolResult? {
+        if #available(macOS 14.0, *) {
+            let status = EKEventStore.authorizationStatus(for: .reminder)
+            logger.info("Reminders authorization status: \(authStatusDescription(status))")
+
+            switch status {
+            case .fullAccess, .authorized:
+                return nil
+            case .denied, .restricted:
+                logger.warning("Reminders access \(authStatusDescription(status)), cannot re-prompt")
+                return MCPToolResult(success: false, output: MCPOutput(content: """
+                Reminders access \(authStatusDescription(status)).
+                To grant access: Open System Settings > Privacy & Security > Reminders, then enable SAM (com.fewtarius.syntheticautonomicmind).
+                If SAM is not listed, click the + button to add it from /Applications/SAM.app.
+                """))
+            case .notDetermined:
+                do {
+                    let granted = try await eventStore.requestFullAccessToReminders()
+                    if !granted {
+                        return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access was declined. To enable later: System Settings > Privacy & Security > Reminders > enable SAM."))
+                    }
+                    return nil
+                } catch {
+                    logger.error("Reminders access request failed: \(error)")
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access request failed: \(error.localizedDescription). Grant access in System Settings > Privacy & Security > Reminders."))
+                }
+            default:
+                do {
+                    let granted = try await eventStore.requestFullAccessToReminders()
+                    if !granted {
+                        return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access denied."))
+                    }
+                    return nil
+                } catch {
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access request failed: \(error.localizedDescription)."))
+                }
+            }
+        } else {
+            let status = EKEventStore.authorizationStatus(for: .reminder)
+            switch status {
+            case .authorized:
+                return nil
+            case .denied, .restricted:
+                return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access \(authStatusDescription(status)). Grant access in System Preferences > Security & Privacy > Privacy > Reminders."))
+            case .notDetermined:
+                do {
+                    let granted = try await eventStore.requestAccess(to: .reminder)
+                    if !granted {
+                        return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access was declined."))
+                    }
+                    return nil
+                } catch {
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access request failed: \(error.localizedDescription)."))
+                }
+            default:
+                do {
+                    let granted = try await eventStore.requestAccess(to: .reminder)
+                    if !granted {
+                        return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access denied."))
+                    }
+                    return nil
+                } catch {
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access request failed: \(error.localizedDescription)."))
+                }
+            }
         }
     }
 
@@ -239,9 +386,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func listEvents(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess(for: .event) else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access denied. Please grant calendar permission in System Settings > Privacy & Security > Calendars."))
-        }
+        if let accessError = await requestAccess(for: .event) { return accessError }
 
         let daysAhead = parameters["days_ahead"] as? Int ?? 7
         let calendarName = parameters["calendar_name"] as? String
@@ -285,9 +430,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func createEvent(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess(for: .event) else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access denied. Please grant calendar permission in System Settings > Privacy & Security > Calendars."))
-        }
+        if let accessError = await requestAccess(for: .event) { return accessError }
 
         guard let title = parameters["title"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: title"))
@@ -332,9 +475,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func searchEvents(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess(for: .event) else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access denied."))
-        }
+        if let accessError = await requestAccess(for: .event) { return accessError }
 
         guard let query = parameters["query"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: query"))
@@ -377,9 +518,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func deleteEvent(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess(for: .event) else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Calendar access denied."))
-        }
+        if let accessError = await requestAccess(for: .event) { return accessError }
 
         guard let eventId = parameters["event_id"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: event_id"))
@@ -403,9 +542,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func listReminders(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestReminderAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access denied. Please grant permission in System Settings > Privacy & Security > Reminders."))
-        }
+        if let accessError = await requestReminderAccess() { return accessError }
 
         let includeCompleted = parameters["include_completed"] as? Bool ?? false
         let listName = parameters["list_name"] as? String
@@ -492,9 +629,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func createReminder(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestReminderAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access denied. Please grant permission in System Settings > Privacy & Security > Reminders."))
-        }
+        if let accessError = await requestReminderAccess() { return accessError }
 
         guard let title = parameters["title"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: title"))
@@ -542,9 +677,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func completeReminder(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestReminderAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access denied."))
-        }
+        if let accessError = await requestReminderAccess() { return accessError }
 
         guard let reminderId = parameters["reminder_id"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: reminder_id"))
@@ -568,9 +701,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func deleteReminder(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestReminderAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access denied."))
-        }
+        if let accessError = await requestReminderAccess() { return accessError }
 
         guard let reminderId = parameters["reminder_id"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: reminder_id"))
@@ -592,9 +723,7 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func listReminderLists() async -> MCPToolResult {
-        guard await requestReminderAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Reminders access denied."))
-        }
+        if let accessError = await requestReminderAccess() { return accessError }
 
         let calendars = eventStore.calendars(for: .reminder)
         if calendars.isEmpty {
