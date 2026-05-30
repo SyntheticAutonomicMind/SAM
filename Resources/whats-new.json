@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "20260530.1",
+      "release_date": "May 30, 2026",
+      "introduction": "Calendar and Contacts tools now give you clear, actionable guidance when macOS permissions are denied - telling you exactly where in System Settings to enable access, instead of a generic 'access denied' message.",
+      "highlights": [],
+      "improvements": [],
+      "bugfixes": [
+        {
+          "id": "calendar-contacts-permission-guidance",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Calendar and Contacts Permission Errors",
+          "description": "When macOS denies Calendar or Contacts access, SAM now checks the authorization status first and returns specific guidance: the exact System Settings path, the bundle ID to look for, and instructions to add the app if it's not listed. Previously, denied permissions produced a generic 'access denied' message with no way to fix it."
+        }
+      ]
+    },
+    {
       "version": "20260528.1",
       "release_date": "May 28, 2026",
       "introduction": "Conversations now verify facts the same way tasks do. SAM restructures its response flow so tool use is the default for any real-world question, not a conditional afterthought you can skip in casual discussion.",
