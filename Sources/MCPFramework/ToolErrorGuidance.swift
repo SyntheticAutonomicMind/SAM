@@ -30,6 +30,7 @@ public struct ToolErrorGuidance: Sendable {
         case insufficientParams = "insufficient_params"
         case fileNotFound = "file_not_found"
         case permissionDenied = "permission_denied"
+        case systemPermissionDenied = "system_permission_denied"
         case networkError = "network_error"
         case timeout = "timeout"
         case genericError = "generic_error"
@@ -132,6 +133,16 @@ public struct ToolErrorGuidance: Sendable {
     
     private func categorizeError(_ error: String, toolName: String) -> ErrorCategory {
         let lowercased = error.lowercased()
+        
+        // System permission tools - calendar, contacts, reminders, etc.
+        // These use macOS privacy framework (TCC), not file system permissions
+        let systemPermissionTools: Set<String> = [
+            "calendar_operations", "contacts_operations"
+        ]
+        if systemPermissionTools.contains(toolName) &&
+            (lowercased.contains("permission") || lowercased.contains("denied") || lowercased.contains("access")) {
+            return .systemPermissionDenied
+        }
         
         if lowercased.contains("missing required") || lowercased.contains("required parameter") {
             return .missingRequired
@@ -236,6 +247,18 @@ public struct ToolErrorGuidance: Sendable {
             return """
             WHAT WENT WRONG: You don't have permission to access this file or directory.
             HOW TO FIX: Check file permissions or try a different path.
+            """
+            
+        case .systemPermissionDenied:
+            return """
+            WHAT WENT WRONG: macOS system permission for this tool was denied or not yet granted.
+            HOW TO FIX: The user needs to grant access in System Settings > Privacy & Security.
+            - For Calendar: System Settings > Privacy & Security > Calendars
+            - For Contacts: System Settings > Privacy & Security > Contacts
+            - For Reminders: System Settings > Privacy & Security > Reminders
+            Find SAM (com.fewtarius.syntheticautonomicmind) in the list and enable it.
+            If SAM is not listed, click the + button and add it from /Applications/SAM.app.
+            NOTE: If access was previously denied, the system will not re-prompt. The user must manually enable it in System Settings.
             """
             
         case .networkError:

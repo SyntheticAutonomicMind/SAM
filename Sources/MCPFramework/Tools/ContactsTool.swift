@@ -130,12 +130,66 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
 
     // MARK: - Authorization
 
-    private func requestAccess() async -> Bool {
-        do {
-            return try await store.requestAccess(for: .contacts)
-        } catch {
-            logger.error("Contacts access denied: \(error)")
-            return false
+    /// Check current contacts authorization status without prompting.
+    private func contactsAuthStatus() -> CNAuthorizationStatus {
+        return CNContactStore.authorizationStatus(for: .contacts)
+    }
+
+    /// Human-readable description of a CNAuthorizationStatus.
+    private func authStatusDescription(_ status: CNAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "notDetermined (permission never requested)"
+        case .restricted: return "restricted (parental controls or MDM)"
+        case .denied: return "denied (user explicitly denied)"
+        case .authorized: return "authorized (access granted)"
+        @unknown default: return "unknown (rawValue: \(status.rawValue))"
+        }
+    }
+
+    /// Request contacts access, checking current status first.
+    /// Returns nil on success, or an error MCPToolResult on failure.
+    @MainActor
+    private func requestAccess() async -> MCPToolResult? {
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        logger.info("Contacts authorization status: \(authStatusDescription(status))")
+
+        switch status {
+        case .authorized:
+            // Already granted
+            return nil
+        case .denied, .restricted:
+            // Cannot prompt again - user must change in System Settings
+            logger.warning("Contacts access \(authStatusDescription(status)), cannot re-prompt")
+            return MCPToolResult(success: false, output: MCPOutput(content: """
+            Contacts access \(authStatusDescription(status)).
+            To grant access: Open System Settings > Privacy & Security > Contacts, then enable SAM (com.fewtarius.syntheticautonomicmind).
+            If SAM is not listed, click the + button to add it from /Applications/SAM.app.
+            """))
+        case .notDetermined:
+            // First time - show the system prompt
+            do {
+                let granted = try await store.requestAccess(for: .contacts)
+                if !granted {
+                    logger.warning("User declined contacts access prompt")
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access was declined. To enable later: System Settings > Privacy & Security > Contacts > enable SAM."))
+                }
+                return nil  // Success
+            } catch {
+                logger.error("Contacts access request failed: \(error)")
+                return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access request failed: \(error.localizedDescription). Grant access in System Settings > Privacy & Security > Contacts."))
+            }
+        @unknown default:
+            // Unknown status - try requesting
+            do {
+                let granted = try await store.requestAccess(for: .contacts)
+                if !granted {
+                    return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access denied."))
+                }
+                return nil
+            } catch {
+                logger.error("Contacts access request failed: \(error)")
+                return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access request failed: \(error.localizedDescription)."))
+            }
         }
     }
 
@@ -205,9 +259,7 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func searchContacts(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access denied. Please grant permission in System Settings > Privacy & Security > Contacts."))
-        }
+        if let accessError = await requestAccess() { return accessError }
 
         guard let query = parameters["query"] as? String, !query.isEmpty else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: query"))
@@ -249,9 +301,7 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func getContact(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access denied."))
-        }
+        if let accessError = await requestAccess() { return accessError }
 
         guard let contactId = parameters["contact_id"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: contact_id"))
@@ -271,9 +321,7 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func createContact(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access denied."))
-        }
+        if let accessError = await requestAccess() { return accessError }
 
         guard let firstName = parameters["first_name"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: first_name"))
@@ -309,9 +357,7 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func updateContact(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access denied."))
-        }
+        if let accessError = await requestAccess() { return accessError }
 
         guard let contactId = parameters["contact_id"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: contact_id"))
@@ -353,9 +399,7 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func listGroups() async -> MCPToolResult {
-        guard await requestAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access denied."))
-        }
+        if let accessError = await requestAccess() { return accessError }
 
         do {
             let groups = try store.groups(matching: nil)
@@ -375,9 +419,7 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
 
     @MainActor
     private func searchGroup(parameters: [String: Any]) async -> MCPToolResult {
-        guard await requestAccess() else {
-            return MCPToolResult(success: false, output: MCPOutput(content: "Contacts access denied."))
-        }
+        if let accessError = await requestAccess() { return accessError }
 
         guard let groupName = parameters["group_name"] as? String else {
             return MCPToolResult(success: false, output: MCPOutput(content: "Missing required parameter: group_name"))
