@@ -320,8 +320,10 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     /// Cache for model supported endpoints (determines Chat Completions vs Responses API routing)
     private static var modelEndpointsCache: [String: [ModelSupportedEndpoint]]?
 
-    /// Cache for model billing information (premium status + multipliers).
-    private var modelBillingCache: [String: (isPremium: Bool, multiplier: Double?)]?
+    /// Cache for model billing information.
+    /// Legacy: isPremium/multiplier for annual plan subscribers still on PRU billing.
+    /// New: category/vendor for usage-based billing (June 2026+).
+    private var modelBillingCache: [String: (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)]?
 
     private let cacheValidityDuration: TimeInterval = 3600
 
@@ -584,7 +586,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
             /// Build capabilities dictionary.
             var capabilities: [String: Int] = [:]
-            var billingInfo: [String: (isPremium: Bool, multiplier: Double?)] = [:]
+            var billingInfo: [String: (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)] = [:]
             var endpointsInfo: [String: [ModelSupportedEndpoint]] = [:]
 
             for model in modelsResponse.data {
@@ -592,11 +594,12 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                     capabilities[model.id] = maxInputTokens
 
                     /// Store billing information using computed properties
-                    billingInfo[model.id] = (isPremium: model.isPremium, multiplier: model.premiumMultiplier)
+                    /// Legacy billing (is_premium/multiplier) may be absent for usage-based billing plans
+                    billingInfo[model.id] = (isPremium: model.isPremium, multiplier: model.premiumMultiplier, category: model.category.rawValue, vendor: model.vendor)
                     
                     /// DEBUG: Log billing data for first few models
                     if billingInfo.count <= 5 {
-                        logger.debug("BILLING: \(model.id) - isPremium=\(model.isPremium), multiplier=\(model.premiumMultiplier?.description ?? "nil"), raw_billing=\(model.billing != nil ? "present" : "nil")")
+                        logger.debug("BILLING: \(model.id) - category=\(model.category.rawValue), vendor=\(model.vendor ?? "nil"), isPremium=\(model.isPremium), multiplier=\(model.premiumMultiplier?.description ?? "nil"), raw_billing=\(model.billing != nil ? "present" : "nil")")
                     }
                 }
                 
@@ -667,9 +670,9 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             let cache = try decoder.decode([String: BillingCacheEntry].self, from: data)
 
             /// Convert from codable format to internal format
-            var billingInfo: [String: (isPremium: Bool, multiplier: Double?)] = [:]
+            var billingInfo: [String: (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)] = [:]
             for (key, entry) in cache {
-                billingInfo[key] = (isPremium: entry.isPremium, multiplier: entry.multiplier)
+                billingInfo[key] = (isPremium: entry.isPremium, multiplier: entry.multiplier, category: entry.category, vendor: entry.vendor)
             }
 
             modelBillingCache = billingInfo
@@ -689,7 +692,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             /// Convert to codable format
             var cache: [String: BillingCacheEntry] = [:]
             for (key, value) in billingCache {
-                cache[key] = BillingCacheEntry(isPremium: value.isPremium, multiplier: value.multiplier)
+                cache[key] = BillingCacheEntry(isPremium: value.isPremium, multiplier: value.multiplier, category: value.category, vendor: value.vendor)
             }
 
             let encoder = JSONEncoder()
@@ -763,8 +766,19 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     }
 
     /// Get billing information for a specific model
-    public func getModelBillingInfo(modelId: String) -> (isPremium: Bool, multiplier: Double?)? {
+    /// Get billing information for a specific model
+    /// Returns legacy (isPremium, multiplier) for backward compatibility.
+    /// For usage-based billing (June 2026+), use getModelCategoryInfo() instead.
+    public func getModelBillingInfo(modelId: String) -> (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)? {
         return modelBillingCache?[modelId]
+    }
+    
+    /// Get model category and vendor info for usage-based billing
+    /// Returns (category, vendor) for a model, or nil if not available
+    public func getModelCategoryInfo(modelId: String) -> (category: String, vendor: String?)? {
+        guard let info = modelBillingCache?[modelId] else { return nil }
+        guard let category = info.category, category != "unknown" else { return nil }
+        return (category: category, vendor: info.vendor)
     }
 
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
@@ -1110,8 +1124,15 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                 }
             }
 
-            return try parseGitHubCopilotResponse(data, requestId: requestId)
-
+            let parsedResponse = try parseGitHubCopilotResponse(data, requestId: requestId)
+            
+            /// Process AI Credit usage from response body (June 2026+ billing)
+            if let copilotUsage = parsedResponse.copilotUsage {
+                processCopilotUsage(copilotUsage, model: parsedResponse.model, requestId: requestId)
+            }
+            
+            return parsedResponse
+            
         } catch let error as ProviderError {
             throw error
         } catch {
@@ -1597,8 +1618,26 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             model: model,
             choices: choices,
             usage: usage,
-            statefulMarker: id
+            statefulMarker: id,
+            copilotUsage: parseCopilotUsage(from: json)
         )
+    }
+
+    /// Parse copilot_usage from a GitHub Copilot response body.
+    /// As of June 2026, GitHub Copilot returns token-based billing data in the response body
+    /// instead of quota headers. Each response includes per-token costs and total nano AI units.
+    private func parseCopilotUsage(from json: [String: Any]?) -> CopilotUsage? {
+        guard let usageDict = json?["copilot_usage"] as? [String: Any] else {
+            return nil
+        }
+        
+        do {
+            let usageData = try JSONSerialization.data(withJSONObject: usageDict)
+            return try JSONDecoder().decode(CopilotUsage.self, from: usageData)
+        } catch {
+            logger.debug("Failed to parse copilot_usage: \(error)")
+            return nil
+        }
     }
 
     private func transformCopilotStreamChunk(_ copilotChunk: [String: Any]?, requestId: String) -> ServerOpenAIChatStreamChunk? {
@@ -2304,7 +2343,9 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     // MARK: - Premium Quota Tracking
 
     /// Quota information structure for UI display
+    /// Supports both legacy PRU-based billing (annual plans) and AI Credit-based billing (monthly plans, June 2026+)
     public struct QuotaInfo: Codable {
+        // Legacy PRU fields (annual plan subscribers)
         public let entitlement: Int
         public let used: Int
         public let percentRemaining: Double
@@ -2312,11 +2353,22 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         public let overagePermitted: Bool
         public let resetDate: String
         
-        // New fields from CopilotUserAPI (optional for backward compatibility)
+        // Legacy PRU fields from CopilotUserAPI (optional for backward compatibility)
         public let overageCount: Int?
         public let login: String?
         public let copilotPlan: String?
         public let remaining: Int?  // Direct remaining count from user API
+
+        // AI Credit fields (June 2026+ usage-based billing)
+        public let creditsUsed: Double?
+        public let creditsAllowance: Double?
+        public let billingMode: BillingMode?
+        
+        /// Billing mode: PRU-based (legacy annual plans) or AI Credit-based (monthly plans)
+        public enum BillingMode: String, Codable, Sendable {
+            case pruBased = "pru"          // Legacy: premium request units
+            case aiCredits = "ai_credits"  // New: token-based AI credits
+        }
 
         public var available: Int {
             // Use direct remaining if available (more accurate), otherwise calculate
@@ -2330,8 +2382,25 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         public var percentUsed: Double {
             return 100.0 - percentRemaining
         }
+        
+        /// Whether this is AI Credit-based billing
+        public var isAICreditBilling: Bool {
+            return billingMode == .aiCredits
+        }
+        
+        /// AI credits remaining (for credit-based billing)
+        public var creditsRemaining: Double? {
+            guard let used = creditsUsed, let allowance = creditsAllowance else { return nil }
+            return max(0, allowance - used)
+        }
+        
+        /// AI credits used as percentage of allowance
+        public var creditsPercentUsed: Double? {
+            guard let used = creditsUsed, let allowance = creditsAllowance, allowance > 0 else { return nil }
+            return (used / allowance) * 100.0
+        }
 
-        public init(entitlement: Int, used: Int, percentRemaining: Double, overageUsed: Double, overagePermitted: Bool, resetDate: String, overageCount: Int? = nil, login: String? = nil, copilotPlan: String? = nil, remaining: Int? = nil) {
+        public init(entitlement: Int, used: Int, percentRemaining: Double, overageUsed: Double, overagePermitted: Bool, resetDate: String, overageCount: Int? = nil, login: String? = nil, copilotPlan: String? = nil, remaining: Int? = nil, creditsUsed: Double? = nil, creditsAllowance: Double? = nil, billingMode: BillingMode? = nil) {
             self.entitlement = entitlement
             self.used = used
             self.percentRemaining = percentRemaining
@@ -2342,9 +2411,12 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             self.login = login
             self.copilotPlan = copilotPlan
             self.remaining = remaining
+            self.creditsUsed = creditsUsed
+            self.creditsAllowance = creditsAllowance
+            self.billingMode = billingMode
         }
         
-        /// Create QuotaInfo from CopilotUserResponse premium quota
+        /// Create QuotaInfo from CopilotUserResponse premium quota (legacy PRU-based)
         public static func from(userResponse: CopilotUserResponse) -> QuotaInfo? {
             guard let premium = userResponse.premiumQuota else { return nil }
             
@@ -2358,7 +2430,26 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                 overageCount: premium.overageCount,
                 login: userResponse.login,
                 copilotPlan: userResponse.copilotPlan,
-                remaining: premium.remaining
+                remaining: premium.remaining,
+                billingMode: .pruBased
+            )
+        }
+        
+        /// Create QuotaInfo from AI Credit usage data (June 2026+)
+        public static func fromAICredits(creditsUsed: Double, creditsAllowance: Double, resetDate: String, login: String? = nil, copilotPlan: String? = nil) -> QuotaInfo {
+            let percentRemaining = creditsAllowance > 0 ? ((creditsAllowance - creditsUsed) / creditsAllowance) * 100.0 : 0
+            return QuotaInfo(
+                entitlement: 0,
+                used: 0,
+                percentRemaining: max(0, percentRemaining),
+                overageUsed: 0,
+                overagePermitted: false,
+                resetDate: resetDate,
+                login: login,
+                copilotPlan: copilotPlan,
+                creditsUsed: creditsUsed,
+                creditsAllowance: creditsAllowance,
+                billingMode: .aiCredits
             )
         }
     }
@@ -2371,15 +2462,26 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     private static var lastPremiumQuotaUsed: Int?
     // NSLock removed - using @MainActor isolation instead
 
-    /// Process GitHub Copilot quota headers from API response **Purpose**: Extract and track premium model usage to warn users before quota exhaustion **Quota headers GitHub returns**: - `x-quota-snapshot-premium_models`: Premium model usage (GPT-4, etc.) - `x-quota-snapshot-premium_interactions`: Alternative header for premium usage - `x-quota-snapshot-chat`: Free tier usage (GPT-3.5, etc.) **Header format** (URL-encoded key=value pairs): `"ent=100&ov=0.0&ovPerm=true&rem=75.5&rst=2025-11-01T00:00:00Z"` **Fields**: - `ent`: Entitlement (total quota limit for billing period) - `rem`: Remaining quota - `ov`: Overage used (beyond entitlement) - `ovPerm`: Overage permitted (can user go over limit?) - `rst`: Reset time (when quota resets) **Why tracking matters**: Users often don't know they're approaching quota limits.
+    /// Process GitHub Copilot quota headers from API response
+    /// **Purpose**: Extract and track premium model usage to warn users before quota exhaustion
+    ///
+    /// **Legacy (PRU-based, annual plans)**: Quota headers contain premium request counts
+    /// - `x-quota-snapshot-premium_models`: Premium model usage (GPT-4, etc.)
+    /// - `x-quota-snapshot-premium_interactions`: Alternative header for premium usage
+    /// - `x-quota-snapshot-chat`: Free tier usage (GPT-3.5, etc.)
+    ///
+    /// **New (AI Credits, June 2026+)**: Quota headers may be absent.
+    /// Usage tracking is now in the response body via `copilot_usage` field.
+    /// This method handles both formats gracefully.
     private func processGitHubCopilotQuotaHeaders(_ headers: [AnyHashable: Any], requestId: String) async {
-        /// Check for premium quota headers.
+        /// Check for premium quota headers (legacy PRU-based billing).
         let quotaHeader = headers["x-quota-snapshot-premium_models"] as? String
             ?? headers["x-quota-snapshot-premium_interactions"] as? String
             ?? headers["x-quota-snapshot-chat"] as? String
 
         guard let quotaHeader = quotaHeader else {
-            /// No quota information in response - this is normal for some requests.
+            /// No quota headers - normal for AI Credit-based billing (June 2026+).
+            /// Usage is tracked via copilot_usage in the response body instead.
             return
         }
 
@@ -2449,6 +2551,47 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         /// Calculate human-readable quota status.
         let available = entitlement == -1 ? "unlimited" : "\(max(0, entitlement - used))"
         logger.debug(" - Status: \(used)/\(entitlement == -1 ? "∞" : "\(entitlement)") premium requests used (\(available) available)")
+    }
+
+    /// Process copilot_usage from a GitHub Copilot response body.
+    /// As of June 2026, GitHub Copilot returns token-based billing data in the response body
+    /// via the `copilot_usage` field. This replaces the legacy quota headers for monthly plans.
+    /// 1 AI Credit = $0.01 USD. Costs are reported in nano AI units (10^-9 AI credits).
+    private func processCopilotUsage(_ copilotUsage: CopilotUsage, model: String, requestId: String) {
+        let credits = copilotUsage.totalAICredits
+        let costUSD = copilotUsage.totalCostUSD
+        
+        logger.debug("GitHub Copilot AI Credits [req:\(requestId.prefix(8))]:")
+        logger.debug(" - Model: \(model)")
+        logger.debug(" - AI Credits: \(String(format: "%.6f", credits)) ($\(String(format: "%.6f", costUSD)))")
+        logger.debug(" - Input tokens: \(copilotUsage.inputTokens)")
+        logger.debug(" - Output tokens: \(copilotUsage.outputTokens)")
+        logger.debug(" - Cached tokens: \(copilotUsage.cachedTokens)")
+        
+        for detail in copilotUsage.tokenDetails {
+            logger.debug(" - \(detail.tokenType.rawValue): \(detail.tokenCount) tokens @ \(String(format: "$%.4f", detail.pricePerMillionUSD))/M")
+        }
+        
+        /// Update quota info with AI credit usage if we're in credit-based billing mode
+        if currentQuotaInfo?.isAICreditBilling == true || currentQuotaInfo?.billingMode == nil {
+            /// Accumulate credits used
+            let existingUsed = currentQuotaInfo?.creditsUsed ?? 0
+            let allowance = currentQuotaInfo?.creditsAllowance ?? 0
+            let resetDate = currentQuotaInfo?.resetDate ?? "unknown"
+            let login = currentQuotaInfo?.login
+            let plan = currentQuotaInfo?.copilotPlan
+            
+            DispatchQueue.main.async {
+                self.currentQuotaInfo = QuotaInfo.fromAICredits(
+                    creditsUsed: existingUsed + credits,
+                    creditsAllowance: allowance,
+                    resetDate: resetDate,
+                    login: login,
+                    copilotPlan: plan
+                )
+            }
+            saveQuotaCache()
+        }
     }
 
     // MARK: - Lifecycle
