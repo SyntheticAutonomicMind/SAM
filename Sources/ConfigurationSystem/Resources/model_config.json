@@ -442,6 +442,34 @@
       "cost_per_million_input_tokens": 0,
       "cost_per_million_output_tokens": 0
     },
+    "MiniMax-M3": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.60,
+      "cost_per_million_output_tokens": 2.40
+    },
+    "minimax-m3": {
+      "provider": "minimax",
+      "delta_mode": "incremental",
+      "prompt_format": {
+        "use_xml_tags": false,
+        "required_tags": [],
+        "continuation_signal_required": false
+      },
+      "supports_stateful_marker": false,
+      "context_window": 1048576,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.60,
+      "cost_per_million_output_tokens": 2.40
+    },
     "MiniMax-M2.7": {
       "provider": "minimax",
       "delta_mode": "incremental",

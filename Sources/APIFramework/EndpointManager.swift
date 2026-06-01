@@ -861,7 +861,7 @@ public class EndpointManager: ObservableObject {
                 providerType: .minimax,
                 isEnabled: false,
                 baseURL: "https://api.minimax.io/v1",
-                models: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
+                models: ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
                 maxTokens: 131072,
                 temperature: 0.7
             )
