@@ -54,7 +54,7 @@ public class EndpointManager: ObservableObject {
 
     /// Billing lookup cache to reduce log spam and provider calls
     /// Cache expires after 10 minutes
-    private var billingCache: [String: (result: (isPremium: Bool, multiplier: Double?)?, timestamp: Date)] = [:]
+    private var billingCache: [String: (result: (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)?, timestamp: Date)] = [:]
     private let billingCacheExpiration: TimeInterval = 600  /// 10 minutes
 
     /// Dependencies.
@@ -128,7 +128,7 @@ public class EndpointManager: ObservableObject {
     /// Get comprehensive model capabilities for API exposure
     /// Returns contextWindow, maxCompletionTokens, maxRequestTokens, and billing info for a given model
     /// This enables clients like CLIO to right-size their API requests and track premium usage
-    public func getModelCapabilityData(for modelId: String) async -> (contextWindow: Int?, maxCompletionTokens: Int?, maxRequestTokens: Int?, isPremium: Bool?, premiumMultiplier: Double?) {
+    public func getModelCapabilityData(for modelId: String) async -> (contextWindow: Int?, maxCompletionTokens: Int?, maxRequestTokens: Int?, isPremium: Bool?, premiumMultiplier: Double?, category: String?, vendor: String?) {
         // Normalize model ID (remove provider prefix if present)
         let normalizedId = modelId.contains("/") ? String(modelId.split(separator: "/").last ?? "") : modelId
         
@@ -137,6 +137,8 @@ public class EndpointManager: ObservableObject {
         var maxCompletionTokens: Int? = nil
         var isPremium: Bool? = nil
         var premiumMultiplier: Double? = nil
+        var category: String? = nil
+        var vendor: String? = nil
         
         // 1. Check GitHub Copilot models
         if modelId.hasPrefix("github_copilot/") {
@@ -147,6 +149,8 @@ public class EndpointManager: ObservableObject {
             if let billing = getGitHubCopilotModelBillingInfo(modelId: normalizedId) ?? getGitHubCopilotModelBillingInfo(modelId: modelId) {
                 isPremium = billing.isPremium
                 premiumMultiplier = billing.multiplier
+                category = billing.category
+                vendor = billing.vendor
             }
         }
         
@@ -180,7 +184,7 @@ public class EndpointManager: ObservableObject {
             nil
         }
         
-        return (contextWindow, maxCompletionTokens, maxRequestTokens, isPremium, premiumMultiplier)
+        return (contextWindow, maxCompletionTokens, maxRequestTokens, isPremium, premiumMultiplier, category, vendor)
     }
     
     /// Get default context window for known model patterns
@@ -234,9 +238,9 @@ public class EndpointManager: ObservableObject {
     }
 
     /// Get billing information for a specific GitHub Copilot model
-    /// Returns (isPremium, multiplier) tuple or nil if not available
+    /// Returns (isPremium, multiplier, category, vendor) tuple or nil if not available
     /// Cached for 10 minutes to reduce log spam and provider calls
-    public func getGitHubCopilotModelBillingInfo(modelId: String) -> (isPremium: Bool, multiplier: Double?)? {
+    public func getGitHubCopilotModelBillingInfo(modelId: String) -> (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)? {
         /// Check cache first
         if let cached = billingCache[modelId] {
             /// Check if cache is still valid (within 10 minutes)
@@ -258,6 +262,13 @@ public class EndpointManager: ObservableObject {
         billingCache[modelId] = (result: result, timestamp: Date())
 
         return result
+    }
+    
+    /// Get model category for a specific GitHub Copilot model
+    /// Returns the model_picker_category (powerful/versatile/lightweight) or nil
+    public func getGitHubCopilotModelCategory(modelId: String) -> String? {
+        guard let billing = getGitHubCopilotModelBillingInfo(modelId: modelId) else { return nil }
+        return billing.category
     }
 
     /// Get current quota information from GitHub Copilot provider
@@ -861,7 +872,7 @@ public class EndpointManager: ObservableObject {
                 providerType: .minimax,
                 isEnabled: false,
                 baseURL: "https://api.minimax.io/v1",
-                models: ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
+                models: ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-M2.1", "MiniMax-M2.1-highspeed"],
                 maxTokens: 131072,
                 temperature: 0.7
             )
