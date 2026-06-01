@@ -5,7 +5,29 @@ import Foundation
 
 // MARK: - GitHub Copilot Models API
 
-/// GitHub Copilot /models API response **Purpose**: Describes available models and their capabilities (context windows, features, pricing tier) **API endpoint**: GET https://api.githubcopilot.com/models **Response structure** (updated Jan 2025): ```json { "data": [{ "id": "gpt-4.1", "name": "GPT-4 Turbo", "capabilities": { "limits": { "max_context_window_tokens": 128000, "max_output_tokens": 4096 } }, "enabled": true }] } ``` **Why needed**: GitHub Copilot doesn't include model capabilities in chat responses.
+/// GitHub Copilot /models API response
+/// **Purpose**: Describes available models and their capabilities (context windows, features, category)
+/// **API endpoint**: GET https://api.githubcopilot.com/models
+/// **Response structure** (updated June 2026 - usage-based billing):
+/// ```json
+/// {
+///   "data": [{
+///     "id": "gpt-5-mini",
+///     "name": "GPT-5 mini",
+///     "capabilities": { "limits": { ... }, "supports": { ... } },
+///     "model_picker_category": "lightweight",
+///     "model_picker_enabled": true,
+///     "vendor": "Azure OpenAI",
+///     "preview": false,
+///     "policy": { "state": "enabled" },
+///     "supported_endpoints": ["/chat/completions", "/responses"]
+///   }]
+/// }
+/// ```
+/// **Why needed**: GitHub Copilot doesn't include model capabilities in chat responses.
+/// **Billing change (June 2026)**: The `billing` field (is_premium/multiplier) has been removed
+/// from the API. All models are now billed per-token via AI Credits. The `model_picker_category`
+/// field (powerful/versatile/lightweight) replaces the free/premium distinction.
 public struct GitHubCopilotModelsResponse: Codable {
     public let data: [GitHubCopilotModelInfo]
 
@@ -41,19 +63,43 @@ public enum ModelSupportedEndpoint: String, Codable {
     case unknown = "_unknown"
 }
 
+/// Model picker category for GitHub Copilot models (replaces free/premium billing distinction).
+/// As of June 2026, all models are billed per-token via AI Credits.
+/// The category indicates the model's cost tier and capability level.
+public enum ModelPickerCategory: String, Codable, Sendable {
+    case powerful
+    case versatile
+    case lightweight
+    case unknown
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = ModelPickerCategory(rawValue: rawValue) ?? .unknown
+    }
+}
+
 /// GitHub Copilot model information.
 public struct GitHubCopilotModelInfo: Codable {
     public let id: String
     public let name: String?
     public let capabilities: ModelCapabilities?
     public let enabled: Bool?
-    public let billing: ModelBilling?
+    public let billing: ModelBilling?  // Legacy: removed from API June 2026, kept for backward compat
     public let policy: ModelPolicy?
     public let supportedEndpoints: [ModelSupportedEndpoint]?
+    public let modelPickerCategory: ModelPickerCategory?
+    public let modelPickerEnabled: Bool?
+    public let vendor: String?
+    public let preview: Bool?
+    public let warningMessage: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, capabilities, enabled, billing, policy
+        case id, name, capabilities, enabled, billing, policy, vendor, preview
         case supportedEndpoints = "supported_endpoints"
+        case modelPickerCategory = "model_picker_category"
+        case modelPickerEnabled = "model_picker_enabled"
+        case warningMessage = "warning_message"
     }
 
     /// Get context window size from nested structure.
@@ -69,12 +115,23 @@ public struct GitHubCopilotModelInfo: Codable {
         return capabilities?.limits?.maxOutputTokens
     }
 
+    /// Get model picker category (replaces free/premium distinction).
+    public var category: ModelPickerCategory {
+        return modelPickerCategory ?? .unknown
+    }
+    
+    /// Whether this model is shown in the model picker.
+    public var isPickerEnabled: Bool {
+        return modelPickerEnabled ?? enabled ?? false
+    }
+    
     /// Get model family from capabilities.
     public var family: String? {
         return capabilities?.family
     }
 
     /// Get premium status and multiplier from billing info.
+    /// Legacy: billing field removed from API June 2026. Returns false/nil for new responses.
     public var isPremium: Bool {
         return billing?.isPremium ?? false
     }
@@ -83,24 +140,69 @@ public struct GitHubCopilotModelInfo: Codable {
         return billing?.multiplier
     }
 
-    public struct ModelCapabilities: Codable {
+    public struct ModelCapabilities: Codable, Sendable {
         public let family: String?
         public let limits: ModelLimits?
+        public let supports: ModelSupports?
+        public let tokenizer: String?
+        public let type: String?
 
-        public struct ModelLimits: Codable {
+        public struct ModelLimits: Codable, Sendable {
             public let maxContextWindowTokens: Int?
             public let maxOutputTokens: Int?
             public let maxPromptTokens: Int?
+            public let maxNonStreamingOutputTokens: Int?
+            public let vision: ModelVision?
 
             enum CodingKeys: String, CodingKey {
                 case maxContextWindowTokens = "max_context_window_tokens"
                 case maxOutputTokens = "max_output_tokens"
                 case maxPromptTokens = "max_prompt_tokens"
+                case maxNonStreamingOutputTokens = "max_non_streaming_output_tokens"
+                case vision
+            }
+        }
+        
+        /// Vision capabilities for a model.
+        public struct ModelVision: Codable, Sendable {
+            public let maxPromptImageSize: Int?
+            public let maxPromptImages: Int?
+            public let supportedMediaTypes: [String]?
+            
+            enum CodingKeys: String, CodingKey {
+                case maxPromptImageSize = "max_prompt_image_size"
+                case maxPromptImages = "max_prompt_images"
+                case supportedMediaTypes = "supported_media_types"
             }
         }
     }
+    
+    /// Model support capabilities (adaptive thinking, tool calls, etc.)
+    public struct ModelSupports: Codable, Sendable {
+        public let adaptiveThinking: Bool?
+        public let maxThinkingBudget: Int?
+        public let minThinkingBudget: Int?
+        public let reasoningEffort: [String]?
+        public let parallelToolCalls: Bool?
+        public let streaming: Bool?
+        public let structuredOutputs: Bool?
+        public let toolCalls: Bool?
+        public let vision: Bool?
+        
+        enum CodingKeys: String, CodingKey {
+            case adaptiveThinking = "adaptive_thinking"
+            case maxThinkingBudget = "max_thinking_budget"
+            case minThinkingBudget = "min_thinking_budget"
+            case reasoningEffort = "reasoning_effort"
+            case parallelToolCalls = "parallel_tool_calls"
+            case streaming
+            case structuredOutputs = "structured_outputs"
+            case toolCalls = "tool_calls"
+            case vision
+        }
+    }
 
-    public struct ModelBilling: Codable {
+    public struct ModelBilling: Codable, Sendable {
         public let isPremium: Bool
         public let multiplier: Double?
         public let restrictedTo: [String]?
@@ -126,6 +228,11 @@ public struct GitHubCopilotModelInfo: Codable {
         self.billing = billing
         self.policy = nil
         self.supportedEndpoints = nil
+        self.modelPickerCategory = nil
+        self.modelPickerEnabled = nil
+        self.vendor = nil
+        self.preview = nil
+        self.warningMessage = nil
     }
 
     /// Check if model is available for use (enabled policy state).
@@ -137,18 +244,103 @@ public struct GitHubCopilotModelInfo: Codable {
 }
 
 /// Billing cache entry for persistence
+/// Legacy: used for backward compatibility with annual plan subscribers still on PRU billing.
 public struct BillingCacheEntry: Codable {
-    public let isPremium: Bool
-    public let multiplier: Double?
+    public let isPremium: Bool  // Legacy: always false for usage-based billing
+    public let multiplier: Double?  // Legacy: always nil for usage-based billing
+    public let category: String?  // New: model_picker_category value
+    public let vendor: String?  // New: model vendor
 
-    public init(isPremium: Bool, multiplier: Double?) {
+    public init(isPremium: Bool, multiplier: Double?, category: String? = nil, vendor: String? = nil) {
         self.isPremium = isPremium
         self.multiplier = multiplier
+        self.category = category
+        self.vendor = vendor
     }
 
     enum CodingKeys: String, CodingKey {
         case isPremium = "is_premium"
         case multiplier
+        case category
+        case vendor
+    }
+}
+ 
+// MARK: - GitHub Copilot Usage (AI Credits)
+ 
+/// Token-based usage information returned in chat completion responses.
+/// As of June 2026, GitHub Copilot uses AI Credits (1 credit = $0.01 USD) instead of
+/// premium request units. Each response includes `copilot_usage` with per-token costs.
+public struct CopilotUsage: Codable, Sendable {
+    public let tokenDetails: [CopilotTokenDetail]
+    public let totalNanoAIU: Int64
+    
+    enum CodingKeys: String, CodingKey {
+        case tokenDetails = "token_details"
+        case totalNanoAIU = "total_nano_aiu"
+    }
+    
+    /// Convert nano AI units to AI credits (1 credit = $0.01, 1 nano AIU = 10^-9 credit)
+    public var totalAICredits: Double {
+        return Double(totalNanoAIU) / 1_000_000_000.0
+    }
+    
+    /// Convert nano AI units to USD
+    public var totalCostUSD: Double {
+        return totalAICredits * 0.01
+    }
+    
+    /// Input tokens consumed
+    public var inputTokens: Int {
+        tokenDetails.first(where: { $0.tokenType == .input })?.tokenCount ?? 0
+    }
+    
+    /// Output tokens consumed
+    public var outputTokens: Int {
+        tokenDetails.first(where: { $0.tokenType == .output })?.tokenCount ?? 0
+    }
+    
+    /// Cached tokens read
+    public var cachedTokens: Int {
+        tokenDetails.first(where: { $0.tokenType == .cacheRead })?.tokenCount ?? 0
+    }
+}
+ 
+/// Per-token-type cost detail in a Copilot usage response.
+public struct CopilotTokenDetail: Codable, Sendable {
+    public let batchSize: Int64
+    public let costPerBatch: Int64
+    public let tokenCount: Int
+    public let tokenType: CopilotTokenType
+    
+    enum CodingKeys: String, CodingKey {
+        case batchSize = "batch_size"
+        case costPerBatch = "cost_per_batch"
+        case tokenCount = "token_count"
+        case tokenType = "token_type"
+    }
+    
+    /// Price per million tokens in USD
+    public var pricePerMillionUSD: Double {
+        guard batchSize > 0 else { return 0 }
+        // costPerBatch is in nano AI units per batchSize tokens
+        // 1 nano AIU = 10^-9 AI credits = 10^-11 USD
+        return Double(costPerBatch) * 0.01 / 1_000_000_000.0 * (1_000_000.0 / Double(batchSize))
+    }
+}
+ 
+/// Token type in Copilot usage response.
+public enum CopilotTokenType: String, Codable, Sendable {
+    case input
+    case cacheRead = "cache_read"
+    case cacheWrite = "cache_write"
+    case output
+    case unknown
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = CopilotTokenType(rawValue: rawValue) ?? .unknown
     }
 }
 

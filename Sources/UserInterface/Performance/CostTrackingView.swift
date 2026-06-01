@@ -298,26 +298,26 @@ public struct CostTrackingView: View {
             if lowercasedModel.contains("claude") {
                 // Claude Haiku is 0.33x, Sonnet is 0.33x, Opus would be higher
                 if lowercasedModel.contains("haiku") {
-                    return (isPremium: true, multiplier: 0.33)
+                    return (isPremium: true, multiplier: 0.33, category: "powerful", vendor: "Anthropic")
                 } else if lowercasedModel.contains("sonnet") {
-                    return (isPremium: true, multiplier: 0.33)
+                    return (isPremium: true, multiplier: 0.33, category: "powerful", vendor: "Anthropic")
                 }
-                return (isPremium: true, multiplier: 1.0)
+                return (isPremium: true, multiplier: 1.0, category: "powerful", vendor: "Anthropic")
             }
             
             // GPT-4.5 is premium
             if lowercasedModel.contains("gpt-4.5") {
-                return (isPremium: true, multiplier: 4.0)
+                return (isPremium: true, multiplier: 4.0, category: "powerful", vendor: "OpenAI")
             }
             
             // o1/o3 models are premium (reasoning models)
             if lowercasedModel.hasPrefix("o1") || lowercasedModel.hasPrefix("o3") {
-                return (isPremium: true, multiplier: 1.0)
+                return (isPremium: true, multiplier: 1.0, category: "powerful", vendor: "OpenAI")
             }
             
             // GPT-4.1 and most others are free (0x)
             if lowercasedModel.contains("gpt-4.1") || lowercasedModel.contains("gpt-4o") {
-                return (isPremium: false, multiplier: 0.0)
+                return (isPremium: false, multiplier: 0.0, category: "versatile", vendor: "OpenAI")
             }
             
             // Default: assume free if not recognized

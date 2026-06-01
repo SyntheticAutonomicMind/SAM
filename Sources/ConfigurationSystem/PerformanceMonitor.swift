@@ -378,10 +378,10 @@ public class PerformanceMonitor: ObservableObject {
     // MARK: - Session Cost Tracking
     
     /// Generate session cost statistics with per-model breakdown
-    /// - Parameter billingLookup: Closure to get billing info for a model (isPremium, multiplier)
+    /// - Parameter billingLookup: Closure to get billing info for a model (isPremium, multiplier, category, vendor)
     /// - Returns: SessionCostStatistics with complete cost breakdown
     public func generateSessionCostStatistics(
-        billingLookup: (String) -> (isPremium: Bool, multiplier: Double?)?
+        billingLookup: (String) -> (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)?
     ) -> SessionCostStatistics {
         // Group metrics by model
         var modelStats: [String: (requests: Int, inputTokens: Int, outputTokens: Int)] = [:]

@@ -345,7 +345,13 @@ public class MiniMaxProvider: AIProvider {
         let defaultMaxTokens = isM3 ? 524288 : 131072
         let requestMaxTokens = request.maxTokens ?? 0
         let configMaxTokens = config.maxTokens ?? defaultMaxTokens
-        let effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
+        /// For M3, ensure at least the M3 default even if config has M2.x value
+        let effectiveMaxTokens: Int
+        if isM3 {
+            effectiveMaxTokens = max(requestMaxTokens, max(configMaxTokens, defaultMaxTokens))
+        } else {
+            effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
+        }
 
         /// Build request body with streaming enabled.
         var requestBody: [String: Any] = [
@@ -979,7 +985,13 @@ public class MiniMaxProvider: AIProvider {
         let defaultMaxTokens = isM3 ? 524288 : 131072
         let requestMaxTokens = request.maxTokens ?? 0
         let configMaxTokens = config.maxTokens ?? defaultMaxTokens
-        let effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
+        /// For M3, ensure at least the M3 default even if config has M2.x value
+        let effectiveMaxTokens: Int
+        if isM3 {
+            effectiveMaxTokens = max(requestMaxTokens, max(configMaxTokens, defaultMaxTokens))
+        } else {
+            effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
+        }
 
         /// Create request body using MiniMax-compatible format.
         /// MiniMax requires different tool message formatting:

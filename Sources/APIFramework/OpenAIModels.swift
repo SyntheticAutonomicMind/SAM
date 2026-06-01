@@ -371,6 +371,10 @@ public struct ServerOpenAIChatResponse: Content, Sendable {
     /// GitHub Copilot response ID for conversation continuity For Chat Completions API: equals id field For Responses API: extracted from completed event.
     public let statefulMarker: String?
 
+    /// GitHub Copilot AI Credit usage data (June 2026+ usage-based billing)
+    /// Contains per-token costs and total nano AI units consumed
+    public let copilotUsage: CopilotUsage?
+
     /// SAM-specific enhanced metadata (provider info, model capabilities, workflow details, cost estimates)
     /// Optional to maintain backward compatibility - only included when SAM processes the request
     public let samMetadata: SAMResponseMetadata?
@@ -378,10 +382,11 @@ public struct ServerOpenAIChatResponse: Content, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, object, created, model, choices, usage
         case statefulMarker = "stateful_marker"
+        case copilotUsage = "copilot_usage"
         case samMetadata = "sam_metadata"
     }
 
-    public init(id: String, object: String, created: Int, model: String, choices: [OpenAIChatChoice], usage: ServerOpenAIUsage, statefulMarker: String? = nil, samMetadata: SAMResponseMetadata? = nil) {
+    public init(id: String, object: String, created: Int, model: String, choices: [OpenAIChatChoice], usage: ServerOpenAIUsage, statefulMarker: String? = nil, copilotUsage: CopilotUsage? = nil, samMetadata: SAMResponseMetadata? = nil) {
         self.id = id
         self.object = object
         self.created = created
@@ -389,6 +394,7 @@ public struct ServerOpenAIChatResponse: Content, Sendable {
         self.choices = choices
         self.usage = usage
         self.statefulMarker = statefulMarker ?? id
+        self.copilotUsage = copilotUsage
         self.samMetadata = samMetadata
     }
 }
@@ -721,6 +727,10 @@ public struct ServerOpenAIModel: Content {
     /// Enables clients to track premium model usage for billing purposes
     public let isPremium: Bool?            // Whether this is a premium model
     public let premiumMultiplier: Double?  // Billing multiplier (e.g., 1.5x for premium)
+    
+    /// Model category and vendor (June 2026+ usage-based billing)
+    public let category: String?          // Model picker category: "powerful", "versatile", "lightweight"
+    public let vendor: String?             // Model vendor: "Anthropic", "OpenAI", "Google", etc.
 
     enum CodingKeys: String, CodingKey {
         case id, object, created
@@ -730,9 +740,11 @@ public struct ServerOpenAIModel: Content {
         case maxRequestTokens = "max_request_tokens"
         case isPremium = "is_premium"
         case premiumMultiplier = "premium_multiplier"
+        case category = "model_picker_category"
+        case vendor
     }
 
-    public init(id: String, object: String, created: Int, ownedBy: String, contextWindow: Int? = nil, maxCompletionTokens: Int? = nil, maxRequestTokens: Int? = nil, isPremium: Bool? = nil, premiumMultiplier: Double? = nil) {
+    public init(id: String, object: String, created: Int, ownedBy: String, contextWindow: Int? = nil, maxCompletionTokens: Int? = nil, maxRequestTokens: Int? = nil, isPremium: Bool? = nil, premiumMultiplier: Double? = nil, category: String? = nil, vendor: String? = nil) {
         self.id = id
         self.object = object
         self.created = created
@@ -742,6 +754,8 @@ public struct ServerOpenAIModel: Content {
         self.maxRequestTokens = maxRequestTokens
         self.isPremium = isPremium
         self.premiumMultiplier = premiumMultiplier
+        self.category = category
+        self.vendor = vendor
     }
 }
 

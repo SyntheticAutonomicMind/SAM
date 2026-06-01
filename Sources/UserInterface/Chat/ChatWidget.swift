@@ -1227,10 +1227,25 @@ public struct ChatWidget: View {
                                     }
                                 } else if let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() {
                                     // Fallback to header-based quota
-                                    let percentUsed = 100.0 - quotaInfo.percentRemaining
-                                    Text("Status: \(quotaInfo.used)/\(quotaInfo.entitlement) Used: \(String(format: "%.1f%%", percentUsed))")
-                                        .font(.caption)
-                                        .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
+                                    if quotaInfo.isAICreditBilling {
+                                        // AI Credit-based billing (June 2026+)
+                                        if let creditsUsed = quotaInfo.creditsUsed, creditsUsed > 0 {
+                                            let creditsStr = String(format: "%.2f", creditsUsed)
+                                            Text("AI Credits: \(creditsStr) used")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        } else {
+                                            Text("AI Credits billing")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    } else {
+                                        // Legacy PRU-based billing
+                                        let percentUsed = 100.0 - quotaInfo.percentRemaining
+                                        Text("Status: \(quotaInfo.used)/\(quotaInfo.entitlement) Used: \(String(format: "%.1f%%", percentUsed))")
+                                            .font(.caption)
+                                            .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
+                                    }
                                 }
                             }
                         }
@@ -4392,16 +4407,19 @@ public struct ChatWidget: View {
             if billingInfo == nil {
                 logger.debug("BILLING_UI: No billing info for '\(baseModelId)'")
             } else {
-                logger.debug("BILLING_UI: Found billing for '\(baseModelId)': premium=\(billingInfo!.isPremium), multiplier=\(billingInfo!.multiplier ?? -1)")
+                logger.debug("BILLING_UI: Found billing for '\(baseModelId)': category=\(billingInfo!.category ?? "nil"), vendor=\(billingInfo!.vendor ?? "nil"), isPremium=\(billingInfo!.isPremium), multiplier=\(billingInfo!.multiplier ?? -1)")
             }
         }
 
         if let billing = billingInfo {
-            if billing.isPremium, let multiplier = billing.multiplier {
-                /// Premium models show actual multiplier
+            if let category = billing.category, category != "unknown", category != "nil" {
+                /// Usage-based billing (June 2026+): show category instead of multiplier
+                billingText = category
+            } else if billing.isPremium, let multiplier = billing.multiplier {
+                /// Legacy PRU billing: premium models show actual multiplier
                 billingText = "\(formatMultiplier(multiplier))x"
             } else {
-                /// Free models show 0x
+                /// Legacy PRU billing: free models show 0x
                 billingText = "0x"
             }
         }
@@ -4472,6 +4490,8 @@ public struct ChatWidget: View {
     }
 
     /// Categorize models into free and premium lists for sectioned picker
+    /// For usage-based billing (June 2026+), uses model_picker_category
+    /// For legacy PRU billing, uses isPremium flag
     private func categorizeModelsByBilling(_ models: [String]) -> (free: [String], premium: [String]) {
         var freeModels: [String] = []
         var premiumModels: [String] = []
@@ -4485,10 +4505,23 @@ public struct ChatWidget: View {
                 baseModelId = model
             }
 
-            /// Check if model is premium
+            /// Check billing category or premium status
             let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: baseModelId)
-            if let billing = billingInfo, billing.isPremium {
-                premiumModels.append(model)
+            if let billing = billingInfo {
+                /// Usage-based billing: use category
+                if let category = billing.category, category != "unknown", category != "nil" {
+                    if category == "powerful" {
+                        premiumModels.append(model)
+                    } else {
+                        /// "versatile" and "lightweight" go in free section
+                        freeModels.append(model)
+                    }
+                } else if billing.isPremium {
+                    /// Legacy PRU billing: use isPremium
+                    premiumModels.append(model)
+                } else {
+                    freeModels.append(model)
+                }
             } else {
                 freeModels.append(model)
             }

@@ -268,7 +268,7 @@ public enum ProviderType: String, CaseIterable, Codable {
             return []
 
         case .minimax:
-            return ["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "M2-her"]
+            return ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-M2.1", "MiniMax-M2.1-highspeed", "M2-her"]
 
         case .openrouter:
             return []
