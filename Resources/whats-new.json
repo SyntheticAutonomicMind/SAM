@@ -1,6 +1,28 @@
 {
   "releases": [
     {
+      "version": "20260601.1",
+      "release_date": "June 1, 2026",
+      "introduction": "MiniMax M3 joins the model lineup as a new frontier option with a 1M token context window, adaptive thinking for complex reasoning, and native tool use. SAM's billing system now tracks AI Credits and pay-per-token providers distinctly from flat-rate subscriptions, so your cost estimates match what you actually get billed.",
+      "highlights": [
+        {
+          "id": "minimax-m3-model",
+          "icon": "sparkles",
+          "title": "MiniMax M3 Model Available",
+          "description": "MiniMax's newest frontier model is now in the model picker. MiniMax M3 brings a 1M token context window (the largest in the SAM lineup), adaptive thinking that interleaves reasoning into responses, and strong performance on coding and agentic tasks. Pricing and capability metadata show in the model card so you can pick it with full information."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "billing-categories",
+          "icon": "creditcard.fill",
+          "title": "AI Credits and Pay-Per-Token Billing Tracked Separately",
+          "description": "SAM now distinguishes three billing models in cost display: AI Credits, pay-per-token (OpenRouter, DeepSeek, MiniMax), and flat-rate subscriptions (Claude, GitHub Copilot). Token usage and credit consumption show up correctly in the cost panel regardless of which provider you're using, so the totals match what you actually get billed."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
       "version": "20260530.1",
       "release_date": "May 30, 2026",
       "introduction": "Calendar and Contacts tools now give you clear, actionable guidance when macOS permissions are denied - telling you exactly where in System Settings to enable access, instead of a generic 'access denied' message.",

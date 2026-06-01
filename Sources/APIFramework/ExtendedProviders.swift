@@ -340,18 +340,21 @@ public class MiniMaxProvider: AIProvider {
             clampedTemperature = min(max(temperature, 0.01), 1.0)
         }
 
-        /// MiniMax M3 supports up to 524288 max output tokens (512K).
-        /// MiniMax M2.x supports up to 131072 max output tokens.
-        let defaultMaxTokens = isM3 ? 524288 : 131072
-        let requestMaxTokens = request.maxTokens ?? 0
-        let configMaxTokens = config.maxTokens ?? defaultMaxTokens
-        /// For M3, ensure at least the M3 default even if config has M2.x value
-        let effectiveMaxTokens: Int
-        if isM3 {
-            effectiveMaxTokens = max(requestMaxTokens, max(configMaxTokens, defaultMaxTokens))
+        /// MiniMax M3: recommended 131072 (128K), max 524288 (512K).
+        /// MiniMax M2.x: recommended 65536 (64K), max 204800 (200K).
+        let modelMaxTokens = isM3 ? 524288 : 204800
+        let modelDefaultMaxTokens = isM3 ? 131072 : 65536
+        /// Resolution order: explicit request -> config override -> model default.
+        /// Clamp to the model's documented max so we never ask for more than the API supports.
+        let requestedMaxTokens: Int
+        if let requestValue = request.maxTokens, requestValue > 0 {
+            requestedMaxTokens = min(requestValue, modelMaxTokens)
+        } else if let configValue = config.maxTokens, configValue > 0 {
+            requestedMaxTokens = min(configValue, modelMaxTokens)
         } else {
-            effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
+            requestedMaxTokens = modelDefaultMaxTokens
         }
+        let effectiveMaxTokens = requestedMaxTokens
 
         /// Build request body with streaming enabled.
         var requestBody: [String: Any] = [
@@ -980,18 +983,21 @@ public class MiniMaxProvider: AIProvider {
             clampedTemperature = min(max(temperature, 0.01), 1.0)
         }
 
-        /// MiniMax M3 supports up to 524288 max output tokens (512K).
-        /// MiniMax M2.x supports up to 131072 max output tokens.
-        let defaultMaxTokens = isM3 ? 524288 : 131072
-        let requestMaxTokens = request.maxTokens ?? 0
-        let configMaxTokens = config.maxTokens ?? defaultMaxTokens
-        /// For M3, ensure at least the M3 default even if config has M2.x value
-        let effectiveMaxTokens: Int
-        if isM3 {
-            effectiveMaxTokens = max(requestMaxTokens, max(configMaxTokens, defaultMaxTokens))
+        /// MiniMax M3: recommended 131072 (128K), max 524288 (512K).
+        /// MiniMax M2.x: recommended 65536 (64K), max 204800 (200K).
+        let modelMaxTokens = isM3 ? 524288 : 204800
+        let modelDefaultMaxTokens = isM3 ? 131072 : 65536
+        /// Resolution order: explicit request -> config override -> model default.
+        /// Clamp to the model's documented max so we never ask for more than the API supports.
+        let requestedMaxTokens: Int
+        if let requestValue = request.maxTokens, requestValue > 0 {
+            requestedMaxTokens = min(requestValue, modelMaxTokens)
+        } else if let configValue = config.maxTokens, configValue > 0 {
+            requestedMaxTokens = min(configValue, modelMaxTokens)
         } else {
-            effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
+            requestedMaxTokens = modelDefaultMaxTokens
         }
+        let effectiveMaxTokens = requestedMaxTokens
 
         /// Create request body using MiniMax-compatible format.
         /// MiniMax requires different tool message formatting:
