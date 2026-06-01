@@ -328,23 +328,44 @@ public class MiniMaxProvider: AIProvider {
             ? request.model.components(separatedBy: "/").last ?? request.model
             : request.model
 
-        /// MiniMax temperature range: 0.01 to 1.0.
-        let temperature = request.temperature ?? config.temperature ?? 0.7
-        let clampedTemperature = min(max(temperature, 0.01), 1.0)
+        let isM3 = modelForAPI.hasPrefix("MiniMax-M3")
 
-        /// MiniMax supports up to 131072 max output tokens.
+        /// MiniMax M3 temperature range: 0 to 2.0.
+        /// MiniMax M2.x temperature range: 0.01 to 1.0.
+        let temperature = request.temperature ?? config.temperature ?? 0.7
+        let clampedTemperature: Double
+        if isM3 {
+            clampedTemperature = min(max(temperature, 0.0), 2.0)
+        } else {
+            clampedTemperature = min(max(temperature, 0.01), 1.0)
+        }
+
+        /// MiniMax M3 supports up to 524288 max output tokens (512K).
+        /// MiniMax M2.x supports up to 131072 max output tokens.
+        let defaultMaxTokens = isM3 ? 524288 : 131072
         let requestMaxTokens = request.maxTokens ?? 0
-        let configMaxTokens = config.maxTokens ?? 131072
+        let configMaxTokens = config.maxTokens ?? defaultMaxTokens
         let effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
 
         /// Build request body with streaming enabled.
         var requestBody: [String: Any] = [
             "model": modelForAPI,
             "messages": buildMiniMaxMessages(from: request.messages, requestId: requestId),
-            "max_tokens": effectiveMaxTokens,
             "temperature": clampedTemperature,
             "stream": true  /// Enable SSE streaming
         ]
+
+        /// MiniMax M3 uses max_completion_tokens; M2.x uses max_tokens.
+        if isM3 {
+            requestBody["max_completion_tokens"] = effectiveMaxTokens
+        } else {
+            requestBody["max_tokens"] = effectiveMaxTokens
+        }
+
+        /// MiniMax M3 supports adaptive thinking for interleaved reasoning.
+        if isM3 {
+            requestBody["thinking"] = ["type": "adaptive"]
+        }
 
         /// Add tools support if present.
         if let tools = request.tools, !tools.isEmpty {
@@ -936,21 +957,29 @@ public class MiniMaxProvider: AIProvider {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        /// MiniMax has specific temperature range: 0.01 to 1.0
-        let temperature = request.temperature ?? config.temperature ?? 0.7
-        let clampedTemperature = min(max(temperature, 0.01), 1.0)
-
-        /// MiniMax supports up to 131072 max output tokens with 200k context.
-        /// Use the HIGHER of request.maxTokens or config.maxTokens to ensure
-        /// we don't artificially limit MiniMax's capabilities.
-        let requestMaxTokens = request.maxTokens ?? 0
-        let configMaxTokens = config.maxTokens ?? 131072
-        let effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
-
         /// Strip provider prefix from model name before sending to API User-facing: "minimax/MiniMax-M2.7" -> API expects: "MiniMax-M2.7".
         let modelForAPI = request.model.contains("/")
             ? request.model.components(separatedBy: "/").last ?? request.model
             : request.model
+
+        let isM3 = modelForAPI.hasPrefix("MiniMax-M3")
+
+        /// MiniMax M3 temperature range: 0 to 2.0.
+        /// MiniMax M2.x temperature range: 0.01 to 1.0.
+        let temperature = request.temperature ?? config.temperature ?? 0.7
+        let clampedTemperature: Double
+        if isM3 {
+            clampedTemperature = min(max(temperature, 0.0), 2.0)
+        } else {
+            clampedTemperature = min(max(temperature, 0.01), 1.0)
+        }
+
+        /// MiniMax M3 supports up to 524288 max output tokens (512K).
+        /// MiniMax M2.x supports up to 131072 max output tokens.
+        let defaultMaxTokens = isM3 ? 524288 : 131072
+        let requestMaxTokens = request.maxTokens ?? 0
+        let configMaxTokens = config.maxTokens ?? defaultMaxTokens
+        let effectiveMaxTokens = max(requestMaxTokens, configMaxTokens)
 
         /// Create request body using MiniMax-compatible format.
         /// MiniMax requires different tool message formatting:
@@ -960,10 +989,21 @@ public class MiniMaxProvider: AIProvider {
         var requestBody: [String: Any] = [
             "model": modelForAPI,
             "messages": buildMiniMaxMessages(from: request.messages, requestId: requestId),
-            "max_tokens": effectiveMaxTokens,
             "temperature": clampedTemperature,
             "stream": false
         ]
+
+        /// MiniMax M3 uses max_completion_tokens; M2.x uses max_tokens.
+        if isM3 {
+            requestBody["max_completion_tokens"] = effectiveMaxTokens
+        } else {
+            requestBody["max_tokens"] = effectiveMaxTokens
+        }
+
+        /// MiniMax M3 supports adaptive thinking for interleaved reasoning.
+        if isM3 {
+            requestBody["thinking"] = ["type": "adaptive"]
+        }
 
         /// Add tools support if present (required for structured tool_calls).
         if let tools = request.tools, !tools.isEmpty {
