@@ -193,10 +193,11 @@ public class DeepSeekProvider: AIProvider {
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
         /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
-        let requestBody = request.buildOpenAICompatibleRequestBody()
+        /// Enable cache_control for DeepSeek prompt caching support.
+        let requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
@@ -399,7 +400,7 @@ public class MiniMaxProvider: AIProvider {
         }
 
         /// Serialize request body.
-        guard let requestBodyData = try? JSONSerialization.data(withJSONObject: requestBody) else {
+        guard let requestBodyData = try? deterministicJSONData(from: requestBody) else {
             throw ProviderError.networkError("Failed to serialize MiniMax request")
         }
         urlRequest.httpBody = requestBodyData
@@ -1048,7 +1049,7 @@ public class MiniMaxProvider: AIProvider {
         }
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
@@ -1061,7 +1062,7 @@ public class MiniMaxProvider: AIProvider {
         logger.debug("Sending request to MiniMax API [req:\(requestId.prefix(8))]")
 
         do {
-            let requestBodyData = try JSONSerialization.data(withJSONObject: requestBody)
+            let requestBodyData = try deterministicJSONData(from: requestBody)
             urlRequest.httpBody = requestBodyData
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
@@ -1524,7 +1525,7 @@ public class CustomProvider: AIProvider {
         }
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
@@ -2037,7 +2038,7 @@ public class GeminiProvider: AIProvider {
         }
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
@@ -2502,10 +2503,11 @@ public class OllamaCloudProvider: AIProvider {
             : request.model
 
         /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
-        let requestBody = request.buildOpenAICompatibleRequestBody(modelOverride: modelForAPI)
+        /// Enable cache_control for Z.AI prompt caching support.
+        let requestBody = request.buildOpenAICompatibleRequestBody(modelOverride: modelForAPI, cacheControl: true)
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
@@ -2741,12 +2743,14 @@ public class ZAIProvider: AIProvider {
 
         /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
         /// Z.AI uses max_completion_tokens (not max_tokens) and has specific sampling defaults.
+        /// Enable cache_control for Z.AI prompt caching support.
         var requestBody = request.buildOpenAICompatibleRequestBody(
             modelOverride: modelForAPI,
             temperatureOverride: request.temperature ?? config.temperature ?? 1.0,
             extraFields: [
                 "top_p": 0.95
-            ]
+            ],
+            cacheControl: true
         )
 
         // Z.AI uses max_completion_tokens instead of max_tokens
@@ -2758,10 +2762,20 @@ public class ZAIProvider: AIProvider {
         }
 
         // Enable thinking parameter for chain-of-thought (Z.AI specific)
-        requestBody["thinking"] = ["type": "enabled"]
+        // Use SAMConfig.thinking if provided, otherwise default to enabled
+        if let thinkingConfig = request.samConfig?.thinking {
+            var thinkingDict: [String: Any] = [:]
+            thinkingDict["type"] = thinkingConfig.mode ?? "enabled"
+            if let budget = thinkingConfig.budgetTokens {
+                thinkingDict["budget_tokens"] = budget
+            }
+            requestBody["thinking"] = thinkingDict
+        } else {
+            requestBody["thinking"] = ["type": "enabled"]
+        }
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
