@@ -1,6 +1,52 @@
 {
   "releases": [
     {
+      "version": "20260603.1",
+      "release_date": "June 3, 2026",
+      "introduction": "Local model conversations now reuse their KV cache across turns instead of reprocessing the entire prompt every time. The system prompt is now fully static - all dynamic content (conversation ID, tools, working directory, LTM, session naming) moves to the user message. This eliminates the cache invalidation that happened when conversation titles changed mid-chat.",
+      "highlights": [
+        {
+          "id": "kv-cache-stability",
+          "icon": "bolt.fill",
+          "title": "Full KV Cache Reuse for Local Models",
+          "description": "The system prompt is now byte-identical across turns in the same conversation. Previously, dynamic content like the working directory path (which includes the conversation title) changed after the first response, invalidating the entire KV cache prefix. Now all dynamic content is injected into the user message instead, so local models can reuse cached tokens and skip reprocessing thousands of tokens on each turn."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "deterministic-serialization",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Deterministic JSON Serialization",
+          "description": "API requests now use deterministic JSON serialization that sorts dictionary keys alphabetically. This ensures the same request content always produces the same byte sequence, which is critical for KV cache matching on local models."
+        },
+        {
+          "id": "cache-control-headers",
+          "icon": "memorychip",
+          "title": "Cache Control Headers for supported providers",
+          "description": "Provider requests now include ephemeral cache control breakpoints on the system prompt and user context. OpenAI requests include cached_response headers. Both help cloud providers reuse previously computed tokens, reducing latency and cost."
+        },
+        {
+          "id": "remote-llama-provider",
+          "icon": "server.rack",
+          "title": "Remote llama.cpp Server Support",
+          "description": "SAM can now connect to a remote llama.cpp server instead of only running models locally and without using the custom provider. Configure a remote server URL in Preferences to offload inference to a dedicated machine on your network."
+        },
+        {
+          "id": "thinking-effort",
+          "icon": "brain.head.profile",
+          "title": "Thinking Effort Control",
+          "description": "A new thinking parameter lets you control how much reasoning effort the model applies. Lower values produce faster responses; higher values engage deeper reasoning for complex problems."
+        },
+        {
+          "id": "minimax-output-token-fix",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed MiniMax M3 Max Output Token Inflation",
+          "description": "MiniMax M3's max output tokens are now capped at the API limit (16,384) instead of being inflated past it, preventing API errors on long responses."
+        }
+      ],
+      "bugfixes": []
+    },
+    {
       "version": "20260601.1",
       "release_date": "June 1, 2026",
       "introduction": "MiniMax M3 joins the model lineup as a new frontier option with a 1M token context window, adaptive thinking for complex reasoning, and native tool use. SAM's billing system now tracks AI Credits and pay-per-token providers distinctly from flat-rate subscriptions, so your cost estimates match what you actually get billed.",
