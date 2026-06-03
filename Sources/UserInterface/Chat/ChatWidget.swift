@@ -3116,11 +3116,12 @@ public struct ChatWidget: View {
         }
 
         /// FEATURE: Inject userContext block for KV cache stability.
-        /// Contains date/time, user info, location, coordinates, and conversation ID.
-        /// All dynamic per-message content is in userContext to keep system prompt static.
+        /// Contains date/time, user info, location, and coordinates.
+        /// Conversation ID, tools, working directory, LTM, and session naming are handled
+        /// by the orchestrator's dynamic context injection (separate <userContext> block).
         let coordinates = LocationManager.shared.getEffectiveCoordinates()
         let userContext = SystemPromptConfiguration.buildUserContextBlock(
-            conversationId: activeConversation?.id,
+            conversationId: nil,
             location: LocationManager.shared.getEffectiveLocation(),
             latitude: coordinates?.latitude,
             longitude: coordinates?.longitude

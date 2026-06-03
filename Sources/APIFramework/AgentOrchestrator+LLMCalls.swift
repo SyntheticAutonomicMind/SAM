@@ -91,31 +91,35 @@ extension AgentOrchestrator {
         // Custom instructions loaded from files could contain hidden Unicode payloads
         userSystemPrompt = SecurityPipeline.sanitizeInputNonNil(userSystemPrompt)
 
-        /// Inject conversation ID for memory operations.
-        var systemPromptAdditions = """
-        \(userSystemPrompt)
+        /// KV CACHE OPTIMIZATION: System prompt must be STATIC across turns.
+        /// Only the user-configured system prompt + personality goes in the system message.
+        /// All dynamic per-turn content (conversation ID, tools, working directory, LTM, etc.)
+        /// goes into <userContext> in the last user message so the system prompt prefix
+        /// stays byte-identical across turns, enabling full KV cache reuse.
 
-        CONVERSATION_ID: \(conversationId.uuidString)
-        """
+        var dynamicContext = ""
+
+        /// Conversation ID for memory operations.
+        dynamicContext += "CONVERSATION_ID: \(conversationId.uuidString)"
 
         /// Inject dynamic tool listing when tools are enabled
         if toolsEnabled {
             let tools = conversationManager.mcpManager.getAvailableTools()
             if !tools.isEmpty {
-                var listing = "Available Tools:"
+                var listing = "\n\nAvailable Tools:"
                 for tool in tools {
                     let desc = tool.description.components(separatedBy: "\n").first ?? tool.description
                     listing += "\n- \(tool.name): \(desc)"
                 }
                 listing += "\n\nUse tools when the task requires action. Respond naturally for conversation."
-                systemPromptAdditions += "\n\n" + listing
+                dynamicContext += listing
             }
         }
 
-        /// Add working directory context when tools are enabled
+        /// Working directory context - changes when conversation title changes
         if toolsEnabled {
             let effectiveWorkingDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-            systemPromptAdditions += """
+            dynamicContext += """
 
 
             # WORKING DIRECTORY CONTEXT
@@ -133,7 +137,7 @@ extension AgentOrchestrator {
         if conversation.settings.useSharedData,
            let topicId = conversation.settings.sharedTopicId,
            let topicName = conversation.settings.sharedTopicName {
-            systemPromptAdditions += """
+            dynamicContext += """
 
 
             # SHARED TOPIC CONTEXT
@@ -157,9 +161,7 @@ extension AgentOrchestrator {
             logger.debug("callLLM: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }
 
-        /// LTM INJECTION: Load and inject Long-Term Memory entries into system prompt
-        /// This gives the agent access to learned discoveries, solutions, and patterns
-        /// across sessions, scoped to the conversation or shared topic.
+        /// LTM injection - can grow between turns as new memories are added
         do {
             let useSharedData = conversation.settings.useSharedData
             let sharedTopicId = conversation.settings.sharedTopicId
@@ -176,21 +178,15 @@ extension AgentOrchestrator {
             if ltm.totalEntries > 0 {
                 let ltmBlock = ltm.formatForSystemPrompt()
                 if !ltmBlock.isEmpty {
-                    systemPromptAdditions += "\n\n" + ltmBlock
-                    logger.info("callLLM: Injected LTM (\(ltm.totalEntries) entries) into system prompt")
+                    dynamicContext += "\n\n" + ltmBlock
+                    logger.info("callLLM: Injected LTM (\(ltm.totalEntries) entries) into dynamic context")
                 }
             }
         }
 
-        /// MINI PROMPT INJECTION: Handled via ephemeral user-message injection below.
-        /// Mini-prompts appended to the system prompt get buried under layers of context
-        /// and models treat them as reference material rather than actionable instructions.
-        /// Instead, we inject them into the latest user message at API-call time (not persisted).
-        /// ChatWidget handles first-message injection into <userContext> (persisted for continuity).
-
-        /// Session naming: inject instruction for unnamed conversations so AI provides a title
+        /// Session naming - only present on first turn, disappears after title is set
         if conversation.title.hasPrefix("New Conversation") {
-            systemPromptAdditions += """
+            dynamicContext += """
 
 
             ## Session Title [MANDATORY]
@@ -208,14 +204,17 @@ extension AgentOrchestrator {
             logger.debug("callLLM: Injected session naming instruction for unnamed conversation")
         }
 
-        let systemPromptWithId = systemPromptAdditions
+        /// System prompt is ONLY the static user-configured prompt + personality.
+        /// This ensures the system message prefix is byte-identical across turns for KV cache reuse.
+        let systemPromptContent = userSystemPrompt
 
-        logger.debug("callLLM: Generated system prompt from ID: \(promptId?.uuidString ?? "default"), length: \(systemPromptWithId.count) chars, toolsEnabled: \(toolsEnabled)")
-        logger.debug("callLLM: Guard rails present: \(systemPromptWithId.contains("TOOL SCHEMA CONFIDENTIALITY"))")
+        logger.debug("callLLM: Generated system prompt from ID: \(promptId?.uuidString ?? "default"), length: \(systemPromptContent.count) chars, toolsEnabled: \(toolsEnabled)")
+        logger.debug("callLLM: Guard rails present: \(systemPromptContent.contains("TOOL SCHEMA CONFIDENTIALITY"))")
+        logger.debug("callLLM: Dynamic context length: \(dynamicContext.count) chars (injected into user message)")
 
         if !userSystemPrompt.isEmpty {
-            messages.append(OpenAIChatMessage(role: "system", content: systemPromptWithId))
-            logger.debug("callLLM: Added user-configured system prompt to messages (with conversation ID)")
+            messages.append(OpenAIChatMessage(role: "system", content: systemPromptContent))
+            logger.debug("callLLM: Added user-configured system prompt to messages (static prefix)")
         }
 
         /// CLAUDE USERCONTEXT INJECTION
@@ -508,6 +507,21 @@ extension AgentOrchestrator {
                         logger.debug("callLLM: Mini-prompt already present in last user message")
                     }
                 }
+            }
+        }
+
+        /// KV CACHE OPTIMIZATION: Inject dynamic context into last user message.
+        /// This keeps the system prompt byte-identical across turns, enabling full KV cache reuse.
+        /// Dynamic context includes: conversation ID, tool listing, working directory, shared topic,
+        /// LTM entries, and session naming instruction.
+        if !dynamicContext.isEmpty {
+            if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
+                let existingContent = messages[lastUserIndex].content ?? ""
+                let injectedContent = existingContent + "\n\n<userContext>\n\(dynamicContext)\n</userContext>"
+                messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
+                logger.debug("callLLM: Injected dynamic context (\(dynamicContext.count) chars) into last user message for KV cache stability")
+            } else {
+                logger.warning("callLLM: No user message found for dynamic context injection")
             }
         }
 
@@ -1163,32 +1177,35 @@ extension AgentOrchestrator {
         // Custom instructions loaded from files could contain hidden Unicode payloads
         userSystemPrompt = SecurityPipeline.sanitizeInputNonNil(userSystemPrompt)
 
+        /// KV CACHE OPTIMIZATION: System prompt must be STATIC across turns.
+        /// Only the user-configured system prompt + personality goes in the system message.
+        /// All dynamic per-turn content (conversation ID, tools, working directory, LTM, etc.)
+        /// goes into <userContext> in the last user message so the system prompt prefix
+        /// stays byte-identical across turns, enabling full KV cache reuse.
 
-        /// Inject conversation ID for memory operations.
-        var systemPromptAdditions = """
-        \(userSystemPrompt)
+        var dynamicContext = ""
 
-        CONVERSATION_ID: \(conversationId.uuidString)
-        """
+        /// Conversation ID for memory operations.
+        dynamicContext += "CONVERSATION_ID: \(conversationId.uuidString)"
 
         /// Inject dynamic tool listing when tools are enabled
         if toolsEnabled {
             let tools = conversationManager.mcpManager.getAvailableTools()
             if !tools.isEmpty {
-                var listing = "Available Tools:"
+                var listing = "\n\nAvailable Tools:"
                 for tool in tools {
                     let desc = tool.description.components(separatedBy: "\n").first ?? tool.description
                     listing += "\n- \(tool.name): \(desc)"
                 }
                 listing += "\n\nUse tools when the task requires action. Respond naturally for conversation."
-                systemPromptAdditions += "\n\n" + listing
+                dynamicContext += listing
             }
         }
 
-        /// Add working directory context when tools are enabled
+        /// Working directory context - changes when conversation title changes
         if toolsEnabled {
             let effectiveWorkingDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-            systemPromptAdditions += """
+            dynamicContext += """
 
 
             # WORKING DIRECTORY CONTEXT
@@ -1206,7 +1223,7 @@ extension AgentOrchestrator {
         if conversation.settings.useSharedData,
            let topicId = conversation.settings.sharedTopicId,
            let topicName = conversation.settings.sharedTopicName {
-            systemPromptAdditions += """
+            dynamicContext += """
 
 
             # SHARED TOPIC CONTEXT
@@ -1230,7 +1247,7 @@ extension AgentOrchestrator {
             logger.debug("callLLMStreaming: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }
 
-        /// LTM INJECTION: Load and inject Long-Term Memory entries into system prompt
+        /// LTM injection - can grow between turns as new memories are added
         do {
             let useSharedData = conversation.settings.useSharedData
             let sharedTopicId = conversation.settings.sharedTopicId
@@ -1247,18 +1264,15 @@ extension AgentOrchestrator {
             if ltm.totalEntries > 0 {
                 let ltmBlock = ltm.formatForSystemPrompt()
                 if !ltmBlock.isEmpty {
-                    systemPromptAdditions += "\n\n" + ltmBlock
-                    logger.info("callLLMStreaming: Injected LTM (\(ltm.totalEntries) entries) into system prompt")
+                    dynamicContext += "\n\n" + ltmBlock
+                    logger.info("callLLMStreaming: Injected LTM (\(ltm.totalEntries) entries) into dynamic context")
                 }
             }
         }
 
-        /// MINI PROMPT INJECTION: Handled via ephemeral user-message injection below.
-        /// See callLLM for rationale - system prompt injection gets buried and ignored.
-
-        /// Session naming: inject instruction for unnamed conversations so AI provides a title
+        /// Session naming - only present on first turn, disappears after title is set
         if conversation.title.hasPrefix("New Conversation") {
-            systemPromptAdditions += """
+            dynamicContext += """
 
 
             ## Session Title [MANDATORY]
@@ -1276,14 +1290,17 @@ extension AgentOrchestrator {
             logger.debug("callLLMStreaming: Injected session naming instruction for unnamed conversation")
         }
 
-        let systemPromptWithId = systemPromptAdditions
+        /// System prompt is ONLY the static user-configured prompt + personality.
+        /// This ensures the system message prefix is byte-identical across turns for KV cache reuse.
+        let systemPromptContent = userSystemPrompt
 
-        logger.debug("callLLMStreaming: Generated system prompt from ID: \(promptId?.uuidString ?? "default"), length: \(systemPromptWithId.count) chars, toolsEnabled: \(toolsEnabled)")
-        logger.debug("callLLMStreaming: Guard rails present: \(systemPromptWithId.contains("TOOL SCHEMA CONFIDENTIALITY"))")
+        logger.debug("callLLMStreaming: Generated system prompt from ID: \(promptId?.uuidString ?? "default"), length: \(systemPromptContent.count) chars, toolsEnabled: \(toolsEnabled)")
+        logger.debug("callLLMStreaming: Guard rails present: \(systemPromptContent.contains("TOOL SCHEMA CONFIDENTIALITY"))")
+        logger.debug("callLLMStreaming: Dynamic context length: \(dynamicContext.count) chars (injected into user message)")
 
         if !userSystemPrompt.isEmpty {
-            messages.append(OpenAIChatMessage(role: "system", content: systemPromptWithId))
-            logger.debug("callLLMStreaming: Added user-configured system prompt to messages (with conversation ID)")
+            messages.append(OpenAIChatMessage(role: "system", content: systemPromptContent))
+            logger.debug("callLLMStreaming: Added user-configured system prompt to messages (static prefix)")
         }
 
         /// CLAUDE USERCONTEXT INJECTION
@@ -1608,6 +1625,21 @@ extension AgentOrchestrator {
                         logger.debug("callLLMStreaming: Mini-prompt already present in last user message")
                     }
                 }
+            }
+        }
+
+        /// KV CACHE OPTIMIZATION: Inject dynamic context into last user message.
+        /// This keeps the system prompt byte-identical across turns, enabling full KV cache reuse.
+        /// Dynamic context includes: conversation ID, tool listing, working directory, shared topic,
+        /// LTM entries, and session naming instruction.
+        if !dynamicContext.isEmpty {
+            if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
+                let existingContent = messages[lastUserIndex].content ?? ""
+                let injectedContent = existingContent + "\n\n<userContext>\n\(dynamicContext)\n</userContext>"
+                messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
+                logger.debug("callLLMStreaming: Injected dynamic context (\(dynamicContext.count) chars) into last user message for KV cache stability")
+            } else {
+                logger.warning("callLLMStreaming: No user message found for dynamic context injection")
             }
         }
 
