@@ -138,10 +138,11 @@ public class OpenAIProvider: AIProvider {
             : request.model
 
         /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
-        var requestBody = request.buildOpenAICompatibleRequestBody()
+        /// Enable cache_control for OpenAI prompt caching support.
+        var requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
@@ -1367,59 +1368,10 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             logger.debug("CHAT_COMPLETIONS: Including stateful marker for context continuation: \(marker.prefix(20))...")
         }
 
-        /// FILTER OUT TOOL RESULT PREVIEW MESSAGES
-        /// These are UI-only messages that should NEVER be sent to the API
-        /// They contain markers like [TOOL_RESULT_STORED] and [TOOL_RESULT_PREVIEW]
-        let filteredMessages = request.messages.filter { message in
-            guard let content = message.content else { return true }
-            let isToolResultPreview = content.contains("[TOOL_RESULT_STORED]") || content.contains("[TOOL_RESULT_PREVIEW]")
-            if isToolResultPreview {
-                logger.debug("FILTER_PREVIEW: Removing tool result preview message (role=\(message.role))")
-            }
-            return !isToolResultPreview
-        }
-        
-        /// NOTE: Message alternation is handled in AgentOrchestrator.ensureMessageAlternation()
-        /// before reaching this provider. Doing it here would cause double-merging and lose context.
-        /// The orchestrator version preserves tool messages and has better logging.
-
-        let messages = filteredMessages.map { message in
-            var messageDict: [String: Any] = [
-                "role": message.role
-            ]
-
-            /// Include content if it exists (can be null for assistant messages with tool_calls).
-            /// CRITICAL FIX: Trim trailing whitespace to prevent GitHub Copilot API rejection
-            /// Claude models sometimes append newlines which cause "trailing whitespace" errors
-            if let content = message.content {
-                let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                /// Only include content if it's not empty after trimming
-                if !trimmedContent.isEmpty {
-                    messageDict["content"] = trimmedContent
-                }
-            }
-
-            /// Include tool_calls for assistant messages (CRITICAL for GitHub Copilot).
-            if let toolCalls = message.toolCalls {
-                messageDict["tool_calls"] = toolCalls.map { toolCall in
-                    [
-                        "id": toolCall.id,
-                        "type": toolCall.type,
-                        "function": [
-                            "name": toolCall.function.name,
-                            "arguments": toolCall.function.arguments
-                        ]
-                    ]
-                }
-            }
-
-            /// Include tool_call_id for tool messages (CRITICAL for GitHub Copilot).
-            if let toolCallId = message.toolCallId {
-                messageDict["tool_call_id"] = toolCallId
-            }
-
-            return messageDict
-        }
+        /// Use shared message serialization with cache_control support.
+        /// This ensures deterministic key ordering and proper handling of
+        /// tool_calls, tool_call_id, reasoning_content, and cache_control.
+        let messages = request.serializeMessages(cacheControl: true)
 
         /// Log the messages being sent to GitHub Copilot API.
         logger.debug("Sending \(messages.count) messages to GitHub Copilot API:")
@@ -1511,7 +1463,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             logger.debug("No tools to include in GitHub Copilot API request")
         }
 
-        let requestData = try JSONSerialization.data(withJSONObject: requestBody)
+        let requestData = try deterministicJSONData(from: requestBody)
         urlRequest.httpBody = requestData
         /// TIMEOUT INCREASED: 60s → 180s to handle batched tool operations and Claude's slower response time
         /// Claude models through GitHub Copilot can take significant time with large contexts

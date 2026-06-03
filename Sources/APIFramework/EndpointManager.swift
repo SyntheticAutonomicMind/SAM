@@ -904,6 +904,15 @@ public class EndpointManager: ObservableObject {
                 models: []
             )
 
+        case .remoteLlama:
+            return ProviderConfiguration(
+                providerId: "remote-llama",
+                providerType: .remoteLlama,
+                isEnabled: false,
+                baseURL: nil,
+                models: []
+            )
+
         case .ollamaCloud:
             return ProviderConfiguration(
                 providerId: "ollama-cloud",
@@ -983,6 +992,9 @@ public class EndpointManager: ObservableObject {
             logger.error("ENDPOINT_ERROR: Local MLX providers must be added via LocalModelManager.addLocalModelProvider()")
             logger.error("ENDPOINT_ERROR: Skipping this provider - please reconfigure through Preferences UI")
             return nil
+
+        case .remoteLlama:
+            return RemoteLlamaProvider(config: config)
 
         case .ollamaCloud:
             return OllamaCloudProvider(config: config)

@@ -219,12 +219,13 @@ public struct SAMConfig: Content {
     public let workingDirectory: String?
     public let systemPromptId: String?
     public let isExternalAPICall: Bool?
+    public let bypassProcessing: Bool?
     /// Per-request proxy mode bypass (1:1 LLM passthrough without SAM processing)
     /// When true, behaves like serverProxyMode toggle but only for this request
     /// Enables external tools like CLIO to bypass SAM's tools/prompts/sessions
-    public let bypassProcessing: Bool?
+    public let thinking: ThinkingConfig?
 
-    public init(sharedMemoryEnabled: Bool? = nil, mcpToolsEnabled: Bool? = nil, memoryCollectionId: String? = nil, conversationTitle: String? = nil, maxIterations: Int? = nil, enableReasoning: Bool? = nil, workingDirectory: String? = nil, systemPromptId: String? = nil, isExternalAPICall: Bool? = nil, bypassProcessing: Bool? = nil) {
+    public init(sharedMemoryEnabled: Bool? = nil, mcpToolsEnabled: Bool? = nil, memoryCollectionId: String? = nil, conversationTitle: String? = nil, maxIterations: Int? = nil, enableReasoning: Bool? = nil, workingDirectory: String? = nil, systemPromptId: String? = nil, isExternalAPICall: Bool? = nil, bypassProcessing: Bool? = nil, thinking: ThinkingConfig? = nil) {
         self.sharedMemoryEnabled = sharedMemoryEnabled
         self.mcpToolsEnabled = mcpToolsEnabled
         self.memoryCollectionId = memoryCollectionId
@@ -235,6 +236,7 @@ public struct SAMConfig: Content {
         self.systemPromptId = systemPromptId
         self.isExternalAPICall = isExternalAPICall
         self.bypassProcessing = bypassProcessing
+        self.thinking = thinking
     }
 
     enum CodingKeys: String, CodingKey {
@@ -248,6 +250,116 @@ public struct SAMConfig: Content {
         case systemPromptId = "system_prompt_id"
         case isExternalAPICall = "is_external_api_call"
         case bypassProcessing = "bypass_processing"
+        case thinking
+    }
+}
+
+/// Thinking effort level for models that support reasoning effort control.
+/// Determines how much compute the model devotes to reasoning before responding.
+/// Higher effort = better reasoning quality but slower response time.
+public enum ThinkingEffort: String, Content, Sendable, CaseIterable {
+    case low = "low"
+    case medium = "medium"
+    case high = "high"
+
+    public var displayName: String {
+        switch self {
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .low: return "Quick responses, minimal reasoning"
+        case .medium: return "Balanced reasoning and speed"
+        case .high: return "Thorough reasoning, best quality"
+        }
+    }
+}
+
+/// Thinking/reasoning configuration for models that support extended thinking.
+/// Maps to provider-specific parameters:
+/// - Anthropic: thinking.type = "enabled"/"adaptive", thinking.budget_tokens
+/// - OpenRouter: reasoning.effort, reasoning.enabled
+/// - DeepSeek: enable_reasoning (boolean)
+/// - Responses API: reasoning.effort, reasoning.summary
+/// - MiniMax: thinking.type = "enabled"/"adaptive"/"disabled"
+public struct ThinkingConfig: Content, Sendable {
+    /// Thinking mode: "enabled" (always think), "adaptive" (model decides), "disabled" (no thinking)
+    public let mode: String?
+    /// Token budget for thinking (Anthropic-specific). nil = use model default.
+    public let budgetTokens: Int?
+    /// Reasoning effort level: "low", "medium", "high" (Responses API, OpenRouter)
+    public let effort: String?
+    /// Whether to include thinking/reasoning in output (for display in thinking cards)
+    public let includeThinking: Bool?
+
+    public init(mode: String? = nil, budgetTokens: Int? = nil, effort: String? = nil, includeThinking: Bool? = nil) {
+        self.mode = mode
+        self.budgetTokens = budgetTokens
+        self.effort = effort
+        self.includeThinking = includeThinking
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case budgetTokens = "budget_tokens"
+        case effort
+        case includeThinking = "include_thinking"
+    }
+}
+
+/// Cache control annotation for prompt caching (Anthropic, OpenRouter, etc.)
+/// Placed on content blocks or messages to indicate caching breakpoints.
+public struct CacheControl: Content, Sendable {
+    public let type: String  // "ephemeral" for Anthropic-style caching
+
+    public init(type: String = "ephemeral") {
+        self.type = type
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+    }
+}
+
+/// A content block within a message. Supports text, tool results, tool use,
+/// and thinking blocks for providers that use structured content arrays
+/// (Anthropic, Responses API, etc.)
+public struct ContentBlock: Content, Sendable {
+    public let type: String  // "text", "tool_result", "tool_use", "thinking", "redacted_thinking"
+    public let text: String?
+    public let toolUseId: String?  // For tool_result and tool_use
+    public let name: String?  // For tool_use
+    public let input: String?  // For tool_use (JSON string)
+    public let content: String?  // For tool_result (result text)
+    public let thinking: String?  // For thinking blocks
+    public let signature: String?  // For thinking blocks (Anthropic round-trip)
+    public let data: String?  // For redacted_thinking blocks (Anthropic round-trip)
+    public let cacheControl: CacheControl?  // Cache breakpoint annotation
+    public let isError: Bool?  // For tool_result error flag
+
+    public init(type: String, text: String? = nil, toolUseId: String? = nil, name: String? = nil, input: String? = nil, content: String? = nil, thinking: String? = nil, signature: String? = nil, data: String? = nil, cacheControl: CacheControl? = nil, isError: Bool? = nil) {
+        self.type = type
+        self.text = text
+        self.toolUseId = toolUseId
+        self.name = name
+        self.input = input
+        self.content = content
+        self.thinking = thinking
+        self.signature = signature
+        self.data = data
+        self.cacheControl = cacheControl
+        self.isError = isError
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, text, name, input, content, thinking, signature, data
+        case toolUseId = "tool_use_id"
+        case cacheControl = "cache_control"
+        case isError = "is_error"
     }
 }
 
@@ -263,6 +375,13 @@ public struct OpenAIChatMessage: Content, Sendable {
     public let toolCalls: [OpenAIToolCall]?
     public let toolCallId: String?
     public let reasoningContent: String?  // Used by llama.cpp servers that put reasoning in separate field
+    /// Structured thinking/reasoning blocks for Anthropic-style extended thinking round-trip.
+    /// Each block has type ("thinking" or "redacted_thinking"), text, and signature.
+    public let reasoningBlocks: [ContentBlock]?
+    /// Signature for single-block reasoning round-trip (legacy, prefer reasoningBlocks)
+    public let reasoningSignature: String?
+    /// Cache control annotation for prompt caching (placed on this message)
+    public let cacheControl: CacheControl?
 
     /// Standard message constructor (backward compatible).
     public init(role: String, content: String) {
@@ -272,6 +391,9 @@ public struct OpenAIChatMessage: Content, Sendable {
         self.toolCalls = nil
         self.toolCallId = nil
         self.reasoningContent = nil
+        self.reasoningBlocks = nil
+        self.reasoningSignature = nil
+        self.cacheControl = nil
     }
 
     /// Tool calling constructor (future use).
@@ -282,6 +404,9 @@ public struct OpenAIChatMessage: Content, Sendable {
         self.toolCalls = toolCalls
         self.toolCallId = nil
         self.reasoningContent = nil
+        self.reasoningBlocks = nil
+        self.reasoningSignature = nil
+        self.cacheControl = nil
     }
 
     /// Tool result constructor (future use).
@@ -292,16 +417,22 @@ public struct OpenAIChatMessage: Content, Sendable {
         self.toolCalls = nil
         self.toolCallId = toolCallId
         self.reasoningContent = nil
+        self.reasoningBlocks = nil
+        self.reasoningSignature = nil
+        self.cacheControl = nil
     }
     
     /// Message constructor with ID for stateful marker tracking.
-    public init(id: String?, role: String, content: String?, toolCalls: [OpenAIToolCall]? = nil, toolCallId: String? = nil, reasoningContent: String? = nil) {
+    public init(id: String?, role: String, content: String?, toolCalls: [OpenAIToolCall]? = nil, toolCallId: String? = nil, reasoningContent: String? = nil, reasoningBlocks: [ContentBlock]? = nil, reasoningSignature: String? = nil, cacheControl: CacheControl? = nil) {
         self.id = id
         self.role = role
         self.content = content
         self.toolCalls = toolCalls
         self.toolCallId = toolCallId
         self.reasoningContent = reasoningContent
+        self.reasoningBlocks = reasoningBlocks
+        self.reasoningSignature = reasoningSignature
+        self.cacheControl = cacheControl
     }
 
     enum CodingKeys: String, CodingKey {
@@ -309,6 +440,9 @@ public struct OpenAIChatMessage: Content, Sendable {
         case toolCalls = "tool_calls"
         case toolCallId = "tool_call_id"
         case reasoningContent = "reasoning_content"
+        case reasoningBlocks = "reasoning_blocks"
+        case reasoningSignature = "reasoning_signature"
+        case cacheControl = "cache_control"
     }
 }
 

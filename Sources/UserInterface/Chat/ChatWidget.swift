@@ -136,6 +136,7 @@ public struct ChatWidget: View {
     @ObservedObject private var modelListManager = ModelListManager.shared
     
     @State private var enableReasoning: Bool = false
+    @State private var thinkingEffort: String = "high"
 
     /// Current model cost display (updated when model changes)
     @State private var currentModelCost: String = "0x"
@@ -670,6 +671,10 @@ public struct ChatWidget: View {
             syncSettingsToConversation()
         }
         .onChange(of: enableReasoning) { _, _ in
+            guard !isLoadingConversationSettings else { return }
+            syncSettingsToConversation()
+        }
+        .onChange(of: thinkingEffort) { _, _ in
             guard !isLoadingConversationSettings else { return }
             syncSettingsToConversation()
         }
@@ -2291,6 +2296,20 @@ public struct ChatWidget: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
 
+                /// Thinking effort level - only shown when reasoning is enabled.
+                if enableReasoning {
+                    Picker(selection: $thinkingEffort) {
+                        ForEach(ThinkingEffort.allCases, id: \.rawValue) { effort in
+                            Text(effort.displayName).tag(effort.rawValue)
+                        }
+                    } label: {
+                        Text("Thinking Effort")
+                            .font(.caption)
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
+                }
+
                 Toggle(isOn: $enableTools) {
                     Text("Tools")
                         .font(.caption)
@@ -2531,6 +2550,7 @@ public struct ChatWidget: View {
         }
         contextWindowSize = conversation.settings.contextWindowSize
         enableReasoning = conversation.settings.enableReasoning
+        thinkingEffort = conversation.settings.thinkingEffort
         enableTools = conversation.settings.enableTools
         /// scrollLockEnabled is now global (@AppStorage), not per-conversation
 
@@ -2908,6 +2928,7 @@ public struct ChatWidget: View {
         /// NOTE: Don't override selectedSystemPromptId here - it's managed by prompt picker binding
         /// and auto-select logic in onChange(of: selectedModel)
         conversation.settings.enableReasoning = enableReasoning
+        conversation.settings.thinkingEffort = thinkingEffort
         conversation.settings.enableTools = enableTools
         /// scrollLockEnabled is now global (@AppStorage), not per-conversation
         conversation.settings.useSharedData = useSharedData
@@ -5937,7 +5958,12 @@ public struct ChatWidget: View {
         logger.debug("AGENT_ORCHESTRATOR: Starting streaming autonomous workflow for UI")
 
         /// FEATURE: Respect enableTools toggle - pass mcpToolsEnabled in samConfig.
+        /// FEATURE: Respect thinkingEffort - pass ThinkingConfig with effort level.
         logger.debug("TOOLS_TOGGLE: enableTools=\(enableTools) - passing to samConfig")
+        let thinkingConfig = ThinkingConfig(
+            mode: enableReasoning ? "enabled" : "disabled",
+            effort: thinkingEffort
+        )
         let samConfig = SAMConfig(
             sharedMemoryEnabled: nil,
             mcpToolsEnabled: enableTools,
@@ -5947,7 +5973,8 @@ public struct ChatWidget: View {
             enableReasoning: enableReasoning,
             workingDirectory: nil,
             systemPromptId: nil,
-            isExternalAPICall: nil
+            isExternalAPICall: nil,
+            thinking: thinkingConfig
         )
 
         return try await orchestrator.runStreamingAutonomousWorkflow(
