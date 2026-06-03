@@ -275,6 +275,9 @@ struct EndpointManagementView: View {
         case .localMLX:
             return "No API key required - MLX models loaded from ~/Library/Caches/SAM/models"
 
+        case .remoteLlama:
+            return "Enter the API key for your remote llama.cpp server"
+
         case .ollamaCloud:
             return "Get your API key from ollama.com/cloud"
 
@@ -427,6 +430,7 @@ struct ProviderRowView: View {
         case .openrouter: return "arrow.triangle.merge"
         case .localLlama: return "laptopcomputer"
         case .localMLX: return "flame"
+        case .remoteLlama: return "server.rack"
         case .ollamaCloud: return "cloud"
         case .zai: return "z.circle"
         case .zaiCoding: return "z.circle"
@@ -890,6 +894,9 @@ struct ProviderConfigurationSheet: View {
         case .localMLX:
             return "No API key required for MLX models - models are loaded from ~/Library/Caches/SAM/models"
 
+        case .remoteLlama:
+            return "Enter the API key for your remote llama.cpp server"
+
         case .ollamaCloud:
             return "Get your API key fromollama.com/cloud - hosted Ollama models with API access"
 
@@ -976,7 +983,7 @@ struct ProviderConfigurationSheet: View {
                 /// Gemini uses API key as query parameter (already added to URL above)
                 break
 
-            case .localLlama, .localMLX, .ollamaCloud, .zai, .zaiCoding:
+            case .localLlama, .localMLX, .ollamaCloud, .zai, .zaiCoding, .remoteLlama:
                 /// No authentication required for local providers and Ollama Cloud, Z.AI use Bearer tokens.
                 break
             }

@@ -198,7 +198,7 @@ public class ALICEProvider: ObservableObject {
             "metadata": metadata
         ]
 
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        request.httpBody = try deterministicJSONData(from: requestBody)
         request.timeoutInterval = 600.0
 
         logger.info("Generating image via ALICE: model=\(modelId), steps=\(steps), size=\(width)x\(height)")

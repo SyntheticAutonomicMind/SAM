@@ -67,6 +67,9 @@ public struct ConversationSettings: Codable, Sendable {
     public var selectedPersonalityId: UUID?
     public var enableReasoning: Bool
     public var enableTools: Bool
+    /// Thinking effort level for models that support reasoning effort control (low/medium/high).
+    /// Defaults to "high" for best quality. Maps to provider-specific parameters.
+    public var thinkingEffort: String
     public var scrollLockEnabled: Bool
     /// Shared data settings
     public var useSharedData: Bool
@@ -95,6 +98,7 @@ public struct ConversationSettings: Codable, Sendable {
         selectedPersonalityId: UUID? = nil,
         enableReasoning: Bool = true,
         enableTools: Bool = true,
+        thinkingEffort: String = "high",
         scrollLockEnabled: Bool = true,
         draftMessage: String = "",
         showingMemoryPanel: Bool = false,
@@ -128,6 +132,7 @@ public struct ConversationSettings: Codable, Sendable {
         
         self.enableReasoning = enableReasoning
         self.enableTools = enableTools
+        self.thinkingEffort = thinkingEffort
         self.scrollLockEnabled = scrollLockEnabled
         self.useSharedData = false
         self.sharedTopicId = nil
@@ -155,6 +160,7 @@ public struct ConversationSettings: Codable, Sendable {
         case selectedModel, temperature, topP, maxTokens, contextWindowSize
         case selectedSystemPromptId, workspacePromptIds, selectedPersonalityId
         case enableReasoning, enableTools
+        case thinkingEffort
         case scrollLockEnabled
         case useSharedData, sharedTopicId, sharedTopicName
         case draftMessage
@@ -180,6 +186,9 @@ public struct ConversationSettings: Codable, Sendable {
 
         enableReasoning = try container.decode(Bool.self, forKey: .enableReasoning)
         enableTools = try container.decode(Bool.self, forKey: .enableTools)
+
+        /// NEW FIELD: Default to "high" if not present (for old conversations).
+        thinkingEffort = try container.decodeIfPresent(String.self, forKey: .thinkingEffort) ?? "high"
 
         /// NEW FIELD: Default to true if not present (for old conversations).
         scrollLockEnabled = try container.decodeIfPresent(Bool.self, forKey: .scrollLockEnabled) ?? true

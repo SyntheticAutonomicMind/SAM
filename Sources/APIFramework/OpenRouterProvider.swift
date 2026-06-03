@@ -49,20 +49,12 @@ public class OpenRouterProvider: AIProvider {
         let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
         urlRequest.timeoutInterval = max(configuredTimeout, 300)
 
-        let requestBody: [String: Any] = [
-            "model": request.model,
-            "messages": request.messages.map { message -> [String: Any] in
-                var msgDict: [String: Any] = ["role": message.role]
-                msgDict["content"] = message.content ?? NSNull()
-                return msgDict
-            },
-            "max_tokens": request.maxTokens ?? config.maxTokens ?? 2048,
-            "temperature": request.temperature ?? config.temperature ?? 0.7,
-            "stream": true  /// Enable actual SSE streaming from OpenRouter.
-        ]
+        // Build request using shared builder with deterministic serialization and cache_control
+        // This ensures reasoning effort, thinking config, and tools are properly included
+        let requestBody = request.buildOpenAICompatibleRequestBody(streamEnabled: true, cacheControl: true)
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }
@@ -201,10 +193,11 @@ public class OpenRouterProvider: AIProvider {
         }
 
         /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
-        let requestBody = request.buildOpenAICompatibleRequestBody()
+        /// Enable cache_control for OpenRouter prompt caching support.
+        let requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
 
         do {
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
         } catch {
             throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
         }

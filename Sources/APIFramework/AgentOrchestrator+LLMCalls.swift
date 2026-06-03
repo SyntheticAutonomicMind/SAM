@@ -628,7 +628,8 @@ extension AgentOrchestrator {
                 enableReasoning: samConfig.enableReasoning,
                 workingDirectory: samConfig.workingDirectory,
                 systemPromptId: samConfig.systemPromptId,
-                isExternalAPICall: isExternalAPICall
+                isExternalAPICall: isExternalAPICall,
+                thinking: samConfig.thinking
             )
         } else if isExternalAPICall {
             /// No samConfig provided but we're external API call - create one with just the flag.
@@ -1669,7 +1670,8 @@ extension AgentOrchestrator {
                 enableReasoning: samConfig.enableReasoning,
                 workingDirectory: samConfig.workingDirectory,
                 systemPromptId: samConfig.systemPromptId,
-                isExternalAPICall: isExternalAPICall
+                isExternalAPICall: isExternalAPICall,
+                thinking: samConfig.thinking
             )
         } else if isExternalAPICall {
             /// No samConfig provided but we're external API call - create one with just the flag.
