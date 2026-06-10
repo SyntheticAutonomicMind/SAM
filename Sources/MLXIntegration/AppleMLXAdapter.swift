@@ -297,15 +297,12 @@ public class AppleMLXAdapter {
         prefillStepSize: Int = 512,
         modelId: String = "mlx-local",
         hideThinking: Bool = false
-    ) -> AsyncThrowingStream<MLXTextChunk, Error> {
+  ) -> AsyncThrowingStream<MLXTextChunk, Error> {
 
-       return AsyncThrowingStream<MLXTextChunk, Error> { continuation in
-            // Capture values before detached task to avoid @MainActor isolation
-            let logger = self.logger
-            let performanceMonitor = self.performanceMonitor
-            Task.detached {
-               do {
-                    logger.debug("Starting text generation with Apple's model")
+   return AsyncThrowingStream<MLXTextChunk, Error> { continuation in
+          Task {
+           do {
+                    self.logger.debug("Starting text generation with Apple's model")
 
                     /// DON'T pass tools to applyChatTemplate - causes system prompt bleeding **The problem**: When tools passed to applyChatTemplate: - Some chat templates inject tool definitions directly into prompt - This causes system prompt content to leak into assistant responses - Model gets confused between instructions and conversation **The solution**: Tools in system message content only - MLXProvider handles tool formatting in system message - applyChatTemplate just formats conversation structure - Clean separation: system message = instructions, chat = conversation **VERIFIED**: mlx-swift-examples Chat.swift does NOT pass tools to template Tool definitions should be in system message content (handled by MLXProvider).
 
@@ -315,7 +312,7 @@ public class AppleMLXAdapter {
                     /// Some community-quantized models (e.g. mlx-community/*) are missing the chat_template in tokenizer_config.json. Detect this and provide a ChatML fallback so generation doesn't fail.
                     let fallbackTemplate: ChatTemplateArgument? = tokenizer.hasChatTemplate ? nil : .literal(Self.defaultChatMLTemplate)
                     if fallbackTemplate != nil {
-                        logger.warning("Model is missing chat_template in tokenizer_config.json, using ChatML fallback")
+                        self.logger.warning("Model is missing chat_template in tokenizer_config.json, using ChatML fallback")
                     }
 
                     let inputTokens = try tokenizer.applyChatTemplate(
@@ -327,11 +324,11 @@ public class AppleMLXAdapter {
                         tools: nil,
                         additionalContext: additionalContext
                     )
-                    logger.debug("Chat template applied with add_generation_prompt=true, tokenized to \(inputTokens.count) tokens")
+                    self.logger.debug("Chat template applied with add_generation_prompt=true, tokenized to \(inputTokens.count) tokens")
 
                     /// Decode the input tokens to see what chat template produced.
                     let decodedInput = tokenizer.decode(tokens: inputTokens)
-                    logger.debug("CHAT_TEMPLATE_DEBUG: Input prompt after template: \(decodedInput.prefix(500))")
+                    self.logger.debug("CHAT_TEMPLATE_DEBUG: Input prompt after template: \(decodedInput.prefix(500))")
 
                     /// Create input.
                     let input = LMInput(tokens: MLXArray(inputTokens))
@@ -363,10 +360,7 @@ public class AppleMLXAdapter {
                     var fullResponse = ""
                     var tokenCount = 0
 
-                    /// PERFORMANCE MONITORING: Start session if enabled.
-                    performanceMonitor?.beginSession()
-
-                    /// STATE MACHINE: Accumulate <think>...</think> blocks across streaming chunks Problem: Regex can't match multi-line patterns when content arrives token-by-token Solution: Buffer content when inside <think> tag, format when complete block received.
+                   /// STATE MACHINE: Accumulate <think>...</think> blocks across streaming chunks Problem: Regex can't match multi-line patterns when content arrives token-by-token Solution: Buffer content when inside <think> tag, format when complete block received.
                     var thinkingBuffer = ""
                     var insideThinkTag = false
 
@@ -379,7 +373,7 @@ public class AppleMLXAdapter {
                    ) {
                         // Propagate stream cancellation to stop GPU work
                         if Task.isCancelled {
-                            logger.debug("Generation cancelled - stopping GPU work")
+                            self.logger.debug("Generation cancelled - stopping GPU work")
                             continuation.finish()
                             return
                         }
@@ -387,20 +381,6 @@ public class AppleMLXAdapter {
                         case .chunk(let text):
                             fullResponse += text
                             tokenCount += 1
-
-                            /// PERFORMANCE MONITORING: Record each token and sample CPU every 10 tokens.
-                            if let monitor = performanceMonitor {
-                                monitor.recordToken()
-                                if tokenCount % 10 == 0 {
-                                    monitor.sampleCPUUsage()
-
-                                    /// Check GPU utilization periodically.
-                                    let gpuUtil = monitor.checkGPUUtilization()
-                                    if let warning = gpuUtil.warning {
-                                        logger.warning("PERF_WARNING at token \(tokenCount): \(warning)")
-                                    }
-                                }
-                            }
 
                             /// STATE MACHINE: Process <think> tags across streaming chunks.
                             var processedText = text
@@ -471,7 +451,7 @@ public class AppleMLXAdapter {
                             }
 
                         case .info(let info):
-                            logger.debug("Generation stats: \(info.tokensPerSecond) tokens/sec, prompt time: \(info.promptTime)")
+                            self.logger.debug("Generation stats: \(info.tokensPerSecond) tokens/sec, prompt time: \(info.promptTime)")
 
                         case .toolCall:
                             /// Tool calls are handled separately via ToolCallExtractor in MLXProvider.
@@ -479,11 +459,11 @@ public class AppleMLXAdapter {
                         }
                     }
 
-                    logger.debug("Completed text generation with Apple's model")
+                    self.logger.debug("Completed text generation with Apple's model")
 
                     /// If generation stopped while inside <think> tag, yield buffered content Problem: Model generates "<think>" then hits EOS without "</think>", parser buffers content forever Solution: Flush buffer when generation completes to prevent lost tool calls.
                     if insideThinkTag && !thinkingBuffer.isEmpty {
-                        logger.warning("Generation stopped mid-<think> block - flushing \(thinkingBuffer.count) buffered chars")
+                        self.logger.warning("Generation stopped mid-<think> block - flushing \(thinkingBuffer.count) buffered chars")
 
                         /// Format or hide partial thinking block based on setting.
                         if !hideThinking {
@@ -502,27 +482,10 @@ public class AppleMLXAdapter {
                     let finalChunk = MLXTextChunk(text: "", isComplete: true)
                     continuation.yield(finalChunk)
 
-                    /// PERFORMANCE MONITORING: End session and report if enabled.
-                    if let monitor = performanceMonitor {
-                        let report = monitor.endSession()
-
-                        /// Log warning if CPU usage is suspiciously high.
-                        if report.cpuUtilizationPercent > 70 {
-                            logger.warning("HIGH_CPU_USAGE: \(String(format: "%.1f", report.cpuUtilizationPercent))% CPU during inference - possible CPU bottleneck")
-                        }
-
-                        /// Check for GPU problems.
-                        if !report.gpuUtilization.isAvailable {
-                            logger.error("NO_GPU_DETECTED: MLX running without Metal GPU - performance severely degraded")
-                        } else if report.gpuUtilization.utilizationPercent < 10 && report.tokenCount > 20 {
-                            logger.warning("LOW_GPU_USAGE: \(String(format: "%.1f", report.gpuUtilization.utilizationPercent))% GPU utilization - model may not be fully GPU-accelerated")
-                        }
-                    }
-
                     continuation.finish()
 
                 } catch {
-                    logger.error("Generation failed: \(error)")
+                    self.logger.error("Generation failed: \(error)")
                     continuation.finish(throwing: error)
                 }
             }
