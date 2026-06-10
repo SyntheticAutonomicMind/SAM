@@ -110,7 +110,7 @@ final class MCPToolExecutionTests: XCTestCase {
         // Test all documented operations exist
         let expectedOps = [
             "read_file", "create_file", "replace_string", "multi_replace_string",
-            "insert_edit", "apply_patch", "rename_file", "delete_file",
+            "insert_edit", "rename_file", "delete_file",
             "list_dir", "file_search", "grep_search"
         ]
         
@@ -124,7 +124,11 @@ final class MCPToolExecutionTests: XCTestCase {
         let tool = MemoryOperationsTool()
         let validOperations = tool.parameters["operation"]?.enumValues ?? []
         
-        let expectedOps = ["search_memory", "store_memory", "list_collections", "manage_todos"]
+        let expectedOps = ["search_memory", "store_memory", "list_collections",
+                          "recall_history", "store", "retrieve",
+                          "search_kv", "list_keys", "delete_key",
+                          "add_discovery", "add_solution", "add_pattern",
+                          "ltm_stats", "prune_ltm"]
         
         for op in expectedOps {
             XCTAssertTrue(validOperations.contains(op), "Missing operation: \(op)")

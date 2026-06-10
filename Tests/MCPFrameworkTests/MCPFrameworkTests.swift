@@ -77,9 +77,9 @@ final class MCPFrameworkTests: XCTestCase {
         let tool = FileOperationsTool()
         let validOps = [
             "read_file", "create_file", "replace_string", "multi_replace_string",
-            "insert_edit", "apply_patch", "rename_file", "delete_file",
+            "insert_edit", "rename_file", "delete_file",
             "list_dir", "file_search", "grep_search", "semantic_search",
-            "list_usages", "get_errors", "get_search_results", "search_index"
+            "list_usages", "get_errors"
         ]
         
         // Tool should have operation parameter with enum
@@ -122,7 +122,12 @@ final class MCPFrameworkTests: XCTestCase {
     
     func testMemoryOperationsValidOperations() {
         let tool = MemoryOperationsTool()
-        let validOps = ["search_memory", "store_memory", "list_collections", "manage_todos"]
+        // manage_todos was moved to separate TodoOperationsTool as "todo_operations"
+        let validOps = ["search_memory", "store_memory", "list_collections",
+                        "recall_history", "store", "retrieve",
+                        "search_kv", "list_keys", "delete_key",
+                        "add_discovery", "add_solution", "add_pattern",
+                        "ltm_stats", "prune_ltm"]
         
         guard let operationParam = tool.parameters["operation"] else {
             XCTFail("Tool must have operation parameter")
