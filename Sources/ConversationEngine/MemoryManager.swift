@@ -324,25 +324,24 @@ public class MemoryManager: ObservableObject {
         }
     }
 
-    /// Clear all memories for a specific conversation.
-    public func clearMemories(for conversationId: UUID) async throws {
-        guard let db = database else {
-            throw MemoryError.databaseNotInitialized
-        }
+   /// Clear all memories for a specific conversation.
+   public func clearMemories(for conversationId: UUID) async throws {
+        // Use per-conversation database for consistency with store/retrieve
+        let db = try getDatabaseConnection(for: conversationId)
 
-        do {
-            let conversationMemories = memories.filter(self.conversationId == conversationId.uuidString)
-            let deletedCount = try db.run(conversationMemories.delete())
+       do {
+           let conversationMemories = memories.filter(self.conversationId == conversationId.uuidString)
+           let deletedCount = try db.run(conversationMemories.delete())
 
-            totalMemories = max(0, totalMemories - deletedCount)
-            logger.debug("Cleared \(deletedCount) memories for conversation \(conversationId)")
+           totalMemories = max(0, totalMemories - deletedCount)
+           logger.debug("Cleared \(deletedCount) memories for conversation \(conversationId)")
 
-        } catch {
-            lastError = error.localizedDescription
-            logger.error("Failed to clear memories: \(error)")
-            throw MemoryError.operationFailed(error.localizedDescription)
-        }
-    }
+       } catch {
+           lastError = error.localizedDescription
+           logger.error("Failed to clear memories: \(error)")
+           throw MemoryError.operationFailed(error.localizedDescription)
+       }
+   }
 
     /// Get memory statistics for a conversation.
     public func getMemoryStatistics(for conversationId: UUID) async throws -> MemoryStatistics {

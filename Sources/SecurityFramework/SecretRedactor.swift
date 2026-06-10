@@ -61,17 +61,8 @@ public final class SecretRedactor: @unchecked Sendable {
     /// Text used to replace redacted content.
     public let redactionText: String
 
-    /// Values that should never be redacted.
-    private let whitelist: Set<String> = Set([
-        "example", "test", "demo", "sample", "mock", "localhost",
-        "127.0.0.1", "::1", "0.0.0.0",
-        "development", "staging", "production",
-        "readme", "license", "changelog", "undefined",
-        "placeholder", "dummy", "foobar", "redacted",
-        "true", "false", "null"
-    ])
-
-    // MARK: - Pattern Definitions
+   /// Values that should never be redacted.
+   // MARK: - Pattern Definitions
 
     /// PII patterns: most critical, always redacted in strict/standard/api_permissive/pii.
     private static let piiPatterns: [NSRegularExpression] = {

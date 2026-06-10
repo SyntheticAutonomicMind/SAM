@@ -247,10 +247,8 @@ public class MCPManager: ObservableObject {
         }
 
         logger.debug("Initialized \(self.builtinTools.count) builtin tools")
-        logger.debug("CONSOLIDATION COMPLETE: memory_operations active (replaced memory_search + manage_todo_list)")
-        logger.warning("CRITICAL: Advanced tools (web research, document import, automation) not yet registered")
-        logger.warning("Need to inject services: WebResearchService, AutomationService, DocumentImportSystem")
-    }
+       logger.debug("CONSOLIDATION COMPLETE: memory_operations active (replaced memory_search + manage_todo_list)")
+   }
 
     @MainActor
     private func registerAllTools() async {

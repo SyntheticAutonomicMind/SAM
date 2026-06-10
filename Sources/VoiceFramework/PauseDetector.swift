@@ -41,12 +41,14 @@ public class PauseDetector: ObservableObject {
         isPaused = false
     }
 
-    /// Update with audio level
-    public func updateAudioLevel(_ level: Float) {
-        /// Log audio level periodically (every 20 updates = ~2 seconds)
-        if Int.random(in: 1...20) == 1 {
-            logger.debug("Audio level: \(String(format: "%.4f", level)), threshold: \(String(format: "%.4f", silenceThreshold))")
-        }
+   /// Update with audio level
+    private var audioLevelUpdateCount = 0
+   public func updateAudioLevel(_ level: Float) {
+        audioLevelUpdateCount += 1
+        // Log audio level every 20 updates (~2 seconds) deterministically
+        if audioLevelUpdateCount % 20 == 0 {
+           logger.debug("Audio level: \(String(format: "%.4f", level)), threshold: \(String(format: "%.4f", silenceThreshold))")
+       }
 
         if level < silenceThreshold {
             /// Audio is silent

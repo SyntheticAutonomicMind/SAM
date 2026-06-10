@@ -51,7 +51,7 @@ jobs:
       run: make build-debug
 
     - name: Run unit tests
-      run: make test || echo "Tests not yet implemented"
+      run: make test
     
     - name: Verify build artifacts
       run: |

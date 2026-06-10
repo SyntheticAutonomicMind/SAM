@@ -39,14 +39,18 @@ echo "Generating new EdDSA key pair..."
 echo ""
 
 # Generate keys using Sparkle's generate_keys tool
-if [ ! -f "bin/generate_keys" ]; then
-    echo "ERROR: bin/generate_keys not found"
+SPARKLE_BIN=".build/artifacts/sparkle/Sparkle/bin/generate_keys"
+if [ ! -f "$SPARKLE_BIN" ]; then
+    SPARKLE_BIN=".build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys"
+fi
+if [ ! -f "$SPARKLE_BIN" ]; then
+    echo "ERROR: generate_keys not found at $SPARKLE_BIN"
     echo "Please run 'make build-debug' first to build Sparkle tools"
-    exit 1
+   exit 1
 fi
 
 # Generate keys and capture output
-KEY_OUTPUT=$(bin/generate_keys 2>&1)
+KEY_OUTPUT=$("$SPARKLE_BIN" 2>&1)
 
 # Extract public and private keys from output
 PUBLIC_KEY=$(echo "$KEY_OUTPUT" | grep "Public key:" | awk '{print $3}')

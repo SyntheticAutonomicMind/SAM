@@ -24,13 +24,10 @@ echo ""
 # Check submodules like pipeline does
 echo "DEBUG: Checking submodules (like GitHub Actions checkout)..."
 if git submodule status | grep -q '^-'; then
-    echo "   WARNING: Submodules not initialized!"
-    echo "   Pipeline does: git submodule update --init --recursive"
-    read -p "   Initialize submodules now? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        git submodule update --init --recursive
-    fi
+   echo "   WARNING: Submodules not initialized!"
+   echo "   Pipeline does: git submodule update --init --recursive"
+    echo "   Auto-initializing submodules..."
+    git submodule update --init --recursive
 fi
 echo "   SUCCESS: Submodules OK"
 echo ""

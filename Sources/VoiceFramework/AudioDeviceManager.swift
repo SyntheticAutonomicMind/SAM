@@ -81,27 +81,44 @@ public class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         }
     }
 
-    /// Available system voices (native macOS voices via NSSpeechSynthesizer)
-    @Published public private(set) var availableVoices: [NativeVoice] = []
+   /// Available system voices (native macOS voices via NSSpeechSynthesizer)
+   @Published public private(set) var availableVoices: [NativeVoice] = []
 
-    public init() {
-        /// Load saved preferences
-        selectedInputDeviceUID = UserDefaults.standard.string(forKey: "sam.audio.inputDeviceUID")
-        selectedOutputDeviceUID = UserDefaults.standard.string(forKey: "sam.audio.outputDeviceUID")
-        selectedVoiceIdentifier = UserDefaults.standard.string(forKey: "sam.audio.voiceIdentifier")
+    /// Stored CoreAudio listener callback and property address for cleanup in deinit
+    private var deviceChangeCallback: AudioObjectPropertyListenerProc?
+    private var deviceChangePropertyAddress: AudioObjectPropertyAddress?
 
-        /// Load speech rate with default of 0.95 (slightly slower than default for natural sound)
-        if UserDefaults.standard.object(forKey: "sam.audio.speechRate") != nil {
-            speechRate = UserDefaults.standard.float(forKey: "sam.audio.speechRate")
+   public init() {
+       /// Load saved preferences
+       selectedInputDeviceUID = UserDefaults.standard.string(forKey: "sam.audio.inputDeviceUID")
+       selectedOutputDeviceUID = UserDefaults.standard.string(forKey: "sam.audio.outputDeviceUID")
+       selectedVoiceIdentifier = UserDefaults.standard.string(forKey: "sam.audio.voiceIdentifier")
+
+       /// Load speech rate with default of 0.95 (slightly slower than default for natural sound)
+       if UserDefaults.standard.object(forKey: "sam.audio.speechRate") != nil {
+           speechRate = UserDefaults.standard.float(forKey: "sam.audio.speechRate")
+       }
+
+       /// Enumerate devices
+       refreshDevices()
+       refreshVoices()
+
+       /// Listen for device changes
+       setupDeviceChangeListener()
+   }
+
+   deinit {
+        // Remove CoreAudio listener using the stored callback pointer
+        if var propAddr = deviceChangePropertyAddress, let callback = deviceChangeCallback {
+            let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+            AudioObjectRemovePropertyListener(
+                AudioObjectID(kAudioObjectSystemObject),
+                &propAddr,
+                callback,
+                selfPtr
+            )
         }
-
-        /// Enumerate devices
-        refreshDevices()
-        refreshVoices()
-
-        /// Listen for device changes
-        setupDeviceChangeListener()
-    }
+   }
 
     /// Refresh the list of available audio devices
     public func refreshDevices() {
@@ -291,38 +308,43 @@ public class AudioDeviceManager: ObservableObject, @unchecked Sendable {
         return deviceUID as String
     }
 
-    private func setupDeviceChangeListener() {
-        /// Listen for audio device configuration changes
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
+   private func setupDeviceChangeListener() {
+       /// Listen for audio device configuration changes
+       var propertyAddress = AudioObjectPropertyAddress(
+           mSelector: kAudioHardwarePropertyDevices,
+           mScope: kAudioObjectPropertyScopeGlobal,
+           mElement: kAudioObjectPropertyElementMain
+       )
+        deviceChangePropertyAddress = propertyAddress
 
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+       // Use passRetained to prevent use-after-free if AudioDeviceManager
+       // is deallocated while the CoreAudio listener is still registered.
+       let selfPtr = Unmanaged.passRetained(self).toOpaque()
 
-        /// C-style callback to avoid Swift concurrency checks
-        /// Must not capture any Swift variables - only use raw clientData pointer
-        let callback: AudioObjectPropertyListenerProc = { (_, _, _, clientData) -> OSStatus in
-            /// Immediately dispatch to main without capturing - pass pointer as bits
-            if let ptr = clientData {
-                let ptrBits = unsafeBitCast(ptr, to: UInt.self)
-                DispatchQueue.main.async {
-                    let reconstructed = unsafeBitCast(ptrBits, to: UnsafeRawPointer.self)
-                    let manager = Unmanaged<AudioDeviceManager>.fromOpaque(reconstructed).takeUnretainedValue()
-                    manager.refreshDevices()
-                }
-            }
-            return noErr
-        }
+       /// C-style callback to avoid Swift concurrency checks
+       /// Must not capture any Swift variables - only use raw clientData pointer
+       let callback: AudioObjectPropertyListenerProc = { (_, _, _, clientData) -> OSStatus in
+           /// Immediately dispatch to main without capturing - pass pointer as bits
+           if let ptr = clientData {
+               let ptrBits = unsafeBitCast(ptr, to: UInt.self)
+               DispatchQueue.main.async {
+                   let reconstructed = unsafeBitCast(ptrBits, to: UnsafeRawPointer.self)
+                   // takeUnretainedValue is safe because passRetained keeps the object alive
+                   let manager = Unmanaged<AudioDeviceManager>.fromOpaque(reconstructed).takeUnretainedValue()
+                   manager.refreshDevices()
+               }
+           }
+           return noErr
+       }
+        deviceChangeCallback = callback
 
-        AudioObjectAddPropertyListener(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            callback,
-            selfPtr
-        )
-    }
+       AudioObjectAddPropertyListener(
+           AudioObjectID(kAudioObjectSystemObject),
+           &propertyAddress,
+           callback,
+           selfPtr
+       )
+   }
 
     /// Set the input device for an AVAudioEngine
     public func configureAudioEngineInput(_ audioEngine: AVAudioEngine, deviceID: AudioDeviceID?) {

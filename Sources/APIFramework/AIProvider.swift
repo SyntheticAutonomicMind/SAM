@@ -88,17 +88,43 @@ public class RoundRobinLoadBalancer: LoadBalancer {
 
 /// Weighted round-robin load balancing Distributes requests across providers based on assigned weights.
 public class WeightedLoadBalancer: LoadBalancer {
-    private var weights: [String: Int] = [:]
-    private var currentWeights: [String: Int] = [:]
+   private var weights: [String: Int] = [:]
+   private var currentWeights: [String: Int] = [:]
 
-    public init(weights: [String: Int] = [:]) {
-        self.weights = weights
-    }
+   public init(weights: [String: Int] = [:]) {
+       self.weights = weights
+   }
 
-    public func selectProvider(from providers: [AIProvider]) async -> AIProvider {
-        /// Weighted algorithm not yet implemented - using random selection Future: Track current weight per provider, select highest, decrement Reset when all weights depleted to prevent starvation.
-        return providers.randomElement() ?? providers[0]
-    }
+   public func selectProvider(from providers: [AIProvider]) async -> AIProvider {
+        // Weighted round-robin: track effective weights, select highest, decrement.
+        // When all weights are depleted, reset to original weights.
+        if currentWeights.isEmpty {
+            for provider in providers {
+                currentWeights[provider.identifier] = weights[provider.identifier] ?? 1
+            }
+        }
+        
+        // Find provider with highest current weight
+        var bestProvider = providers[0]
+        var bestWeight = currentWeights[bestProvider.identifier] ?? 0
+        for provider in providers {
+            let w = currentWeights[provider.identifier] ?? 0
+            if w > bestWeight {
+                bestWeight = w
+                bestProvider = provider
+            }
+        }
+        
+        // Decrement selected provider's weight
+        currentWeights[bestProvider.identifier] = bestWeight - 1
+        
+        // Check if all weights are zero, reset if so
+        if currentWeights.values.allSatisfy({ $0 <= 0 }) {
+            currentWeights.removeAll()
+        }
+        
+        return bestProvider
+   }
 }
 
 // MARK: - Provider Response Normalization
@@ -137,63 +163,33 @@ public struct ResponseNormalizer {
     // MARK: - Provider-Specific Normalization
 
     /// Normalize GitHub Copilot Chat responses to OpenAI format GitHub Copilot may use extended response fields not in the OpenAI spec.
-    private static func normalizeGitHubCopilotResponse(_ response: Any, requestModel: String, requestId: String) throws -> ServerOpenAIChatResponse {
-        return ServerOpenAIChatResponse(
-            id: "chatcmpl-\(requestId)",
-            object: "chat.completion",
-            created: Int(Date().timeIntervalSince1970),
-            model: requestModel,
-            choices: [
-                OpenAIChatChoice(
-                    index: 0,
-                    message: OpenAIChatMessage(role: "assistant", content: "GitHub Copilot response (normalized)"),
-                    finishReason: "stop"
-                )
-            ],
-            usage: ServerOpenAIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0)
-        )
-    }
-
-    /// Normalize DeepSeek API responses to OpenAI format DeepSeek uses an OpenAI-compatible API but may have minor differences.
-    private static func normalizeDeepSeekResponse(_ response: Any, requestModel: String, requestId: String) throws -> ServerOpenAIChatResponse {
-        /// DeepSeek advertises OpenAI API compatibility.
+   private static func normalizeGitHubCopilotResponse(_ response: Any, requestModel: String, requestId: String) throws -> ServerOpenAIChatResponse {
+        // If response is already in OpenAI format, pass it through
         if let openAIResponse = response as? ServerOpenAIChatResponse {
             return openAIResponse
         }
+        // Fallback: return a properly structured response indicating normalization is needed
+        throw ProviderError.responseNormalizationFailed("GitHub Copilot response format not recognized - expected OpenAI-compatible format")
+   }
 
-        return ServerOpenAIChatResponse(
-            id: "chatcmpl-\(requestId)",
-            object: "chat.completion",
-            created: Int(Date().timeIntervalSince1970),
-            model: requestModel,
-            choices: [
-                OpenAIChatChoice(
-                    index: 0,
-                    message: OpenAIChatMessage(role: "assistant", content: "DeepSeek response (normalized)"),
-                    finishReason: "stop"
-                )
-            ],
-            usage: ServerOpenAIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0)
-        )
-    }
+    /// Normalize DeepSeek API responses to OpenAI format DeepSeek uses an OpenAI-compatible API but may have minor differences.
+   private static func normalizeDeepSeekResponse(_ response: Any, requestModel: String, requestId: String) throws -> ServerOpenAIChatResponse {
+        // DeepSeek uses OpenAI-compatible API - pass through if already in correct format
+       if let openAIResponse = response as? ServerOpenAIChatResponse {
+           return openAIResponse
+       }
+
+        throw ProviderError.responseNormalizationFailed("DeepSeek response format not recognized - expected OpenAI-compatible format")
+   }
 
     /// Normalize custom provider responses to OpenAI format Users can configure arbitrary API endpoints as custom providers.
-    private static func normalizeCustomResponse(_ response: Any, requestModel: String, requestId: String) throws -> ServerOpenAIChatResponse {
-        return ServerOpenAIChatResponse(
-            id: "chatcmpl-\(requestId)",
-            object: "chat.completion",
-            created: Int(Date().timeIntervalSince1970),
-            model: requestModel,
-            choices: [
-                OpenAIChatChoice(
-                    index: 0,
-                    message: OpenAIChatMessage(role: "assistant", content: "Custom provider response (normalized)"),
-                    finishReason: "stop"
-                )
-            ],
-            usage: ServerOpenAIUsage(promptTokens: 0, completionTokens: 0, totalTokens: 0)
-        )
-    }
+   private static func normalizeCustomResponse(_ response: Any, requestModel: String, requestId: String) throws -> ServerOpenAIChatResponse {
+        // Custom providers should return OpenAI-compatible format
+        if let openAIResponse = response as? ServerOpenAIChatResponse {
+            return openAIResponse
+        }
+        throw ProviderError.responseNormalizationFailed("Custom provider response format not recognized - configure provider to use OpenAI-compatible format")
+   }
 }
 
 // MARK: - Provider Errors

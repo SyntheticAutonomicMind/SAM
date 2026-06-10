@@ -72,10 +72,12 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
 
     private let logger = Logger(label: "com.sam.mcp.UserCollaborationTool")
 
-    /// Shared state for pending user responses Key: toolCallId (UUID string), Value: PendingResponse.
-    /// Thread-safe access: ALL reads/writes MUST go through lockedRead/lockedWrite helpers.
-    nonisolated(unsafe) private static var _pendingResponses: [String: PendingResponse] = [:]
-    private static let responseLock = NSLock()
+   /// Shared state for pending user responses Key: toolCallId (UUID string), Value: PendingResponse.
+   /// Thread-safe access: ALL reads/writes MUST go through lockedRead/lockedWrite helpers.
+   nonisolated(unsafe) private static var _pendingResponses: [String: PendingResponse] = [:]
+    /// Continuations for waiting tasks, keyed by toolCallId. Resumed when user responds.
+    nonisolated(unsafe) private static var _pendingContinuations: [String: CheckedContinuation<String, Never>] = [:]
+   private static let responseLock = NSLock()
 
     /// Thread-safe read from pendingResponses.
     private static func lockedRead<T>(_ body: ([String: PendingResponse]) -> T) -> T {
@@ -191,106 +193,92 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
             conversationId: context.conversationId
         )
 
-        /// Clean up pending response.
-        Self.lockedWrite { $0.removeValue(forKey: toolCallId) }
+       /// Clean up pending response.
+        Self.lockedWrite {
+            $0.removeValue(forKey: toolCallId)
+            // Also clean up any stale continuation
+            Self._pendingContinuations.removeValue(forKey: toolCallId)
+        }
 
-        return result
-    }
+       return result
+   }
 
     // MARK: - Async Blocking Mechanism
 
-    /// Wait for user response indefinitely (no timeout) Workflow is BLOCKED until user responds - user is in full control.
-    @MainActor
-    private func waitForUserResponse(toolCallId: String, authorizeOperation: String?, conversationId: UUID?) async -> MCPToolResult {
-        let startTime = Date()
-        var pollCount = 0
+  /// Wait for user response indefinitely (no timeout) Workflow is BLOCKED until user responds - user is in full control.
+  @MainActor
+  private func waitForUserResponse(toolCallId: String, authorizeOperation: String?, conversationId: UUID?) async -> MCPToolResult {
+      let startTime = Date()
 
-        /// INDEFINITE WAIT: Poll for response every 100ms until user responds No timeout - user has full control, workflow waits as long as needed.
-        while true {
-            pollCount += 1
-            
-            /// Log every 10 polls (every second) to track that we're still waiting
-            if pollCount % 10 == 0 {
-               let elapsed = Date().timeIntervalSince(startTime)
-                let (hasPending, hasResponse) = Self.lockedRead { dict in
-                    (dict[toolCallId] != nil, dict[toolCallId]?.userResponse != nil)
-                }
-                logger.debug("COLLAB_DEBUG: Still waiting for user response", metadata: [
-                    "toolCallId": .string(toolCallId),
-                    "pollCount": .stringConvertible(pollCount),
-                    "elapsedSeconds": .stringConvertible(elapsed),
-                    "hasPending": .stringConvertible(hasPending),
-                    "hasResponse": .stringConvertible(hasResponse)
-                ])
-            }
 
-            /// Check if response received (thread-safe read).
-            let maybeResponse = Self.lockedRead { dict -> String? in
-                dict[toolCallId]?.userResponse
-            }
 
-            if let response = maybeResponse {
 
-                let waitTime = Date().timeIntervalSince(startTime)
-                logger.info("USER_RESPONDED: User response received after \(String(format: "%.2f", waitTime))s", metadata: [
-                    "toolCallId": .string(toolCallId),
-                    "waitTimeSeconds": .stringConvertible(waitTime),
-                    "pollCount": .stringConvertible(pollCount)
-                ])
+       // Use continuation-based waiting instead of busy-polling.
+       // The continuation is stored and resumed by submitUserResponse when the user responds.
+       let response: String = await withCheckedContinuation { continuation in
+           // Check if response already arrived (race condition)
+           if let existingResponse = Self.lockedRead({ $0[toolCallId]?.userResponse }) {
+               continuation.resume(returning: existingResponse)
+               return
+           }
+           // Store continuation for later resumption
+           Self.lockedWrite { dict in
+               Self._pendingContinuations[toolCallId] = continuation
+           }
+       }
 
-                /// AUTHORIZATION HANDLING: If authorize_operation was specified, check if user approved.
-                if let operation = authorizeOperation, let convId = conversationId {
-                    if AuthorizationManager.isApprovalResponse(response) {
-                        /// User approved!.
-                        let expiryDuration = DurationParser.getAuthorizationExpiryDuration()
+              let waitTime = Date().timeIntervalSince(startTime)
+              logger.info("USER_RESPONDED: User response received after \(String(format: "%.2f", waitTime))s", metadata: [
+                  "toolCallId": .string(toolCallId),
+                   "waitTimeSeconds": .stringConvertible(waitTime)
+              ])
 
-                        AuthorizationManager.shared.grantAuthorization(
-                            conversationId: convId,
-                            operation: operation,
-                            expirySeconds: expiryDuration,
-                            oneTimeUse: false
-                        )
-                        logger.debug("Authorization granted based on user approval", metadata: [
-                            "operation": .string(operation),
-                            "expirySeconds": .stringConvertible(expiryDuration),
-                            "conversationId": .string(convId.uuidString)
-                        ])
-                    } else if AuthorizationManager.isRejectionResponse(response) {
-                        logger.debug("Authorization denied based on user rejection", metadata: [
-                            "operation": .string(operation),
-                            "conversationId": .string(convId.uuidString)
-                        ])
-                    }
-                }
+               /// AUTHORIZATION HANDLING: If authorize_operation was specified, check if user approved.
+               if let operation = authorizeOperation, let convId = conversationId {
+                   if AuthorizationManager.isApprovalResponse(response) {
+                       /// User approved!.
+                       let expiryDuration = DurationParser.getAuthorizationExpiryDuration()
 
-                return MCPToolResult(
-                    toolName: name,
-                    success: true,
-                    output: MCPOutput(
-                        content: """
-                        User response: \(response)
+                       AuthorizationManager.shared.grantAuthorization(
+                           conversationId: convId,
+                           operation: operation,
+                           expirySeconds: expiryDuration,
+                           oneTimeUse: false
+                       )
+                       logger.debug("Authorization granted based on user approval", metadata: [
+                           "operation": .string(operation),
+                           "expirySeconds": .stringConvertible(expiryDuration),
+                           "conversationId": .string(convId.uuidString)
+                       ])
+                   } else if AuthorizationManager.isRejectionResponse(response) {
+                       logger.debug("Authorization denied based on user rejection", metadata: [
+                           "operation": .string(operation),
+                           "conversationId": .string(convId.uuidString)
+                       ])
+                   }
+               }
 
-                        ACTION REQUIRED: Process the user's response and continue with your workflow.
-                        Do NOT end the conversation - use the response to make decisions and proceed with the task.
-                        """,
-                        mimeType: "text/plain",
-                        additionalData: [
-                            "toolCallId": toolCallId,
-                            "waitTimeSeconds": waitTime,
-                            "userResponse": response
-                        ]
-                    )
-                )
-            }
+             return MCPToolResult(
+                 toolName: name,
+                 success: true,
+                 output: MCPOutput(
+                     content: """
+                     User response: \(response)
 
-            /// Sleep for 100ms before checking again.
-            try? await Task.sleep(nanoseconds: 100_000_000)
-
-            /// Loop continues indefinitely until user responds No timeout - user is in full control of when to respond.
-        }
+                     ACTION REQUIRED: Process the user's response and continue with your workflow.
+                     Do NOT end the conversation - use the response to make decisions and proceed with the task.
+                     """,
+                     mimeType: "text/plain",
+                     additionalData: [
+                         "toolCallId": toolCallId,
+                         "waitTimeSeconds": waitTime,
+                         "userResponse": response
+                     ]
+                 )
+             )
     }
 
-    /// Notify UI that user input is required (will be sent as SSE event).
+   /// Notify UI that user input is required (will be sent as SSE event).
     @MainActor
     private func notifyUIForInput(toolCallId: String, prompt: String, context: String?, conversationId: UUID?) async {
         /// Post notification via global event system AgentOrchestrator/StreamingHandler will observe and emit SSE event.
@@ -341,9 +329,17 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
             return false
         }
 
-        logger.debug("COLLAB_DEBUG: Pending response updated under lock, posting notification")
+       logger.debug("COLLAB_DEBUG: Pending response updated under lock, posting notification")
 
-        /// Notify that user response was received so AgentOrchestrator can emit it as streaming chunk
+        // Resume any waiting continuation (replaces busy-polling)
+        lockedWrite { dict in
+            if let continuation = _pendingContinuations[toolCallId] {
+                continuation.resume(returning: userInput)
+                _pendingContinuations.removeValue(forKey: toolCallId)
+            }
+        }
+
+       /// Notify that user response was received so AgentOrchestrator can emit it as streaming chunk
         ToolNotificationCenter.shared.postUserResponseReceived(
             toolCallId: toolCallId,
             userInput: userInput,

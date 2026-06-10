@@ -114,14 +114,14 @@ fi
 # Sign embedded dylibs (if any)
 echo "  - Checking for embedded libraries..."
 DYLIBS_FOUND=false
-find "${APP_PATH}/Contents" -name "*.dylib" -print0 2>/dev/null | while IFS= read -r -d '' dylib; do
-    DYLIBS_FOUND=true
-    echo "  - Signing library: $(basename "$dylib")"
-    codesign --force --sign "${SIGNING_IDENTITY}" \
-             --options runtime \
-             --timestamp \
-             "$dylib" 2>&1 | sed 's/^/     /'
-done
+while IFS= read -r -d '' dylib; do
+   DYLIBS_FOUND=true
+   echo "  - Signing library: $(basename "$dylib")"
+   codesign --force --sign "${SIGNING_IDENTITY}" \
+            --options runtime \
+            --timestamp \
+            "$dylib" 2>&1 | sed 's/^/     /'
+done < <(find "${APP_PATH}/Contents" -name "*.dylib" -print0 2>/dev/null)
 
 if [ "$DYLIBS_FOUND" = false ]; then
     echo "  - No embedded libraries found"
@@ -172,20 +172,20 @@ if [ -d "${APP_PATH}/Contents/Resources/python_base/lib" ]; then
     SO_COUNT=$(find "$PYTHON_BASE_LIB" -name "*.so" -type f 2>/dev/null | wc -l | tr -d ' ')
     echo "     Found $SO_COUNT base extension modules to sign"
     
-    SIGNED_COUNT=0
-    # Find all .so files (compiled Python extensions)
-    find "$PYTHON_BASE_LIB" -name "*.so" -type f 2>/dev/null | while IFS= read -r sofile; do
-        SIGNED_COUNT=$((SIGNED_COUNT + 1))
-        # Only show progress every 10 files to avoid spam
-        if [ $((SIGNED_COUNT % 10)) -eq 0 ] || [ $SIGNED_COUNT -eq $SO_COUNT ]; then
-            echo "     Progress: $SIGNED_COUNT/$SO_COUNT"
-        fi
-        
-        codesign --force --sign "${SIGNING_IDENTITY}" \
-                 --options runtime \
-                 --timestamp \
-                 "$sofile" 2>/dev/null || true
-    done
+   SIGNED_COUNT=0
+    # Find all .so files (compiled Python extensions) - use process substitution to avoid subshell
+    while IFS= read -r sofile; do
+       SIGNED_COUNT=$((SIGNED_COUNT + 1))
+       # Only show progress every 10 files to avoid spam
+       if [ $((SIGNED_COUNT % 10)) -eq 0 ] || [ $SIGNED_COUNT -eq $SO_COUNT ]; then
+           echo "     Progress: $SIGNED_COUNT/$SO_COUNT"
+       fi
+       
+       codesign --force --sign "${SIGNING_IDENTITY}" \
+                --options runtime \
+                --timestamp \
+                "$sofile" 2>/dev/null || true
+    done < <(find "$PYTHON_BASE_LIB" -name "*.so" -type f 2>/dev/null)
     
     echo "     ✓ Signed $SO_COUNT base extension modules"
 fi
@@ -199,20 +199,20 @@ if [ -d "${APP_PATH}/Contents/Resources/python_env/lib" ]; then
     SO_COUNT=$(find "$PYTHON_LIB" -name "*.so" -type f 2>/dev/null | wc -l | tr -d ' ')
     echo "     Found $SO_COUNT extension modules to sign"
     
-    SIGNED_COUNT=0
-    # Find all .so files (compiled Python extensions)
-    find "$PYTHON_LIB" -name "*.so" -type f 2>/dev/null | while IFS= read -r sofile; do
-        SIGNED_COUNT=$((SIGNED_COUNT + 1))
-        # Only show progress every 10 files to avoid spam
-        if [ $((SIGNED_COUNT % 10)) -eq 0 ] || [ $SIGNED_COUNT -eq $SO_COUNT ]; then
-            echo "     Progress: $SIGNED_COUNT/$SO_COUNT"
-        fi
-        
-        codesign --force --sign "${SIGNING_IDENTITY}" \
-                 --options runtime \
-                 --timestamp \
-                 "$sofile" 2>/dev/null || true
-    done
+   SIGNED_COUNT=0
+    # Find all .so files (compiled Python extensions) - use process substitution to avoid subshell
+    while IFS= read -r sofile; do
+       SIGNED_COUNT=$((SIGNED_COUNT + 1))
+       # Only show progress every 10 files to avoid spam
+       if [ $((SIGNED_COUNT % 10)) -eq 0 ] || [ $SIGNED_COUNT -eq $SO_COUNT ]; then
+           echo "     Progress: $SIGNED_COUNT/$SO_COUNT"
+       fi
+       
+       codesign --force --sign "${SIGNING_IDENTITY}" \
+                --options runtime \
+                --timestamp \
+                "$sofile" 2>/dev/null || true
+    done < <(find "$PYTHON_LIB" -name "*.so" -type f 2>/dev/null)
     
     echo "     ✓ Signed $SO_COUNT extension modules"
 fi

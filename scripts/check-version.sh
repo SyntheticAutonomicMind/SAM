@@ -80,12 +80,12 @@ if [ "$CHANGE_COUNT" -gt 0 ]; then
     echo "Files changed since last version bump: $CHANGE_COUNT"
     echo ""
     
-    # Parse version (assumes semantic versioning: MAJOR.MINOR.PATCH)
-    IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+    # Parse version as YYYYMMDD.RELEASE (SAM date-based versioning)
+    IFS='.' read -r DATE RELEASE <<< "$CURRENT_VERSION"
     
-    # Increment patch version
-    NEW_PATCH=$((PATCH + 1))
-    NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+    # Increment release number
+    NEW_RELEASE=$((RELEASE + 1))
+    NEW_VERSION="${DATE}.${NEW_RELEASE}"
     
     echo "Incrementing patch version: $CURRENT_VERSION - $NEW_VERSION"
     echo ""

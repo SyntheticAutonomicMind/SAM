@@ -46,9 +46,7 @@ fi
 
 # Create ZIP archive (preserves code signature)
 echo "Creating ZIP archive..."
-cd .build/Build/Products/Release
-ditto -c -k --keepParent "${APP_NAME}.app" "../../../../${ARCHIVE}"
-cd - > /dev/null
+(cd .build/Build/Products/Release && ditto -c -k --keepParent "${APP_NAME}.app" "../../../../${ARCHIVE}")
 
 echo "Archive created: ${ARCHIVE}"
 

@@ -31,7 +31,7 @@ build: build-release
 llamacpp:
 	@echo "Building llama.cpp framework (macOS-only)..."
 	@if [ ! -d "external/llama.cpp" ]; then \
-		echo "ERROR: ERROR: llama.cpp submodule not found"; \
+		echo "ERROR: llama.cpp submodule not found"; \
 		echo "Run: git submodule update --init --recursive"; \
 		exit 1; \
 	fi
@@ -268,7 +268,7 @@ test-ci: build-debug run-background
 	@echo "SUCCESS: CI tests complete"
 
 # Run the application (debug)
-run: build-debug install-metallib
+run: build-debug
 	@echo "Running $(EXECUTABLE_NAME)..."
 	$(BUILD_DIR)/Build/Products/Debug/$(EXECUTABLE_NAME)
 
@@ -340,7 +340,7 @@ sign: sign-release
 sign-debug: build-debug
 	@echo "Signing SAM.app (Debug) with Developer ID..."
 	@if [ -z "$(DEVELOPER_ID)" ]; then \
-		echo "ERROR: ERROR: APPLE_DEVELOPER_ID environment variable not set"; \
+		echo "ERROR: APPLE_DEVELOPER_ID environment variable not set"; \
 		echo ""; \
 		echo "Set it in your shell profile (~/.profile, ~/.zshrc, etc.):"; \
 		echo '  export APPLE_DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"'; \
@@ -351,7 +351,7 @@ sign-debug: build-debug
 		exit 1; \
 	fi
 	@if [ ! -f "$(ENTITLEMENTS)" ]; then \
-		echo "ERROR: ERROR: $(ENTITLEMENTS) not found"; \
+		echo "ERROR: $(ENTITLEMENTS) not found"; \
 		exit 1; \
 	fi
 	codesign --force --sign $(DEVELOPER_ID) \
@@ -366,7 +366,7 @@ sign-debug: build-debug
 sign-release: build-release
 	@echo "Signing SAM.app (Release) with Developer ID..."
 	@if [ -z "$(DEVELOPER_ID)" ]; then \
-		echo "ERROR: ERROR: APPLE_DEVELOPER_ID environment variable not set"; \
+		echo "ERROR: APPLE_DEVELOPER_ID environment variable not set"; \
 		echo ""; \
 		echo "Set it in your shell profile (~/.profile, ~/.zshrc, etc.):"; \
 		echo '  export APPLE_DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"'; \
@@ -377,7 +377,7 @@ sign-release: build-release
 		exit 1; \
 	fi
 	@if [ ! -f "$(ENTITLEMENTS)" ]; then \
-		echo "ERROR: ERROR: $(ENTITLEMENTS) not found"; \
+		echo "ERROR: $(ENTITLEMENTS) not found"; \
 		exit 1; \
 	fi
 	codesign --force --sign $(DEVELOPER_ID) \
@@ -418,7 +418,7 @@ verify-signature:
 notarize:
 	@echo "Submitting SAM.app for notarization (via automated scripts)..."
 	@if [ ! -f "./scripts/sign_app.sh" ] || [ ! -f "./scripts/notarize_app.sh" ]; then \
-		echo "ERROR: ERROR: Signing/notarization scripts not found"; \
+		echo "ERROR: Signing/notarization scripts not found"; \
 		echo "Expected: scripts/sign_app.sh and scripts/notarize_app.sh"; \
 		exit 1; \
 	fi
@@ -433,7 +433,7 @@ notarize:
 staple:
 	@echo "Stapling notarization ticket to SAM.app..."
 	@if [ ! -d "$(APP_BUNDLE_RELEASE)" ]; then \
-		echo "ERROR: ERROR: Release app bundle not found"; \
+		echo "ERROR: Release app bundle not found"; \
 		exit 1; \
 	fi
 	xcrun stapler staple $(APP_BUNDLE_RELEASE)
@@ -443,7 +443,7 @@ staple:
 create-dmg:
 	@echo "Creating DMG installer..."
 	@if [ ! -d "$(APP_BUNDLE_RELEASE)" ]; then \
-		echo "ERROR: ERROR: Release app bundle not found"; \
+		echo "ERROR: Release app bundle not found"; \
 		exit 1; \
 	fi
 	@ABS_APP_PATH=$$(cd "$(APP_BUNDLE_RELEASE)" && pwd); \
@@ -600,7 +600,7 @@ sign-only-release:
 dist:
 	@echo "Creating SAM distribution..."
 	@if [ ! -f "scripts/create-dist.sh" ]; then \
-		echo "ERROR: ERROR: scripts/create-dist.sh not found"; \
+		echo "ERROR: scripts/create-dist.sh not found"; \
 		exit 1; \
 	fi
 	@chmod +x scripts/create-dist.sh

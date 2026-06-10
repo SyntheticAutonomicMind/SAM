@@ -16,10 +16,13 @@ public class SpeechSynthesisService: NSObject, ObservableObject, NSSpeechSynthes
     private var currentCompletionHandler: (() -> Void)?
     private let logger = Logger(label: "com.sam.voice.synthesis")
 
-    /// Audio device manager for voice selection
-    private var audioDeviceManager: AudioDeviceManager?
+   /// Audio device manager for voice selection
+   private var audioDeviceManager: AudioDeviceManager?
+    /// Track last applied voice/rate to avoid unnecessary synthesizer recreation
+    private var lastVoiceIdentifier: String?
+    private var lastSpeechRate: Float?
 
-    /// Callbacks for TTS lifecycle events
+   /// Callbacks for TTS lifecycle events
     public var onSpeakingStarted: (() -> Void)?
     public var onSpeakingFinished: (() -> Void)?
 
@@ -82,14 +85,20 @@ public class SpeechSynthesisService: NSObject, ObservableObject, NSSpeechSynthes
     public func speak(_ text: String, completion: (() -> Void)? = nil) {
         logger.info("speak() called: isSpeaking=\(isSpeaking), text.count=\(text.count)")
 
-        /// Stop any existing speech
-        synthesizer?.stopSpeaking()
+       /// Stop any existing speech
+       synthesizer?.stopSpeaking()
 
-        /// Update voice in case settings changed
-        updateSynthesizerVoice()
+        // Only recreate synthesizer if voice or rate settings changed
+        let currentVoice = audioDeviceManager?.selectedVoiceIdentifier
+        let currentRate = audioDeviceManager?.speechRate
+        if currentVoice != lastVoiceIdentifier || currentRate != lastSpeechRate {
+            updateSynthesizerVoice()
+            lastVoiceIdentifier = currentVoice
+            lastSpeechRate = currentRate
+        }
 
-        /// Strip markdown formatting for cleaner speech
-        let cleanText = stripMarkdown(text)
+       /// Strip markdown formatting for cleaner speech
+       let cleanText = stripMarkdown(text)
 
         /// Store completion handler
         currentCompletionHandler = completion

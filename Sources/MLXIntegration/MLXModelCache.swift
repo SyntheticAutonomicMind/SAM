@@ -40,10 +40,13 @@ public class MLXModelCache: @unchecked Sendable {
         return dir
     }
 
-    public func getModelPath(_ modelId: String) async throws -> URL {
-        let dir = try await getModelsDirectory()
-        let normalizedId = modelId.replacingOccurrences(of: "/", with: "_")
-        return dir.appendingPathComponent(normalizedId)
+   public func getModelPath(_ modelId: String) async throws -> URL {
+       let dir = try await getModelsDirectory()
+        // Use percent-encoding for reversible model ID -> directory name mapping.
+        // Previous approach (replacing "/" with "_") was lossy because model IDs
+        // can contain underscores, causing round-trip corruption.
+        let normalizedId = modelId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? modelId
+       return dir.appendingPathComponent(normalizedId)
     }
 
     public func getInstalledModelPaths() async throws -> [String: URL] {
@@ -62,10 +65,10 @@ public class MLXModelCache: @unchecked Sendable {
             if resourceValues.isDirectory == true {
                 /// Check if this is a valid model directory.
                 let configPath = item.appendingPathComponent("config.json")
-                if fileManager.fileExists(atPath: configPath.path) {
-                    /// Convert directory name back to model ID.
-                    let modelId = item.lastPathComponent.replacingOccurrences(of: "_", with: "/")
-                    modelPaths[modelId] = item
+               if fileManager.fileExists(atPath: configPath.path) {
+                    // Reverse percent-encoding to recover original model ID.
+                    let modelId = item.lastPathComponent.removingPercentEncoding ?? item.lastPathComponent
+                   modelPaths[modelId] = item
                 }
             }
         }

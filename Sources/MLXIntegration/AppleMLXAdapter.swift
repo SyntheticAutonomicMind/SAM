@@ -33,9 +33,13 @@ public class AppleMLXAdapter {
     // swiftlint:disable:next line_length
     static let defaultChatMLTemplate = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
 
-    /// Cache loaded models to avoid reloading.
-    private var loadedModels: [String: any LanguageModel] = [:]
-    private var loadedTokenizers: [String: Tokenizer] = [:]
+   /// Cache loaded models to avoid reloading.
+   private var loadedModels: [String: any LanguageModel] = [:]
+   private var loadedTokenizers: [String: Tokenizer] = [:]
+    /// Maximum number of models to keep in memory (LRU eviction)
+    private let maxCachedModels = 3
+    /// Track model access order for LRU eviction
+    private var modelAccessOrder: [String] = []
 
     /// Performance monitoring (optional, disabled by default).
     private var performanceMonitor: MLXPerformanceMonitor?
@@ -59,12 +63,15 @@ public class AppleMLXAdapter {
     public func loadModel(from localPath: URL) async throws -> (model: any LanguageModel, tokenizer: Tokenizer) {
         let modelId = localPath.lastPathComponent
 
-        /// Check cache first.
-        if let cachedModel = loadedModels[modelId],
-           let cachedTokenizer = loadedTokenizers[modelId] {
-            logger.debug("CACHE_HIT: Using cached model \(modelId)")
-            return (cachedModel, cachedTokenizer)
-        }
+       /// Check cache first.
+       if let cachedModel = loadedModels[modelId],
+          let cachedTokenizer = loadedTokenizers[modelId] {
+           logger.debug("CACHE_HIT: Using cached model \(modelId)")
+            // Update access order for LRU
+            modelAccessOrder.removeAll { $0 == modelId }
+            modelAccessOrder.append(modelId)
+           return (cachedModel, cachedTokenizer)
+       }
 
         logger.debug("Loading model from local path: \(localPath.path)")
 
@@ -73,11 +80,15 @@ public class AppleMLXAdapter {
             $0.pathExtension == "gguf"
         } ?? []
 
-        if !ggufFiles.isEmpty {
-            logger.debug("GGUF_DETECTED: Found \(ggufFiles.count) .gguf file(s): \(ggufFiles.map { $0.lastPathComponent }.joined(separator: ", "))")
-            logger.debug("GGUF_LOADING: Using GGUF loading path (not safetensors)")
-            return try await loadGGUFModel(from: ggufFiles[0], modelId: modelId, modelDirectory: localPath)
-        }
+       if !ggufFiles.isEmpty {
+           logger.debug("GGUF_DETECTED: Found \(ggufFiles.count) .gguf file(s): \(ggufFiles.map { $0.lastPathComponent }.joined(separator: ", "))")
+            logger.warning("GGUF model detected but GGUF loading is not yet implemented in MLX. Use a safetensors-format model instead.")
+            throw AdapterError.ggufNotImplemented(
+                "This model uses GGUF format which is not yet supported by MLX. " +
+                "Download a safetensors-format model from Hugging Face (look for 'mlx-community' models). " +
+                "GGUF file: \(ggufFiles[0].lastPathComponent)"
+            )
+       }
 
         logger.debug("SAFETENSORS_DETECTED: Using standard MLX safetensors loading path")
 
@@ -146,13 +157,22 @@ public class AppleMLXAdapter {
             throw AdapterError.tokenizerLoadingFailed(error.localizedDescription)
         }
 
-        /// Cache the loaded model and tokenizer.
-        loadedModels[modelId] = model
-        loadedTokenizers[modelId] = tokenizer
+       /// Cache the loaded model and tokenizer.
+       loadedModels[modelId] = model
+       loadedTokenizers[modelId] = tokenizer
+        modelAccessOrder.append(modelId)
 
-        logger.debug("Successfully loaded model \(modelId) using Apple's MLXLLM")
-        return (model, tokenizer)
-    }
+        // LRU eviction: remove oldest model if cache exceeds limit
+        while loadedModels.count > maxCachedModels, let oldest = modelAccessOrder.first {
+            logger.info("EVICTING_CACHE: Removing \(oldest) from cache (limit: \(maxCachedModels))")
+            loadedModels.removeValue(forKey: oldest)
+            loadedTokenizers.removeValue(forKey: oldest)
+            modelAccessOrder.removeFirst()
+        }
+
+       logger.debug("Successfully loaded model \(modelId) using Apple's MLXLLM")
+       return (model, tokenizer)
+   }
 
     /// Load a GGUF format model using MLX's native GGUF support This is called when .gguf files are detected instead of .safetensors.
     private func loadGGUFModel(from ggufPath: URL, modelId: String, modelDirectory: URL) async throws -> (model: any LanguageModel, tokenizer: Tokenizer) {
@@ -279,9 +299,12 @@ public class AppleMLXAdapter {
         hideThinking: Bool = false
     ) -> AsyncThrowingStream<MLXTextChunk, Error> {
 
-        return AsyncThrowingStream<MLXTextChunk, Error> { continuation in
-            Task {
-                do {
+       return AsyncThrowingStream<MLXTextChunk, Error> { continuation in
+            // Capture values before detached task to avoid @MainActor isolation
+            let logger = self.logger
+            let performanceMonitor = self.performanceMonitor
+            Task.detached {
+               do {
                     logger.debug("Starting text generation with Apple's model")
 
                     /// DON'T pass tools to applyChatTemplate - causes system prompt bleeding **The problem**: When tools passed to applyChatTemplate: - Some chat templates inject tool definitions directly into prompt - This causes system prompt content to leak into assistant responses - Model gets confused between instructions and conversation **The solution**: Tools in system message content only - MLXProvider handles tool formatting in system message - applyChatTemplate just formats conversation structure - Clean separation: system message = instructions, chat = conversation **VERIFIED**: mlx-swift-examples Chat.swift does NOT pass tools to template Tool definitions should be in system message content (handled by MLXProvider).
@@ -348,13 +371,19 @@ public class AppleMLXAdapter {
                     var insideThinkTag = false
 
                     /// CORRECT STREAMING API: AsyncSequence pattern from reference implementation HYBRID KV CACHE: Pass cache to generate() to reuse cached key/value tensors.
-                    for await item in try MLXLMCommon.generate(
-                        input: input,
-                        cache: cache,
-                        parameters: parameters,
-                        context: context
-                    ) {
-                        switch item {
+                   for await item in try MLXLMCommon.generate(
+                       input: input,
+                       cache: cache,
+                       parameters: parameters,
+                       context: context
+                   ) {
+                        // Propagate stream cancellation to stop GPU work
+                        if Task.isCancelled {
+                            logger.debug("Generation cancelled - stopping GPU work")
+                            continuation.finish()
+                            return
+                        }
+                       switch item {
                         case .chunk(let text):
                             fullResponse += text
                             tokenCount += 1
