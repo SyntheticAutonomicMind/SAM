@@ -71,16 +71,18 @@ run_swift_tests() {
         swift test 2>&1 | tee /tmp/swift_test_output.log | grep -E "^Test|passed|failed|Executed"
     fi
     
-    # Parse results
-    local result_line=$(grep "^Test Suite 'SAMPackageTests.xctest'" /tmp/swift_test_output.log | tail -1)
+    # Parse results - find the "Executed N tests" line following the suite passed line
+    local result_line=$(grep "^Test Suite 'SAMPackageTests.xctest'" /tmp/swift_test_output.log | tail -1 || true)
+    # The "Executed N tests" line comes right after the suite passed/failed line
+    local executed_line=$(grep -A1 "^Test Suite 'SAMPackageTests.xctest'" /tmp/swift_test_output.log | tail -1 || true)
     if echo "$result_line" | grep -q "passed"; then
-        SWIFT_TESTS_PASSED=$(echo "$result_line" | grep -oE "Executed [0-9]+" | grep -oE "[0-9]+")
+        SWIFT_TESTS_PASSED=$(echo "$executed_line" | grep -oE "Executed [0-9]+" | grep -oE "[0-9]+" || echo "0")
         SWIFT_TESTS_FAILED=0
-        echo -e "${GREEN}✓ Swift Unit Tests: All $SWIFT_TESTS_PASSED tests passed${NC}"
+        echo -e "${GREEN} Swift Unit Tests: All $SWIFT_TESTS_PASSED tests passed${NC}"
     else
-        SWIFT_TESTS_PASSED=$(echo "$result_line" | grep -oE "Executed [0-9]+" | grep -oE "[0-9]+" | head -1)
-        SWIFT_TESTS_FAILED=$(echo "$result_line" | grep -oE "with [0-9]+ failures" | grep -oE "[0-9]+" | head -1)
-        echo -e "${RED}✗ Swift Unit Tests: $SWIFT_TESTS_FAILED failed out of $SWIFT_TESTS_PASSED${NC}"
+        SWIFT_TESTS_PASSED=$(echo "$executed_line" | grep -oE "Executed [0-9]+" | grep -oE "[0-9]+" | head -1 || echo "0")
+        SWIFT_TESTS_FAILED=$(echo "$executed_line" | grep -oE "with [0-9]+ failures" | grep -oE "[0-9]+" | head -1 || echo "0")
+        echo -e "${RED} Swift Unit Tests: $SWIFT_TESTS_FAILED failed out of $SWIFT_TESTS_PASSED${NC}"
     fi
     echo ""
 }
@@ -110,13 +112,13 @@ run_e2e_tests() {
     # Check if SAM is running
     echo -e "${YELLOW}Checking if SAM server is running...${NC}"
     if ! check_sam_running; then
-        echo -e "${RED}✗ SAM server is not running. Please start SAM first:${NC}"
+        echo -e "${RED} SAM server is not running. Please start SAM first:${NC}"
         echo -e "${CYAN}  make build-debug${NC}"
         echo -e "${CYAN}  .build/Build/Products/Debug/SAM${NC}"
         echo -e "${YELLOW} Skipping E2E tests (SAM server not running)${NC}"
         return 0
     fi
-    echo -e "${GREEN}✓ SAM server is running${NC}"
+    echo -e "${GREEN} SAM server is running${NC}"
     echo ""
     
     # Run E2E tests
@@ -124,7 +126,7 @@ run_e2e_tests() {
     if [ "$VERBOSE" = true ]; then
         python3 Tests/e2e/mcp_e2e_tests.py 2>&1 | tee /tmp/e2e_test_output.log
     else
-        python3 Tests/e2e/mcp_e2e_tests.py 2>&1 | tee /tmp/e2e_test_output.log | grep -E "^TEST SUMMARY|^Total:|^Passed:|^Failed:|^Skipped:|Pass Rate:|✓ PASS|✗ FAIL|⊘ SKIP"
+        python3 Tests/e2e/mcp_e2e_tests.py 2>&1 | tee /tmp/e2e_test_output.log | grep -E "^TEST SUMMARY|^Total:|^Passed:|^Failed:|^Skipped:|Pass Rate:| PASS| FAIL|⊘ SKIP"
     fi
     
     # Parse results from log
@@ -165,16 +167,16 @@ print_summary() {
     echo -e "${BOLD}Total Skipped:  ${YELLOW}$E2E_TESTS_SKIPPED${NC}"
     echo ""
     
+    # Use bash arithmetic instead of bc (which may not be installed on CI runners)
     if [ "$total_failed" -eq 0 ]; then
-        local pass_rate=100
-        if [ "$total" -gt 0 ]; then
-            pass_rate=$(echo "scale=1; ($total_passed * 100) / ($total - $E2E_TESTS_SKIPPED)" | bc)
-        fi
-        echo -e "${GREEN}${BOLD}✓ ALL TESTS PASSED! Pass Rate: ${pass_rate}%${NC}"
+        local denom=$((total - E2E_TESTS_SKIPPED))
+        local pass_rate=$(( denom > 0 ? (total_passed * 100) / denom : 100 ))
+        echo -e "${GREEN}${BOLD} ALL TESTS PASSED! Pass Rate: ${pass_rate}%${NC}"
         return 0
     else
-        local pass_rate=$(echo "scale=1; ($total_passed * 100) / ($total - $E2E_TESTS_SKIPPED)" | bc)
-        echo -e "${RED}${BOLD}✗ SOME TESTS FAILED. Pass Rate: ${pass_rate}%${NC}"
+        local denom=$((total - E2E_TESTS_SKIPPED))
+        local pass_rate=$(( denom > 0 ? (total_passed * 100) / denom : 0 ))
+        echo -e "${RED}${BOLD} SOME TESTS FAILED. Pass Rate: ${pass_rate}%${NC}"
         return 1
     fi
 }
