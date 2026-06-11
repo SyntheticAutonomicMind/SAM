@@ -750,12 +750,24 @@ public class SharedConversationService: ObservableObject {
         }
     }
 
-    /// SAM 1.0 Feedback Loop Implementation - CORE SEQUENTIAL THINKING ARCHITECTURE CRITICAL: This method implements the exact SAM 1.0 pattern discovered through user guidance.
+    /// SAM 1.0 Feedback Loop Implementation - CORE SEQUENTIAL THINKING ARCHITECTURE
+    /// CRITICAL: This method implements the exact SAM 1.0 pattern discovered through user guidance.
+    /// Includes iteration limit to prevent unbounded recursive tool call loops.
     private func processSAM1FeedbackLoop(
         _ response: ServerOpenAIChatResponse,
         originalRequest: OpenAIChatRequest,
-        sessionId: String?
+        sessionId: String?,
+        iteration: Int = 1
     ) async throws -> ServerOpenAIChatResponse {
+
+        /// Maximum number of tool call iterations before forcing termination.
+        /// Prevents infinite loops when the LLM keeps returning tool calls.
+        let maxIterations = originalRequest.samConfig?.maxIterations ?? 10
+
+        guard iteration <= maxIterations else {
+            logger.warning("SHARED_SERVICE: Feedback loop reached max iterations (\(maxIterations)), terminating")
+            return response
+        }
 
         guard let firstChoice = response.choices.first else {
             logger.warning("SHARED_SERVICE: No response choices found")
@@ -883,8 +895,8 @@ public class SharedConversationService: ObservableObject {
         if let continuationChoice = continuationResponse.choices.first,
            let continuationToolCalls = continuationChoice.message.toolCalls,
            !continuationToolCalls.isEmpty {
-            logger.debug("SHARED_SERVICE: LLM requested \(continuationToolCalls.count) more tools, continuing feedback loop")
-            return try await processSAM1FeedbackLoop(continuationResponse, originalRequest: continuationRequest, sessionId: sessionId)
+            logger.debug("SHARED_SERVICE: LLM requested \(continuationToolCalls.count) more tools, continuing feedback loop (iteration \(iteration)/\(maxIterations))")
+            return try await processSAM1FeedbackLoop(continuationResponse, originalRequest: continuationRequest, sessionId: sessionId, iteration: iteration + 1)
         }
 
         /// Combine conversational response with final LLM continuation.

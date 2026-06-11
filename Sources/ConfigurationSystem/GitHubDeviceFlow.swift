@@ -292,6 +292,13 @@ public struct CopilotTokenResponse: Codable {
     public let refreshIn: Int
     public let username: String?
 
+    public init(token: String, expiresAt: Int, refreshIn: Int, username: String?) {
+        self.token = token
+        self.expiresAt = expiresAt
+        self.refreshIn = refreshIn
+        self.username = username
+    }
+
     enum CodingKeys: String, CodingKey {
         case token
         case expiresAt = "expires_at"

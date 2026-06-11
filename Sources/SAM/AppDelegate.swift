@@ -36,7 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         /// Load saved Copilot tokens if available
         Task { @MainActor in
-            try? CopilotTokenStore.shared.loadTokens()
+            try? await CopilotTokenStore.shared.loadTokens()
         }
         
         /// Initialize API token for secure API access

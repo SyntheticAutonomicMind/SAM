@@ -82,8 +82,10 @@ struct GitHubOAuthPreferencesPane: View {
             }
             
             Button("Sign Out") {
-                tokenStore.clearTokens()
-                signInState = .idle
+                Task {
+                    await tokenStore.clearTokens()
+                    signInState = .idle
+                }
             }
             .buttonStyle(.bordered)
         }

@@ -902,7 +902,8 @@ AVAILABLE TOOLS:
             return try await self.handleModelDetail(req)
         }
 
-        /// MCP test endpoints (temporary for development).
+        #if DEBUG
+        /// MCP test endpoints (development only - not included in release builds).
         protected.get("debug", "mcp", "tools") { req async throws -> MCPToolsResponse in
             return try await self.handleMCPToolsList(req)
         }
@@ -911,7 +912,7 @@ AVAILABLE TOOLS:
             return try await self.handleMCPToolExecution(req)
         }
 
-        /// Debug endpoint to check tool registry.
+        /// Debug endpoint to check tool registry (development only).
         protected.get("debug", "tools", "available") { _ async throws -> Response in
             return await MainActor.run {
                 let toolsDescription = self.toolRegistry.getToolsDescriptionMainActor()
@@ -931,6 +932,7 @@ AVAILABLE TOOLS:
                 }
             }
         }
+        #endif
 
         /// Conversation management endpoints.
         protected.get("v1", "conversations") { req async throws -> Response in
@@ -1263,7 +1265,7 @@ AVAILABLE TOOLS:
     private func handleAutonomousWorkflow(_ req: Request) async throws -> Response {
         let requestId = UUID().uuidString
 
-        logger.debug("Processing autonomous workflow request [req:\(requestId.prefix(8))]")
+        logger.info("SECURITY: Autonomous workflow request [req:\(requestId.prefix(8))] from \(req.remoteAddress?.description ?? "unknown")")
 
         /// Parse OpenAI chat request.
         let chatRequest: OpenAIChatRequest
@@ -2869,7 +2871,7 @@ AVAILABLE TOOLS:
 
     private func handleMCPToolExecution(_ req: Request) async throws -> MCPExecutionResponse {
         let request = try req.content.decode(MCPExecutionRequest.self)
-        logger.debug("Executing MCP tool: \(request.toolName)")
+        logger.info("SECURITY: MCP tool execution request - tool: \(request.toolName) from \(req.remoteAddress?.description ?? "unknown")")
 
         /// Parse parameters JSON.
         var parameters: [String: Any] = [:]

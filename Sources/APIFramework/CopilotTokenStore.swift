@@ -4,8 +4,13 @@
 import Foundation
 import Logging
 import ConfigurationSystem
+import SecurityFramework
 
-/// Manages storage and refresh of Copilot tokens
+/// Manages storage and refresh of Copilot tokens.
+///
+/// Tokens are stored in the macOS Keychain for security (replaces previous
+/// plaintext JSON file storage). On first launch after upgrade, any legacy
+/// plaintext file is automatically migrated to Keychain and deleted.
 @MainActor
 public class CopilotTokenStore: ObservableObject {
     public static let shared = CopilotTokenStore()
@@ -19,9 +24,25 @@ public class CopilotTokenStore: ObservableObject {
     private var copilotToken: CopilotTokenResponse?
     private var refreshTask: Task<Void, Never>?
     
+    /// Keychain account identifiers for secure token storage.
+    private let keychainAccountGitHub = "copilot-github-token"
+    private let keychainAccountCopilotToken = "copilot-api-token"
+    private let keychainAccountCopilotExpiry = "copilot-api-token-expiry"
+    private let keychainAccountCopilotUsername = "copilot-api-token-username"
+    
+    /// Legacy file path for migration.
+    private var legacyTokensFilePath: URL {
+        let configDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config")
+            .appendingPathComponent("sam")
+        return configDir.appendingPathComponent("github_tokens.json")
+    }
+    
     private init() {
-        // Try to load tokens on initialization
-        try? loadTokens()
+        // Load tokens asynchronously on init
+        Task {
+            try? await loadTokens()
+        }
     }
     
     /// Store GitHub user token and exchange for Copilot token
@@ -44,9 +65,7 @@ public class CopilotTokenStore: ObservableObject {
                 
                 // Update username if we got a better one
                 if let login = userResponse.login {
-                    await MainActor.run {
-                        self.username = login
-                    }
+                    self.username = login
                     logger.info("User API: authenticated as \(login)")
                 }
                 
@@ -66,8 +85,8 @@ public class CopilotTokenStore: ObservableObject {
         // Start refresh timer
         startRefreshTimer()
         
-        // Save to disk
-        try saveTokens()
+        // Save to Keychain
+        try await saveTokens()
         
         // Notify that authentication succeeded
         NotificationCenter.default.post(name: .githubAuthenticationDidSucceed, object: nil)
@@ -108,8 +127,8 @@ public class CopilotTokenStore: ObservableObject {
         // No refresh needed - GitHub tokens are long-lived
         refreshTask?.cancel()
         
-        // Save to disk
-        try? saveTokens()
+        // Save to Keychain
+        try? await saveTokens()
         
         // Notify that authentication succeeded
         NotificationCenter.default.post(name: .githubAuthenticationDidSucceed, object: nil)
@@ -159,7 +178,7 @@ public class CopilotTokenStore: ObservableObject {
         let deviceFlowService = GitHubDeviceFlowService()
         copilotToken = try await deviceFlowService.exchangeForCopilotToken(githubToken: githubToken)
         username = copilotToken?.username
-        try saveTokens()
+        try await saveTokens()
         
         logger.info("Copilot token refreshed successfully")
     }
@@ -206,47 +225,65 @@ public class CopilotTokenStore: ObservableObject {
     }
     
     /// Clear all tokens (sign out)
-    public func clearTokens() {
+    public func clearTokens() async {
         refreshTask?.cancel()
         githubToken = nil
         copilotToken = nil
         isSignedIn = false
         username = nil
-        try? deleteTokensFromDisk()
+        await deleteTokensFromKeychain()
         
         logger.info("Tokens cleared, user signed out")
     }
     
-    // MARK: - Persistence
+    // MARK: - Keychain Persistence
     
-    private var tokensFilePath: URL {
-        let configDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config")
-            .appendingPathComponent("sam")
-        try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
-        return configDir.appendingPathComponent("github_tokens.json")
-    }
-    
-    private func saveTokens() throws {
-        let data = TokensStorage(
-            githubToken: githubToken,
-            copilotToken: copilotToken
-        )
-        let encoded = try JSONEncoder().encode(data)
-        try encoded.write(to: tokensFilePath)
-        logger.debug("Tokens saved to disk")
-    }
-    
-    public func loadTokens() throws {
-        guard FileManager.default.fileExists(atPath: tokensFilePath.path) else {
-            return
+    /// Save tokens to macOS Keychain (replaces plaintext file storage).
+    private func saveTokens() async throws {
+        let keychain = KeychainManager.shared
+        
+        if let githubToken = githubToken {
+            try await keychain.store(secret: githubToken, for: keychainAccountGitHub)
         }
         
-        let data = try Data(contentsOf: tokensFilePath)
-        let storage = try JSONDecoder().decode(TokensStorage.self, from: data)
+        if let copilotToken = copilotToken {
+            try await keychain.store(secret: copilotToken.token, for: keychainAccountCopilotToken)
+            try await keychain.store(secret: String(copilotToken.expiresAt), for: keychainAccountCopilotExpiry)
+            if let username = copilotToken.username {
+                try await keychain.store(secret: username, for: keychainAccountCopilotUsername)
+            }
+        }
         
-        githubToken = storage.githubToken
-        copilotToken = storage.copilotToken
+        logger.debug("Tokens saved to Keychain")
+    }
+    
+    /// Load tokens from macOS Keychain, with migration from legacy file.
+    public func loadTokens() async throws {
+        // First, attempt migration from legacy plaintext file
+        try? await migrateFromLegacyFile()
+        
+        let keychain = KeychainManager.shared
+        
+        // Load GitHub token
+        githubToken = try await keychain.retrieve(for: keychainAccountGitHub)
+        
+        // Load Copilot token components
+        let copilotTokenValue = try await keychain.retrieve(for: keychainAccountCopilotToken)
+        let copilotExpiry = try await keychain.retrieve(for: keychainAccountCopilotExpiry)
+        let copilotUsername = try await keychain.retrieve(for: keychainAccountCopilotUsername)
+        
+        if let tokenValue = copilotTokenValue,
+           let expiryString = copilotExpiry,
+           let expiresAt = Int(expiryString) {
+            // Calculate refresh interval from expiry (default: refresh 5 min before expiry)
+            let refreshIn = max(expiresAt - Int(Date().timeIntervalSince1970) - 300, 60)
+            copilotToken = CopilotTokenResponse(
+                token: tokenValue,
+                expiresAt: expiresAt,
+                refreshIn: refreshIn,
+                username: copilotUsername
+            )
+        }
         
         // Update published properties
         if let token = copilotToken {
@@ -256,27 +293,76 @@ public class CopilotTokenStore: ObservableObject {
             // Start refresh if we have a valid token
             if !token.isExpired() {
                 startRefreshTimer()
-                logger.info("Loaded valid Copilot token from disk")
+                logger.info("Loaded valid Copilot token from Keychain")
             } else {
                 logger.warning("Loaded expired Copilot token, will need refresh")
             }
         } else if githubToken != nil {
             // Have a GitHub token but no Copilot token - exchange on first use
             isSignedIn = true
-            logger.info("Loaded GitHub token from disk, will exchange for Copilot token on first use")
+            logger.info("Loaded GitHub token from Keychain, will exchange for Copilot token on first use")
         }
     }
     
-    private func deleteTokensFromDisk() throws {
-        if FileManager.default.fileExists(atPath: tokensFilePath.path) {
-            try FileManager.default.removeItem(at: tokensFilePath)
+    /// Delete tokens from Keychain.
+    private func deleteTokensFromKeychain() async {
+        let keychain = KeychainManager.shared
+        try? await keychain.delete(for: keychainAccountGitHub)
+        try? await keychain.delete(for: keychainAccountCopilotToken)
+        try? await keychain.delete(for: keychainAccountCopilotExpiry)
+        try? await keychain.delete(for: keychainAccountCopilotUsername)
+    }
+    
+    /// Migrate tokens from legacy plaintext file to Keychain.
+    ///
+    /// Reads the old `~/.config/sam/github_tokens.json` file, stores tokens
+    /// in the Keychain, and deletes the plaintext file.
+    private func migrateFromLegacyFile() async throws {
+        let fileManager = FileManager.default
+        let filePath = legacyTokensFilePath
+        
+        guard fileManager.fileExists(atPath: filePath.path) else {
+            return // No legacy file to migrate
+        }
+        
+        logger.info("Found legacy token file, migrating to Keychain: \(filePath.path)")
+        
+        guard let data = try? Data(contentsOf: filePath),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            logger.warning("Failed to read legacy token file, skipping migration")
+            return
+        }
+        
+        let keychain = KeychainManager.shared
+        
+        // Migrate GitHub token
+        if let githubTokenValue = json["githubToken"] as? String {
+            try await keychain.store(secret: githubTokenValue, for: keychainAccountGitHub)
+        }
+        
+        // Migrate Copilot token components
+        if let copilotDict = json["copilotToken"] as? [String: Any] {
+            if let tokenValue = copilotDict["token"] as? String {
+                try await keychain.store(secret: tokenValue, for: keychainAccountCopilotToken)
+            }
+            if let expiresAt = copilotDict["expiresAt"] as? Double {
+                try await keychain.store(secret: String(Int(expiresAt)), for: keychainAccountCopilotExpiry)
+            }
+            if let username = copilotDict["username"] as? String {
+                try await keychain.store(secret: username, for: keychainAccountCopilotUsername)
+            }
+        }
+        
+        // Delete the plaintext file after successful migration
+        do {
+            try fileManager.removeItem(at: filePath)
+            logger.info("Successfully migrated tokens from legacy file and deleted plaintext file")
+        } catch {
+            logger.warning("Migrated tokens to Keychain but failed to delete legacy file: \(error.localizedDescription)")
+            // Try to at least zero out the file contents
+            try? Data().write(to: filePath)
         }
     }
-}
-
-private struct TokensStorage: Codable {
-    let githubToken: String?
-    let copilotToken: CopilotTokenResponse?
 }
 
 public enum TokenStoreError: LocalizedError {
