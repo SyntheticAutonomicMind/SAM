@@ -361,7 +361,14 @@ public class LlamaProvider: AIProvider {
 
     /// Build a sampler config from a request, falling back to defaults.
     private func buildSamplerConfig(from request: OpenAIChatRequest) -> LlamaContext.SamplerConfig {
-        var config = LlamaContext.SamplerConfig()
+        /// Per-request values win, but unset fields fall back to the
+        /// user's Settings pane values via the global LlamaConfiguration.
+        let global = getGlobalLlamaConfiguration()
+        var config = LlamaContext.SamplerConfig(
+            temperature: Float(global.temperature),
+            topP: Float(global.topP),
+            repetitionPenalty: Float(global.repetitionPenalty)
+        )
         if let temperature = request.temperature {
             config.temperature = Float(temperature)
         }
@@ -440,7 +447,10 @@ public class LlamaProvider: AIProvider {
 actor LlamaEngine {
     private let modelPath: String
     private var context: LlamaContext?
-
+    /// The LlamaContext init reads getGlobalLlamaConfiguration() directly
+    /// to install sampling defaults, so the engine does not need to track
+    /// its own copy. We keep the init parameter for explicit per-engine
+    /// overrides (e.g., tests or power users) but it is optional.
     init(modelPath: String) {
         self.modelPath = modelPath
     }
@@ -458,6 +468,11 @@ actor LlamaEngine {
             return context
         }
         let new = try LlamaContext.create_context(path: modelPath)
+        /// The LlamaContext init installs the global sampling
+        /// defaults from getGlobalLlamaConfiguration(), so no
+        /// setSampling hop is needed here. Per-request overrides
+        /// reach setSampling from generateStream and take
+        /// precedence.
         context = new
         return new
     }

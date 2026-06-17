@@ -5,6 +5,7 @@ import Foundation
 import llama
 import Logging
 import Metal
+import ConfigurationSystem
 
 // MARK: - Logging
 
@@ -111,16 +112,44 @@ actor LlamaContext {
         self.contextSize = contextSize
         self.batchSize = batchSize
         self.tokens_list = []
+        /// Initial sampling chain built from the global LlamaConfiguration
+        /// so the Settings pane temperature / topP / repetition penalty
+        /// are honored as defaults. setSampling replaces it on every
+        /// per-request call to apply chat-popover overrides.
+        let initialSampler = getGlobalLlamaConfiguration()
+        let defaultSamplerConfig = SamplerConfig(
+            temperature: Float(initialSampler.temperature),
+            topP: Float(initialSampler.topP),
+            repetitionPenalty: Float(initialSampler.repetitionPenalty)
+        )
 
         /// Initialize batch with BATCH SIZE, not full context size Using full context (32k) causes massive memory allocation and crashes Batch size should be 512-2048 for prompt processing efficiency.
         self.batch = llama_batch_init(batchSize, 0, 1)
         self.temporary_invalid_cchars = []
 
-        /// Initialize sampling chain with reasonable defaults.
+        /// Build the initial sampler chain inline because the init
+        /// context cannot call actor-isolated methods. setSampling
+        /// duplicates this same chain build for per-request overrides.
         let sparams = llama_sampler_chain_default_params()
         self.sampling = llama_sampler_chain_init(sparams)
-        llama_sampler_chain_add(self.sampling, llama_sampler_init_temp(0.7))
-        llama_sampler_chain_add(self.sampling, llama_sampler_init_dist(UInt32(Date().timeIntervalSince1970)))
+        if defaultSamplerConfig.repetitionPenalty != nil,
+           defaultSamplerConfig.repetitionPenalty ?? 1.0 != 1.0 {
+            llama_sampler_chain_add(
+                self.sampling,
+                llama_sampler_init_penalties(64, defaultSamplerConfig.repetitionPenalty ?? 1.0, 0.0, 0.0)
+            )
+        }
+        if let topP = defaultSamplerConfig.topP, topP > 0.0 && topP < 1.0 {
+            llama_sampler_chain_add(self.sampling, llama_sampler_init_top_p(topP, 1))
+        }
+        let initTemperature = defaultSamplerConfig.temperature ?? 0.7
+        if initTemperature <= 0.0 {
+            llama_sampler_chain_add(self.sampling, llama_sampler_init_greedy())
+        } else {
+            llama_sampler_chain_add(self.sampling, llama_sampler_init_temp(initTemperature))
+        }
+        let initSeed = defaultSamplerConfig.seed ?? UInt32(Date().timeIntervalSince1970)
+        llama_sampler_chain_add(self.sampling, llama_sampler_init_dist(initSeed))
 
         vocab = llama_model_get_vocab(model)
 
@@ -298,6 +327,12 @@ actor LlamaContext {
     static func create_context(path: String) throws -> LlamaContext {
         llamaLogger.info("Creating LlamaContext from path: \(path)")
 
+        /// Resolve the active configuration. If the caller did not provide one,
+        /// fall back to the global user preference so the Settings pane values
+        /// are honored automatically.
+        let activeConfig = getGlobalLlamaConfiguration()
+        llamaLogger.info("LlamaContext configuration: nGpuLayers=\(activeConfig.nGpuLayers) nCtx=\(activeConfig.nCtx) nBatch=\(activeConfig.nBatch) topP=\(activeConfig.topP) temp=\(activeConfig.temperature) repPenalty=\(activeConfig.repetitionPenalty)")
+
         llama_backend_init()
         var model_params = llama_model_default_params()
 
@@ -305,8 +340,9 @@ actor LlamaContext {
         model_params.n_gpu_layers = 0
         llamaLogger.warning("Running on simulator, forcing n_gpu_layers = 0")
         #else
-        /// Use Metal acceleration on real devices.
-        model_params.n_gpu_layers = 999
+        /// Honor the user's nGpuLayers setting when positive; -1 means
+        /// "auto" and we offload every layer to the Metal device.
+        model_params.n_gpu_layers = activeConfig.nGpuLayers > 0 ? Int32(activeConfig.nGpuLayers) : 999
         #endif
 
         /// PERFORMANCE: Enable mmap for faster model loading and memory efficiency.
@@ -353,14 +389,31 @@ actor LlamaContext {
         /// Use minimum of: model max, RAM limit, and GPU limit.
         var n_ctx = min(model_ctx_train, min(maxContextFromRAM, maxContextFromGPU))
 
-        /// Safety: Clamp to reasonable range (4k-32k for most models).
-        let minContext: Int32 = 4096
-        let maxContext: Int32 = 32768
-        let originalCtx = n_ctx
-        n_ctx = max(minContext, min(n_ctx, maxContext))
+        /// If the user pinned a specific context size, use it (clamped to the
+        /// model's training context). Otherwise, fall back to the
+        /// auto-detected value with safety clamping. This honors the
+        /// Settings pane nCtx slider.
+        if activeConfig.nCtx > 0 {
+            let pinnedCtx = Int32(activeConfig.nCtx)
+            let clamped = min(pinnedCtx, model_ctx_train)
+            if clamped != pinnedCtx {
+                llamaLogger.warning("CONTEXT_CLAMPED: User requested \(pinnedCtx) tokens, clamped to model training max \(model_ctx_train)")
+            }
+            let originalPinned = n_ctx
+            n_ctx = clamped
+            if originalPinned != n_ctx {
+                llamaLogger.info("CONTEXT_OVERRIDE: Auto-detected=\(originalPinned) -> User-pinned=\(n_ctx)")
+            }
+        } else {
+            /// Safety: Clamp to reasonable range (4k-32k for most models).
+            let minContext: Int32 = 4096
+            let maxContext: Int32 = 32768
+            let originalCtx = n_ctx
+            n_ctx = max(minContext, min(n_ctx, maxContext))
 
-        if originalCtx != n_ctx {
-            llamaLogger.warning("WARNING: CONTEXT_CLAMPED: Adjusted context from \(originalCtx) to \(n_ctx) (min=\(minContext), max=\(maxContext))")
+            if originalCtx != n_ctx {
+                llamaLogger.warning("WARNING: CONTEXT_CLAMPED: Adjusted context from \(originalCtx) to \(n_ctx) (min=\(minContext), max=\(maxContext))")
+            }
         }
 
         llamaLogger.error("LLAMA_CONTEXT_DEBUG: selected_ctx=\(n_ctx), model_max=\(model_ctx_train), ram_limit=\(maxContextFromRAM), gpu_limit=\(maxContextFromGPU)")
@@ -369,11 +422,19 @@ actor LlamaContext {
         llamaLogger.info("Memory: available_ram=\(availableMemory/(1024*1024*1024))GB, available_gpu=\(availableGPUMemory/(1024*1024*1024))GB, model_size=\(modelSize/(1024*1024*1024))GB, bytes_per_token=\(bytesPerToken), total_ram=\(physicalMemory/(1024*1024*1024))GB)")
 
         /// PRIORITY 2 OPTIMIZATION: Adaptive batch sizing based on model characteristics.
-        let n_batch = calculateOptimalBatchSize(
+        /// If the user pinned a specific batch size, use it directly.
+        /// Otherwise, fall back to the auto-detected value.
+        let n_batch: Int32
+        if activeConfig.nBatch > 0 {
+            n_batch = Int32(activeConfig.nBatch)
+            llamaLogger.info("BATCH_OVERRIDE: User-pinned batch size: \(n_batch)")
+        } else {
+            n_batch = calculateOptimalBatchSize(
             modelSize: modelSize,
             availableGPUMemory: availableGPUMemory,
             contextSize: n_ctx
         )
+        }
 
         /// PRIORITY 4 OPTIMIZATION: Adaptive threading based on CPU cores and model size.
         let totalCores = ProcessInfo.processInfo.processorCount
@@ -783,12 +844,12 @@ actor LlamaContext {
     func setSampling(_ config: SamplerConfig) {
         guard !isDestroyed else { return }
 
-        /// Tear down the old chain and build a fresh one.
-        llama_sampler_free(sampling)
+        if sampling != nil {
+            llama_sampler_free(sampling)
+        }
         let sparams = llama_sampler_chain_default_params()
         sampling = llama_sampler_chain_init(sparams)
 
-        /// Penalties first (so they apply before filtering).
         if let repetitionPenalty = config.repetitionPenalty, repetitionPenalty != 1.0 {
             llama_sampler_chain_add(
                 sampling,
@@ -796,14 +857,10 @@ actor LlamaContext {
             )
         }
 
-        /// Nucleus filter (top-p) before temperature - this is the order
-        /// llama.cpp examples use and matches the documented sampler_chain
-        /// example in llama.h.
         if let topP = config.topP, topP > 0.0 && topP < 1.0 {
             llama_sampler_chain_add(sampling, llama_sampler_init_top_p(topP, 1))
         }
 
-        /// Temperature (default 0.7 to match original behavior).
         let temperature = config.temperature ?? 0.7
         if temperature <= 0.0 {
             llama_sampler_chain_add(sampling, llama_sampler_init_greedy())
@@ -811,8 +868,6 @@ actor LlamaContext {
             llama_sampler_chain_add(sampling, llama_sampler_init_temp(temperature))
         }
 
-        /// Distribution sampler with a time-based seed keeps generation
-        /// non-deterministic by default, which matches the original chain.
         let seed = config.seed ?? UInt32(Date().timeIntervalSince1970)
         llama_sampler_chain_add(sampling, llama_sampler_init_dist(seed))
     }
