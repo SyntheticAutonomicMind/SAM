@@ -606,10 +606,20 @@ extension AgentOrchestrator {
         /// Build OpenAI request WITHOUT tools (we'll inject them next) Use conversation's maxTokens setting (user-configured, defaults to 8192).
         /// CRITICAL: Ensure maxTokens is at least 4096 to prevent truncated responses
         let effectiveMaxTokens = max(conversation.settings.maxTokens ?? 8192, 4096)
+        /// User-configured sampling parameters (per-conversation sliders in chat popover).
+        /// These used to be hardcoded at 0.7 — that meant every chat ran at the same temperature
+        /// regardless of what the user set. Wires conversation.settings -> OpenAIChatRequest -> provider.
+        let samplingTemperature = conversation.settings.temperature
+        let samplingTopP = conversation.settings.topP
+        /// Repetition penalty is per-provider (MLX config / llama.cpp config), not per-conversation.
+        /// Passed through when set by the request, otherwise provider uses its default.
+        let samplingRepetitionPenalty: Double? = nil
         let baseRequest = OpenAIChatRequest(
             model: model,
             messages: messages,
-            temperature: 0.7,
+            temperature: samplingTemperature,
+            topP: samplingTopP,
+            repetitionPenalty: samplingRepetitionPenalty,
             maxTokens: effectiveMaxTokens,
             stream: false,
             samConfig: enhancedSamConfig,
@@ -635,6 +645,8 @@ extension AgentOrchestrator {
             model: requestWithTools.model,
             messages: fixedMessages,
             temperature: requestWithTools.temperature,
+            topP: requestWithTools.topP,
+            repetitionPenalty: requestWithTools.repetitionPenalty,
             maxTokens: requestWithTools.maxTokens,
             stream: requestWithTools.stream,
             tools: requestWithTools.tools,
@@ -701,7 +713,9 @@ extension AgentOrchestrator {
                     let compressedBaseRequest = OpenAIChatRequest(
                         model: model,
                         messages: messages,
-                        temperature: 0.7,
+                        temperature: samplingTemperature,
+                        topP: samplingTopP,
+                        repetitionPenalty: samplingRepetitionPenalty,
                         maxTokens: conversation.settings.maxTokens ?? 8192,
                         stream: false,
                         samConfig: enhancedSamConfig,
@@ -757,6 +771,8 @@ extension AgentOrchestrator {
                         model: compressedRequestWithTools.model,
                         messages: finalMessages,
                         temperature: compressedRequestWithTools.temperature,
+                        topP: compressedRequestWithTools.topP,
+                        repetitionPenalty: compressedRequestWithTools.repetitionPenalty,
                         maxTokens: compressedRequestWithTools.maxTokens,
                         stream: compressedRequestWithTools.stream,
                         tools: compressedRequestWithTools.tools,
@@ -1663,10 +1679,18 @@ extension AgentOrchestrator {
         /// Build OpenAI request with statefulMarker for GitHub Copilot session continuity Use conversation's maxTokens setting (user-configured, defaults to 8192).
         /// CRITICAL: Ensure maxTokens is at least 4096 to prevent truncated responses
         let effectiveMaxTokensStreaming = max(conversation.settings.maxTokens ?? 8192, 4096)
+        /// User-configured sampling parameters (per-conversation sliders in chat popover).
+        /// Wires conversation.settings -> OpenAIChatRequest -> provider.
+        let samplingTemperatureStreaming = conversation.settings.temperature
+        let samplingTopPStreaming = conversation.settings.topP
+        /// Repetition penalty is per-provider (MLX config / llama.cpp config), not per-conversation.
+        let samplingRepetitionPenaltyStreaming: Double? = nil
         let baseRequest = OpenAIChatRequest(
             model: model,
             messages: messages,
-            temperature: 0.7,
+            temperature: samplingTemperatureStreaming,
+            topP: samplingTopPStreaming,
+            repetitionPenalty: samplingRepetitionPenaltyStreaming,
             maxTokens: effectiveMaxTokensStreaming,
             stream: true,
             samConfig: enhancedSamConfig,

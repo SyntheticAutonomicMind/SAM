@@ -91,9 +91,22 @@ public class MLXProvider: AIProvider {
             toolsEnabled: request.samConfig?.mcpToolsEnabled ?? true
         )
 
-        let temperature = Float(request.temperature ?? 0.8)
-        let topP = Float(request.topP ?? 0.95)
-        let maxTokens = request.maxTokens ?? 2048
+        /// Per-provider MLX defaults (kvBits, kvGroupSize, maxKVSize, etc.) live in
+        /// ProviderConfiguration.mlxConfig. Per-conversation sampling (temperature, topP)
+        /// comes from the request (set by AgentOrchestrator from conversation.settings).
+        /// When the request specifies a repetitionPenalty, it overrides the MLX preset.
+        let mlxConfig = self.config.mlxConfig ?? getGlobalMLXConfiguration()
+        let temperature = Float(request.temperature ?? mlxConfig.temperature)
+        let topP = Float(request.topP ?? mlxConfig.topP)
+        let maxTokens = request.maxTokens ?? mlxConfig.maxTokens
+        let repetitionPenalty: Float? = request.repetitionPenalty.map(Float.init)
+            ?? mlxConfig.repetitionPenalty.map(Float.init)
+        let repetitionContextSize = mlxConfig.repetitionContextSize
+        let kvBits: Int? = mlxConfig.kvBits
+        let kvGroupSize = mlxConfig.kvGroupSize
+        let quantizedKVStart = mlxConfig.quantizedKVStart
+        let maxKVSize: Int? = mlxConfig.maxKVSize
+        let prefillStepSize = mlxConfig.prefillStepSize
 
         let events = mlxEngine.generateStream(
             model: model,
@@ -103,7 +116,14 @@ public class MLXProvider: AIProvider {
             cache: conversationCaches[requestConversationId ?? ""],
             maxTokens: maxTokens,
             temperature: temperature,
-            topP: topP
+            topP: topP,
+            repetitionPenalty: repetitionPenalty,
+            repetitionContextSize: repetitionContextSize,
+            kvBits: kvBits,
+            kvGroupSize: kvGroupSize,
+            quantizedKVStart: quantizedKVStart,
+            maxKVSize: maxKVSize,
+            prefillStepSize: prefillStepSize
         )
 
         var accumulated = ""
@@ -173,9 +193,20 @@ public class MLXProvider: AIProvider {
                             toolsEnabled: request.samConfig?.mcpToolsEnabled ?? true
                         )
 
-                        let temperature = Float(request.temperature ?? 0.8)
-                        let topP = Float(request.topP ?? 0.95)
-                        let maxTokens = request.maxTokens ?? 2048
+                        /// Per-provider MLX defaults from ProviderConfiguration.mlxConfig.
+                        /// Per-conversation sampling (temperature, topP) comes from the request.
+                        let mlxConfig = self.config.mlxConfig ?? getGlobalMLXConfiguration()
+                        let temperature = Float(request.temperature ?? mlxConfig.temperature)
+                        let topP = Float(request.topP ?? mlxConfig.topP)
+                        let maxTokens = request.maxTokens ?? mlxConfig.maxTokens
+                        let repetitionPenalty: Float? = request.repetitionPenalty.map(Float.init)
+                            ?? mlxConfig.repetitionPenalty.map(Float.init)
+                        let repetitionContextSize = mlxConfig.repetitionContextSize
+                        let kvBits: Int? = mlxConfig.kvBits
+                        let kvGroupSize = mlxConfig.kvGroupSize
+                        let quantizedKVStart = mlxConfig.quantizedKVStart
+                        let maxKVSize: Int? = mlxConfig.maxKVSize
+                        let prefillStepSize = mlxConfig.prefillStepSize
 
                         let events = self.mlxEngine.generateStream(
                             model: model,
@@ -185,7 +216,14 @@ public class MLXProvider: AIProvider {
                             cache: self.conversationCaches[requestConversationId ?? ""],
                             maxTokens: maxTokens,
                             temperature: temperature,
-                            topP: topP
+                            topP: topP,
+                            repetitionPenalty: repetitionPenalty,
+                            repetitionContextSize: repetitionContextSize,
+                            kvBits: kvBits,
+                            kvGroupSize: kvGroupSize,
+                            quantizedKVStart: quantizedKVStart,
+                            maxKVSize: maxKVSize,
+                            prefillStepSize: prefillStepSize
                         )
 
                         var accumulated = ""
@@ -483,7 +521,14 @@ public final class MLXEngine {
         cache: [KVCache]?,
         maxTokens: Int,
         temperature: Float,
-        topP: Float
+        topP: Float,
+        repetitionPenalty: Float? = nil,
+        repetitionContextSize: Int = 20,
+        kvBits: Int? = nil,
+        kvGroupSize: Int = 64,
+        quantizedKVStart: Int = 0,
+        maxKVSize: Int? = nil,
+        prefillStepSize: Int = 512
     ) -> AsyncThrowingStream<LocalProviderEvent, Error> {
         return AsyncThrowingStream { continuation in
             Task { @MainActor in
@@ -509,8 +554,15 @@ public final class MLXEngine {
 
                     let parameters = GenerateParameters(
                         maxTokens: maxTokens,
+                        maxKVSize: maxKVSize,
+                        kvBits: kvBits,
+                        kvGroupSize: kvGroupSize,
+                        quantizedKVStart: quantizedKVStart,
                         temperature: temperature,
-                        topP: topP
+                        topP: topP,
+                        repetitionPenalty: repetitionPenalty,
+                        repetitionContextSize: repetitionContextSize,
+                        prefillStepSize: prefillStepSize
                     )
 
                     var completionChars = 0
