@@ -92,6 +92,11 @@ actor LlamaContext {
     /// This is the actual limit for how many tokens to generate, separate from context size.
     var maxTokensLimit: Int = 4096
 
+    /// User-supplied stop sequences. When ANY of these strings appears in
+    /// the accumulated output, generation halts. Empty by default - the
+    /// built-in EOG token/text detection still runs.
+    private var stopSequences: [String] = []
+
     /// Context size limit (for safety checks).
     private let contextSize: Int32
 
@@ -709,6 +714,17 @@ actor LlamaContext {
             return new_token_str
         }
 
+        /// User-supplied stop sequence check.
+        /// When any caller-supplied stop string appears in the accumulated text,
+        /// halt generation. Caller can clear via setStopSequences(nil).
+        for seq in stopSequences where !seq.isEmpty {
+            if accumulatedText.contains(seq) {
+                llamaLogger.info("STOP_SEQUENCE_HIT: '\(seq)' detected at position \(tokensGenerated)")
+                is_done = true
+                return new_token_str
+            }
+        }
+
         /// Keep only last 50 chars for EOG detection to avoid memory growth
         if accumulatedText.count > 50 {
             accumulatedText = String(accumulatedText.suffix(50))
@@ -753,6 +769,87 @@ actor LlamaContext {
     /// This should be called before completion_init() to control how many tokens are generated.
     func setMaxTokensLimit(_ limit: Int) {
         maxTokensLimit = limit
+    }
+
+    /// Configure the sampler chain from a struct of parameters.
+    ///
+    /// Replaces the current sampler chain with one built from the supplied config.
+    /// The chain is rebuilt on every call so a single context can serve requests
+    /// with different sampling parameters. Defaults mirror the original hard-coded
+    /// chain (temperature 0.7, no penalties, no top-p filter).
+    ///
+    /// - Parameter config: Sampling parameters. Use `SamplerConfig()` for original
+    ///   behavior; supply non-nil values to override.
+    func setSampling(_ config: SamplerConfig) {
+        guard !isDestroyed else { return }
+
+        /// Tear down the old chain and build a fresh one.
+        llama_sampler_free(sampling)
+        let sparams = llama_sampler_chain_default_params()
+        sampling = llama_sampler_chain_init(sparams)
+
+        /// Penalties first (so they apply before filtering).
+        if let repetitionPenalty = config.repetitionPenalty, repetitionPenalty != 1.0 {
+            llama_sampler_chain_add(
+                sampling,
+                llama_sampler_init_penalties(64, repetitionPenalty, 0.0, 0.0)
+            )
+        }
+
+        /// Nucleus filter (top-p) before temperature - this is the order
+        /// llama.cpp examples use and matches the documented sampler_chain
+        /// example in llama.h.
+        if let topP = config.topP, topP > 0.0 && topP < 1.0 {
+            llama_sampler_chain_add(sampling, llama_sampler_init_top_p(topP, 1))
+        }
+
+        /// Temperature (default 0.7 to match original behavior).
+        let temperature = config.temperature ?? 0.7
+        if temperature <= 0.0 {
+            llama_sampler_chain_add(sampling, llama_sampler_init_greedy())
+        } else {
+            llama_sampler_chain_add(sampling, llama_sampler_init_temp(temperature))
+        }
+
+        /// Distribution sampler with a time-based seed keeps generation
+        /// non-deterministic by default, which matches the original chain.
+        let seed = config.seed ?? UInt32(Date().timeIntervalSince1970)
+        llama_sampler_chain_add(sampling, llama_sampler_init_dist(seed))
+    }
+
+    /// Set the stop sequences used by the text-EOG detector.
+    ///
+    /// The completion loop checks accumulated text against this list on every
+    /// token. When any sequence appears, generation halts. The built-in EOG
+    /// detection (`<|im_end|>`, `<|endoftext|>`, `</s>`) always runs in addition.
+    ///
+    /// - Parameter sequences: Stop strings. Pass `nil` or empty to clear.
+    func setStopSequences(_ sequences: [String]?) {
+        stopSequences = sequences ?? []
+    }
+
+    /// Sampling parameters applied to the next generation.
+    ///
+    /// All fields are optional; `nil` falls back to the original hard-coded
+    /// defaults (temperature 0.7, no top-p filter, no penalties). Only the
+    /// supplied fields are applied.
+    public struct SamplerConfig: Sendable {
+        public var temperature: Float?
+        public var topP: Float?
+        public var repetitionPenalty: Float?
+        public var seed: UInt32?
+
+        public init(
+            temperature: Float? = nil,
+            topP: Float? = nil,
+            repetitionPenalty: Float? = nil,
+            seed: UInt32? = nil
+        ) {
+            self.temperature = temperature
+            self.topP = topP
+            self.repetitionPenalty = repetitionPenalty
+            self.seed = seed
+        }
     }
 
     /// Explicitly free all Metal/llama resources. Call before app exit to avoid
