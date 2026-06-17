@@ -619,6 +619,59 @@ public class EndpointManager: ObservableObject {
         }
     }
 
+    /// Register (or replace) a remote llama.cpp endpoint that points at a
+    /// locally-spawned CachyLLama server. Used by LocalLlamaServerPane
+    /// after the server is up so the user can immediately pick its models
+    /// from the provider list without retyping URLs.
+    ///
+    /// The model name is the GGUF file's basename, matching the value
+    /// CachyLLama reports in /v1/models.
+    @discardableResult
+    public func registerLocalCachyLLamaServer(
+        apiKey: String = "no-key-required",
+        baseURL: String,
+        modelName: String,
+        providerId: String
+    ) -> Bool {
+        let config = ProviderConfiguration(
+            providerId: providerId,
+            providerType: .remoteLlama,
+            isEnabled: true,
+            apiKey: apiKey,
+            baseURL: baseURL,
+            models: [modelName],
+            maxTokens: nil,
+            temperature: nil,
+            customHeaders: [:],
+            timeoutSeconds: 600,
+            retryCount: 1
+        )
+        providerConfigs[providerId] = config
+        saveProviderConfiguration(config, for: providerId)
+        providers[providerId] = createProvider(type: .remoteLlama, config: config)
+        /// Persist the provider ID so it survives restart.
+        var savedIds = UserDefaults.standard.stringArray(forKey: "saved_provider_ids") ?? []
+        if !savedIds.contains(providerId) {
+            savedIds.append(providerId)
+            UserDefaults.standard.set(savedIds, forKey: "saved_provider_ids")
+        }
+        logger.info("Registered local CachyLLama server provider '\(providerId)' at \(baseURL) (model: \(modelName))")
+        return true
+    }
+
+    /// Remove a previously-registered provider (used when the user stops
+    /// the local server). Idempotent.
+    public func unregisterProvider(_ providerId: String) {
+        providers.removeValue(forKey: providerId)
+        providerConfigs.removeValue(forKey: providerId)
+        UserDefaults.standard.removeObject(forKey: "provider_config_\(providerId)")
+        if var savedIds = UserDefaults.standard.stringArray(forKey: "saved_provider_ids") {
+            savedIds.removeAll { $0 == providerId }
+            UserDefaults.standard.set(savedIds, forKey: "saved_provider_ids")
+        }
+        logger.info("Unregistered provider '\(providerId)'")
+    }
+
     // MARK: - Provider Management
 
     private func setupProviders() {
