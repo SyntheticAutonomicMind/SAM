@@ -79,6 +79,18 @@ extension OpenAIChatRequest {
             "stream": streamEnabled
         ]
 
+        /// CachyLLama reads the OpenAI "user" field for slot affinity and
+        /// per-user concurrency limits. Other providers (OpenAI, Anthropic,
+        /// etc.) either use it for abuse detection or ignore it, so the
+        /// field is always safe to send.
+        ///
+        /// Default to conversationId when user is not explicitly set, so
+        /// the same conversation always lands on the same slot even if
+        /// callers forget to populate the dedicated field.
+        if let user = user ?? conversationId {
+            requestBody["user"] = user
+        }
+
         // Add tools if present
         if let tools = tools, !tools.isEmpty {
             var serializedTools = tools.map { tool in

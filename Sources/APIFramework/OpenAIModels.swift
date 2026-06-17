@@ -142,6 +142,11 @@ public struct OpenAIChatRequest: Content {
     public let maxTokens: Int?
     public let stream: Bool?
     public let tools: [OpenAITool]?
+    /// Stable per-conversation identifier sent as the OpenAI "user" field.
+    /// CachyLLama uses this for slot affinity and per-user concurrency
+    /// (--max-concurrent-per-user), so conversations that share a user
+    /// get the same slot and KV cache. Other providers ignore it.
+    public let user: String?
 
     /// SAM-specific extensions for advanced configuration.
     public let samConfig: SAMConfig?
@@ -169,7 +174,7 @@ public struct OpenAIChatRequest: Content {
     /// Personality ID to apply (adds trait-based prompt additions after system prompt)
     public let personalityId: String?
 
-    public init(model: String, messages: [OpenAIChatMessage], temperature: Double? = nil, topP: Double? = nil, repetitionPenalty: Double? = nil, maxTokens: Int? = nil, stream: Bool? = nil, tools: [OpenAITool]? = nil, samConfig: SAMConfig? = nil, contextId: String? = nil, enableMemory: Bool? = nil, sessionId: String? = nil, conversationId: String? = nil, statefulMarker: String? = nil, iterationNumber: Int? = nil, topic: String? = nil, miniPrompts: [String]? = nil, personalityId: String? = nil) {
+    public init(model: String, messages: [OpenAIChatMessage], temperature: Double? = nil, topP: Double? = nil, repetitionPenalty: Double? = nil, maxTokens: Int? = nil, stream: Bool? = nil, tools: [OpenAITool]? = nil, user: String? = nil, samConfig: SAMConfig? = nil, contextId: String? = nil, enableMemory: Bool? = nil, sessionId: String? = nil, conversationId: String? = nil, statefulMarker: String? = nil, iterationNumber: Int? = nil, topic: String? = nil, miniPrompts: [String]? = nil, personalityId: String? = nil) {
         self.model = model
         self.messages = messages
         self.temperature = temperature
@@ -178,6 +183,7 @@ public struct OpenAIChatRequest: Content {
         self.maxTokens = maxTokens
         self.stream = stream
         self.tools = tools
+        self.user = user
         self.samConfig = samConfig
         self.contextId = contextId
         self.enableMemory = enableMemory
@@ -192,6 +198,7 @@ public struct OpenAIChatRequest: Content {
 
     enum CodingKeys: String, CodingKey {
         case model, messages, temperature, stream, tools
+        case user
         case topP = "top_p"
         case repetitionPenalty = "repetition_penalty"
         case maxTokens = "max_tokens"
