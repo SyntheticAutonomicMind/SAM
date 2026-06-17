@@ -120,6 +120,8 @@ actor LlamaContext {
         let defaultSamplerConfig = SamplerConfig(
             temperature: Float(initialSampler.temperature),
             topP: Float(initialSampler.topP),
+            topK: Int32(initialSampler.topK),
+            minP: Float(initialSampler.minP),
             repetitionPenalty: Float(initialSampler.repetitionPenalty)
         )
 
@@ -132,6 +134,14 @@ actor LlamaContext {
         /// duplicates this same chain build for per-request overrides.
         let sparams = llama_sampler_chain_default_params()
         self.sampling = llama_sampler_chain_init(sparams)
+        /// Sampler order matches setSampling: top-k -> min-p ->
+        /// penalties -> top-p -> temperature -> distribution.
+        if let topK = defaultSamplerConfig.topK, topK > 0 {
+            llama_sampler_chain_add(self.sampling, llama_sampler_init_top_k(topK))
+        }
+        if let minP = defaultSamplerConfig.minP, minP > 0.0 && minP < 1.0 {
+            llama_sampler_chain_add(self.sampling, llama_sampler_init_min_p(minP, 1))
+        }
         if defaultSamplerConfig.repetitionPenalty != nil,
            defaultSamplerConfig.repetitionPenalty ?? 1.0 != 1.0 {
             llama_sampler_chain_add(
@@ -850,6 +860,23 @@ actor LlamaContext {
         let sparams = llama_sampler_chain_default_params()
         sampling = llama_sampler_chain_init(sparams)
 
+        /// Sampler order follows the llama.cpp example chain: top-k ->
+        /// top-p -> min-p -> penalties -> temperature -> dist. The order
+        /// matters because each stage prunes the candidate set before
+        /// the next stage applies its filter.
+
+        /// Top-K first: drops low-probability tokens before more
+        /// expensive filters run. Disabled when topK <= 0.
+        if let topK = config.topK, topK > 0 {
+            llama_sampler_chain_add(sampling, llama_sampler_init_top_k(topK))
+        }
+
+        /// Min-P: dynamic nucleus filter that adapts to confidence.
+        /// When minP > 0 and < 1, drops tokens below minP * max_prob.
+        if let minP = config.minP, minP > 0.0 && minP < 1.0 {
+            llama_sampler_chain_add(sampling, llama_sampler_init_min_p(minP, 1))
+        }
+
         if let repetitionPenalty = config.repetitionPenalty, repetitionPenalty != 1.0 {
             llama_sampler_chain_add(
                 sampling,
@@ -891,17 +918,23 @@ actor LlamaContext {
     public struct SamplerConfig: Sendable {
         public var temperature: Float?
         public var topP: Float?
+        public var topK: Int32?
+        public var minP: Float?
         public var repetitionPenalty: Float?
         public var seed: UInt32?
 
         public init(
             temperature: Float? = nil,
             topP: Float? = nil,
+            topK: Int32? = nil,
+            minP: Float? = nil,
             repetitionPenalty: Float? = nil,
             seed: UInt32? = nil
         ) {
             self.temperature = temperature
             self.topP = topP
+            self.topK = topK
+            self.minP = minP
             self.repetitionPenalty = repetitionPenalty
             self.seed = seed
         }

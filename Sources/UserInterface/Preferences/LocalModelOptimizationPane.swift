@@ -25,6 +25,8 @@ public struct LocalModelOptimizationSection: View {
     @AppStorage("localModels.llama.customNCtx") private var llamaCustomNCtx: Int = 4096
     @AppStorage("localModels.llama.customNBatch") private var llamaCustomNBatch: Int = 512
     @AppStorage("localModels.llama.customTopP") private var llamaCustomTopP: Double = 0.95
+    @AppStorage("localModels.llama.customTopK") private var llamaCustomTopK: Int = 40
+    @AppStorage("localModels.llama.customMinP") private var llamaCustomMinP: Double = 0.05
     @AppStorage("localModels.llama.customTemperature") private var llamaCustomTemperature: Double = 0.8
     @AppStorage("localModels.llama.customRepetitionPenalty") private var llamaCustomRepetitionPenalty: Double = 1.1
     @AppStorage("localModels.llama.customMaxTokens") private var llamaCustomMaxTokens: Int = 2048
@@ -305,6 +307,24 @@ public struct LocalModelOptimizationSection: View {
                         .help("Nucleus sampling threshold (0.0-1.0, default: 0.95)")
 
                         HStack {
+                            Text("Top-K Sampling:")
+                            Spacer()
+                            TextField("", value: $llamaCustomTopK, formatter: NumberFormatter())
+                                .frame(width: 80)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .help("Restrict sampling to the K most likely tokens (0 = disabled, default: 40)")
+
+                        HStack {
+                            Text("Min-P Sampling:")
+                            Spacer()
+                            TextField("", value: $llamaCustomMinP, formatter: NumberFormatter())
+                                .frame(width: 80)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        .help("Drop tokens below minP * max probability (0.0-1.0, default: 0.05)")
+
+                        HStack {
                             Text("Repetition Penalty:")
                             Spacer()
                             TextField("", value: $llamaCustomRepetitionPenalty, formatter: NumberFormatter())
@@ -470,6 +490,8 @@ public struct LocalModelOptimizationSection: View {
                 topP: llamaCustomTopP,
                 temperature: llamaCustomTemperature,
                 repetitionPenalty: llamaCustomRepetitionPenalty,
+                topK: llamaCustomTopK,
+                minP: llamaCustomMinP,
                 maxTokens: llamaCustomMaxTokens
             )
         default: return SystemCapabilities.current.ramProfile.llamaConfiguration

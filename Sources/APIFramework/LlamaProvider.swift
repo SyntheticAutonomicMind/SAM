@@ -367,6 +367,8 @@ public class LlamaProvider: AIProvider {
         var config = LlamaContext.SamplerConfig(
             temperature: Float(global.temperature),
             topP: Float(global.topP),
+            topK: Int32(global.topK),
+            minP: Float(global.minP),
             repetitionPenalty: Float(global.repetitionPenalty)
         )
         if let temperature = request.temperature {
@@ -375,6 +377,8 @@ public class LlamaProvider: AIProvider {
         if let topP = request.topP {
             config.topP = Float(topP)
         }
+        /// top_k and min_p are Settings-pane values only; the OpenAI
+        /// request body does not expose them.
         if let repetitionPenalty = request.repetitionPenalty {
             config.repetitionPenalty = Float(repetitionPenalty)
         }

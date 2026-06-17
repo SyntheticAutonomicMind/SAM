@@ -244,6 +244,14 @@ public struct LlamaConfiguration: Codable, Equatable {
     /// Repetition penalty factor.
     public var repetitionPenalty: Double
 
+    /// Top-K sampling threshold (0 = disabled, default: 40).
+    /// Restricts sampling to the K most likely tokens.
+    public var topK: Int
+
+    /// Min-P sampling threshold (0 = disabled, default: 0.05).
+    /// Drops tokens whose probability is below minP * max_probability.
+    public var minP: Double
+
     /// Maximum tokens to generate per response.
     public var maxTokens: Int
 
@@ -254,6 +262,8 @@ public struct LlamaConfiguration: Codable, Equatable {
         topP: Double = 0.95,
         temperature: Double = 0.8,
         repetitionPenalty: Double = 1.1,
+        topK: Int = 40,
+        minP: Double = 0.05,
         maxTokens: Int = 2048
     ) {
         self.nGpuLayers = nGpuLayers
@@ -262,6 +272,8 @@ public struct LlamaConfiguration: Codable, Equatable {
         self.topP = topP
         self.temperature = temperature
         self.repetitionPenalty = repetitionPenalty
+        self.topK = topK
+        self.minP = minP
         self.maxTokens = maxTokens
     }
 
