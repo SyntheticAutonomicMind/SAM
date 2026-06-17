@@ -538,8 +538,8 @@ extension AgentOrchestrator {
             maxPromptTokens: modelContextLimit
         )
         messages = truncationResult.messages
-        var yarnCompressed = truncationResult.wasTrimmed
-        if yarnCompressed {
+        let wasTrimmed = truncationResult.wasTrimmed
+        if wasTrimmed {
             logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages (\(truncationResult.droppedMessages.count) dropped)")
 
             // Archive dropped messages for later recall
@@ -570,64 +570,15 @@ extension AgentOrchestrator {
             logger.debug("CONTEXT: Messages within budget, no trimming needed")
         }
 
-        /// Conditional statefulMarker based on YaRN compression + premium model status
-        /// Get model billing info to determine if model is premium
-        let modelIsPremium: Bool
-        if let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: model) {
-            modelIsPremium = billingInfo.isPremium
-            logger.debug("BILLING: Model '\(model)' premium=\(modelIsPremium), multiplier=\(billingInfo.multiplier)x")
+        /// Determine statefulMarker for session continuity.
+        /// Use currentMarker (may be cleared if trimming occurred) instead of statefulMarker.
+        /// Note: With usage-based billing (June 2026+), we always use the marker for session continuity
+        /// since billing is based on actual tokens consumed, not premium multipliers.
+        let checkpointMarker: String? = currentMarker ?? conversation.lastGitHubCopilotResponseId
+        if let marker = checkpointMarker {
+            logger.debug("Using statefulMarker for session continuity: \(marker.prefix(20))...")
         } else {
-            modelIsPremium = false
-            logger.debug("BILLING: Model '\(model)' billing info unavailable, treating as free model")
-        }
-
-        /// Determine whether to use statefulMarker for billing continuity
-        /// Use currentMarker (may be cleared if trimming occurred) instead of statefulMarker
-        let checkpointMarker: String?
-        if yarnCompressed && modelIsPremium {
-            /// YaRN compressed context AND model charges premium rates
-            /// Skip statefulMarker to avoid billing mismatch (compressed context != original context)
-            checkpointMarker = nil
-            logger.warning("BILLING: Skipping statefulMarker - YaRN compression active on premium model (prevents billing mismatch)")
-
-            /// Notify user about potential premium billing due to compression
-            /// Only notify for internal calls (not external API calls which have no UI)
-            if !isExternalAPICall {
-                let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: model)
-                let multiplierText = billingInfo?.multiplier.map { "\($0)x" } ?? "premium"
-
-                let warningMessage = """
-                WARNING: Context Compression Notice
-
-                Your conversation context has grown large. SAM automatically compressed the context to prevent errors.
-
-                Because you're using a premium model (\(model) - \(multiplierText) billing multiplier), this request may incur premium API charges.
-
-                This is normal for large conversations with many document imports or tool results. The compression ensures reliable operation.
-                """
-
-                /// Add warning as assistant message in conversation
-                /// Use non-blocking approach - don't wait for user, just inform
-                Task { @MainActor in
-                    conversation.messageBus?.addAssistantMessage(
-                        id: UUID(),
-                        content: warningMessage,
-                        timestamp: Date()
-                    )
-                    /// MessageBus handles persistence automatically
-                }
-
-                logger.info("BILLING: Added compression warning to conversation for user visibility")
-            }
-        } else {
-            /// No compression OR free model - preserve statefulMarker for billing continuity
-            /// CRITICAL: Use currentMarker (may be nil if trimming cleared it) instead of statefulMarker
-            checkpointMarker = currentMarker ?? conversation.lastGitHubCopilotResponseId
-            if let marker = checkpointMarker {
-                logger.debug("BILLING: Using statefulMarker for billing continuity: \(marker.prefix(20))...")
-            } else {
-                logger.debug("BILLING: No statefulMarker available (may have been cleared by payload trimming)")
-            }
+            logger.debug("No statefulMarker available (may have been cleared by payload trimming)")
         }
 
         /// Inject isExternalAPICall flag into samConfig for tool filtering. External API calls should never have user_collaboration tool (no UI to interact with).
@@ -742,9 +693,6 @@ extension AgentOrchestrator {
 
                     logger.debug("YARN_FORCED: Successfully compressed to \(processedContext.tokenCount) tokens (target was \(targetTokens))")
 
-                    /// Update yarnCompressed flag since we just compressed again
-                    yarnCompressed = true
-                    
                     /// Track compression telemetry
                     await conversationManager.incrementCompressionEvent(for: conversationId)
 

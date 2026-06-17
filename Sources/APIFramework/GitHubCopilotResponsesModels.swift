@@ -130,16 +130,6 @@ public struct GitHubCopilotModelInfo: Codable {
         return capabilities?.family
     }
 
-    /// Get premium status and multiplier from billing info.
-    /// Legacy: billing field removed from API June 2026. Returns false/nil for new responses.
-    public var isPremium: Bool {
-        return billing?.isPremium ?? false
-    }
-
-    public var premiumMultiplier: Double? {
-        return billing?.multiplier
-    }
-
     public struct ModelCapabilities: Codable, Sendable {
         public let family: String?
         public let limits: ModelLimits?
@@ -203,6 +193,8 @@ public struct GitHubCopilotModelInfo: Codable {
     }
 
     public struct ModelBilling: Codable, Sendable {
+        /// Legacy fields kept for backward compat with cached responses.
+        /// billing field was removed from the GitHub Copilot /models API in June 2026.
         public let isPremium: Bool
         public let multiplier: Double?
         public let restrictedTo: [String]?
@@ -243,24 +235,17 @@ public struct GitHubCopilotModelInfo: Codable {
     }
 }
 
-/// Billing cache entry for persistence
-/// Legacy: used for backward compatibility with annual plan subscribers still on PRU billing.
-public struct BillingCacheEntry: Codable {
-    public let isPremium: Bool  // Legacy: always false for usage-based billing
-    public let multiplier: Double?  // Legacy: always nil for usage-based billing
-    public let category: String?  // New: model_picker_category value
-    public let vendor: String?  // New: model vendor
+/// Model metadata cache entry for persistence.
+public struct ModelMetadataCacheEntry: Codable, Sendable {
+    public let category: String?  // model_picker_category value (powerful, versatile, lightweight)
+    public let vendor: String?  // Model vendor (e.g. "OpenAI", "Anthropic")
 
-    public init(isPremium: Bool, multiplier: Double?, category: String? = nil, vendor: String? = nil) {
-        self.isPremium = isPremium
-        self.multiplier = multiplier
+    public init(category: String?, vendor: String?) {
         self.category = category
         self.vendor = vendor
     }
 
     enum CodingKeys: String, CodingKey {
-        case isPremium = "is_premium"
-        case multiplier
         case category
         case vendor
     }

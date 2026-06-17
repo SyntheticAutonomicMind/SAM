@@ -856,12 +856,7 @@ public struct ServerOpenAIModel: Content {
     public let contextWindow: Int?         // Maximum context length in tokens
     public let maxCompletionTokens: Int?   // Maximum tokens for completion
     public let maxRequestTokens: Int?      // Maximum tokens for input (context - completion reserve)
-    
-    /// Billing information (GitHub Copilot premium tier tracking)
-    /// Enables clients to track premium model usage for billing purposes
-    public let isPremium: Bool?            // Whether this is a premium model
-    public let premiumMultiplier: Double?  // Billing multiplier (e.g., 1.5x for premium)
-    
+
     /// Model category and vendor (June 2026+ usage-based billing)
     public let category: String?          // Model picker category: "powerful", "versatile", "lightweight"
     public let vendor: String?             // Model vendor: "Anthropic", "OpenAI", "Google", etc.
@@ -872,13 +867,11 @@ public struct ServerOpenAIModel: Content {
         case contextWindow = "context_window"
         case maxCompletionTokens = "max_completion_tokens"
         case maxRequestTokens = "max_request_tokens"
-        case isPremium = "is_premium"
-        case premiumMultiplier = "premium_multiplier"
         case category = "model_picker_category"
         case vendor
     }
 
-    public init(id: String, object: String, created: Int, ownedBy: String, contextWindow: Int? = nil, maxCompletionTokens: Int? = nil, maxRequestTokens: Int? = nil, isPremium: Bool? = nil, premiumMultiplier: Double? = nil, category: String? = nil, vendor: String? = nil) {
+    public init(id: String, object: String, created: Int, ownedBy: String, contextWindow: Int? = nil, maxCompletionTokens: Int? = nil, maxRequestTokens: Int? = nil, category: String? = nil, vendor: String? = nil) {
         self.id = id
         self.object = object
         self.created = created
@@ -886,8 +879,6 @@ public struct ServerOpenAIModel: Content {
         self.contextWindow = contextWindow
         self.maxCompletionTokens = maxCompletionTokens
         self.maxRequestTokens = maxRequestTokens
-        self.isPremium = isPremium
-        self.premiumMultiplier = premiumMultiplier
         self.category = category
         self.vendor = vendor
     }

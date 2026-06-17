@@ -52,10 +52,10 @@ public class EndpointManager: ObservableObject {
         case loaded
     }
 
-    /// Billing lookup cache to reduce log spam and provider calls
+    /// GitHub Copilot model metadata lookup cache (category + vendor)
     /// Cache expires after 10 minutes
-    private var billingCache: [String: (result: (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)?, timestamp: Date)] = [:]
-    private let billingCacheExpiration: TimeInterval = 600  /// 10 minutes
+    private var metadataCache: [String: (result: (category: String?, vendor: String?)?, timestamp: Date)] = [:]
+    private let metadataCacheExpiration: TimeInterval = 600  /// 10 minutes
 
     /// Dependencies.
     private let conversationManager: ConversationManager
@@ -67,8 +67,8 @@ public class EndpointManager: ObservableObject {
         logger.debug("DEBUG: loadProviderConfigurations completed")
         logger.debug("EndpointManager initialized with \(self.providers.count) providers")
 
-        /// Prefetch GitHub Copilot billing data so it's available when user opens model picker
-        prefetchGitHubCopilotBillingData()
+        /// Prefetch GitHub Copilot model metadata so it's available when user opens model picker
+        prefetchGitHubCopilotMetadata()
 
         /// Listen for local model changes to enable hot reload
         NotificationCenter.default.addObserver(
@@ -126,65 +126,61 @@ public class EndpointManager: ObservableObject {
     }
 
     /// Get comprehensive model capabilities for API exposure
-    /// Returns contextWindow, maxCompletionTokens, maxRequestTokens, and billing info for a given model
-    /// This enables clients like CLIO to right-size their API requests and track premium usage
-    public func getModelCapabilityData(for modelId: String) async -> (contextWindow: Int?, maxCompletionTokens: Int?, maxRequestTokens: Int?, isPremium: Bool?, premiumMultiplier: Double?, category: String?, vendor: String?) {
+    /// Returns contextWindow, maxCompletionTokens, maxRequestTokens, category, and vendor for a given model
+    /// This enables clients like CLIO to right-size their API requests
+    public func getModelCapabilityData(for modelId: String) async -> (contextWindow: Int?, maxCompletionTokens: Int?, maxRequestTokens: Int?, category: String?, vendor: String?) {
         // Normalize model ID (remove provider prefix if present)
         let normalizedId = modelId.contains("/") ? String(modelId.split(separator: "/").last ?? "") : modelId
-        
+
         // Try to get capabilities from various sources
         var contextWindow: Int? = nil
         var maxCompletionTokens: Int? = nil
-        var isPremium: Bool? = nil
-        var premiumMultiplier: Double? = nil
         var category: String? = nil
         var vendor: String? = nil
-        
+
         // 1. Check GitHub Copilot models
         if modelId.hasPrefix("github_copilot/") {
             if let capabilities = try? await getGitHubCopilotModelCapabilities() {
                 contextWindow = capabilities[normalizedId] ?? capabilities[modelId]
             }
-            // Get billing info for GitHub Copilot models
-            if let billing = getGitHubCopilotModelBillingInfo(modelId: normalizedId) ?? getGitHubCopilotModelBillingInfo(modelId: modelId) {
-                isPremium = billing.isPremium
-                premiumMultiplier = billing.multiplier
-                category = billing.category
-                vendor = billing.vendor
+            // Get category/vendor for GitHub Copilot models
+            if let info = getGitHubCopilotModelMetadata(modelId: normalizedId) ?? getGitHubCopilotModelMetadata(modelId: modelId) {
+                category = info.category
+                vendor = info.vendor
             }
         }
-        
+
         // 2. Check Gemini models
         if modelId.hasPrefix("gemini/") {
             if let capabilities = try? await getGeminiModelCapabilities() {
                 contextWindow = capabilities[normalizedId] ?? capabilities[modelId]
             }
         }
-        
+
         // 3. Check local models (MLX/GGUF)
         if isLocalModel(modelId) {
             contextWindow = await getLocalModelContextSize(modelName: modelId)
         }
-        
+
         // 4. Apply known defaults for popular models
         if contextWindow == nil {
             contextWindow = getDefaultContextWindow(for: modelId)
         }
-        
+
         // Calculate maxCompletionTokens (typically reserve for output)
         if let context = contextWindow {
             // Reserve 25% for output, 75% for input (reasonable default)
             maxCompletionTokens = context / 4
         }
-        
+
         // Calculate maxRequestTokens (input limit)
         let maxRequestTokens: Int? = if let context = contextWindow, let completion = maxCompletionTokens {
             context - completion
         } else {
             nil
         }
-        
-        return (contextWindow, maxCompletionTokens, maxRequestTokens, isPremium, premiumMultiplier, category, vendor)
+
+        return (contextWindow, maxCompletionTokens, maxRequestTokens, category, vendor)
     }
     
     /// Get default context window for known model patterns
@@ -237,14 +233,14 @@ public class EndpointManager: ObservableObject {
         return nil  // Unknown model
     }
 
-    /// Get billing information for a specific GitHub Copilot model
-    /// Returns (isPremium, multiplier, category, vendor) tuple or nil if not available
+    /// Get metadata for a specific GitHub Copilot model
+    /// Returns (category, vendor) tuple or nil if not available
     /// Cached for 10 minutes to reduce log spam and provider calls
-    public func getGitHubCopilotModelBillingInfo(modelId: String) -> (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)? {
+    public func getGitHubCopilotModelMetadata(modelId: String) -> (category: String?, vendor: String?)? {
         /// Check cache first
-        if let cached = billingCache[modelId] {
+        if let cached = metadataCache[modelId] {
             /// Check if cache is still valid (within 10 minutes)
-            if Date().timeIntervalSince(cached.timestamp) < billingCacheExpiration {
+            if Date().timeIntervalSince(cached.timestamp) < metadataCacheExpiration {
                 return cached.result
             }
         }
@@ -252,14 +248,14 @@ public class EndpointManager: ObservableObject {
         /// Cache miss or expired - fetch from provider
         guard let githubProvider = providers.values.first(where: { $0.config.providerType == .githubCopilot }) as? GitHubCopilotProvider else {
             /// Cache the nil result to avoid repeated provider lookups
-            billingCache[modelId] = (result: nil, timestamp: Date())
+            metadataCache[modelId] = (result: nil, timestamp: Date())
             return nil
         }
 
-        let result = githubProvider.getModelBillingInfo(modelId: modelId)
+        let result = githubProvider.getModelMetadata(modelId: modelId)
 
         /// Cache the result (whether nil or valid)
-        billingCache[modelId] = (result: result, timestamp: Date())
+        metadataCache[modelId] = (result: result, timestamp: Date())
 
         return result
     }
@@ -267,8 +263,7 @@ public class EndpointManager: ObservableObject {
     /// Get model category for a specific GitHub Copilot model
     /// Returns the model_picker_category (powerful/versatile/lightweight) or nil
     public func getGitHubCopilotModelCategory(modelId: String) -> String? {
-        guard let billing = getGitHubCopilotModelBillingInfo(modelId: modelId) else { return nil }
-        return billing.category
+        getGitHubCopilotModelMetadata(modelId: modelId)?.category
     }
 
     /// Get current quota information from GitHub Copilot provider
@@ -280,16 +275,16 @@ public class EndpointManager: ObservableObject {
         return githubProvider.currentQuotaInfo
     }
 
-    /// Prefetch GitHub Copilot billing data in the background
-    /// Called at startup and when providers are reloaded to ensure billing info is cached
+    /// Prefetch GitHub Copilot model metadata in the background
+    /// Called at startup and when providers are reloaded to ensure metadata is cached
     /// before the user opens the model picker
-    public func prefetchGitHubCopilotBillingData() {
+    public func prefetchGitHubCopilotMetadata() {
         Task {
             do {
                 _ = try await getGitHubCopilotModelCapabilities()
-                logger.debug("Successfully prefetched GitHub Copilot billing data")
+                logger.debug("Successfully prefetched GitHub Copilot model metadata")
             } catch {
-                logger.debug("GitHub Copilot billing prefetch skipped: \(error.localizedDescription)")
+                logger.debug("GitHub Copilot metadata prefetch skipped: \(error.localizedDescription)")
             }
         }
     }
@@ -1271,9 +1266,9 @@ public class EndpointManager: ObservableObject {
 
         /// No longer manually scanning for models here - the file system watcher in LocalModelManager handles this automatically.
 
-        /// Clear billing cache when providers are reloaded
-        billingCache.removeAll()
-        logger.debug("Cleared billing cache (provider reload)")
+        /// Clear metadata cache when providers are reloaded
+        metadataCache.removeAll()
+        logger.debug("Cleared GitHub Copilot metadata cache (provider reload)")
 
         /// Clear ALL providers including local models - we'll recreate them from current registry
         /// This enables hot reload when new local models are downloaded
@@ -1429,7 +1424,7 @@ public class EndpointManager: ObservableObject {
         logger.debug("Provider reload complete. Active providers: \(self.providers.keys.sorted().joined(separator: ", "))")
 
         /// Prefetch GitHub Copilot billing data for the newly loaded providers
-        prefetchGitHubCopilotBillingData()
+        prefetchGitHubCopilotMetadata()
 
         /// Post notification so UI components can update their model lists This enables hot-reloading without requiring SAM restart.
         NotificationCenter.default.post(name: .endpointManagerDidReloadProviders, object: self)

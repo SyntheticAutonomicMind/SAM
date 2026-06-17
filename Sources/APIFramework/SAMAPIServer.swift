@@ -2424,7 +2424,7 @@ AVAILABLE TOOLS:
             let enrichedModels = await withTaskGroup(of: ServerOpenAIModel.self) { group in
                 for model in modelsResponse.data {
                     group.addTask {
-                        let (contextWindow, maxCompletion, maxRequest, isPremium, premiumMultiplier, category, vendor) = await self.endpointManager.getModelCapabilityData(for: model.id)
+                        let (contextWindow, maxCompletion, maxRequest, category, vendor) = await self.endpointManager.getModelCapabilityData(for: model.id)
                         return ServerOpenAIModel(
                             id: model.id,
                             object: model.object,
@@ -2433,8 +2433,6 @@ AVAILABLE TOOLS:
                             contextWindow: contextWindow,
                             maxCompletionTokens: maxCompletion,
                             maxRequestTokens: maxRequest,
-                            isPremium: isPremium,
-                            premiumMultiplier: premiumMultiplier,
                             category: category,
                             vendor: vendor
                         )

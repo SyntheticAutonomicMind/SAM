@@ -298,9 +298,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0,
-      "cost_per_million_output_tokens": 0
+      "requires_alternating_messages": false
     },
     "gemini-2.5-flash-paid": {
       "provider": "gemini",
@@ -312,9 +310,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.30,
-      "cost_per_million_output_tokens": 2.50
+      "requires_alternating_messages": false
     },
     "gemini-2.5-pro": {
       "provider": "gemini",
@@ -326,9 +322,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0,
-      "cost_per_million_output_tokens": 0
+      "requires_alternating_messages": false
     },
     "gemini-2.5-pro-paid": {
       "provider": "gemini",
@@ -340,9 +334,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 1.25,
-      "cost_per_million_output_tokens": 10.00
+      "requires_alternating_messages": false
     },
     "gemini-2.0-flash": {
       "provider": "gemini",
@@ -354,9 +346,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0,
-      "cost_per_million_output_tokens": 0
+      "requires_alternating_messages": false
     },
     "gemini-2.0-flash-paid": {
       "provider": "gemini",
@@ -368,9 +358,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.10,
-      "cost_per_million_output_tokens": 0.40
+      "requires_alternating_messages": false
     },
     "gemini-3-flash-preview": {
       "provider": "gemini",
@@ -382,9 +370,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0,
-      "cost_per_million_output_tokens": 0
+      "requires_alternating_messages": false
     },
     "gemini-3-flash-preview-paid": {
       "provider": "gemini",
@@ -396,9 +382,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.50,
-      "cost_per_million_output_tokens": 3.00
+      "requires_alternating_messages": false
     },
     "gemini-3-pro-preview": {
       "provider": "gemini",
@@ -410,9 +394,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 2.00,
-      "cost_per_million_output_tokens": 12.00
+      "requires_alternating_messages": false
     },
     "gemini-1.5-pro": {
       "provider": "gemini",
@@ -424,9 +406,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 2000000,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0,
-      "cost_per_million_output_tokens": 0
+      "requires_alternating_messages": false
     },
     "gemini-1.5-flash": {
       "provider": "gemini",
@@ -438,9 +418,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0,
-      "cost_per_million_output_tokens": 0
+      "requires_alternating_messages": false
     },
     "MiniMax-M3": {
       "provider": "minimax",
@@ -452,9 +430,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.60,
-      "cost_per_million_output_tokens": 2.40
+      "requires_alternating_messages": false
     },
     "minimax-m3": {
       "provider": "minimax",
@@ -466,9 +442,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 1048576,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.60,
-      "cost_per_million_output_tokens": 2.40
+      "requires_alternating_messages": false
     },
     "MiniMax-M2.7": {
       "provider": "minimax",
@@ -480,9 +454,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 204800,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.01,
-      "cost_per_million_output_tokens": 0.1
+      "requires_alternating_messages": false
     },
     "minimax-m2.7": {
       "provider": "minimax",
@@ -494,9 +466,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 204800,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.01,
-      "cost_per_million_output_tokens": 0.1
+      "requires_alternating_messages": false
     },
     "MiniMax-M2.7-highspeed": {
       "provider": "minimax",
@@ -508,9 +478,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 204800,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.02,
-      "cost_per_million_output_tokens": 0.2
+      "requires_alternating_messages": false
     },
     "MiniMax-M2.5": {
       "provider": "minimax",
@@ -522,9 +490,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 204800,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.01,
-      "cost_per_million_output_tokens": 0.1
+      "requires_alternating_messages": false
     },
     "MiniMax-M2.5-highspeed": {
       "provider": "minimax",
@@ -536,9 +502,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 204800,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.02,
-      "cost_per_million_output_tokens": 0.2
+      "requires_alternating_messages": false
     },
     "MiniMax-M2.1": {
       "provider": "minimax",
@@ -550,9 +514,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 204800,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.008,
-      "cost_per_million_output_tokens": 0.08
+      "requires_alternating_messages": false
     },
     "MiniMax-M2.1-highspeed": {
       "provider": "minimax",
@@ -564,9 +526,7 @@
       },
       "supports_stateful_marker": false,
       "context_window": 204800,
-      "requires_alternating_messages": false,
-      "cost_per_million_input_tokens": 0.015,
-      "cost_per_million_output_tokens": 0.15
+      "requires_alternating_messages": false
     }
   },
   "provider_defaults": {

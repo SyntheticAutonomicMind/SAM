@@ -321,10 +321,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     /// Cache for model supported endpoints (determines Chat Completions vs Responses API routing)
     private static var modelEndpointsCache: [String: [ModelSupportedEndpoint]]?
 
-    /// Cache for model billing information.
-    /// Legacy: isPremium/multiplier for annual plan subscribers still on PRU billing.
-    /// New: category/vendor for usage-based billing (June 2026+).
-    private var modelBillingCache: [String: (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)]?
+    /// Cache for GitHub Copilot model metadata (category and vendor).
+    private var modelMetadataCache: [String: (category: String?, vendor: String?)]?
 
     private let cacheValidityDuration: TimeInterval = 3600
 
@@ -348,12 +346,12 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
     private var rateLimitedUntil: Date?
 
     /// Cache persistence paths
-    private let billingCachePath: URL = {
+    private let metadataCachePath: URL = {
         let configDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config")
             .appendingPathComponent("sam")
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
-        return configDir.appendingPathComponent("github_copilot_billing_cache.json")
+        return configDir.appendingPathComponent("github_copilot_model_metadata_cache.json")
     }()
 
     private let quotaCachePath: URL = {
@@ -431,7 +429,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         logger.debug("GitHub Copilot Provider initialized")
 
         /// Load cached data on init
-        loadBillingCache()
+        loadMetadataCache()
         loadQuotaCache()
     }
 
@@ -587,23 +585,16 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
             /// Build capabilities dictionary.
             var capabilities: [String: Int] = [:]
-            var billingInfo: [String: (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)] = [:]
+            var metadata: [String: (category: String?, vendor: String?)] = [:]
             var endpointsInfo: [String: [ModelSupportedEndpoint]] = [:]
 
             for model in modelsResponse.data {
                 if let maxInputTokens = model.maxInputTokens {
                     capabilities[model.id] = maxInputTokens
 
-                    /// Store billing information using computed properties
-                    /// Legacy billing (is_premium/multiplier) may be absent for usage-based billing plans
-                    billingInfo[model.id] = (isPremium: model.isPremium, multiplier: model.premiumMultiplier, category: model.category.rawValue, vendor: model.vendor)
-                    
-                    /// DEBUG: Log billing data for first few models
-                    if billingInfo.count <= 5 {
-                        logger.debug("BILLING: \(model.id) - category=\(model.category.rawValue), vendor=\(model.vendor ?? "nil"), isPremium=\(model.isPremium), multiplier=\(model.premiumMultiplier?.description ?? "nil"), raw_billing=\(model.billing != nil ? "present" : "nil")")
-                    }
+                    metadata[model.id] = (category: model.category.rawValue, vendor: model.vendor)
                 }
-                
+
                 /// Store supported endpoints for API routing (Chat Completions vs Responses)
                 if let endpoints = model.supportedEndpoints {
                     endpointsInfo[model.id] = endpoints
@@ -615,7 +606,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             /// Update caches.
             Self.modelCapabilitiesCache = capabilities
             Self.modelEndpointsCache = endpointsInfo
-            modelBillingCache = billingInfo
+            modelMetadataCache = metadata
             Self.modelCapabilitiesCacheTime = Date()
 
             /// Update config.models with fresh model list from API
@@ -634,8 +625,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             config.models = modelIds
             logger.info("Updated config.models with \(modelIds.count) available models from API")
 
-            /// Persist billing data to disk
-            saveBillingCache()
+            /// Persist model metadata to disk
+            saveMetadataCache()
 
             /// Persist updated configuration with new model list
             saveProviderConfiguration()
@@ -658,52 +649,50 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         logger.debug("Cleared capabilities cache - next fetch will be fresh from API")
     }
 
-    /// Load billing cache from disk
-    private func loadBillingCache() {
-        guard FileManager.default.fileExists(atPath: billingCachePath.path) else {
-            logger.debug("No billing cache file found, will fetch fresh data")
+    /// Load model metadata cache from disk
+    private func loadMetadataCache() {
+        guard FileManager.default.fileExists(atPath: metadataCachePath.path) else {
+            logger.debug("No model metadata cache file found, will fetch fresh data")
             return
         }
 
         do {
-            let data = try Data(contentsOf: billingCachePath)
+            let data = try Data(contentsOf: metadataCachePath)
             let decoder = JSONDecoder()
-            let cache = try decoder.decode([String: BillingCacheEntry].self, from: data)
+            let cache = try decoder.decode([String: ModelMetadataCacheEntry].self, from: data)
 
-            /// Convert from codable format to internal format
-            var billingInfo: [String: (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)] = [:]
+            var metadata: [String: (category: String?, vendor: String?)] = [:]
             for (key, entry) in cache {
-                billingInfo[key] = (isPremium: entry.isPremium, multiplier: entry.multiplier, category: entry.category, vendor: entry.vendor)
+                metadata[key] = (category: entry.category, vendor: entry.vendor)
             }
 
-            modelBillingCache = billingInfo
-            logger.debug("Loaded billing cache with \(billingInfo.count) models from disk")
+            modelMetadataCache = metadata
+            logger.debug("Loaded model metadata cache with \(metadata.count) models from disk")
         } catch {
-            logger.warning("Failed to load billing cache: \(error)")
+            logger.warning("Failed to load model metadata cache: \(error)")
         }
     }
 
-    /// Save billing cache to disk
-    private func saveBillingCache() {
-        guard let billingCache = modelBillingCache else {
+    /// Save model metadata cache to disk
+    private func saveMetadataCache() {
+        guard let metadata = modelMetadataCache else {
             return
         }
 
         do {
-            /// Convert to codable format
-            var cache: [String: BillingCacheEntry] = [:]
-            for (key, value) in billingCache {
-                cache[key] = BillingCacheEntry(isPremium: value.isPremium, multiplier: value.multiplier, category: value.category, vendor: value.vendor)
+            var cache: [String: ModelMetadataCacheEntry] = [:]
+            for (key, value) in metadata {
+                cache[key] = ModelMetadataCacheEntry(category: value.category, vendor: value.vendor)
             }
 
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(cache)
 
-            try data.write(to: billingCachePath, options: .atomic)
-            logger.debug("Saved billing cache with \(cache.count) models to disk")
+            try data.write(to: metadataCachePath, options: .atomic)
+            logger.debug("Saved model metadata cache with \(cache.count) models to disk")
         } catch {
-            logger.error("Failed to save billing cache: \(error)")
+            logger.error("Failed to save model metadata cache: \(error)")
         }
     }
 
@@ -766,18 +755,16 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         }
     }
 
-    /// Get billing information for a specific model
-    /// Get billing information for a specific model
-    /// Returns legacy (isPremium, multiplier) for backward compatibility.
-    /// For usage-based billing (June 2026+), use getModelCategoryInfo() instead.
-    public func getModelBillingInfo(modelId: String) -> (isPremium: Bool, multiplier: Double?, category: String?, vendor: String?)? {
-        return modelBillingCache?[modelId]
+    /// Get metadata for a specific model
+    /// Returns (category, vendor) tuple or nil if not available
+    public func getModelMetadata(modelId: String) -> (category: String?, vendor: String?)? {
+        return modelMetadataCache?[modelId]
     }
-    
+
     /// Get model category and vendor info for usage-based billing
     /// Returns (category, vendor) for a model, or nil if not available
     public func getModelCategoryInfo(modelId: String) -> (category: String, vendor: String?)? {
-        guard let info = modelBillingCache?[modelId] else { return nil }
+        guard let info = modelMetadataCache?[modelId] else { return nil }
         guard let category = info.category, category != "unknown" else { return nil }
         return (category: category, vendor: info.vendor)
     }

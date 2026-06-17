@@ -111,10 +111,6 @@ public struct ChatWidget: View {
     /// FEATURE: Enable/disable tool usage.
     @State private var enableTools: Bool = true
 
-
-
-
-
     /// Shared data UI state
     @State private var useSharedData: Bool = false
     @State private var assignedSharedTopicId: String?
@@ -137,9 +133,6 @@ public struct ChatWidget: View {
     
     @State private var enableReasoning: Bool = false
     @State private var thinkingEffort: String = "high"
-
-    /// Current model cost display (updated when model changes)
-    @State private var currentModelCost: String = "0x"
 
     /// Local model loading state.
     @State private var isLocalModelLoaded: Bool = false
@@ -190,7 +183,6 @@ public struct ChatWidget: View {
     @State private var busyStatusText: String = ""
     private let brailleFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-
     /// Document import system for auto-importing attached files
     @State private var documentImportSystem: DocumentImportSystem?
 
@@ -208,10 +200,6 @@ public struct ChatWidget: View {
     @State private var searchInStored = true
     @State private var searchInActive = false
     @State private var searchInArchive = false
-    
-    /// Cost tracking panel
-    @State private var showingCostTrackingPanel = false
-
 
     /// Working directory panel.
     @State private var showingWorkingDirectoryPanel = false
@@ -241,7 +229,6 @@ public struct ChatWidget: View {
             )
         }
     }
-
 
     public init(activeConversation: ConversationModel? = nil, messageBus: ConversationMessageBus, showingMiniPrompts: Binding<Bool>) {
         self.activeConversation = activeConversation
@@ -306,9 +293,6 @@ public struct ChatWidget: View {
             .onChange(of: showingPerformanceMetrics) { _, newValue in
                 savePanelState(panel: "perf", value: newValue)
             }
-            .onChange(of: showingCostTrackingPanel) { _, newValue in
-                savePanelState(panel: "cost", value: newValue)
-            }
     }
 
     /// Scroll lock is now in toolbar (removed overlay)
@@ -321,14 +305,6 @@ public struct ChatWidget: View {
             UserInterface.PerformanceMetricsView(
                 performanceMonitor: performanceMonitor,
                 isVisible: $showingPerformanceMetrics
-            )
-        }
-        
-        if showingCostTrackingPanel {
-            Divider()
-            UserInterface.CostTrackingView(
-                performanceMonitor: performanceMonitor,
-                isVisible: $showingCostTrackingPanel
             )
         }
 
@@ -585,7 +561,6 @@ public struct ChatWidget: View {
             /// Don't save settings or trigger preload if we're loading from conversation.
             guard !isLoadingConversationSettings else { return }
 
-
             /// Auto-select SAM Minimal for local models, SAM Default for remote models
             /// Only auto-switch if currently using SAM Default (00000000-0000-0000-0000-000000000001)
             /// Don't switch if user explicitly selected a different prompt
@@ -622,9 +597,6 @@ public struct ChatWidget: View {
 
             updateMaxContextForModel()
             preloadModel()
-
-            /// Update cost display for quota header
-            currentModelCost = getCostDisplay(for: newValue)
 
             /// Check loading status for local models.
             Task {
@@ -1182,76 +1154,19 @@ public struct ChatWidget: View {
 
                         Spacer()
 
-                        /// Provider quota status (GitHub Copilot only)
-                        /// Show cost for all models, quota status only for Copilot
+                        /// AI Credits usage indicator (GitHub Copilot only)
                         let isGitHubCopilot = selectedModel.starts(with: "github_copilot/")
 
-                        HStack(spacing: 4) {
-                            /// Cost display (always shown)
-                            Group {
-                                /// Format cost with "per 1M" suffix for pricing display
-                                let formattedCost: String = {
-                                    if currentModelCost == "0x" || currentModelCost.hasSuffix("x") {
-                                        return currentModelCost  // Keep multiplier format as-is
-                                    } else if currentModelCost.contains("/") {
-                                        return "\(currentModelCost)/1M"  // Add per-million suffix
-                                    } else {
-                                        return currentModelCost
-                                    }
-                                }()
-                                
-                                Text("Cost: \(formattedCost)")
+                        if isGitHubCopilot, let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() {
+                            if let creditsUsed = quotaInfo.creditsUsed, creditsUsed > 0 {
+                                let creditsStr = String(format: "%.2f", creditsUsed)
+                                Text("AI Credits: \(creditsStr) used")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                            }
-                            .help(currentModelCost.contains("/") 
-                                ? "Cost per million tokens (input/output)"
-                                : "Cost multiplier (0x = free)")
-
-                            /// Quota status (GitHub Copilot only)
-                            /// Prefers CopilotUserAPI data (richer, pre-request check), falls back to header-based quota
-                            if isGitHubCopilot {
-                                if let userResponse = cachedCopilotUserResponse, let premium = userResponse.premiumQuota {
-                                    // Rich data from CopilotUserAPI
-                                    let percentUsed = premium.percentUsed
-                                    HStack(spacing: 4) {
-                                        if let login = userResponse.login {
-                                            Text(login)
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        Text("•")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        Text("\(premium.used)/\(premium.entitlement)")
-                                            .font(.caption)
-                                            .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
-                                        Text("(\(String(format: "%.1f%%", percentUsed)))")
-                                            .font(.caption)
-                                            .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
-                                    }
-                                } else if let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() {
-                                    // Fallback to header-based quota
-                                    if quotaInfo.isAICreditBilling {
-                                        // AI Credit-based billing (June 2026+)
-                                        if let creditsUsed = quotaInfo.creditsUsed, creditsUsed > 0 {
-                                            let creditsStr = String(format: "%.2f", creditsUsed)
-                                            Text("AI Credits: \(creditsStr) used")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        } else {
-                                            Text("AI Credits billing")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    } else {
-                                        // Legacy PRU-based billing
-                                        let percentUsed = 100.0 - quotaInfo.percentRemaining
-                                        Text("Status: \(quotaInfo.used)/\(quotaInfo.entitlement) Used: \(String(format: "%.1f%%", percentUsed))")
-                                            .font(.caption)
-                                            .foregroundColor(percentUsed >= 90 ? .red : percentUsed >= 80 ? .orange : .secondary)
-                                    }
-                                }
+                            } else {
+                                Text("AI Credits billing")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
                         }
                     }
@@ -2027,7 +1942,6 @@ public struct ChatWidget: View {
     /// NOTE: UI picker stores user preference, but actual dimension support depends on Core ML model capabilities.
     /// Future enhancement: Query Core ML model metadata to get truly supported dimensions.
 
-
     /// Detect if current model is Z-Image (or Qwen-Image)
 
     /// - EDMDPMSolverMultistepScheduler produces garbage on MPS
@@ -2036,7 +1950,7 @@ public struct ChatWidget: View {
     /// Whether any panel is currently open.
     private var anyPanelOpen: Bool {
         showingWorkingDirectoryPanel || showingMemoryPanel || showingPerformanceMetrics ||
-        showingCostTrackingPanel || showingTodoListPopover
+        showingTodoListPopover
     }
 
     /// Todo list popover content.
@@ -2111,7 +2025,6 @@ public struct ChatWidget: View {
             panelToggleRow(icon: "folder", label: "Working Directory", isOn: $showingWorkingDirectoryPanel)
             panelToggleRow(icon: "brain.head.profile", label: "Session Intelligence", isOn: $showingMemoryPanel)
             panelToggleRow(icon: "chart.line.uptrend.xyaxis", label: "Performance Metrics", isOn: $showingPerformanceMetrics)
-            panelToggleRow(icon: "creditcard", label: "Session Costs", isOn: $showingCostTrackingPanel)
 
             Divider()
 
@@ -2396,7 +2309,6 @@ public struct ChatWidget: View {
         .padding(12)
     }
 
-
     // MARK: - Actions
 
     private func performMainChatViewAppear() {
@@ -2442,10 +2354,6 @@ public struct ChatWidget: View {
         if activeConversation == nil {
             selectedModel = appDefaultModel
         }
-
-        /// Initialize cost display for current model on first load
-        currentModelCost = getCostDisplay(for: selectedModel)
-        logger.info("CHATWIDGET INIT: selectedModel=\\(selectedModel), cost=\\(currentModelCost)")
 
         /// Setup voice manager callbacks via bridge
         setupVoiceCallbacks()
@@ -2525,9 +2433,8 @@ public struct ChatWidget: View {
         showingWorkingDirectoryPanel = conversation.settings.showingWorkingDirectoryPanel
         showAdvancedParameters = conversation.settings.showAdvancedParameters
         showingPerformanceMetrics = conversation.settings.showingPerformanceMetrics
-        showingCostTrackingPanel = conversation.settings.showingCostTrackingPanel
 
-        logger.debug("PANEL_SYNC: Loaded panel states - memory:\(showingMemoryPanel) workdir:\(showingWorkingDirectoryPanel) advanced:\(showAdvancedParameters) perf:\(showingPerformanceMetrics) cost:\(showingCostTrackingPanel)")
+        logger.debug("PANEL_SYNC: Loaded panel states - memory:\(showingMemoryPanel) workdir:\(showingWorkingDirectoryPanel) advanced:\(showAdvancedParameters) perf:\(showingPerformanceMetrics)")
 
         /// Sync settings from conversation with validation to prevent crashes.
         selectedModel = conversation.settings.selectedModel
@@ -2940,7 +2847,6 @@ public struct ChatWidget: View {
         conversation.settings.showingWorkingDirectoryPanel = showingWorkingDirectoryPanel
         conversation.settings.showAdvancedParameters = showAdvancedParameters
         conversation.settings.showingPerformanceMetrics = showingPerformanceMetrics
-        conversation.settings.showingCostTrackingPanel = showingCostTrackingPanel
 
         conversation.updated = Date()
 
@@ -2966,8 +2872,6 @@ public struct ChatWidget: View {
             conversation.settings.showAdvancedParameters = value
         case "perf":
             conversation.settings.showingPerformanceMetrics = value
-        case "cost":
-            conversation.settings.showingCostTrackingPanel = value
         default:
             logger.error("Unknown panel: \(panel)")
             return
@@ -4403,158 +4307,9 @@ public struct ChatWidget: View {
         }
     }
 
-    /// Format model name for display with better readability Converts "provider/Model-Name-Q5_K_M" to "Model-Name (Q5_K_M) - provider".
-    private func formatModelDisplayName(_ fullModelName: String) -> String {
-        /// Split by "/" to separate provider from model.
-        let parts = fullModelName.split(separator: "/", maxSplits: 1)
-
-        let baseModelId: String
-        let provider: String?
-
-        if parts.count == 2 {
-            provider = String(parts[0])
-            baseModelId = String(parts[1])
-        } else {
-            provider = nil
-            baseModelId = fullModelName
-        }
-
-        /// Check billing info using ORIGINAL base model ID (before any processing)
-        /// Cache stores exact model IDs like "gpt-4o-2024-11-20", must match exactly
-        var billingText = ""
-        let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: baseModelId)
-
-        /// Log billing lookup for GitHub Copilot models
-        if provider == "github_copilot" {
-            if billingInfo == nil {
-                logger.debug("BILLING_UI: No billing info for '\(baseModelId)'")
-            } else {
-                logger.debug("BILLING_UI: Found billing for '\(baseModelId)': category=\(billingInfo!.category ?? "nil"), vendor=\(billingInfo!.vendor ?? "nil"), isPremium=\(billingInfo!.isPremium), multiplier=\(billingInfo!.multiplier ?? -1)")
-            }
-        }
-
-        if let billing = billingInfo {
-            if let category = billing.category, category != "unknown", category != "nil" {
-                /// Usage-based billing (June 2026+): show category instead of multiplier
-                billingText = category
-            } else if billing.isPremium, let multiplier = billing.multiplier {
-                /// Legacy PRU billing: premium models show actual multiplier
-                billingText = "\(formatMultiplier(multiplier))x"
-            } else {
-                /// Legacy PRU billing: free models show 0x
-                billingText = "0x"
-            }
-        }
-
-        /// Extract version date if present (YYYY-MM-DD format at end)
-        /// Pattern must not match single letters like '-o-' in 'gpt-4o-2024'
-        var cleanModelId = baseModelId
-        var versionDate = ""
-        let datePattern = "-(\\d{4})-(\\d{2})-(\\d{2})$"
-        if let range = baseModelId.range(of: datePattern, options: .regularExpression) {
-            versionDate = String(baseModelId[range]).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-            cleanModelId = String(baseModelId[..<range.lowerBound])
-        }
-
-        /// Format model name with proper capitalization
-        let displayName = beautifyModelName(cleanModelId)
-
-        /// Extract quantization if present (pattern: Q\d+_[KM0-9_]+) for local models
-        let quantPattern = "[-_]Q\\d+_[KM0-9_]+"
-        if let range = cleanModelId.range(of: quantPattern, options: .regularExpression) {
-            let quant = cleanModelId[range].trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
-            let baseName = cleanModelId.replacingCharacters(in: range, with: "")
-            let beautifiedBase = beautifyModelName(baseName)
-
-            if let prov = provider {
-                let beautifiedProvider = beautifyProviderName(prov)
-                if !versionDate.isEmpty {
-                    if !billingText.isEmpty {
-                        return "\(beautifiedBase) (\(quant), \(billingText), \(beautifiedProvider), \(versionDate))"
-                    } else {
-                        return "\(beautifiedBase) (\(quant), \(beautifiedProvider), \(versionDate))"
-                    }
-                } else {
-                    if !billingText.isEmpty {
-                        return "\(beautifiedBase) (\(quant), \(billingText), \(beautifiedProvider))"
-                    } else {
-                        return "\(beautifiedBase) (\(quant), \(beautifiedProvider))"
-                    }
-                }
-            } else {
-                return "\(beautifiedBase) (\(quant))"
-            }
-        }
-
-        /// Standard format: "Model Name (billing, Provider, date)" 
-        if let prov = provider {
-            let beautifiedProvider = beautifyProviderName(prov)
-            if !billingText.isEmpty {
-                if !versionDate.isEmpty {
-                    return "\(displayName) (\(billingText), \(beautifiedProvider), \(versionDate))"
-                } else {
-                    return "\(displayName) (\(billingText), \(beautifiedProvider))"
-                }
-            } else {
-                if !versionDate.isEmpty {
-                    return "\(displayName) (\(beautifiedProvider), \(versionDate))"
-                } else {
-                    return "\(displayName) (\(beautifiedProvider))"
-                }
-            }
-        } else {
-            if !versionDate.isEmpty {
-                return "\(displayName) (\(versionDate))"
-            } else {
-                return displayName
-            }
-        }
-    }
-
-    /// Categorize models into free and premium lists for sectioned picker
-    /// For usage-based billing (June 2026+), uses model_picker_category
-    /// For legacy PRU billing, uses isPremium flag
-    private func categorizeModelsByBilling(_ models: [String]) -> (free: [String], premium: [String]) {
-        var freeModels: [String] = []
-        var premiumModels: [String] = []
-
-        for model in models {
-            /// Extract base model ID for billing lookup (remove provider prefix)
-            let baseModelId: String
-            if let lastPart = model.split(separator: "/").last {
-                baseModelId = String(lastPart)
-            } else {
-                baseModelId = model
-            }
-
-            /// Check billing category or premium status
-            let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: baseModelId)
-            if let billing = billingInfo {
-                /// Usage-based billing: use category
-                if let category = billing.category, category != "unknown", category != "nil" {
-                    if category == "powerful" {
-                        premiumModels.append(model)
-                    } else {
-                        /// "versatile" and "lightweight" go in free section
-                        freeModels.append(model)
-                    }
-                } else if billing.isPremium {
-                    /// Legacy PRU billing: use isPremium
-                    premiumModels.append(model)
-                } else {
-                    freeModels.append(model)
-                }
-            } else {
-                freeModels.append(model)
-            }
-        }
-
-        return (freeModels, premiumModels)
-    }
-
     /// Beautify model name: "gpt-4.1" -> "GPT-4.1", "claude-sonnet-4.5" -> "Claude Sonnet 4.5"
     private func beautifyModelName(_ modelId: String) -> String {
-        /// Remove version dates first (already handled in formatModelDisplayName)
+        /// Remove version dates
         var cleanId = modelId
         let datePattern = "-\\d{4}-\\d{2}-\\d{2}$"
         if let range = cleanId.range(of: datePattern, options: .regularExpression) {
@@ -4635,14 +4390,6 @@ public struct ChatWidget: View {
     }
 
     /// Format multiplier to avoid unnecessary decimals
-    private func formatMultiplier(_ multiplier: Double) -> String {
-        if multiplier.truncatingRemainder(dividingBy: 1.0) == 0 {
-            return String(Int(multiplier))
-        } else {
-            return String(format: "%.1f", multiplier)
-        }
-    }
-
     /// Load global MLX settings from preferences.
     private func loadGlobalMLXSettings() {
         /// Load settings from UserDefaults (same keys as LocalModelOptimizationSection).
@@ -5279,7 +5026,6 @@ public struct ChatWidget: View {
 
     // MARK: - Helper Methods
 
-
     private func exportChatAsJSON() {
         let chatSession = ChatSession(
             id: UUID(),
@@ -5685,34 +5431,6 @@ public struct ChatWidget: View {
         return nil
     }
 
-    // MARK: - Helper Functions
-    
-    /// Get cost display string for a model
-    /// Tries GitHub Copilot billing first, then falls back to model_config.json
-    private func getCostDisplay(for modelName: String) -> String {
-        /// Strip provider prefix for billing lookup
-        let baseModelId = modelName.contains("/") ? String(modelName.split(separator: "/").last ?? "") : modelName
-        
-        /// Priority 1: GitHub Copilot billing info (multiplier system)
-        if let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: baseModelId) {
-            if let multiplier = billingInfo.multiplier {
-                if multiplier.truncatingRemainder(dividingBy: 1) == 0 {
-                    return String(format: "%.0fx", multiplier)
-                } else {
-                    return String(format: "%.2fx", multiplier)
-                }
-            }
-        }
-        
-        /// Priority 2: model_config.json pricing
-        if let costString = ModelConfigurationManager.shared.getCostDisplayString(for: baseModelId) {
-            return costString
-        }
-        
-        /// Default: assume free
-        return "0x"
-    }
-
     // MARK: - UI Setup
 
     /// Calculate dynamic width for model dropdown based on longest model name Ensures all model names are fully visible without truncation.
@@ -5934,7 +5652,6 @@ public struct ChatWidget: View {
             throw NSError(domain: "ChatWidget", code: 2, userInfo: [NSLocalizedDescriptionKey: "No user message with content"])
         }
 
-
         /// Create AgentOrchestrator instance (same as API).
         let orchestrator = AgentOrchestrator(
             endpointManager: endpointManager,
@@ -5942,7 +5659,6 @@ public struct ChatWidget: View {
             conversationManager: conversationManager,
             maxIterations: WorkflowConfiguration.defaultMaxIterations,
         )
-
 
         /// Connect performance monitor for metrics tracking.
         orchestrator.performanceMonitor = performanceMonitor

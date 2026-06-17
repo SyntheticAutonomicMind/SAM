@@ -4,58 +4,34 @@
 import SwiftUI
 import APIFramework
 
-/// Enhanced model picker showing provider, location, and cost inline using native Picker
+/// Enhanced model picker showing provider and location inline using native Picker
 struct ModelPickerView: View {
     @Binding var selectedModel: String
     @ObservedObject var modelListManager: ModelListManager
     let endpointManager: EndpointManager
-    @State private var billingDataLoaded = false
-    
+
     /// Computed properties for model lists
     private var models: [String] {
         modelListManager.availableModels
     }
-    
-    private var categorizedModels: (free: [String], premium: [String]) {
-        categorizeModelsByBilling(models)
+
+    private var sortedModels: [String] {
+        models.sorted { formatModelDisplayName($0) < formatModelDisplayName($1) }
     }
 
     var body: some View {
         Menu {
-            if !categorizedModels.free.isEmpty {
-                Section {
-                    /// Column header
-                    Text(formatColumnHeader())
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .disabled(true)
+            Section {
+                /// Column header
+                Text(formatColumnHeader())
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .disabled(true)
 
-                    Text("FREE MODELS")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .disabled(true)
-
-                    ForEach(categorizedModels.free, id: \.self) { model in
-                        Button(action: { selectedModel = model }) {
-                            Text(formatModelDisplayName(model))
-                                .font(.system(.caption, design: .monospaced))
-                        }
-                    }
-                }
-            }
-
-            if !categorizedModels.premium.isEmpty {
-                Section {
-                    Text("PREMIUM MODELS")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .disabled(true)
-
-                    ForEach(categorizedModels.premium, id: \.self) { model in
-                        Button(action: { selectedModel = model }) {
-                            Text(formatModelDisplayName(model))
-                                .font(.system(.caption, design: .monospaced))
-                        }
+                ForEach(sortedModels, id: \.self) { model in
+                    Button(action: { selectedModel = model }) {
+                        Text(formatModelDisplayName(model))
+                            .font(.system(.caption, design: .monospaced))
                     }
                 }
             }
@@ -81,29 +57,17 @@ struct ModelPickerView: View {
                     .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
             )
         }
-        .onAppear {
-            /// Fetch GitHub Copilot billing data if not already cached
-            fetchGitHubCopilotBillingIfNeeded()
-        }
     }
 
-
-
-    /// Fetch GitHub Copilot billing data if needed
-    private func fetchGitHubCopilotBillingIfNeeded() {
-        Task {
-            do {
-                _ = try await endpointManager.getGitHubCopilotModelCapabilities()
-                /// Trigger UI refresh after billing data is loaded
-                await MainActor.run {
-                    billingDataLoaded = true
-                }
-            } catch {
-                /// Silently fail - billing data will remain unavailable and show "-"
-                await MainActor.run {
-                    billingDataLoaded = true
-                }
-            }
+    /// Beautify provider name
+    private func beautifyProviderName(_ provider: String) -> String {
+        switch provider.lowercased() {
+        case "github_copilot": return "GitHub Copilot"
+        case "unsloth": return "Unsloth"
+        case "openai": return "OpenAI"
+        case "local": return "Local"
+        case "mlx": return "MLX"
+        default: return provider.capitalized
         }
     }
 
@@ -134,37 +98,10 @@ struct ModelPickerView: View {
         let paddedName = "Model Name".padding(toLength: 30, withPad: " ", startingAt: 0)
         let paddedProvider = "Provider".padding(toLength: 18, withPad: " ", startingAt: 0)
         let paddedLocation = "Location".padding(toLength: 8, withPad: " ", startingAt: 0)
-        return "\(paddedName)  \(paddedProvider)  \(paddedLocation)  Cost"
+        return "\(paddedName)  \(paddedProvider)  \(paddedLocation)"
     }
 
-    /// Categorize models by billing (free vs premium)
-    private func categorizeModelsByBilling(_ models: [String]) -> (free: [String], premium: [String]) {
-        var freeModels: [String] = []
-        var premiumModels: [String] = []
-
-        for model in models {
-            let baseModelId: String
-            if let lastPart = model.split(separator: "/").last {
-                baseModelId = String(lastPart)
-            } else {
-                baseModelId = model
-            }
-
-            let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: baseModelId)
-            if let billing = billingInfo, billing.isPremium {
-                premiumModels.append(model)
-            } else {
-                freeModels.append(model)
-            }
-        }
-
-        return (
-            freeModels.sorted { formatModelDisplayName($0) < formatModelDisplayName($1) },
-            premiumModels.sorted { formatModelDisplayName($0) < formatModelDisplayName($1) }
-        )
-    }
-
-    /// Format model display name with provider, location, and cost
+    /// Format model display name with provider and location
     private func formatModelDisplayName(_ model: String) -> String {
         let baseModelId: String
         let provider: String
@@ -182,41 +119,13 @@ struct ModelPickerView: View {
         let isLocal = endpointManager.isLocalModel(model)
         let location = isLocal ? "Local" : "Remote"
 
-        let billingInfo = endpointManager.getGitHubCopilotModelBillingInfo(modelId: baseModelId)
-        let multiplierStr: String
-        if let billing = billingInfo {
-            let multiplier = billing.multiplier ?? 0
-            if multiplier == 0 {
-                multiplierStr = "-"  /// Free model (multiplier is 0)
-            } else if multiplier.truncatingRemainder(dividingBy: 1) == 0 {
-                multiplierStr = "\(Int(multiplier))x"
-            } else {
-                multiplierStr = String(format: "%.1fx", multiplier)
-            }
-        } else {
-            /// No billing data available (not a GitHub Copilot model or data not fetched)
-            multiplierStr = "-"
-        }
-
         /// Use fixed-width spacing for uniform column alignment
-        /// Format: "ModelName (padded to 30) | Provider (padded to 18) | Location (padded to 8) | Cost"
+        /// Format: "ModelName (padded to 30) | Provider (padded to 18) | Location (padded to 8)"
         let paddedName = displayName.padding(toLength: 30, withPad: " ", startingAt: 0)
         let paddedProvider = (provider.isEmpty ? "-" : provider).padding(toLength: 18, withPad: " ", startingAt: 0)
         let paddedLocation = location.padding(toLength: 8, withPad: " ", startingAt: 0)
 
-        return "\(paddedName)  \(paddedProvider)  \(paddedLocation)  \(multiplierStr)"
-    }
-
-    /// Beautify provider name
-    private func beautifyProviderName(_ provider: String) -> String {
-        switch provider.lowercased() {
-        case "github_copilot": return "GitHub Copilot"
-        case "unsloth": return "Unsloth"
-        case "openai": return "OpenAI"
-        case "local": return "Local"
-        case "mlx": return "MLX"
-        default: return provider.capitalized
-        }
+        return "\(paddedName)  \(paddedProvider)  \(paddedLocation)"
     }
 
     /// Beautify model name

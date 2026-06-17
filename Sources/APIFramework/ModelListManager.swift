@@ -131,23 +131,8 @@ public class ModelListManager: ObservableObject {
                 return !isNonChatModel
             }
             
-            // Sort models: Free (0x) first, then Premium, both alphabetical within tier
+            // Sort models alphabetically (no longer sorting by free/premium tiers - usage-based billing June 2026+)
             let sortedModels = chatModelsOnly.sorted { model1, model2 in
-                let base1 = model1.split(separator: "/").last.map(String.init) ?? model1
-                let base2 = model2.split(separator: "/").last.map(String.init) ?? model2
-                
-                let billing1 = endpointManager.getGitHubCopilotModelBillingInfo(modelId: base1)
-                let billing2 = endpointManager.getGitHubCopilotModelBillingInfo(modelId: base2)
-                
-                let isFree1 = !(billing1?.isPremium ?? false)
-                let isFree2 = !(billing2?.isPremium ?? false)
-                
-                // Free models come first
-                if isFree1 != isFree2 {
-                    return isFree1
-                }
-                
-                // Within same tier, sort alphabetically
                 return model1.lowercased() < model2.lowercased()
             }
             

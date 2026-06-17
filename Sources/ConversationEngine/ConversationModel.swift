@@ -82,8 +82,7 @@ public struct ConversationSettings: Codable, Sendable {
     public var showingWorkingDirectoryPanel: Bool
     public var showAdvancedParameters: Bool
     public var showingPerformanceMetrics: Bool
-    public var showingCostTrackingPanel: Bool
-    
+
     /// Telemetry for Session Intelligence UI - tracks memory/archive/compression usage
     public var telemetry: ConversationTelemetry
 
@@ -105,7 +104,6 @@ public struct ConversationSettings: Codable, Sendable {
         showingWorkingDirectoryPanel: Bool = false,
         showAdvancedParameters: Bool = false,
         showingPerformanceMetrics: Bool = false,
-        showingCostTrackingPanel: Bool = false,
         telemetry: ConversationTelemetry = ConversationTelemetry()
     ) {
         self.selectedModel = selectedModel
@@ -142,7 +140,6 @@ public struct ConversationSettings: Codable, Sendable {
         self.showingWorkingDirectoryPanel = showingWorkingDirectoryPanel
         self.showAdvancedParameters = showAdvancedParameters
         self.showingPerformanceMetrics = showingPerformanceMetrics
-        self.showingCostTrackingPanel = showingCostTrackingPanel
         self.telemetry = telemetry
 
         /// Default to SAM Default system prompt if none specified This ensures guard rails are always active in API calls and UI.
@@ -164,7 +161,7 @@ public struct ConversationSettings: Codable, Sendable {
         case scrollLockEnabled
         case useSharedData, sharedTopicId, sharedTopicName
         case draftMessage
-        case showingMemoryPanel, showingWorkingDirectoryPanel, showAdvancedParameters, showingPerformanceMetrics, showingCostTrackingPanel
+        case showingMemoryPanel, showingWorkingDirectoryPanel, showAdvancedParameters, showingPerformanceMetrics
         case telemetry
     }
 
@@ -204,8 +201,7 @@ public struct ConversationSettings: Codable, Sendable {
         showingWorkingDirectoryPanel = try container.decodeIfPresent(Bool.self, forKey: .showingWorkingDirectoryPanel) ?? false
         showAdvancedParameters = try container.decodeIfPresent(Bool.self, forKey: .showAdvancedParameters) ?? false
         showingPerformanceMetrics = try container.decodeIfPresent(Bool.self, forKey: .showingPerformanceMetrics) ?? false
-        showingCostTrackingPanel = try container.decodeIfPresent(Bool.self, forKey: .showingCostTrackingPanel) ?? false
-        
+
         /// Telemetry - default to empty if not present (for old conversations)
         telemetry = try container.decodeIfPresent(ConversationTelemetry.self, forKey: .telemetry) ?? ConversationTelemetry()
     }
