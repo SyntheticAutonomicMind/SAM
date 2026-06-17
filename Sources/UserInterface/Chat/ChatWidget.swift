@@ -1507,6 +1507,7 @@ public struct ChatWidget: View {
         .background(Color(NSColor.controlBackgroundColor))
         .onAppear {
             loadGlobalMLXSettings()
+            loadGlobalLlamaSettings()
         }
     }
 
@@ -4428,6 +4429,14 @@ public struct ChatWidget: View {
         }
 
         logger.debug("Loaded global MLX settings: preset=\(preset), topP=\(config.topP), repPenalty=\(config.repetitionPenalty?.description ?? "nil")")
+    }
+
+    /// Load global llama.cpp settings from preferences. Mirror of
+    /// loadGlobalMLXSettings so the log line at chat-start names the
+    /// active llama preset and its topK/minP.
+    private func loadGlobalLlamaSettings() {
+        let llamaConfig = getGlobalLlamaConfiguration()
+        logger.debug("Loaded global llama settings: nCtx=\(llamaConfig.nCtx) topP=\(llamaConfig.topP) temp=\(llamaConfig.temperature) repPenalty=\(llamaConfig.repetitionPenalty) topK=\(llamaConfig.topK) minP=\(llamaConfig.minP)")
     }
 
     /// Load system prompts - Ensure SystemPromptManager is initialized with default.

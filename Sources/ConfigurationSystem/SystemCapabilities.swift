@@ -378,6 +378,8 @@ public func getGlobalLlamaConfiguration() -> LlamaConfiguration {
         let nCtx = UserDefaults.standard.integer(forKey: "localModels.llama.customNCtx")
         let nBatch = UserDefaults.standard.integer(forKey: "localModels.llama.customNBatch")
         let topP = UserDefaults.standard.double(forKey: "localModels.llama.customTopP")
+        let topK = UserDefaults.standard.integer(forKey: "localModels.llama.customTopK")
+        let minP = UserDefaults.standard.double(forKey: "localModels.llama.customMinP")
         let temperature = UserDefaults.standard.double(forKey: "localModels.llama.customTemperature")
         let repPenalty = UserDefaults.standard.double(forKey: "localModels.llama.customRepetitionPenalty")
         let maxTokens = UserDefaults.standard.integer(forKey: "localModels.llama.customMaxTokens")
@@ -389,6 +391,8 @@ public func getGlobalLlamaConfiguration() -> LlamaConfiguration {
             topP: topP > 0 ? topP : 0.95,
             temperature: temperature > 0 ? temperature : 0.8,
             repetitionPenalty: repPenalty > 0 ? repPenalty : 1.1,
+            topK: topK > 0 ? topK : 40,
+            minP: minP > 0 ? minP : 0.05,
             maxTokens: maxTokens > 0 ? maxTokens : 2048
         )
     default: return SystemCapabilities.current.ramProfile.llamaConfiguration

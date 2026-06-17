@@ -392,6 +392,22 @@ public struct LocalModelOptimizationSection: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
                                 .font(.caption)
+                            Text("Top-K: \(config.topK)")
+                                .font(.caption)
+                        }
+
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("Min-P: \(String(format: "%.2f", config.minP))")
+                                .font(.caption)
+                        }
+
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
                             Text("Max Tokens: \(config.maxTokens)")
                                 .font(.caption)
                         }

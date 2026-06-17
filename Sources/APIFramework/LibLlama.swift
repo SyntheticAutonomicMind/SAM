@@ -341,7 +341,7 @@ actor LlamaContext {
         /// fall back to the global user preference so the Settings pane values
         /// are honored automatically.
         let activeConfig = getGlobalLlamaConfiguration()
-        llamaLogger.info("LlamaContext configuration: nGpuLayers=\(activeConfig.nGpuLayers) nCtx=\(activeConfig.nCtx) nBatch=\(activeConfig.nBatch) topP=\(activeConfig.topP) temp=\(activeConfig.temperature) repPenalty=\(activeConfig.repetitionPenalty)")
+        llamaLogger.info("LlamaContext configuration: nGpuLayers=\(activeConfig.nGpuLayers) nCtx=\(activeConfig.nCtx) nBatch=\(activeConfig.nBatch) topP=\(activeConfig.topP) temp=\(activeConfig.temperature) repPenalty=\(activeConfig.repetitionPenalty) topK=\(activeConfig.topK) minP=\(activeConfig.minP)")
 
         llama_backend_init()
         var model_params = llama_model_default_params()
@@ -860,6 +860,8 @@ actor LlamaContext {
         let sparams = llama_sampler_chain_default_params()
         sampling = llama_sampler_chain_init(sparams)
 
+        var chainSummary: [String] = []
+
         /// Sampler order follows the llama.cpp example chain: top-k ->
         /// top-p -> min-p -> penalties -> temperature -> dist. The order
         /// matters because each stage prunes the candidate set before
@@ -869,12 +871,14 @@ actor LlamaContext {
         /// expensive filters run. Disabled when topK <= 0.
         if let topK = config.topK, topK > 0 {
             llama_sampler_chain_add(sampling, llama_sampler_init_top_k(topK))
+            chainSummary.append("top_k(\(topK))")
         }
 
         /// Min-P: dynamic nucleus filter that adapts to confidence.
         /// When minP > 0 and < 1, drops tokens below minP * max_prob.
         if let minP = config.minP, minP > 0.0 && minP < 1.0 {
             llama_sampler_chain_add(sampling, llama_sampler_init_min_p(minP, 1))
+            chainSummary.append("min_p(\(minP))")
         }
 
         if let repetitionPenalty = config.repetitionPenalty, repetitionPenalty != 1.0 {
@@ -882,21 +886,28 @@ actor LlamaContext {
                 sampling,
                 llama_sampler_init_penalties(64, repetitionPenalty, 0.0, 0.0)
             )
+            chainSummary.append("penalties(\(repetitionPenalty))")
         }
 
         if let topP = config.topP, topP > 0.0 && topP < 1.0 {
             llama_sampler_chain_add(sampling, llama_sampler_init_top_p(topP, 1))
+            chainSummary.append("top_p(\(topP))")
         }
 
         let temperature = config.temperature ?? 0.7
         if temperature <= 0.0 {
             llama_sampler_chain_add(sampling, llama_sampler_init_greedy())
+            chainSummary.append("greedy")
         } else {
             llama_sampler_chain_add(sampling, llama_sampler_init_temp(temperature))
+            chainSummary.append("temp(\(temperature))")
         }
 
         let seed = config.seed ?? UInt32(Date().timeIntervalSince1970)
         llama_sampler_chain_add(sampling, llama_sampler_init_dist(seed))
+        chainSummary.append("dist")
+
+        llamaLogger.info("setSampling chain (in order): \(chainSummary.joined(separator: " -> "))")
     }
 
     /// Set the stop sequences used by the text-EOG detector.
