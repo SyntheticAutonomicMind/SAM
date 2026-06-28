@@ -27,10 +27,10 @@ extension ChatWidget {
                         Spacer()
 
                         /// Active mini-prompts (when sidebar closed) - shown on same line as title
-                        if !showingMiniPrompts {
-                            let miniPromptManager = MiniPromptManager.shared
-                            let enabledPrompts = miniPromptManager.miniPrompts
-                                .filter { conversation.enabledMiniPromptIds.contains($0.id) }
+                        if !showingCustomInstructions {
+                            let customInstructionManager = CustomInstructionManager.shared
+                            let enabledInstructions = customInstructionManager.customInstructions
+                                .filter { conversation.enabledCustomInstructionIds.contains($0.id) }
                                 .sorted { $0.displayOrder < $1.displayOrder }
 
                             if !enabledPrompts.isEmpty {

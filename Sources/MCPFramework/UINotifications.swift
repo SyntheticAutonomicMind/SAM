@@ -97,5 +97,5 @@ public extension Notification.Name {
     static let toggleSidebar = Notification.Name("SAM.UI.toggleSidebar")
 
     /// Toggle mini-prompts panel.
-    static let toggleMiniPrompts = Notification.Name("SAM.UI.toggleMiniPrompts")
+    static let toggleCustomInstructions = Notification.Name("SAM.UI.toggleCustomInstructions")
 }

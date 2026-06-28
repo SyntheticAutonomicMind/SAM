@@ -133,7 +133,7 @@ public enum LocalProviderCore {
             statefulMarker: request.statefulMarker,
             iterationNumber: request.iterationNumber,
             topic: request.topic,
-            miniPrompts: request.miniPrompts,
+            customInstructions: request.customInstructions,
             personalityId: request.personalityId
         )
     }

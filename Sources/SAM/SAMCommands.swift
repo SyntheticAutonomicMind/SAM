@@ -122,7 +122,7 @@ struct SAMCommands: Commands {
             .keyboardShortcut("\\", modifiers: .command)
 
             Button("Toggle Mini-Prompts") {
-                NotificationCenter.default.post(name: .toggleMiniPrompts, object: nil)
+                NotificationCenter.default.post(name: .toggleCustomInstructions, object: nil)
             }
             .keyboardShortcut("\\", modifiers: [.command, .shift])
 

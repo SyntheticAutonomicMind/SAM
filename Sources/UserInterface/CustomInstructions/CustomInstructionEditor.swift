@@ -4,29 +4,28 @@
 import SwiftUI
 import ConfigurationSystem
 
-/// Editor for creating/editing mini-prompts.
-public struct MiniPromptEditor: View {
-    @ObservedObject var manager: MiniPromptManager
-    var prompt: MiniPrompt?
+/// Editor for creating/editing custom instructions.
+public struct CustomInstructionEditor: View {
+    @ObservedObject var manager: CustomInstructionManager
+    var instruction: CustomInstruction?
 
     @State private var name: String
     @State private var content: String
 
     @Environment(\.dismiss) private var dismiss
 
-    public init(manager: MiniPromptManager, prompt: MiniPrompt? = nil) {
+    public init(manager: CustomInstructionManager, instruction: CustomInstruction? = nil) {
         self.manager = manager
-        self.prompt = prompt
-        /// Initialize @State variables with prompt data if editing, empty if new.
-        _name = State(initialValue: prompt?.name ?? "")
-        _content = State(initialValue: prompt?.content ?? "")
+        self.instruction = instruction
+        _name = State(initialValue: instruction?.name ?? "")
+        _content = State(initialValue: instruction?.content ?? "")
     }
 
     public var body: some View {
         VStack(spacing: 16) {
             /// Header.
             HStack {
-                Text(prompt == nil ? "New Mini-Prompt" : "Edit Mini-Prompt")
+                Text(instruction == nil ? "New Custom Instruction" : "Edit Custom Instruction")
                     .font(.headline)
                 Spacer()
                 Button("Cancel") {
@@ -61,9 +60,9 @@ public struct MiniPromptEditor: View {
 
             /// Actions.
             HStack {
-                if prompt != nil {
+                if instruction != nil {
                     Button("Delete", role: .destructive) {
-                        manager.deletePrompt(id: prompt!.id)
+                        manager.deleteInstruction(id: instruction!.id)
                         dismiss()
                     }
                     Spacer()
@@ -74,7 +73,7 @@ public struct MiniPromptEditor: View {
                 }
 
                 Button("Save") {
-                    savePrompt()
+                    saveInstruction()
                     dismiss()
                 }
                 .disabled(name.isEmpty || content.isEmpty)
@@ -85,14 +84,14 @@ public struct MiniPromptEditor: View {
         .frame(width: 500, height: 450)
     }
 
-    private func savePrompt() {
-        if let existing = prompt {
+    private func saveInstruction() {
+        if let existing = instruction {
             var updated = existing
             updated.update(name: name, content: content)
-            manager.updatePrompt(updated)
+            manager.updateInstruction(updated)
         } else {
-            let newPrompt = MiniPrompt(name: name, content: content)
-            manager.addPrompt(newPrompt)
+            let newInstruction = CustomInstruction(name: name, content: content)
+            manager.addInstruction(newInstruction)
         }
     }
 }

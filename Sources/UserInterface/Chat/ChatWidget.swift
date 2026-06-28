@@ -26,7 +26,7 @@ public struct ChatWidget: View {
     @EnvironmentObject var endpointManager: EndpointManager
     let activeConversation: ConversationModel?
     @ObservedObject var messageBus: ConversationMessageBus
-    @Binding var showingMiniPrompts: Bool
+    @Binding var showingCustomInstructions: Bool
     let logger = Logging.Logger(label: "com.sam.chat")
     @EnvironmentObject var conversationManager: ConversationManager
     @EnvironmentObject var sharedConversationService: SharedConversationService
@@ -242,10 +242,10 @@ public struct ChatWidget: View {
         }
     }
 
-    public init(activeConversation: ConversationModel? = nil, messageBus: ConversationMessageBus, showingMiniPrompts: Binding<Bool>) {
+    public init(activeConversation: ConversationModel? = nil, messageBus: ConversationMessageBus, showingCustomInstructions: Binding<Bool>) {
         self.activeConversation = activeConversation
         self.messageBus = messageBus
-        self._showingMiniPrompts = showingMiniPrompts
+        self._showingCustomInstructions = showingCustomInstructions
     }
 
     /// Check if input should be disabled (when model needs loading)
@@ -1981,7 +1981,7 @@ public struct ChatWidget: View {
         var textForAPI = originalText
         var injectedContexts: [String] = []
 
-        /// FEATURE: Inject mini-prompts into FIRST user message only (per-conversation).
+        /// FEATURE: Inject custom instructions into FIRST user message only (per-conversation).
         /// Mini-prompts are persistent instructions that should be set once at conversation start,
         /// not repeated in every user message (which would waste context and cause issues).
         if let activeConversation = activeConversation {
@@ -1991,25 +1991,25 @@ public struct ChatWidget: View {
             let isFirstUserMessage = currentUserMessageCount == 0
             
             if isFirstUserMessage {
-                logger.debug("MINI_PROMPT_TRACE: ChatWidget first message check - convId=\(activeConversation.id.uuidString.prefix(8)), enabledCount=\(activeConversation.enabledMiniPromptIds.count)")
-                let miniPromptText = MiniPromptManager.shared.getInjectedText(
+                logger.debug("CUSTOM_INSTRUCTION_TRACE: ChatWidget first message check - convId=\(activeConversation.id.uuidString.prefix(8)), enabledCount=\(activeConversation.enabledCustomInstructionIds.count)")
+                let customInstructionText = CustomInstructionManager.shared.getInjectedText(
                     for: activeConversation.id,
-                    enabledIds: activeConversation.enabledMiniPromptIds
+                    enabledIds: activeConversation.enabledCustomInstructionIds
                 )
-                if !miniPromptText.isEmpty {
-                    injectedContexts.append(miniPromptText)
-                    let enabledPrompts = MiniPromptManager.shared.enabledPrompts(
+                if !customInstructionText.isEmpty {
+                    injectedContexts.append(customInstructionText)
+                    let enabledPrompts = CustomInstructionManager.shared.enabledInstructions(
                         for: activeConversation.id,
-                        enabledIds: activeConversation.enabledMiniPromptIds
+                        enabledIds: activeConversation.enabledCustomInstructionIds
                     )
                     /// ChatWidget handles first-message persist only. AgentOrchestrator handles
                     /// one-time mid-conversation persist and ephemeral per-turn injection.
-                    logger.info("MINI_PROMPT_TRACE: ChatWidget injected \(enabledPrompts.count) mini-prompt(s) into FIRST user message: \(enabledPrompts.map { $0.name }.joined(separator: ", "))")
+                    logger.info("CUSTOM_INSTRUCTION_TRACE: ChatWidget injected \(enabledPrompts.count) custom instruction(s) into FIRST user message: \(enabledPrompts.map { $0.name }.joined(separator: ", "))")
                 } else {
-                    logger.debug("MINI_PROMPT_TRACE: ChatWidget miniPromptText was empty")
+                    logger.debug("CUSTOM_INSTRUCTION_TRACE: ChatWidget customInstructionText was empty")
                 }
             } else {
-                logger.debug("MINI_PROMPT_TRACE: ChatWidget skipped injection (not first message, count=\(currentUserMessageCount), enabledCount=\(activeConversation.enabledMiniPromptIds.count))")
+                logger.debug("CUSTOM_INSTRUCTION_TRACE: ChatWidget skipped injection (not first message, count=\(currentUserMessageCount), enabledCount=\(activeConversation.enabledCustomInstructionIds.count))")
             }
         }
 
@@ -2560,7 +2560,7 @@ public struct ChatWidget: View {
         let shouldPin = currentUserMessageCount < 3  /// Auto-pin first 3 user messages
         let importance = calculateMessageImportance(text: text, isUser: true)
 
-        /// Add user message with performance tracking Store the FULL message (with mini-prompts) for API/memory, display filtered version in UI.
+        /// Add user message with performance tracking Store the FULL message (with custom instructions) for API/memory, display filtered version in UI.
         let userMessage = EnhancedMessage(
             id: UUID(),
             content: text,

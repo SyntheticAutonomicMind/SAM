@@ -464,47 +464,47 @@ extension AgentOrchestrator {
         logger.debug("callLLM: Request has \(messages.count) messages (\(messagesToSend.count) conversation + \(internalMessages.count) internal)")
         logger.debug("callLLM: User sees \(conversation.messages.count) messages, LLM context uses \(messagesToSend.count) messages")
 
-        /// EPHEMERAL MINI-PROMPT INJECTION: Append mini-prompt content to the last user message
+        /// CUSTOM INSTRUCTION INJECTION: Append custom instruction content to the last user message
         /// in the API payload. This is NOT persisted to conversation history - it only exists
         /// in the messages array sent to the API. Models pay more attention to content in user
-        /// messages than system prompts, so this gets mini-prompts acted on rather than ignored.
+        /// messages than system prompts, so this gets custom instructions acted on rather than ignored.
         ///
-        /// ONE-TIME PERSIST: When mini-prompts are enabled mid-conversation, we also add a
+        /// ONE-TIME PERSIST: When custom instructions are enabled mid-conversation, we also add a
         /// hidden system-generated user message to conversation history so the model retains
-        /// context about WHY it made certain decisions even after the prompt is disabled.
-        if !conversation.enabledMiniPromptIds.isEmpty {
-            let miniPromptText = MiniPromptManager.shared.getInjectedText(
+        /// context about WHY it made certain decisions even after the instruction is disabled.
+        if !conversation.enabledCustomInstructionIds.isEmpty {
+            let customInstructionText = CustomInstructionManager.shared.getInjectedText(
                 for: conversation.id,
-                enabledIds: conversation.enabledMiniPromptIds
+                enabledIds: conversation.enabledCustomInstructionIds
             )
-            if !miniPromptText.isEmpty {
-                /// Check if mini-prompt content is already persisted in conversation history
+            if !customInstructionText.isEmpty {
+                /// Check if custom instruction content is already persisted in conversation history
                 let alreadyPersisted = conversation.messages.contains { msg in
-                    msg.isFromUser && msg.content.contains(miniPromptText.prefix(100))
+                    msg.isFromUser && msg.content.contains(customInstructionText.prefix(100))
                 }
 
                 /// One-time persist: Add hidden message if not already in history.
                 /// This ensures the model retains context for its decisions even after
-                /// the mini-prompt is disabled. Hidden from UI via isSystemGenerated.
+                /// the custom instruction is disabled. Hidden from UI via isSystemGenerated.
                 if !alreadyPersisted {
-                    let persistContent = "<userContext>\n\(miniPromptText)\n</userContext>"
+                    let persistContent = "<userContext>\n\(customInstructionText)\n</userContext>"
                     conversation.messageBus?.addUserMessage(
                         content: persistContent,
                         isPinned: true,
                         isSystemGenerated: true
                     )
-                    logger.info("callLLM: Persisted mini-prompt content as hidden message for conversation continuity (\(miniPromptText.count) chars)")
+                    logger.info("callLLM: Persisted custom instruction content as hidden message for conversation continuity (\(customInstructionText.count) chars)")
                 }
 
                 /// Ephemeral injection into last user message for immediate salience
                 if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
                     let existingContent = messages[lastUserIndex].content ?? ""
-                    if !existingContent.contains(miniPromptText.prefix(100)) {
-                        let injectedContent = existingContent + "\n\n<userContext>\n\(miniPromptText)\n</userContext>"
+                    if !existingContent.contains(customInstructionText.prefix(100)) {
+                        let injectedContent = existingContent + "\n\n<userContext>\n\(customInstructionText)\n</userContext>"
                         messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
-                        logger.info("callLLM: Ephemeral mini-prompt injection into last user message (\(miniPromptText.count) chars)")
+                        logger.info("callLLM: Ephemeral custom instruction injection into last user message (\(customInstructionText.count) chars)")
                     } else {
-                        logger.debug("callLLM: Mini-prompt already present in last user message")
+                        logger.debug("callLLM: Custom instruction already present in last user message")
                     }
                 }
             }
@@ -1554,39 +1554,39 @@ extension AgentOrchestrator {
         messages = MessageValidator.validateToolMessagePairs(messages)
         logger.debug("callLLMStreaming: Validated tool message pairs - \(messages.count) messages after validation")
 
-        /// EPHEMERAL MINI-PROMPT INJECTION + ONE-TIME PERSIST
+        /// CUSTOM INSTRUCTION INJECTION + ONE-TIME PERSIST
         /// See callLLM for full rationale - models act on user-message content, ignore system prompt tail.
-        if !conversation.enabledMiniPromptIds.isEmpty {
-            let miniPromptText = MiniPromptManager.shared.getInjectedText(
+        if !conversation.enabledCustomInstructionIds.isEmpty {
+            let customInstructionText = CustomInstructionManager.shared.getInjectedText(
                 for: conversation.id,
-                enabledIds: conversation.enabledMiniPromptIds
+                enabledIds: conversation.enabledCustomInstructionIds
             )
-            if !miniPromptText.isEmpty {
-                /// Check if mini-prompt content is already persisted in conversation history
+            if !customInstructionText.isEmpty {
+                /// Check if custom instruction content is already persisted in conversation history
                 let alreadyPersisted = conversation.messages.contains { msg in
-                    msg.isFromUser && msg.content.contains(miniPromptText.prefix(100))
+                    msg.isFromUser && msg.content.contains(customInstructionText.prefix(100))
                 }
 
                 /// One-time persist: Add hidden message if not already in history
                 if !alreadyPersisted {
-                    let persistContent = "<userContext>\n\(miniPromptText)\n</userContext>"
+                    let persistContent = "<userContext>\n\(customInstructionText)\n</userContext>"
                     conversation.messageBus?.addUserMessage(
                         content: persistContent,
                         isPinned: true,
                         isSystemGenerated: true
                     )
-                    logger.info("callLLMStreaming: Persisted mini-prompt content as hidden message (\(miniPromptText.count) chars)")
+                    logger.info("callLLMStreaming: Persisted custom instruction content as hidden message (\(customInstructionText.count) chars)")
                 }
 
                 /// Ephemeral injection into last user message for immediate salience
                 if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
                     let existingContent = messages[lastUserIndex].content ?? ""
-                    if !existingContent.contains(miniPromptText.prefix(100)) {
-                        let injectedContent = existingContent + "\n\n<userContext>\n\(miniPromptText)\n</userContext>"
+                    if !existingContent.contains(customInstructionText.prefix(100)) {
+                        let injectedContent = existingContent + "\n\n<userContext>\n\(customInstructionText)\n</userContext>"
                         messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
-                        logger.info("callLLMStreaming: Ephemeral mini-prompt injection into last user message (\(miniPromptText.count) chars)")
+                        logger.info("callLLMStreaming: Ephemeral custom instruction injection into last user message (\(customInstructionText.count) chars)")
                     } else {
-                        logger.debug("callLLMStreaming: Mini-prompt already present in last user message")
+                        logger.debug("callLLMStreaming: Custom instruction already present in last user message")
                     }
                 }
             }

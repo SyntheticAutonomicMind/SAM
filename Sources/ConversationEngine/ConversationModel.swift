@@ -222,7 +222,7 @@ public struct ConversationData: Codable, Sendable {
     public let isPinned: Bool?
     public let workingDirectory: String?
     public let workingDirectoryBookmark: Data?
-    public let enabledMiniPromptIds: [UUID]?
+    public let enabledCustomInstructionIds: [UUID]?
 
     /// Folder organization - conversations can be grouped into folders
     public let folderId: String?
@@ -233,7 +233,7 @@ public struct ConversationData: Codable, Sendable {
     /// Performance metrics for this conversation (cost tracking)
     public let performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]?
 
-    public init(id: UUID, title: String, created: Date, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: [UUID]? = nil, folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]? = nil) {
+    public init(id: UUID, title: String, created: Date, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledCustomInstructionIds: [UUID]? = nil, folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]? = nil) {
         self.id = id
         self.title = title
         self.created = created
@@ -246,7 +246,7 @@ public struct ConversationData: Codable, Sendable {
         self.isPinned = isPinned
         self.workingDirectory = workingDirectory
         self.workingDirectoryBookmark = workingDirectoryBookmark
-        self.enabledMiniPromptIds = enabledMiniPromptIds
+        self.enabledCustomInstructionIds = enabledCustomInstructionIds
         self.folderId = folderId
         self.isFromAPI = isFromAPI
         self.performanceMetrics = performanceMetrics
@@ -286,7 +286,7 @@ public class ConversationModel: ObservableObject, Identifiable {
     @Published public var isPinned: Bool = false
 
     /// Enabled mini-prompt IDs for this conversation Allows per-conversation context injection (e.g., location context only when relevant).
-    @Published public var enabledMiniPromptIds: Set<UUID> = []
+    @Published public var enabledCustomInstructionIds: Set<UUID> = []
 
     /// Folder organization - conversations can be grouped into folders
     @Published public var folderId: String?
@@ -386,7 +386,7 @@ public class ConversationModel: ObservableObject, Identifiable {
         return ConversationModel.from(data: data)
     }
 
-    private init(id: UUID, created: Date, title: String, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledMiniPromptIds: Set<UUID> = [], folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []) {
+    private init(id: UUID, created: Date, title: String, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledCustomInstructionIds: Set<UUID> = [], folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []) {
         self.id = id
         self.created = created
         self.title = title
@@ -398,7 +398,7 @@ public class ConversationModel: ObservableObject, Identifiable {
         self.contextMessages = contextMessages
         self.isPinned = isPinned
         self.workingDirectoryBookmark = workingDirectoryBookmark
-        self.enabledMiniPromptIds = enabledMiniPromptIds
+        self.enabledCustomInstructionIds = enabledCustomInstructionIds
         self.folderId = folderId
         self.isFromAPI = isFromAPI
         self.performanceMetrics = performanceMetrics
@@ -433,7 +433,7 @@ public class ConversationModel: ObservableObject, Identifiable {
             isPinned: isPinned,
             workingDirectory: workingDirectory,
             workingDirectoryBookmark: workingDirectoryBookmark,
-            enabledMiniPromptIds: Array(enabledMiniPromptIds),
+            enabledCustomInstructionIds: Array(enabledCustomInstructionIds),
             folderId: folderId,
             isFromAPI: isFromAPI,
             performanceMetrics: performanceMetrics
@@ -455,7 +455,7 @@ public class ConversationModel: ObservableObject, Identifiable {
             isPinned: data.isPinned ?? false,
             workingDirectory: data.workingDirectory,
             workingDirectoryBookmark: data.workingDirectoryBookmark,
-            enabledMiniPromptIds: Set(data.enabledMiniPromptIds ?? []),
+            enabledCustomInstructionIds: Set(data.enabledCustomInstructionIds ?? []),
             folderId: data.folderId,
             isFromAPI: data.isFromAPI ?? false,
             performanceMetrics: data.performanceMetrics ?? []

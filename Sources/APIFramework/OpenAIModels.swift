@@ -168,13 +168,13 @@ public struct OpenAIChatRequest: Content {
     /// Topic folder ID for conversation context (e.g., "vscode-copilot-chat" from reference/ directory)
     public let topic: String?
 
-    /// Mini-prompt names to enable for this conversation
-    public let miniPrompts: [String]?
+    /// Custom instruction names to enable for this conversation
+    public let customInstructions: [String]?
 
     /// Personality ID to apply (adds trait-based prompt additions after system prompt)
     public let personalityId: String?
 
-    public init(model: String, messages: [OpenAIChatMessage], temperature: Double? = nil, topP: Double? = nil, repetitionPenalty: Double? = nil, maxTokens: Int? = nil, stream: Bool? = nil, tools: [OpenAITool]? = nil, user: String? = nil, samConfig: SAMConfig? = nil, contextId: String? = nil, enableMemory: Bool? = nil, sessionId: String? = nil, conversationId: String? = nil, statefulMarker: String? = nil, iterationNumber: Int? = nil, topic: String? = nil, miniPrompts: [String]? = nil, personalityId: String? = nil) {
+    public init(model: String, messages: [OpenAIChatMessage], temperature: Double? = nil, topP: Double? = nil, repetitionPenalty: Double? = nil, maxTokens: Int? = nil, stream: Bool? = nil, tools: [OpenAITool]? = nil, user: String? = nil, samConfig: SAMConfig? = nil, contextId: String? = nil, enableMemory: Bool? = nil, sessionId: String? = nil, conversationId: String? = nil, statefulMarker: String? = nil, iterationNumber: Int? = nil, topic: String? = nil, customInstructions: [String]? = nil, personalityId: String? = nil) {
         self.model = model
         self.messages = messages
         self.temperature = temperature
@@ -192,7 +192,7 @@ public struct OpenAIChatRequest: Content {
         self.statefulMarker = statefulMarker
         self.iterationNumber = iterationNumber
         self.topic = topic
-        self.miniPrompts = miniPrompts
+        self.customInstructions = customInstructions
         self.personalityId = personalityId
     }
 
@@ -210,7 +210,7 @@ public struct OpenAIChatRequest: Content {
         case statefulMarker = "stateful_marker"
         case iterationNumber = "iteration_number"
         case topic
-        case miniPrompts = "mini_prompts"
+        case customInstructions = "custom_instructions"
         case personalityId = "personality_id"
     }
 }

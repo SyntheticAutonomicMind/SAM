@@ -983,27 +983,27 @@ AVAILABLE TOOLS:
         }
 
         protected.get("api", "prompts", "mini") { req async throws -> Response in
-            return try await self.handleListMiniPrompts(req)
+            return try await self.handleListCustomInstructions(req)
         }
 
         protected.get("api", "topics") { req async throws -> Response in
             return try await self.handleListTopics(req)
         }
 
-        protected.get("api", "mini-prompts") { req async throws -> Response in
-            return try await self.handleListMiniPrompts(req)
+        protected.get("api", "custom-instructions") { req async throws -> Response in
+            return try await self.handleListCustomInstructions(req)
         }
 
-        protected.post("api", "mini-prompts") { req async throws -> Response in
-            return try await self.handleCreateMiniPrompt(req)
+        protected.post("api", "custom-instructions") { req async throws -> Response in
+            return try await self.handleCreateCustomInstruction(req)
         }
 
-        protected.patch("api", "mini-prompts", ":promptId") { req async throws -> Response in
-            return try await self.handleUpdateMiniPrompt(req)
+        protected.patch("api", "custom-instructions", ":promptId") { req async throws -> Response in
+            return try await self.handleUpdateCustomInstruction(req)
         }
 
-        protected.delete("api", "mini-prompts", ":promptId") { req async throws -> Response in
-            return try await self.handleDeleteMiniPrompt(req)
+        protected.delete("api", "custom-instructions", ":promptId") { req async throws -> Response in
+            return try await self.handleDeleteCustomInstruction(req)
         }
 
         /// Personality discovery endpoint.
@@ -1197,10 +1197,10 @@ AVAILABLE TOOLS:
                     logger.warning("DEBUG_SYSTEM_PROMPT: Invalid systemPromptId '\(requestedPromptId)', using default")
                 }
 
-                /// Enable mini-prompts if provided
-                if let miniPromptNames = chatRequest.miniPrompts, !miniPromptNames.isEmpty {
-                    self.enableMiniPromptsForConversation(conversation, miniPromptNames: miniPromptNames)
-                    logger.debug("DEBUG_MINI_PROMPTS: Enabled mini-prompts for conversation \(conversation.id): \(miniPromptNames.joined(separator: ", "))")
+                /// Enable custom-instructions if provided
+                if let customInstructionNames = chatRequest.customInstructions, !customInstructionNames.isEmpty {
+                    self.enableCustomInstructionsForConversation(conversation, customInstructionNames: customInstructionNames)
+                    logger.debug("DEBUG_CUSTOM_INSTRUCTIONS: Enabled custom-instructions for conversation \(conversation.id): \(customInstructionNames.joined(separator: ", "))")
                 }
 
                 /// Apply personality if provided
@@ -1214,10 +1214,10 @@ AVAILABLE TOOLS:
             }
         }
 
-        /// Apply topic and mini-prompts even when no systemPromptId is provided
-        logger.debug("DEBUG_TOPIC_CHECK: samConfig=\(chatRequest.samConfig != nil), systemPromptId=\(chatRequest.samConfig?.systemPromptId ?? "nil"), topic=\(chatRequest.topic ?? "nil"), miniPrompts=\(chatRequest.miniPrompts?.count ?? 0)")
-        if chatRequest.samConfig?.systemPromptId == nil && (chatRequest.topic != nil || chatRequest.miniPrompts != nil) {
-            logger.debug("DEBUG_TOPIC_CHECK: Entering topic/mini-prompt application block")
+        /// Apply topic and custom-instructions even when no systemPromptId is provided
+        logger.debug("DEBUG_TOPIC_CHECK: samConfig=\(chatRequest.samConfig != nil), systemPromptId=\(chatRequest.samConfig?.systemPromptId ?? "nil"), topic=\(chatRequest.topic ?? "nil"), customInstructions=\(chatRequest.customInstructions?.count ?? 0)")
+        if chatRequest.samConfig?.systemPromptId == nil && (chatRequest.topic != nil || chatRequest.customInstructions != nil) {
+            logger.debug("DEBUG_TOPIC_CHECK: Entering topic/custom instruction application block")
             await MainActor.run {
                 /// Get or create conversation.
                 let conversation: ConversationModel
@@ -1241,10 +1241,10 @@ AVAILABLE TOOLS:
                     }
                 }
 
-                /// Enable mini-prompts if provided
-                if let miniPromptNames = chatRequest.miniPrompts, !miniPromptNames.isEmpty {
-                    self.enableMiniPromptsForConversation(conversation, miniPromptNames: miniPromptNames)
-                    logger.debug("DEBUG_MINI_PROMPTS: Enabled mini-prompts for conversation \(conversation.id): \(miniPromptNames.joined(separator: ", "))")
+                /// Enable custom-instructions if provided
+                if let customInstructionNames = chatRequest.customInstructions, !customInstructionNames.isEmpty {
+                    self.enableCustomInstructionsForConversation(conversation, customInstructionNames: customInstructionNames)
+                    logger.debug("DEBUG_CUSTOM_INSTRUCTIONS: Enabled custom-instructions for conversation \(conversation.id): \(customInstructionNames.joined(separator: ", "))")
                 }
             }
         }
@@ -1873,11 +1873,11 @@ AVAILABLE TOOLS:
                     }
                 }
 
-                /// Enable mini-prompts if provided
-                if let miniPromptNames = chatRequest.miniPrompts, !miniPromptNames.isEmpty {
-                    self.enableMiniPromptsForConversation(existing, miniPromptNames: miniPromptNames)
+                /// Enable custom-instructions if provided
+                if let customInstructionNames = chatRequest.customInstructions, !customInstructionNames.isEmpty {
+                    self.enableCustomInstructionsForConversation(existing, customInstructionNames: customInstructionNames)
                     conversationManager.saveConversations()
-                    logger.debug("DEBUG_NONSTREAMING: Enabled mini-prompts for existing conversation: \(miniPromptNames.joined(separator: ", "))")
+                    logger.debug("DEBUG_NONSTREAMING: Enabled custom-instructions for existing conversation: \(customInstructionNames.joined(separator: ", "))")
                 }
 
                 /// Set isProcessing when starting workflow
@@ -1945,10 +1945,10 @@ AVAILABLE TOOLS:
                     }
                 }
 
-                /// Enable mini-prompts if provided
-                if let miniPromptNames = chatRequest.miniPrompts, !miniPromptNames.isEmpty {
-                    self.enableMiniPromptsForConversation(conversation, miniPromptNames: miniPromptNames)
-                    logger.debug("DEBUG_NONSTREAMING: Enabled mini-prompts for new conversation: \(miniPromptNames.joined(separator: ", "))")
+                /// Enable custom-instructions if provided
+                if let customInstructionNames = chatRequest.customInstructions, !customInstructionNames.isEmpty {
+                    self.enableCustomInstructionsForConversation(conversation, customInstructionNames: customInstructionNames)
+                    logger.debug("DEBUG_NONSTREAMING: Enabled custom-instructions for new conversation: \(customInstructionNames.joined(separator: ", "))")
                 }
 
                 /// Save conversations to disk immediately to persist API-specified settings.
@@ -2277,10 +2277,10 @@ AVAILABLE TOOLS:
                     /// NOTE: Topic attachment happens in handleNonStreamingChatCompletion via attachSharedTopic()
                     /// Do NOT set folderId here - streaming uses separate conversation lookup
 
-                    /// Enable mini-prompts if provided
-                    if let miniPromptNames = chatRequest.miniPrompts, !miniPromptNames.isEmpty {
-                        self.enableMiniPromptsForConversation(existing, miniPromptNames: miniPromptNames)
-                        logger.debug("DEBUG_STREAMING: Enabled mini-prompts: \(miniPromptNames.joined(separator: ", "))")
+                    /// Enable custom-instructions if provided
+                    if let customInstructionNames = chatRequest.customInstructions, !customInstructionNames.isEmpty {
+                        self.enableCustomInstructionsForConversation(existing, customInstructionNames: customInstructionNames)
+                        logger.debug("DEBUG_STREAMING: Enabled custom-instructions: \(customInstructionNames.joined(separator: ", "))")
                     }
 
                     /// Update existing conversation's model if it changed (use normalized name).
@@ -2323,10 +2323,10 @@ AVAILABLE TOOLS:
                     /// Initialize MessageBus for API conversation
                     conversation.initializeMessageBus(conversationManager: conversationManager)
 
-                    /// Enable mini-prompts BEFORE adding to manager
-                    if let miniPromptNames = chatRequest.miniPrompts, !miniPromptNames.isEmpty {
-                        self.enableMiniPromptsForConversation(conversation, miniPromptNames: miniPromptNames)
-                        logger.debug("Enabled mini-prompts for streaming conversation: \(miniPromptNames.joined(separator: ", "))")
+                    /// Enable custom-instructions BEFORE adding to manager
+                    if let customInstructionNames = chatRequest.customInstructions, !customInstructionNames.isEmpty {
+                        self.enableCustomInstructionsForConversation(conversation, customInstructionNames: customInstructionNames)
+                        logger.debug("Enabled custom-instructions for streaming conversation: \(customInstructionNames.joined(separator: ", "))")
                     }
 
                     conversationManager.conversations.append(conversation)
@@ -2609,10 +2609,10 @@ AVAILABLE TOOLS:
                     }
                     /// NOTE: Topic attachment happens in handleNonStreamingChatCompletion via attachSharedTopic()
                     /// Do NOT set folderId here - folderId is for reference folders, not shared topics
-                    /// Enable mini-prompts if provided
-                    if let miniPromptNames = request?.miniPrompts, !miniPromptNames.isEmpty {
-                        self.enableMiniPromptsForConversation(existingConversation, miniPromptNames: miniPromptNames)
-                        logger.debug("Enabled mini-prompts: \(miniPromptNames.joined(separator: ", "))")
+                    /// Enable custom-instructions if provided
+                    if let customInstructionNames = request?.customInstructions, !customInstructionNames.isEmpty {
+                        self.enableCustomInstructionsForConversation(existingConversation, customInstructionNames: customInstructionNames)
+                        logger.debug("Enabled custom-instructions: \(customInstructionNames.joined(separator: ", "))")
                     }
                     return existingConversation
                 }
@@ -2630,10 +2630,10 @@ AVAILABLE TOOLS:
                 }
                 /// NOTE: Topic attachment happens in handleNonStreamingChatCompletion via attachSharedTopic()
                 /// Do NOT set folderId here - folderId is for reference folders, not shared topics
-                /// Enable mini-prompts if provided
-                if let miniPromptNames = request?.miniPrompts, !miniPromptNames.isEmpty {
-                    self.enableMiniPromptsForConversation(existingSession, miniPromptNames: miniPromptNames)
-                    logger.debug("Enabled mini-prompts: \(miniPromptNames.joined(separator: ", "))")
+                /// Enable custom-instructions if provided
+                if let customInstructionNames = request?.customInstructions, !customInstructionNames.isEmpty {
+                    self.enableCustomInstructionsForConversation(existingSession, customInstructionNames: customInstructionNames)
+                    logger.debug("Enabled custom-instructions: \(customInstructionNames.joined(separator: ", "))")
                 }
                 return existingSession
             }
@@ -2686,10 +2686,10 @@ AVAILABLE TOOLS:
                 /// Initialize MessageBus for API conversation
                 apiConversation.initializeMessageBus(conversationManager: conversationManager)
 
-                /// Enable mini-prompts BEFORE adding to manager
-                if let miniPromptNames = request?.miniPrompts, !miniPromptNames.isEmpty {
-                    self.enableMiniPromptsForConversation(apiConversation, miniPromptNames: miniPromptNames)
-                    logger.debug("Enabled mini-prompts for new conversation: \(miniPromptNames.joined(separator: ", "))")
+                /// Enable custom-instructions BEFORE adding to manager
+                if let customInstructionNames = request?.customInstructions, !customInstructionNames.isEmpty {
+                    self.enableCustomInstructionsForConversation(apiConversation, customInstructionNames: customInstructionNames)
+                    logger.debug("Enabled custom-instructions for new conversation: \(customInstructionNames.joined(separator: ", "))")
                 }
 
                 conversationManager.conversations.append(apiConversation)
@@ -2740,10 +2740,10 @@ AVAILABLE TOOLS:
             /// NOTE: Topic attachment happens in handleNonStreamingChatCompletion via attachSharedTopic()
             /// Do NOT set folderId here - folderId is for reference folders, not shared topics
 
-            /// Enable mini-prompts BEFORE adding to manager
-            if let miniPromptNames = request?.miniPrompts, !miniPromptNames.isEmpty {
-                self.enableMiniPromptsForConversation(apiConversation, miniPromptNames: miniPromptNames)
-                logger.debug("Enabled mini-prompts: \(miniPromptNames.joined(separator: ", "))")
+            /// Enable custom-instructions BEFORE adding to manager
+            if let customInstructionNames = request?.customInstructions, !customInstructionNames.isEmpty {
+                self.enableCustomInstructionsForConversation(apiConversation, customInstructionNames: customInstructionNames)
+                logger.debug("Enabled custom-instructions: \(customInstructionNames.joined(separator: ", "))")
             }
 
             conversationManager.conversations.append(apiConversation)
@@ -2796,10 +2796,10 @@ AVAILABLE TOOLS:
             /// NOTE: Topic attachment happens in handleNonStreamingChatCompletion via attachSharedTopic()
             /// Do NOT set folderId here - folderId is for reference folders, not shared topics
 
-            /// Enable mini-prompts BEFORE adding to manager
-            if let miniPromptNames = request?.miniPrompts, !miniPromptNames.isEmpty {
-                self.enableMiniPromptsForConversation(apiConversation, miniPromptNames: miniPromptNames)
-                logger.debug("Enabled mini-prompts: \(miniPromptNames.joined(separator: ", "))")
+            /// Enable custom-instructions BEFORE adding to manager
+            if let customInstructionNames = request?.customInstructions, !customInstructionNames.isEmpty {
+                self.enableCustomInstructionsForConversation(apiConversation, customInstructionNames: customInstructionNames)
+                logger.debug("Enabled custom-instructions: \(customInstructionNames.joined(separator: ", "))")
             }
 
             conversationManager.conversations.append(apiConversation)
@@ -3305,18 +3305,18 @@ AVAILABLE TOOLS:
         return topics.first(where: { $0.name == topicName })
     }
 
-    /// Handle GET /api/prompts/mini - list all mini-prompts available Returns array of mini-prompts with id, name, and content Used by agents to discover available contextual prompts.
-    private func handleListMiniPrompts(_ req: Request) async throws -> Response {
-        logger.debug("Listing mini-prompts")
+    /// Handle GET /api/prompts/mini - list all custom-instructions available Returns array of custom-instructions with id, name, and content Used by agents to discover available contextual prompts.
+    private func handleListCustomInstructions(_ req: Request) async throws -> Response {
+        logger.debug("Listing custom-instructions")
 
-        /// Get all mini-prompts from manager.
-        let miniPromptManager = MiniPromptManager.shared
-        let allMiniPrompts = await MainActor.run {
-            miniPromptManager.miniPrompts
+        /// Get all custom-instructions from manager.
+        let customInstructionManager = CustomInstructionManager.shared
+        let allCustomInstructions = await MainActor.run {
+            customInstructionManager.customInstructions
         }
 
         /// Map to response format.
-        let promptList = allMiniPrompts.map { prompt in
+        let instructionList = allCustomInstructions.map { instruction in
             [
                 "id": prompt.id.uuidString,
                 "name": prompt.name,
@@ -3726,18 +3726,18 @@ AVAILABLE TOOLS:
         return modelName
     }
 
-    /// Enable mini-prompts for a conversation by name
+    /// Enable custom-instructions for a conversation by name
     @MainActor
-    private func enableMiniPromptsForConversation(_ conversation: ConversationModel, miniPromptNames: [String]) {
-        let miniPromptManager = MiniPromptManager.shared
-        let allMiniPrompts = miniPromptManager.miniPrompts
+    private func enableCustomInstructionsForConversation(_ conversation: ConversationModel, customInstructionNames: [String]) {
+        let customInstructionManager = CustomInstructionManager.shared
+        let allCustomInstructions = customInstructionManager.customInstructions
 
-        for name in miniPromptNames {
-            if let miniPrompt = allMiniPrompts.first(where: { $0.name.lowercased() == name.lowercased() }) {
-                conversation.enabledMiniPromptIds.insert(miniPrompt.id)
-                logger.debug("Enabled mini-prompt '\(name)' for conversation \(conversation.id)")
+        for name in customInstructionNames {
+            if let customInstruction = allCustomInstructions.first(where: { $0.name.lowercased() == name.lowercased() }) {
+                    conversation.enabledCustomInstructionIds.insert(customInstruction.id)
+                logger.debug("Enabled custom instruction '\(name)' for conversation \(conversation.id)")
             } else {
-                logger.warning("Mini-prompt '\(name)' not found, skipping")
+                logger.warning("Custom instruction '\(name)' not found, skipping")
             }
         }
     }
@@ -3904,10 +3904,10 @@ AVAILABLE TOOLS:
         return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
     }
 
-    // MARK: - Mini-Prompt Management API Handlers
+    // MARK: - Custom Instruction Management API Handlers
 
-    /// Response model for mini-prompt
-    private struct MiniPromptResponse: Codable {
+    /// Response model for custom instruction
+    private struct CustomInstructionResponse: Codable {
         let id: String
         let name: String
         let content: String
@@ -3916,36 +3916,36 @@ AVAILABLE TOOLS:
         let displayOrder: Int
     }
 
-    /// Handle POST /api/mini-prompts - create a new mini-prompt
-    private func handleCreateMiniPrompt(_ req: Request) async throws -> Response {
-        logger.debug("Creating mini-prompt")
+    /// Handle POST /api/custom-instructions - create a new custom instruction
+    private func handleCreateCustomInstruction(_ req: Request) async throws -> Response {
+        logger.debug("Creating custom instruction")
 
-        struct CreateMiniPromptRequest: Codable {
+        struct CreateCustomInstructionRequest: Codable {
             var name: String
             var content: String
             var displayOrder: Int?
         }
 
-        let createRequest = try req.content.decode(CreateMiniPromptRequest.self)
+        let createRequest = try req.content.decode(CreateCustomInstructionRequest.self)
 
-        let miniPrompt = MiniPrompt(
+        let customInstruction = CustomInstruction(
             name: createRequest.name,
             content: createRequest.content,
             displayOrder: createRequest.displayOrder ?? 0
         )
 
         await MainActor.run {
-            MiniPromptManager.shared.addPrompt(miniPrompt)
+            CustomInstructionManager.shared.addInstruction(customInstruction)
         }
 
         let formatter = ISO8601DateFormatter()
-        let response = MiniPromptResponse(
-            id: miniPrompt.id.uuidString,
-            name: miniPrompt.name,
-            content: miniPrompt.content,
-            createdAt: formatter.string(from: miniPrompt.createdAt),
-            modifiedAt: formatter.string(from: miniPrompt.modifiedAt),
-            displayOrder: miniPrompt.displayOrder
+        let response = CustomInstructionResponse(
+            id: customInstruction.id.uuidString,
+            name: customInstruction.name,
+            content: customInstruction.content,
+            createdAt: formatter.string(from: customInstruction.createdAt),
+            modifiedAt: formatter.string(from: customInstruction.modifiedAt),
+            displayOrder: customInstruction.displayOrder
         )
 
         let encoder = JSONEncoder()
@@ -3954,25 +3954,25 @@ AVAILABLE TOOLS:
         return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
     }
 
-    /// Handle PATCH /api/mini-prompts/:promptId - update mini-prompt
-    private func handleUpdateMiniPrompt(_ req: Request) async throws -> Response {
+    /// Handle PATCH /api/custom-instructions/:promptId - update custom instruction
+    private func handleUpdateCustomInstruction(_ req: Request) async throws -> Response {
         guard let promptIdString = req.parameters.get("promptId"),
               let promptId = UUID(uuidString: promptIdString) else {
             throw Abort(.badRequest, reason: "Invalid prompt ID")
         }
 
-        logger.debug("Updating mini-prompt: \(promptIdString)")
+        logger.debug("Updating custom instruction: \(promptIdString)")
 
-        struct UpdateMiniPromptRequest: Codable {
+        struct UpdateCustomInstructionRequest: Codable {
             var name: String?
             var content: String?
             var displayOrder: Int?
         }
 
-        let updateRequest = try req.content.decode(UpdateMiniPromptRequest.self)
+        let updateRequest = try req.content.decode(UpdateCustomInstructionRequest.self)
 
         let updated = await MainActor.run { () -> Bool in
-            guard let prompt = MiniPromptManager.shared.miniPrompts.first(where: { $0.id == promptId }) else {
+            guard let prompt = CustomInstructionManager.shared.customInstructions.first(where: { $0.id == promptId }) else {
                 return false
             }
 
@@ -3988,28 +3988,28 @@ AVAILABLE TOOLS:
             }
             updatedPrompt.modifiedAt = Date()
 
-            MiniPromptManager.shared.updatePrompt(updatedPrompt)
+            CustomInstructionManager.shared.updateInstruction(updatedPrompt)
             return true
         }
 
         guard updated else {
-            throw Abort(.notFound, reason: "Mini-prompt not found")
+            throw Abort(.notFound, reason: "Custom instruction not found")
         }
 
         return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))
     }
 
-    /// Handle DELETE /api/mini-prompts/:promptId - delete mini-prompt
-    private func handleDeleteMiniPrompt(_ req: Request) async throws -> Response {
+    /// Handle DELETE /api/custom-instructions/:promptId - delete custom instruction
+    private func handleDeleteCustomInstruction(_ req: Request) async throws -> Response {
         guard let promptIdString = req.parameters.get("promptId"),
               let promptId = UUID(uuidString: promptIdString) else {
             throw Abort(.badRequest, reason: "Invalid prompt ID")
         }
 
-        logger.debug("Deleting mini-prompt: \(promptIdString)")
+        logger.debug("Deleting custom instruction: \(promptIdString)")
 
         await MainActor.run {
-            MiniPromptManager.shared.deletePrompt(id: promptId)
+            CustomInstructionManager.shared.deleteInstruction(id: promptId)
         }
 
         return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(string: "{\"success\": true}"))

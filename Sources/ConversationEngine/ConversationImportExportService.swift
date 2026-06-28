@@ -518,7 +518,7 @@ public class ConversationImportExportService {
             isPinned: package.conversation.isPinned ?? false,
             workingDirectory: nil, /// Will use default
             workingDirectoryBookmark: nil,
-            enabledMiniPromptIds: package.conversation.enabledMiniPromptIds,
+            enabledCustomInstructionIds: package.conversation.enabledCustomInstructionIds,
             folderId: resolvedFolderId,
             isFromAPI: package.conversation.isFromAPI ?? false
         )

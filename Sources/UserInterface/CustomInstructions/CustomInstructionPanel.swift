@@ -5,33 +5,33 @@ import SwiftUI
 import ConfigurationSystem
 import ConversationEngine
 
-/// Panel for managing mini-prompts (per-conversation).
-public struct MiniPromptPanel: View {
-    @ObservedObject var manager: MiniPromptManager
+/// Panel for managing custom instructions (per-conversation).
+public struct CustomInstructionPanel: View {
+    @ObservedObject var manager: CustomInstructionManager
     @ObservedObject var conversation: ConversationModel
     @ObservedObject var conversationManager: ConversationManager
-    @State private var editingPrompt: MiniPrompt?
-    @State private var showNewPromptEditor = false
+    @State private var editingInstruction: CustomInstruction?
+    @State private var showNewInstructionEditor = false
     @State private var showDeleteConfirmation = false
-    @State private var promptToDelete: UUID?
+    @State private var instructionToDelete: UUID?
     @State private var filterText: String = ""
 
-    public init(manager: MiniPromptManager = .shared, conversation: ConversationModel, conversationManager: ConversationManager) {
+    public init(manager: CustomInstructionManager = .shared, conversation: ConversationModel, conversationManager: ConversationManager) {
         self.manager = manager
         self.conversation = conversation
         self.conversationManager = conversationManager
     }
 
-    /// Get filtered prompts based on filterText.
-    private var filteredPrompts: [MiniPrompt] {
-        let sorted = manager.miniPrompts.sorted { $0.displayOrder < $1.displayOrder }
+    /// Get filtered instructions based on filterText.
+    private var filteredInstructions: [CustomInstruction] {
+        let sorted = manager.customInstructions.sorted { $0.displayOrder < $1.displayOrder }
 
         if filterText.isEmpty {
             return sorted
         } else {
-            return sorted.filter { prompt in
-                prompt.name.localizedCaseInsensitiveContains(filterText) ||
-                prompt.content.localizedCaseInsensitiveContains(filterText)
+            return sorted.filter { instruction in
+                instruction.name.localizedCaseInsensitiveContains(filterText) ||
+                instruction.content.localizedCaseInsensitiveContains(filterText)
             }
         }
     }
@@ -40,17 +40,17 @@ public struct MiniPromptPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             /// Header.
             HStack(alignment: .center) {
-                Text("Mini-Prompts")
+                Text("Custom Instructions")
                     .font(.headline)
                 Spacer()
                 Button(action: {
-                    showNewPromptEditor = true
+                    showNewInstructionEditor = true
                 }) {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
                 }
                 .buttonStyle(.plain)
-                .help("Add new mini-prompt")
+                .help("Add new custom instruction")
             }
             .padding()
 
@@ -58,7 +58,7 @@ public struct MiniPromptPanel: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
-                TextField("Filter prompts...", text: $filterText)
+                TextField("Filter instructions...", text: $filterText)
                     .textFieldStyle(.plain)
                 if !filterText.isEmpty {
                     Button(action: { filterText = "" }) {
@@ -74,15 +74,15 @@ public struct MiniPromptPanel: View {
             Divider()
 
             /// Empty state.
-            if filteredPrompts.isEmpty {
+            if filteredInstructions.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "text.badge.plus")
                         .font(.system(size: 48))
                         .foregroundColor(.secondary)
-                    Text(manager.miniPrompts.isEmpty ? "No mini-prompts" : "No matches")
+                    Text(manager.customInstructions.isEmpty ? "No custom instructions" : "No matches")
                         .font(.headline)
                         .foregroundColor(.secondary)
-                    Text(manager.miniPrompts.isEmpty ? "Create contextual prompts to add context to your conversations." : "Try a different filter term.")
+                    Text(manager.customInstructions.isEmpty ? "Create instructions to add context or behavioral guidance to your conversations." : "Try a different filter term.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -91,9 +91,9 @@ public struct MiniPromptPanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
             } else {
-                /// List with drag-and-drop reordering (CRITICAL: Must use List for .onMove to work).
+                /// List with drag-and-drop reordering.
                 List {
-                    ForEach(filteredPrompts) { prompt in
+                    ForEach(filteredInstructions) { instruction in
                         HStack(spacing: 12) {
                             /// Drag handle.
                             Image(systemName: "line.3.horizontal")
@@ -102,9 +102,9 @@ public struct MiniPromptPanel: View {
 
                             /// Enable toggle.
                             Toggle("", isOn: Binding(
-                                get: { manager.isEnabled(id: prompt.id, for: conversation.id, enabledIds: conversation.enabledMiniPromptIds) },
+                                get: { manager.isEnabled(id: instruction.id, for: conversation.id, enabledIds: conversation.enabledCustomInstructionIds) },
                                 set: { _ in
-                                    manager.toggleEnabled(id: prompt.id, for: conversation.id, currentIds: &conversation.enabledMiniPromptIds)
+                                    manager.toggleEnabled(id: instruction.id, for: conversation.id, currentIds: &conversation.enabledCustomInstructionIds)
                                     /// Trigger save immediately after toggle.
                                     conversationManager.saveConversations()
                                 }
@@ -115,12 +115,12 @@ public struct MiniPromptPanel: View {
                             /// Name and preview.
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text(prompt.name)
+                                    Text(instruction.name)
                                         .font(.subheadline)
                                         .fontWeight(.medium)
 
-                                    /// Badge for conversation-specific prompts.
-                                    if prompt.conversationIds != nil && !(prompt.conversationIds?.isEmpty ?? true) {
+                                    /// Badge for conversation-specific instructions.
+                                    if instruction.conversationIds != nil && !(instruction.conversationIds?.isEmpty ?? true) {
                                         Text("SCOPED")
                                             .font(.caption2)
                                             .padding(.horizontal, 6)
@@ -131,7 +131,7 @@ public struct MiniPromptPanel: View {
                                     }
                                 }
 
-                                Text(prompt.content)
+                                Text(instruction.content)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(2)
@@ -141,29 +141,29 @@ public struct MiniPromptPanel: View {
 
                             /// Edit button.
                             Button(action: {
-                                editingPrompt = prompt
+                                editingInstruction = instruction
                             }) {
                                 Image(systemName: "pencil")
                                     .foregroundColor(.blue)
                             }
                             .buttonStyle(.plain)
-                            .help("Edit prompt")
+                            .help("Edit instruction")
 
                             /// Delete button.
                             Button(action: {
-                                promptToDelete = prompt.id
+                                instructionToDelete = instruction.id
                                 showDeleteConfirmation = true
                             }) {
                                 Image(systemName: "trash")
                                     .foregroundColor(.red)
                             }
                             .buttonStyle(.plain)
-                            .help("Delete prompt")
+                            .help("Delete instruction")
                         }
                         .padding(.vertical, 4)
                     }
                     .onMove { source, destination in
-                        movePrompt(from: source, to: destination)
+                        moveInstruction(from: source, to: destination)
                     }
                 }
                 .listStyle(.sidebar)
@@ -171,7 +171,7 @@ public struct MiniPromptPanel: View {
             }
 
             /// Footer.
-            let enabledCount = conversation.enabledMiniPromptIds.count
+            let enabledCount = conversation.enabledCustomInstructionIds.count
             if enabledCount > 0 {
                 Divider()
                 HStack {
@@ -185,21 +185,21 @@ public struct MiniPromptPanel: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .sheet(item: $editingPrompt) { prompt in
-            MiniPromptEditor(manager: manager, prompt: prompt)
+        .sheet(item: $editingInstruction) { instruction in
+            CustomInstructionEditor(manager: manager, instruction: instruction)
         }
-        .sheet(isPresented: $showNewPromptEditor) {
-            MiniPromptEditor(manager: manager, prompt: nil)
+        .sheet(isPresented: $showNewInstructionEditor) {
+            CustomInstructionEditor(manager: manager, instruction: nil)
         }
-        .alert("Delete Mini-Prompt?", isPresented: $showDeleteConfirmation) {
+        .alert("Delete Custom Instruction?", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) {
-                promptToDelete = nil
+                instructionToDelete = nil
             }
             Button("Delete", role: .destructive) {
-                if let id = promptToDelete {
-                    manager.deletePrompt(id: id)
+                if let id = instructionToDelete {
+                    manager.deleteInstruction(id: id)
                 }
-                promptToDelete = nil
+                instructionToDelete = nil
             }
         } message: {
             Text("This action cannot be undone.")
@@ -207,20 +207,19 @@ public struct MiniPromptPanel: View {
     }
 
     /// Handle drag-and-drop reordering.
-    private func movePrompt(from source: IndexSet, to destination: Int) {
+    private func moveInstruction(from source: IndexSet, to destination: Int) {
         guard let sourceIndex = source.first else { return }
 
         /// When filtering is active, we need to map back to the full list.
         if !filterText.isEmpty {
-            /// Cannot reorder when filtering - would be confusing User must clear filter first.
             return
         }
 
-        /// Get the prompt being moved.
-        let sourcePrompt = filteredPrompts[sourceIndex]
-        let promptId = sourcePrompt.id
+        /// Get the instruction being moved.
+        let sourceInstruction = filteredInstructions[sourceIndex]
+        let instructionId = sourceInstruction.id
 
         /// Reorder in the manager.
-        manager.reorder(prompt: promptId, to: destination)
+        manager.reorder(instruction: instructionId, to: destination)
     }
 }
