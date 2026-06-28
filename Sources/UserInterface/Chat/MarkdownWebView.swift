@@ -102,6 +102,8 @@ struct MarkdownWebView: NSViewRepresentable {
             border-radius: 6px; padding: 12px; overflow-x: auto;
             font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
             font-size: 0.9em; line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
         code {
             font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;

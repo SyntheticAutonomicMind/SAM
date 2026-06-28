@@ -121,37 +121,25 @@ struct MessageView: View {
 
 // MARK: - User Message Bubble (Right-Aligned)
 
+/// User (right-aligned) wrapper around the shared MessageBubble.
+/// Filter logic: strip mini-prompt context (kept in stored message
+/// for the API but never shown back to the user).
 struct UserMessageBubble: View {
     let message: EnhancedMessage
     let enableAnimations: Bool
     let conversation: ConversationModel
     @Binding var messageToExport: EnhancedMessage?
-    @State private var showCopyConfirmation = false
-    @State private var userBubbleHeight: CGFloat = 100
-    @State private var userBubbleWidth: CGFloat = 500
-    @State private var reloadTrigger = UUID()
 
-    /// Track display content for smooth resize animation
-    @State private var currentContentLength: Int = 0
-
-    /// Cap bubble width so long unbreakable strings (URLs, hashes) can't
-    /// overflow the chat frame. Measured dynamically via GeometryReader.
-    private static let maxBubbleCap: CGFloat = 600
-    private static let minBubbleWidth: CGFloat = 200
-
-    /// Filter out mini-prompt context from display (but keep in stored message for API).
-    /// Handles both new XML format and legacy bracket format for backwards compatibility.
     private var displayContent: String {
         var result = message.content
 
-        /// Remove <userContext>...</userContext> section (new XML format)
-        if let xmlStart = result.range(of: "\n\n<userContext>") {
-            if let xmlEnd = result.range(of: "</userContext>", range: xmlStart.upperBound..<result.endIndex) {
-                result = String(result[..<xmlStart.lowerBound])
-            }
+        /// New XML format: <userContext>...</userContext>
+        if let xmlStart = result.range(of: "\n\n<userContext>"),
+           let xmlEnd = result.range(of: "</userContext>", range: xmlStart.upperBound..<result.endIndex) {
+            result = String(result[..<xmlStart.lowerBound])
         }
 
-        /// Also handle legacy [User Context: ...] format for old messages
+        /// Legacy bracket format: [User Context: ...]
         if let contextStart = result.range(of: "\n\n[User Context:") {
             result = String(result[..<contextStart.lowerBound])
         }
@@ -160,161 +148,12 @@ struct UserMessageBubble: View {
     }
 
     var body: some View {
-        HStack(alignment: .top) {
-            Spacer(minLength: 60)
-
-            VStack(alignment: .trailing, spacing: 4) {
-                bubble
-
-                /// Timestamp with copy button.
-                HStack(spacing: 4) {
-                    Text(message.timestamp, format: .dateTime.hour().minute().second())
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    Button(action: reloadMessage) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .help("Reload message")
-
-                    Button(action: copyMessage) {
-                        Image(systemName: showCopyConfirmation ? "checkmark" : "doc.on.doc")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .help("Copy message")
-
-                    Button(action: { messageToExport = message }) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .help("Export")
-
-                    Button(action: printMessage) {
-                        Image(systemName: "printer")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .help("Print message")
-                }
-            }
-        }
-        .contextMenu {
-            Button("Copy Message") {
-                copyMessage()
-            }
-
-            Button("Reload Message") {
-                reloadMessage()
-            }
-
-            Divider()
-
-            Button("Export...") {
-                messageToExport = message
-            }
-
-            Button("Print Message...") {
-                printMessage()
-            }
-        }
-        .animation(enableAnimations ? .easeInOut(duration: 0.2) : nil, value: showCopyConfirmation)
-    }
-
-    /// Bubble wrapped in GeometryReader so the dynamic cap reflects actual
-    /// chat width. Without this, content with no breakable characters
-    /// (URLs, hashes) overflowed the chat frame.
-    private var bubble: some View {
-        GeometryReader { geo in
-            let cap = min(max(geo.size.width, Self.minBubbleWidth), Self.maxBubbleCap)
-
-            MarkdownWebView(
-                markdown: displayContent,
-                isFromUser: true,
-                maxBubbleWidth: cap,
-                bubbleWidth: Binding(
-                    get: { userBubbleWidth },
-                    set: { userBubbleWidth = min($0, cap) }
-                ),
-                bubbleHeight: $userBubbleHeight
-            )
-            .frame(width: userBubbleWidth, height: userBubbleHeight)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.accentColor)
-                    .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
-            )
-            .clipped()
-        }
-        .frame(height: userBubbleHeight + 24)  /// bubble height + vertical padding (12 + 12)
-    }
-
-    private func reloadMessage() {
-        reloadTrigger = UUID()
-        logger.info("Reloading user message: \(message.id)")
-    }
-
-    private func copyMessage() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(displayContent, forType: .string)
-        showCopyConfirmation = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            showCopyConfirmation = false
-        }
-    }
-
-    @MainActor
-    private func exportMessageToPDF() {
-        Task.detached(priority: .userInitiated) {
-            do {
-                let fileURL = try await MessageExportService.exportMessageToPDFAsync(
-                    message: message,
-                    conversationTitle: "Conversation",
-                    modelName: nil
-                )
-
-                /// Present save panel on main actor.
-                await MainActor.run {
-                    let savePanel = NSSavePanel()
-                    savePanel.allowedContentTypes = [.pdf]
-                    savePanel.nameFieldStringValue = "SAM_Message_\(message.timestamp.formatted(date: .abbreviated, time: .shortened).replacingOccurrences(of: "/", with: "-")).pdf"
-                    savePanel.message = "Export message to PDF"
-
-                    let result = savePanel.runModal()
-                    if result == .OK, let url = savePanel.url {
-                        do {
-                            if FileManager.default.fileExists(atPath: url.path) {
-                                try FileManager.default.removeItem(at: url)
-                            }
-                            try FileManager.default.copyItem(at: fileURL, to: url)
-                            try? FileManager.default.removeItem(at: fileURL)
-                            NSWorkspace.shared.open(url)
-                        } catch {
-                            logger.error("Failed to save PDF: \(error)")
-                        }
-                    }
-                }
-            } catch {
-                logger.error("Failed to export message to PDF: \(error)")
-            }
-        }
-    }
-
-    @MainActor
-    private func printMessage() {
-        WKWebViewPrintService.printMessage(
-            markdown: displayContent,
+        MessageBubble(
+            message: message,
             isFromUser: true,
-            title: "SAM Message"
+            enableAnimations: enableAnimations,
+            messageToExport: $messageToExport,
+            displayContent: displayContent
         )
     }
 }
@@ -326,27 +165,20 @@ struct AssistantMessageBubble: View {
     let enableAnimations: Bool
     let conversation: ConversationModel
     @Binding var messageToExport: EnhancedMessage?
-    @State private var showCopyConfirmation = false
-    @State private var assistantBubbleHeight: CGFloat = 100
-    @State private var assistantBubbleWidth: CGFloat = 600
 
-    /// ANTI-FLICKER FIX: Track content separately to enable smooth streaming updates
-    /// When message.content changes during streaming, only this @State updates
-    /// SwiftUI updates MarkdownText content smoothly without rebuilding view hierarchy
+    /// ANTI-FLICKER: Track filtered content separately so streaming updates animate
+    /// smoothly without rebuilding the entire view hierarchy. When `message.content`
+    /// changes during streaming, only this @State updates.
     @State private var displayedContent: String = ""
 
-    /// Cap bubble width so long unbreakable strings (URLs, hashes) can't
-    /// overflow the chat frame. Measured dynamically via GeometryReader.
-    private static let maxBubbleCap: CGFloat = 700
-    private static let minBubbleWidth: CGFloat = 200
+    private let logger = Logger(subsystem: "com.sam.chat", category: "assistantbubble")
 
-    private let logger = Logger(subsystem: "com.sam.chat.assistantbubble", category: "UserInterface")
-
-    /// Filter out status signals from display (workflow control markers)
+    /// Strip workflow-control status markers ({"status": "continue"}, etc.)
+    /// before rendering. These are emitted by orchestration logic and should
+    /// never be displayed to the user.
     private func filterContent(_ content: String) -> String {
         var filtered = content
 
-        /// Remove JSON status markers: {"status": "continue"}, {"status": "complete"}, {"status": "stop"}
         let statusPatterns = [
             #"\{\s*"status"\s*:\s*"continue"\s*\}"#,
             #"\{\s*"status"\s*:\s*"complete"\s*\}"#,
@@ -360,7 +192,6 @@ struct AssistantMessageBubble: View {
             }
         }
 
-        /// Clean up extra whitespace left by filtering
         filtered = filtered.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
         filtered = filtered.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -368,209 +199,25 @@ struct AssistantMessageBubble: View {
     }
 
     var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                /// Message bubble - ALWAYS show container to prevent collapse/reappear flicker
-                /// Only hide if message has no content AND is not streaming AND has no contentParts
-                if !message.content.isEmpty || message.isStreaming || message.contentParts != nil {
-                    bubble
-                }                /// Render contentParts if present (images, etc.)
-                if let contentParts = message.contentParts {
-                    ForEach(Array(contentParts.enumerated()), id: \.offset) { _, part in
-                        if case .imageUrl(let imageURL) = part {
-                            /// Convert to markdown and render using MarkdownViewRenderer
-                            MarkdownText("![\(imageURL.url)](\(imageURL.url))")
-                                .padding(.top, 4)
-                        }
-                    }
-                }
-
-                /// Metadata (timestamp + performance + copy button).
-                if !displayedContent.isEmpty || message.isStreaming || message.contentParts != nil {
-                    HStack(spacing: 8) {
-                        Text(message.timestamp, format: .dateTime.hour().minute().second())
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-
-                        Button(action: reloadMessage) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
-                        .help("Reload message")
-
-                        Button(action: copyMessage) {
-                            Image(systemName: showCopyConfirmation ? "checkmark" : "doc.on.doc")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
-                        .help("Copy message")
-
-                        Button(action: { messageToExport = message }) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
-                        .help("Export to PDF")
-
-                        Button(action: printMessage) {
-                            Image(systemName: "printer")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
-                        .help("Print message")
-
-                        if let metrics = message.performanceMetrics {
-                            Text("• \(metrics.tokenCount) tokens • \(String(format: "%.1f", metrics.timeToFirstToken))s TTFT • \(String(format: "%.0f", metrics.tokensPerSecond)) tok/s")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .help("Token count • Time to First Token • Tokens per second")
-                        } else if let processingTime = message.processingTime {
-                            Text("• \(String(format: "%.1f", processingTime))s")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .help("Processing time")
-                        }
-
-                        if message.isStreaming {
-                            ProgressView()
-                                .scaleEffect(0.6)
-                                .tint(.primary)
-                        }
-                    }
-                }
-            }
-
-            Spacer(minLength: 60)
-        }
+        MessageBubble(
+            message: message,
+            isFromUser: false,
+            enableAnimations: enableAnimations,
+            messageToExport: $messageToExport,
+            displayContent: displayedContent
+        )
         .onAppear {
-            /// Initialize displayedContent when view first appears
+            // Initialize displayedContent when view first appears
             displayedContent = filterContent(message.content)
             logger.info("[ASSISTANT_BUBBLE] Initial render message \(message.id) with \(message.content.count) chars, filtered=\(displayedContent.count) chars")
         }
         .onChange(of: message.content) { _, newValue in
-            /// SMOOTH UPDATE: Content change detected, update @State smoothly
-            /// This triggers MarkdownText animation without rebuilding view hierarchy
+            // Streaming: re-filter and update @State so the change animates smoothly
             let filtered = filterContent(newValue)
             if displayedContent != filtered {
                 displayedContent = filtered
             }
         }
-        .contextMenu {
-            Button("Copy Message") {
-                copyMessage()
-            }
-
-            Button("Reload Message") {
-                reloadMessage()
-            }
-
-            Divider()
-
-            Button("Export...") {
-                messageToExport = message
-            }
-
-            Button("Print Message...") {
-                printMessage()
-            }
-        }
-        .animation(enableAnimations ? .easeInOut(duration: 0.2) : nil, value: showCopyConfirmation)
-    }
-
-    private func reloadMessage() {
-        /// Force content refresh by re-filtering from source
-        displayedContent = filterContent(message.content)
-        logger.info("Reloading assistant message: \(message.id)")
-    }
-
-    /// Bubble wrapped in GeometryReader so the dynamic cap reflects actual
-    /// chat width. Without this, content with no breakable characters
-    /// (URLs, hashes) overflowed the chat frame.
-    private var bubble: some View {
-        GeometryReader { geo in
-            let cap = min(max(geo.size.width, Self.minBubbleWidth), Self.maxBubbleCap)
-
-            MarkdownWebView(
-                markdown: displayedContent,
-                isFromUser: false,
-                maxBubbleWidth: cap,
-                bubbleWidth: Binding(
-                    get: { assistantBubbleWidth },
-                    set: { assistantBubbleWidth = min($0, cap) }
-                ),
-                bubbleHeight: $assistantBubbleHeight
-            )
-            .frame(width: assistantBubbleWidth, height: assistantBubbleHeight)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.primary.opacity(0.05))
-                    .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
-            )
-            .clipped()
-        }
-        .frame(height: assistantBubbleHeight + 24)  /// bubble height + vertical padding (12 + 12)
-    }
-
-    private func copyMessage() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(message.content, forType: .string)
-        showCopyConfirmation = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            showCopyConfirmation = false
-        }
-    }
-
-    @MainActor
-    private func exportMessageToPDF() {
-        Task.detached(priority: .userInitiated) {
-            do {
-                let fileURL = try await MessageExportService.exportMessageToPDFAsync(
-                    message: message,
-                    conversationTitle: "Conversation",
-                    modelName: nil
-                )
-
-                await MainActor.run {
-                    let savePanel = NSSavePanel()
-                    savePanel.allowedContentTypes = [.pdf]
-                    savePanel.nameFieldStringValue = "SAM_Message_\(message.timestamp.formatted(date: .abbreviated, time: .shortened).replacingOccurrences(of: "/", with: "-")).pdf"
-                    savePanel.message = "Export message to PDF"
-
-                    let result = savePanel.runModal()
-                    if result == .OK, let url = savePanel.url {
-                        do {
-                            if FileManager.default.fileExists(atPath: url.path) {
-                                try FileManager.default.removeItem(at: url)
-                            }
-                            try FileManager.default.copyItem(at: fileURL, to: url)
-                            try? FileManager.default.removeItem(at: fileURL)
-                            NSWorkspace.shared.open(url)
-                        } catch {
-                            logger.error("Failed to save PDF: \(error)")
-                        }
-                    }
-                }
-            } catch {
-                logger.error("Failed to export message to PDF: \(error)")
-            }
-        }
-    }
-
-    @MainActor
-    private func printMessage() {
-        WKWebViewPrintService.printMessage(
-            markdown: displayedContent,
-            isFromUser: false,
-            title: "SAM Message"
-        )
     }
 }
 
