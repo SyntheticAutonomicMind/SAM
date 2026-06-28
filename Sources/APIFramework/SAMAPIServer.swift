@@ -8,7 +8,12 @@ import ConfigurationSystem
 import MCPFramework
 import SharedData
 import Logging
-public class SAMAPIServer: ObservableObject {
+/// SAMAPIServer is @unchecked Sendable because:
+///  - It's owned exclusively by AppDelegate (single-owner concurrency domain)
+///  - Vapor Application runs on a single event loop
+///  - @MainActor properties are properly isolated to the main actor
+///  - All shared mutable state is protected by actor isolation
+public class SAMAPIServer: ObservableObject, @unchecked Sendable {
     private let logger = Logging.Logger(label: "com.sam.apiserver")
     private var app: Application?
     private let conversationManager: ConversationManager
@@ -283,7 +288,7 @@ public class SAMAPIServer: ObservableObject {
                 let toolName = toolCall.function.name
 
                 /// Parse parameters from JSON string.
-                let parameters: [String: Any]
+                nonisolated(unsafe) let parameters: [String: Any]
                 if let parametersData = toolCall.function.arguments.data(using: .utf8),
                    let parsedParams = try? JSONSerialization.jsonObject(with: parametersData) as? [String: Any] {
                     parameters = parsedParams

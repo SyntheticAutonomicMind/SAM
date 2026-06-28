@@ -1957,7 +1957,7 @@ public struct ChatWidget: View {
         /// This prevents the agent from trying to import files before the copy completes
         if isAttachingFiles {
             attachmentRetryCount += 1
-            guard attachmentRetryCount < 30 else {
+            if attachmentRetryCount >= 30 {
                 logger.error("Attachment wait timed out after \(attachmentRetryCount) retries (3 seconds) - sending anyway")
                 /// Reset and continue with message
                 attachmentRetryCount = 0

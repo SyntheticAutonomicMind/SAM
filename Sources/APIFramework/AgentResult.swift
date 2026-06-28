@@ -4,7 +4,9 @@
 import Foundation
 
 /// Result container for autonomous agent workflow execution.
-public struct AgentResult {
+/// @unchecked Sendable: all stored properties are value types; concurrency safety
+/// is maintained by the AgentOrchestrator's actor isolation.
+public struct AgentResult: @unchecked Sendable {
     /// The final LLM response after workflow completion.
     public let finalResponse: String
 

@@ -317,7 +317,7 @@ public struct MainWindowView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let activeConv = conversationManager.activeConversation,
                       let messageBus = activeConv.messageBus {
-                ChatWidget(activeConversation: activeConv, messageBus: messageBus, showingMiniPrompts: $showingMiniPrompts)
+                ChatWidget(activeConversation: activeConv, messageBus: messageBus, showingCustomInstructions: $showingMiniPrompts)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .environmentObject(conversationManager)
                 .environmentObject(endpointManager)
@@ -325,7 +325,7 @@ public struct MainWindowView: View {
 
             if showingMiniPrompts, let activeConversation = conversationManager.activeConversation {
                 Divider()
-                MiniPromptPanel(conversation: activeConversation, conversationManager: conversationManager)
+                CustomInstructionPanel(conversation: activeConversation, conversationManager: conversationManager)
                     .background(.ultraThinMaterial)
                     .frame(minWidth: 250, idealWidth: 280, maxWidth: 350)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -605,7 +605,7 @@ public struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
             showingSidebar.toggle()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleMiniPrompts)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .toggleCustomInstructions)) { _ in
             showingMiniPrompts.toggle()
         }
     }

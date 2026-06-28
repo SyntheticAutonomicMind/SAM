@@ -33,8 +33,8 @@ extension ChatWidget {
                                 .filter { conversation.enabledCustomInstructionIds.contains($0.id) }
                                 .sorted { $0.displayOrder < $1.displayOrder }
 
-                            if !enabledPrompts.isEmpty {
-                                let promptNames = enabledPrompts.map { $0.name }.joined(separator: ", ")
+                            if !enabledInstructions.isEmpty {
+                                let promptNames = enabledInstructions.map { $0.name }.joined(separator: ", ")
                                 let displayText = promptNames.count > 80 ? String(promptNames.prefix(80)) + "..." : promptNames
 
                                 Text(displayText)
