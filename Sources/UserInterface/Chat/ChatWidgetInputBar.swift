@@ -297,30 +297,17 @@ extension ChatWidget {
                 Divider()
                     .frame(height: 14)
 
-                /// Panels menu button.
-                Button(action: { showingPanelsMenu.toggle() }) {
-                    Image(systemName: "square.grid.2x2")
-                        .foregroundColor(anyPanelOpen ? .accentColor : .secondary)
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.borderless)
-                .help("Panels")
-                .popover(isPresented: $showingPanelsMenu, arrowEdge: .top) {
-                    panelsMenuContent
-                        .frame(width: 220)
-                }
-
-                /// Settings button.
-                Button(action: { showingSettingsPopover.toggle() }) {
+                /// Controls button - panels, parameters, features, settings, and actions.
+                Button(action: { showingControlsPopover.toggle() }) {
                     Image(systemName: "slider.horizontal.3")
-                        .foregroundColor(showingSettingsPopover ? .accentColor : .secondary)
+                        .foregroundColor(showingControlsPopover ? .accentColor : .secondary)
                         .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.borderless)
-                .help("Parameters & settings")
-                .popover(isPresented: $showingSettingsPopover, arrowEdge: .top) {
-                    settingsPopoverContent
-                        .frame(width: 320)
+                .help("Controls & settings")
+                .popover(isPresented: $showingControlsPopover, arrowEdge: .top) {
+                    controlsPopoverContent
+                        .frame(width: 300)
                 }
 
                 /// Todo list button.

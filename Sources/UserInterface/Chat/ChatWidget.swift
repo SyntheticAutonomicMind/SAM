@@ -160,8 +160,7 @@ public struct ChatWidget: View {
     @State var showAdvancedParameters = false
 
     /// Bottom bar popover states.
-    @State var showingPanelsMenu = false
-    @State var showingSettingsPopover = false
+    @State var showingControlsPopover = false
 
     /// System prompt management - using systemPromptManager.selectedConfigurationId as single source of truth.
     @ObservedObject var systemPromptManager = SystemPromptManager.shared
@@ -649,11 +648,6 @@ public struct ChatWidget: View {
     /// - EDMDPMSolverMultistepScheduler produces garbage on MPS
 
     // MARK: - Bottom Bar Popovers
-    /// Whether any panel is currently open.
-    var anyPanelOpen: Bool {
-        showingWorkingDirectoryPanel || showingMemoryPanel || showingPerformanceMetrics ||
-        showingTodoListPopover
-    }
 
     /// Todo list popover content.
     var todoListPopoverContent: some View {
@@ -718,21 +712,215 @@ public struct ChatWidget: View {
     }
 
     /// Panels menu popover content.
-    var panelsMenuContent: some View {
+    var controlsPopoverContent: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Panels")
+            Text("Controls")
                 .font(.headline)
                 .padding(.bottom, 4)
 
+            /// Section: Panels
+            sectionLabel("PANELS")
             panelToggleRow(icon: "folder", label: "Working Directory", isOn: $showingWorkingDirectoryPanel)
             panelToggleRow(icon: "brain.head.profile", label: "Session Intelligence", isOn: $showingMemoryPanel)
             panelToggleRow(icon: "chart.line.uptrend.xyaxis", label: "Performance Metrics", isOn: $showingPerformanceMetrics)
 
-            Divider()
+            Divider().padding(.vertical, 4)
 
-            /// Export and scroll lock.
+            /// Section: Parameters
+            sectionLabel("PARAMETERS")
+
+            HStack(spacing: 8) {
+                Text("Temperature")
+                    .font(.caption)
+                    .frame(width: 80, alignment: .leading)
+                Slider(value: $temperature, in: 0.0...2.0, step: 0.1)
+                    .frame(width: 100)
+                Text("\(temperature, specifier: "%.1f")")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 30)
+            }
+
+            HStack(spacing: 8) {
+                Text("Top-P")
+                    .font(.caption)
+                    .frame(width: 80, alignment: .leading)
+                Slider(value: $topP, in: 0.0...1.0, step: 0.05)
+                    .frame(width: 100)
+                Text("\(topP, specifier: "%.2f")")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 30)
+            }
+
+            if let repPenalty = repetitionPenalty {
+                HStack(spacing: 8) {
+                    Text("Repetition")
+                        .font(.caption)
+                        .frame(width: 80, alignment: .leading)
+                    Slider(value: Binding(
+                        get: { repPenalty },
+                        set: { repetitionPenalty = $0 }
+                    ), in: 1.0...2.0, step: 0.1)
+                        .frame(width: 100)
+                    Text("\(repPenalty, specifier: "%.1f")")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 30)
+                    Button(action: { repetitionPenalty = nil }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                Button(action: { repetitionPenalty = 1.1 }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle")
+                            .font(.caption)
+                        Text("Add Repetition Penalty")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 8) {
+                Text("Max Tokens")
+                    .font(.caption)
+                    .frame(width: 80, alignment: .leading)
+                let minTokens = 1024
+                let effectiveMaxTokens = max(minTokens + 1024, maxMaxTokens)
+                let clampedValue = min(max(minTokens, maxTokens ?? effectiveMaxTokens), effectiveMaxTokens)
+                Slider(value: Binding(
+                    get: { Double(clampedValue) },
+                    set: { maxTokens = Int($0) }
+                ), in: Double(minTokens)...Double(effectiveMaxTokens), step: 1024)
+                    .frame(width: 100)
+                Text(maxTokens != nil ? (maxTokens! >= 1024 ? "\(maxTokens!/1024)k" : "\(maxTokens!)") : "∞")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 30)
+            }
+
+            HStack(spacing: 8) {
+                Text("Context")
+                    .font(.caption)
+                    .frame(width: 80, alignment: .leading)
+                let minContext = 2048
+                let effectiveMaxContext = max(minContext + 2048, maxContextWindowSize)
+                let clampedContext = min(max(minContext, contextWindowSize), effectiveMaxContext)
+                Slider(value: Binding(
+                    get: { Double(clampedContext) },
+                    set: { contextWindowSize = Int($0) }
+                ), in: Double(minContext)...Double(effectiveMaxContext), step: 1024)
+                    .frame(width: 100)
+                Text("\(contextWindowSize/1024)k")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 30)
+            }
+
+            Divider().padding(.vertical, 4)
+
+            /// Section: Features
+            sectionLabel("FEATURES")
+
+            Toggle(isOn: $enableReasoning) {
+                Text("Reasoning")
+                    .font(.caption)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+
+            if enableReasoning {
+                Picker(selection: $thinkingEffort) {
+                    ForEach(ThinkingEffort.allCases, id: \.rawValue) { effort in
+                        Text(effort.displayName).tag(effort.rawValue)
+                    }
+                } label: {
+                    Text("Thinking Effort")
+                        .font(.caption)
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+            }
+
+            Toggle(isOn: $enableTools) {
+                Text("Tools")
+                    .font(.caption)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .onChange(of: enableTools) { _, newValue in
+                guard !isLoadingConversationSettings else { return }
+                if !newValue {
+                }
+                syncSettingsToConversation()
+            }
+
+            Divider().padding(.vertical, 4)
+
+            /// Section: Shared Topic
+            sectionLabel("SHARED TOPIC")
+
+            Toggle(isOn: $useSharedData) {
+                Text("Enable Shared Topic")
+                    .font(.caption)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .onChange(of: useSharedData) { _, newValue in
+                guard !isLoadingConversationSettings else { return }
+                if newValue {
+                    Task { await loadSharedTopics() }
+                    if assignedSharedTopicId == nil, let first = sharedTopics.first {
+                        assignedSharedTopicId = first.id
+                        conversationManager.attachSharedTopic(topicId: UUID(uuidString: first.id), topicName: first.name)
+                    } else if let topicId = assignedSharedTopicId {
+                        let topicName = sharedTopics.first(where: { $0.id == topicId })?.name
+                        conversationManager.attachSharedTopic(topicId: UUID(uuidString: topicId), topicName: topicName)
+                    }
+                } else {
+                    conversationManager.detachSharedTopic()
+                }
+                syncSettingsToConversation()
+            }
+
+            if useSharedData {
+                if sharedTopics.isEmpty {
+                    Button(action: {
+                        NotificationCenter.default.post(name: .showPreferences, object: nil)
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.caption)
+                            Text("No Topics - Create One")
+                                .font(.caption)
+                        }
+                        .foregroundColor(.orange)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    TopicPickerView(
+                        selectedTopicId: $assignedSharedTopicId,
+                        topics: sharedTopics
+                    )
+                    .onChange(of: assignedSharedTopicId) { _, newVal in
+                        guard !isLoadingConversationSettings else { return }
+                        if let topicId = newVal {
+                            let topicName = sharedTopics.first(where: { $0.id == topicId })?.name
+                            conversationManager.attachSharedTopic(topicId: UUID(uuidString: topicId), topicName: topicName)
+                        }
+                        syncSettingsToConversation()
+                    }
+                }
+            }
+
+            Divider().padding(.vertical, 4)
+
+            /// Section: Actions
+            sectionLabel("ACTIONS")
+
             Button(action: {
-                showingPanelsMenu = false
+                showingControlsPopover = false
                 showingExportOptions.toggle()
             }) {
                 HStack {
@@ -747,7 +935,10 @@ public struct ChatWidget: View {
             }
             .buttonStyle(.borderless)
 
-            Button(action: { scrollLockEnabled.toggle() }) {
+            Button(action: {
+                scrollLockEnabled.toggle()
+                if !isLoadingConversationSettings { syncSettingsToConversation() }
+            }) {
                 HStack {
                     Image(systemName: scrollLockEnabled ? "lock.fill" : "lock.open.fill")
                         .frame(width: 20)
@@ -766,6 +957,15 @@ public struct ChatWidget: View {
             .buttonStyle(.borderless)
         }
         .padding(12)
+    }
+
+    /// Section label helper.
+    func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundColor(.secondary)
+            .fontWeight(.semibold)
+            .padding(.top, 2)
     }
 
     /// Helper for panel toggle rows in the panels menu.
@@ -789,226 +989,6 @@ public struct ChatWidget: View {
         }
         .buttonStyle(.borderless)
         .disabled(disabled)
-    }
-
-    /// Settings popover content - all parameters, toggles, and advanced settings.
-    var settingsPopoverContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Settings")
-                .font(.headline)
-                .padding(.bottom, 2)
-
-            /// Sampling parameters.
-            Group {
-                Text("PARAMETERS")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fontWeight(.semibold)
-
-                HStack(spacing: 8) {
-                    Text("Temperature")
-                        .font(.caption)
-                        .frame(width: 80, alignment: .leading)
-                    Slider(value: $temperature, in: 0.0...2.0, step: 0.1)
-                        .frame(width: 100)
-                    Text("\(temperature, specifier: "%.1f")")
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(width: 30)
-                }
-
-                HStack(spacing: 8) {
-                    Text("Top-P")
-                        .font(.caption)
-                        .frame(width: 80, alignment: .leading)
-                    Slider(value: $topP, in: 0.0...1.0, step: 0.05)
-                        .frame(width: 100)
-                    Text("\(topP, specifier: "%.2f")")
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(width: 30)
-                }
-
-                if let repPenalty = repetitionPenalty {
-                    HStack(spacing: 8) {
-                        Text("Repetition")
-                            .font(.caption)
-                            .frame(width: 80, alignment: .leading)
-                        Slider(value: Binding(
-                            get: { repPenalty },
-                            set: { repetitionPenalty = $0 }
-                        ), in: 1.0...2.0, step: 0.1)
-                            .frame(width: 100)
-                        Text("\(repPenalty, specifier: "%.1f")")
-                            .font(.system(.caption, design: .monospaced))
-                            .frame(width: 30)
-                        Button(action: { repetitionPenalty = nil }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } else {
-                    Button(action: { repetitionPenalty = 1.1 }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus.circle")
-                                .font(.caption)
-                            Text("Add Repetition Penalty")
-                                .font(.caption)
-                        }
-                        .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                HStack(spacing: 8) {
-                    Text("Max Tokens")
-                        .font(.caption)
-                        .frame(width: 80, alignment: .leading)
-                    let minTokens = 1024
-                    let effectiveMaxTokens = max(minTokens + 1024, maxMaxTokens)
-                    let clampedValue = min(max(minTokens, maxTokens ?? effectiveMaxTokens), effectiveMaxTokens)
-                    Slider(value: Binding(
-                        get: { Double(clampedValue) },
-                        set: { maxTokens = Int($0) }
-                    ), in: Double(minTokens)...Double(effectiveMaxTokens), step: 1024)
-                        .frame(width: 100)
-                    Text(maxTokens != nil ? (maxTokens! >= 1024 ? "\(maxTokens!/1024)k" : "\(maxTokens!)") : "∞")
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(width: 30)
-                }
-
-                HStack(spacing: 8) {
-                    Text("Context")
-                        .font(.caption)
-                        .frame(width: 80, alignment: .leading)
-                    let minContext = 2048
-                    let effectiveMaxContext = max(minContext + 2048, maxContextWindowSize)
-                    let clampedContext = min(max(minContext, contextWindowSize), effectiveMaxContext)
-                    Slider(value: Binding(
-                        get: { Double(clampedContext) },
-                        set: { contextWindowSize = Int($0) }
-                    ), in: Double(minContext)...Double(effectiveMaxContext), step: 1024)
-                        .frame(width: 100)
-                    Text("\(contextWindowSize/1024)k")
-                        .font(.system(.caption, design: .monospaced))
-                        .frame(width: 30)
-                }
-            }
-
-            Divider()
-
-            /// Feature toggles.
-            Group {
-                Text("FEATURES")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fontWeight(.semibold)
-
-                Toggle(isOn: $enableReasoning) {
-                    Text("Reasoning")
-                        .font(.caption)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-
-                /// Thinking effort level - only shown when reasoning is enabled.
-                if enableReasoning {
-                    Picker(selection: $thinkingEffort) {
-                        ForEach(ThinkingEffort.allCases, id: \.rawValue) { effort in
-                            Text(effort.displayName).tag(effort.rawValue)
-                        }
-                    } label: {
-                        Text("Thinking Effort")
-                            .font(.caption)
-                    }
-                    .pickerStyle(.segmented)
-                    .controlSize(.small)
-                }
-
-                Toggle(isOn: $enableTools) {
-                    Text("Tools")
-                        .font(.caption)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .onChange(of: enableTools) { _, newValue in
-                    guard !isLoadingConversationSettings else { return }
-                    if !newValue {
-                    }
-                    syncSettingsToConversation()
-                }
-
-            }
-
-            Divider()
-
-            /// Shared topic.
-            Group {
-                Text("SHARED TOPIC")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fontWeight(.semibold)
-
-                Toggle(isOn: $useSharedData) {
-                    Text("Enable Shared Topic")
-                        .font(.caption)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .onChange(of: useSharedData) { _, newValue in
-                    guard !isLoadingConversationSettings else { return }
-                    if newValue {
-                        Task { await loadSharedTopics() }
-                        if assignedSharedTopicId == nil, let first = sharedTopics.first {
-                            assignedSharedTopicId = first.id
-                            conversationManager.attachSharedTopic(topicId: UUID(uuidString: first.id), topicName: first.name)
-                        } else if let topicId = assignedSharedTopicId {
-                            let topicName = sharedTopics.first(where: { $0.id == topicId })?.name
-                            conversationManager.attachSharedTopic(topicId: UUID(uuidString: topicId), topicName: topicName)
-                        }
-                    } else {
-                        conversationManager.detachSharedTopic()
-                    }
-                    syncSettingsToConversation()
-                }
-
-                if useSharedData {
-                    if sharedTopics.isEmpty {
-                        Button(action: {
-                            NotificationCenter.default.post(name: .showPreferences, object: nil)
-                        }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "exclamationmark.triangle")
-                                    .font(.caption)
-                                Text("No Topics - Create One")
-                                    .font(.caption)
-                            }
-                            .foregroundColor(.orange)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        TopicPickerView(
-                            selectedTopicId: $assignedSharedTopicId,
-                            topics: sharedTopics
-                        )
-                        .onChange(of: assignedSharedTopicId) { _, newVal in
-                            guard !isLoadingConversationSettings else { return }
-                            if let topicId = newVal {
-                                let topicName = sharedTopics.first(where: { $0.id == topicId })?.name
-                                conversationManager.attachSharedTopic(topicId: UUID(uuidString: topicId), topicName: topicName)
-                            }
-                            syncSettingsToConversation()
-                        }
-                    }
-                }
-            }
-
-            .onChange(of: scrollLockEnabled) { _, newValue in
-                guard !isLoadingConversationSettings else { return }
-                syncSettingsToConversation()
-            }
-        }
-        .padding(12)
     }
 
     // MARK: - Actions

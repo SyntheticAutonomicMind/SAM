@@ -1,6 +1,83 @@
 {
   "releases": [
     {
+      "version": "20260628.1",
+      "release_date": "June 28, 2026",
+      "introduction": "Local models get a new engine with explicit sampler controls you can tune per conversation. You can now select text in message bubbles and copy it - and print works properly again with correct multi-page formatting. The bottom bar is cleaner with one organized Controls popover instead of two separate menus. Mini-Prompts get a clearer name: Custom Instructions.",
+      "highlights": [
+        {
+          "id": "cachyllama-backend",
+          "icon": "cpu",
+          "title": "CachyLLama Local Model Engine",
+          "description": "The local model backend now runs on CachyLLama with a modern sampler chain. You get new top-K and min-P controls alongside temperature and top-P, configurable globally in Preferences or per-conversation. The sampler chain is visible so you can see exactly what's active."
+        },
+        {
+          "id": "markdown-print-overhaul",
+          "icon": "text.viewfinder",
+          "title": "Text Selection and Print Overhaul",
+          "description": "You can now select text inside message bubbles and copy it with Cmd+C. Printing conversations works correctly again with proper multi-page pagination, correct margins, and dark-text-on-white-background output. Mermaid diagrams render reliably in both chat display and printed output."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "sampler-controls",
+          "icon": "slider.horizontal.2.square",
+          "title": "Per-Conversation Sampler Controls",
+          "description": "Top-K and min-P are now exposed in the Controls popover alongside temperature and top-P. Sampling parameters set per-conversation flow through to local model requests, and the sampler chain is visible so you know what's active."
+        },
+        {
+          "id": "controls-popover-merge",
+          "icon": "slider.horizontal.3",
+          "title": "Cleaner Bottom Bar",
+          "description": "The bottom bar now has one Controls button instead of two. Panel toggles, sampling parameters, feature switches, shared topic settings, Export Chat, and Scroll Lock are all in one organized popover with clear section headers."
+        },
+        {
+          "id": "custom-instructions-rename",
+          "icon": "text.badge.checkmark",
+          "title": "Mini-Prompts Renamed to Custom Instructions",
+          "description": "The name now matches what the feature actually does - persistent behavioral instructions you set per-conversation. The old name made them sound like temporary prompts."
+        },
+        {
+          "id": "mermaid-rendering",
+          "icon": "chart.bar.doc.horizontal",
+          "title": "Mermaid Diagram Rendering Fixed",
+          "description": "Mermaid diagrams now render correctly in both chat display and printed output, using a bundled local copy of mermaid instead of loading from CDN. No more broken diagrams or API version mismatches."
+        },
+        {
+          "id": "security-fixes",
+          "icon": "lock.shield",
+          "title": "API Token Security",
+          "description": "API tokens are now stored in the macOS Keychain instead of plaintext files. The internal API authentication uses per-installation random tokens instead of a hardcoded shared secret."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "print-fix",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Conversation Printing",
+          "description": "Printing conversations works again after the markdown rendering overhaul. Print output now properly paginates across multiple pages with correct formatting."
+        },
+        {
+          "id": "mlx-model-loading",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed MLX Model Loading Crashes",
+          "description": "Resolved Swift 6 concurrency errors that could crash SAM during MLX model loading. Models load reliably now."
+        },
+        {
+          "id": "ci-test-fixes",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed CI Test Runner",
+          "description": "The automated test suite no longer fails when the SAM server isn't running, and the bc dependency has been removed from test scripts."
+        },
+        {
+          "id": "copilot-duplicate-keys",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed GitHub Copilot Compiler Errors",
+          "description": "Duplicate CodingKeys in Copilot response models and SAMAPIServer concurrency issues are resolved."
+        }
+      ]
+    },
+    {
       "version": "20260603.1",
       "release_date": "June 3, 2026",
       "introduction": "Local model conversations now reuse their KV cache across turns instead of reprocessing the entire prompt every time. The system prompt is now fully static - all dynamic content (conversation ID, tools, working directory, LTM, session naming) moves to the user message. This eliminates the cache invalidation that happened when conversation titles changed mid-chat.",
