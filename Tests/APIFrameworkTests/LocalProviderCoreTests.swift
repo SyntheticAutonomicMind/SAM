@@ -50,7 +50,7 @@ final class LocalProviderCoreTests: XCTestCase {
             repetitionPenalty: nil, maxTokens: nil, stream: nil, tools: nil,
             samConfig: nil, contextId: nil, enableMemory: nil,
             sessionId: nil, conversationId: nil, statefulMarker: nil,
-            iterationNumber: nil, topic: nil, miniPrompts: nil, personalityId: nil
+            iterationNumber: nil, topic: nil, customInstructions: nil, personalityId: nil
         )
         let result = LocalProviderCore.injectNothinkIfNeeded(request)
         XCTAssertEqual(result.messages.count, request.messages.count)
@@ -335,7 +335,7 @@ final class LocalProviderCoreTests: XCTestCase {
             repetitionPenalty: nil, maxTokens: nil, stream: nil, tools: nil,
             samConfig: config, contextId: nil, enableMemory: nil,
             sessionId: nil, conversationId: nil, statefulMarker: nil,
-            iterationNumber: nil, topic: nil, miniPrompts: nil, personalityId: nil
+            iterationNumber: nil, topic: nil, customInstructions: nil, personalityId: nil
         )
     }
 
