@@ -127,6 +127,8 @@ struct UserMessageBubble: View {
     let conversation: ConversationModel
     @Binding var messageToExport: EnhancedMessage?
     @State private var showCopyConfirmation = false
+    @State private var userBubbleHeight: CGFloat = 100
+    @State private var userBubbleWidth: CGFloat = 500
     @State private var reloadTrigger = UUID()
 
     /// Track display content for smooth resize animation
@@ -158,8 +160,8 @@ struct UserMessageBubble: View {
 
             VStack(alignment: .trailing, spacing: 4) {
                 /// Message bubble.
-                MarkdownText(displayContent)
-                    .id(reloadTrigger)
+                MarkdownWebView(markdown: displayContent, isFromUser: true, bubbleWidth: $userBubbleWidth, bubbleHeight: $userBubbleHeight)
+                    .frame(width: userBubbleWidth, height: userBubbleHeight)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                     .background(
@@ -168,7 +170,6 @@ struct UserMessageBubble: View {
                             .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
                     )
                     .clipped()
-                    .foregroundColor(.white)
 
                 /// Timestamp with copy button.
                 HStack(spacing: 4) {
@@ -285,10 +286,10 @@ struct UserMessageBubble: View {
 
     @MainActor
     private func printMessage() {
-        MessageExportService.printMessage(
-            message: message,
-            conversationTitle: "Conversation",
-            modelName: nil
+        WKWebViewPrintService.printMessage(
+            markdown: displayContent,
+            isFromUser: true,
+            title: "SAM Message"
         )
     }
 }
@@ -301,6 +302,8 @@ struct AssistantMessageBubble: View {
     let conversation: ConversationModel
     @Binding var messageToExport: EnhancedMessage?
     @State private var showCopyConfirmation = false
+    @State private var assistantBubbleHeight: CGFloat = 100
+    @State private var assistantBubbleWidth: CGFloat = 600
 
     /// ANTI-FLICKER FIX: Track content separately to enable smooth streaming updates
     /// When message.content changes during streaming, only this @State updates
@@ -340,7 +343,8 @@ struct AssistantMessageBubble: View {
                 /// Message bubble - ALWAYS show container to prevent collapse/reappear flicker
                 /// Only hide if message has no content AND is not streaming AND has no contentParts
                 if !message.content.isEmpty || message.isStreaming || message.contentParts != nil {
-                    MarkdownText(displayedContent)
+                    MarkdownWebView(markdown: displayedContent, isFromUser: false, bubbleWidth: $assistantBubbleWidth, bubbleHeight: $assistantBubbleHeight)
+                        .frame(width: assistantBubbleWidth, height: assistantBubbleHeight)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -350,7 +354,6 @@ struct AssistantMessageBubble: View {
                                 .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
                         )
                         .clipped()
-                        .foregroundColor(.primary)
                 }                /// Render contentParts if present (images, etc.)
                 if let contentParts = message.contentParts {
                     ForEach(Array(contentParts.enumerated()), id: \.offset) { _, part in
@@ -512,10 +515,10 @@ struct AssistantMessageBubble: View {
 
     @MainActor
     private func printMessage() {
-        MessageExportService.printMessage(
-            message: message,
-            conversationTitle: "Conversation",
-            modelName: nil
+        WKWebViewPrintService.printMessage(
+            markdown: displayedContent,
+            isFromUser: false,
+            title: "SAM Message"
         )
     }
 }

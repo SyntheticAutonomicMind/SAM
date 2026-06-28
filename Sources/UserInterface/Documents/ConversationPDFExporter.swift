@@ -27,14 +27,13 @@ public class ConversationPDFExporter {
             .filter { !$0.isToolMessage }  // Skip tool messages for cleaner export
             .sorted { $0.timestamp < $1.timestamp }
 
-        logger.info("Generating conversation PDF using UnifiedPDFGenerator: \(messagesToExport.count) messages")
+        logger.info("Generating conversation PDF using SimplePDFGenerator: \(messagesToExport.count) messages")
 
-        // Use UnifiedPDFGenerator for reliable PDF generation
-        return try await UnifiedPDFGenerator.generatePDF(
+        // Use SimplePDFGenerator for reliable PDF generation
+        return try await SimplePDFGenerator.generatePDF(
             messages: messagesToExport,
             conversationTitle: conversation.title,
-            modelName: nil,
-            includeHeaders: true  // Show message role headers for conversations
+            modelName: nil
         )
     }
 }

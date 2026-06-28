@@ -14,207 +14,216 @@ import Combine
 
 /// ChatWidget with dynamic model loading, performance tracking, copy functionality, and chat management Includes chat duplication, JSON export, and session persistence features.
 public struct ChatWidget: View {
-    @EnvironmentObject private var endpointManager: EndpointManager
-    let activeConversation: ConversationModel?
-    @ObservedObject private var messageBus: ConversationMessageBus
-    @Binding var showingMiniPrompts: Bool
-    private let logger = Logging.Logger(label: "com.sam.chat")
-    @EnvironmentObject private var conversationManager: ConversationManager
-    @EnvironmentObject private var sharedConversationService: SharedConversationService
 
-    @State private var messageText = ""
+    // MARK: - Prompt ID Constants
+    // Extracted to help SwiftUI type-checker with the massive view body.
+    static let samDefaultPromptId: UUID = {
+        UUID(uuidString: "00[REDACTED]-0000-[REDACTED]00001") ?? UUID()
+    }()
+    static let samMinimalPromptId: UUID = {
+        UUID(uuidString: "00[REDACTED]-0000-[REDACTED]00004") ?? UUID()
+    }()
+    @EnvironmentObject var endpointManager: EndpointManager
+    let activeConversation: ConversationModel?
+    @ObservedObject var messageBus: ConversationMessageBus
+    @Binding var showingMiniPrompts: Bool
+    let logger = Logging.Logger(label: "com.sam.chat")
+    @EnvironmentObject var conversationManager: ConversationManager
+    @EnvironmentObject var sharedConversationService: SharedConversationService
+
+    @State var messageText = ""
 
     /// Dynamic height of the text input (auto-grows with content)
-    @State private var inputTextHeight: CGFloat = 45
+    @State var inputTextHeight: CGFloat = 45
 
     /// Track previous conversation for draft save/restore
-    @State private var previousConversationId: UUID?
+    @State var previousConversationId: UUID?
 
     /// Debounced draft save task - prevents excessive disk writes while typing
-    @State private var draftSaveTask: Task<Void, Never>?
+    @State var draftSaveTask: Task<Void, Never>?
 
     /// Messages directly from MessageBus (single source of truth)
     /// MessageBus is @ObservedObject - SwiftUI automatically re-renders on @Published changes
     /// This is the CORRECT data flow: MessageBus → ChatWidget (not MessageBus → ConversationModel → ChatWidget)
-    private var messages: [EnhancedMessage] {
+    var messages: [EnhancedMessage] {
         messageBus.messages
     }
 
-    @State private var cachedToolHierarchy: [UUID: [EnhancedMessage]] = [:]
+    @State var cachedToolHierarchy: [UUID: [EnhancedMessage]] = [:]
 
     /// PERFORMANCE: Cache cleaned messages to avoid regex operations on every render
     /// Key: message.id, Value: (contentHash, cleanedMessage)
     /// Only recompute cleanSpecialTokens when content actually changes
-    @State private var cachedCleanedMessages: [UUID: (contentHash: Int, cleaned: EnhancedMessage)] = [:]
+    @State var cachedCleanedMessages: [UUID: (contentHash: Int, cleaned: EnhancedMessage)] = [:]
 
-    @State private var processingStatus: ProcessingStatus = .idle
-    @State private var currentToolName: String?
-    @State private var isSending = false
-    @State private var streamingTask: Task<Void, Never>?
+    @State var processingStatus: ProcessingStatus = .idle
+    @State var currentToolName: String?
+    @State var isSending = false
+    @State var streamingTask: Task<Void, Never>?
 
     /// Current orchestrator for cancellation support
-    @State private var currentOrchestrator: AgentOrchestrator?
+    @State var currentOrchestrator: AgentOrchestrator?
 
     /// Input focus state for auto-focus on chat open.
-    @FocusState private var isInputFocused: Bool
+    @FocusState var isInputFocused: Bool
 
     /// PERFORMANCE: Streaming update throttling.
-    @State private var pendingStreamingUpdate: (messageId: UUID, content: String)?
-    @State private var streamingUpdateTask: Task<Void, Never>?
-    @State private var lastUIUpdateTime: Date = Date()
-    @State private var streamingUpdateCount: Int = 0
+    @State var pendingStreamingUpdate: (messageId: UUID, content: String)?
+    @State var streamingUpdateTask: Task<Void, Never>?
+    @State var lastUIUpdateTime: Date = Date()
+    @State var streamingUpdateCount: Int = 0
 
     /// Scroll system: auto-scroll to latest content during streaming
-    @State private var lastScrollTime: Date = .distantPast
-    @State private var pendingScrollTask: Task<Void, Never>?
-    @State private var lastScrolledToId: UUID?
+    @State var lastScrollTime: Date = .distantPast
+    @State var pendingScrollTask: Task<Void, Never>?
+    @State var lastScrolledToId: UUID?
 
     /// Scroll proxy for keyboard navigation (stored from ScrollViewReader)
-    @State private var scrollProxy: ScrollViewProxy?
+    @State var scrollProxy: ScrollViewProxy?
 
     /// Auto-scroll control: user explicitly enables/disables via toggle.
     /// Global and persistent across all conversations and app restarts.
-    @AppStorage("scrollLockEnabled") private var scrollLockEnabled: Bool = true
+    @AppStorage("scrollLockEnabled") var scrollLockEnabled: Bool = true
 
     /// User collaboration state.
-    @State private var isAwaitingUserInput = false
-    @State private var userCollaborationPrompt = ""
-    @State private var userCollaborationContext: String?
-    @State private var userCollaborationToolCallId: String?
+    @State var isAwaitingUserInput = false
+    @State var userCollaborationPrompt = ""
+    @State var userCollaborationContext: String?
+    @State var userCollaborationToolCallId: String?
 
     /// CRITICAL: Prevents conversation sync from overwriting streaming messages
     /// During active streaming, UI is source of truth - DO NOT load from conversation
-    @State private var isActivelyStreaming = false
+    @State var isActivelyStreaming = false
 
     /// Thinking indicator for UI feedback.
-    @State private var isThinking = false
-    @State private var lastToolProcessorMessage = false
-    @State private var lastToolName: String?
-    @State private var lastToolExecutionId: String?
+    @State var isThinking = false
+    @State var lastToolProcessorMessage = false
+    @State var lastToolName: String?
+    @State var lastToolExecutionId: String?
 
     /// Appearance preferences.
-    @AppStorage("enableAnimations") private var enableAnimations: Bool = true
+    @AppStorage("enableAnimations") var enableAnimations: Bool = true
 
     /// Flag to prevent syncSettingsToConversation during syncWithActiveConversation.
-    @State private var isLoadingConversationSettings = false
+    @State var isLoadingConversationSettings = false
 
     /// Cached Copilot User API response for quota display
     /// Fetched on appear and refreshed periodically
-    @State private var cachedCopilotUserResponse: CopilotUserResponse?
+    @State var cachedCopilotUserResponse: CopilotUserResponse?
 
     /// Flag to prevent bidirectional sync loop between UI and ConversationModel.
-    @State private var isSyncingMessages = false
+    @State var isSyncingMessages = false
 
     /// Combine subscription to observe conversation changes.
-    @State private var conversationSubscription: AnyCancellable?
+    @State var conversationSubscription: AnyCancellable?
 
     /// FEATURE: Enable/disable tool usage.
-    @State private var enableTools: Bool = true
+    @State var enableTools: Bool = true
 
     /// Shared data UI state
-    @State private var useSharedData: Bool = false
-    @State private var assignedSharedTopicId: String?
-    @State private var sharedTopics: [SharedTopic] = []
-    private let sharedTopicManager = SharedTopicManager()
+    @State var useSharedData: Bool = false
+    @State var assignedSharedTopicId: String?
+    @State var sharedTopics: [SharedTopic] = []
+    let sharedTopicManager = SharedTopicManager()
 
     /// Configuration - dynamically loaded.
-    @AppStorage("defaultModel") private var appDefaultModel: String = "gpt-4"
-    @State private var selectedModel: String = "gpt-4"
-    @State private var temperature: Double = 0.7
-    @State private var topP: Double = 1.0
-    @State private var repetitionPenalty: Double?
-    @State private var maxTokens: Int? = 8192
-    @State private var maxMaxTokens: Int = 16384
-    @State private var contextWindowSize: Int = 4096
-    @State private var maxContextWindowSize: Int = 32768
+    @AppStorage("defaultModel") var appDefaultModel: String = "gpt-4"
+    @State var selectedModel: String = "gpt-4"
+    @State var temperature: Double = 0.7
+    @State var topP: Double = 1.0
+    @State var repetitionPenalty: Double?
+    @State var maxTokens: Int? = 8192
+    @State var maxMaxTokens: Int = 16384
+    @State var contextWindowSize: Int = 4096
+    @State var maxContextWindowSize: Int = 32768
     
     /// Model list management - using shared ModelListManager
-    @ObservedObject private var modelListManager = ModelListManager.shared
+    @ObservedObject var modelListManager = ModelListManager.shared
     
-    @State private var enableReasoning: Bool = false
-    @State private var thinkingEffort: String = "high"
+    @State var enableReasoning: Bool = false
+    @State var thinkingEffort: String = "high"
 
     /// Local model loading state.
-    @State private var isLocalModelLoaded: Bool = false
-    @State private var isLoadingLocalModel: Bool = false
+    @State var isLocalModelLoaded: Bool = false
+    @State var isLoadingLocalModel: Bool = false
 
     /// Track if user manually overrode auto-disable tools for local models.
-    @State private var userManuallyEnabledTools: Bool = false
+    @State var userManuallyEnabledTools: Bool = false
 
     /// Memory validation state.
-    private let localModelManager = LocalModelManager.shared
-    @State private var showMemoryWarning: Bool = false
-    @State private var memoryWarningMessage: String = ""
-    @State private var pendingModelLoad: (provider: String, model: String)?
+    let localModelManager = LocalModelManager.shared
+    @State var showMemoryWarning: Bool = false
+    @State var memoryWarningMessage: String = ""
+    @State var pendingModelLoad: (provider: String, model: String)?
 
     /// Advanced parameters toolbar - collapsible.
-    @State private var showAdvancedParameters = false
+    @State var showAdvancedParameters = false
 
     /// Bottom bar popover states.
-    @State private var showingPanelsMenu = false
-    @State private var showingSettingsPopover = false
+    @State var showingPanelsMenu = false
+    @State var showingSettingsPopover = false
 
     /// System prompt management - using systemPromptManager.selectedConfigurationId as single source of truth.
-    @ObservedObject private var systemPromptManager = SystemPromptManager.shared
+    @ObservedObject var systemPromptManager = SystemPromptManager.shared
 
     /// Chat session management.
-    @StateObject private var chatManager = ChatManager()
-    @State private var showingExportOptions = false
+    @StateObject var chatManager = ChatManager()
+    @State var showingExportOptions = false
 
     /// Message export - centralized at ChatWidget level for reliable sheet presentation.
-    @State private var messageToExport: EnhancedMessage?
+    @State var messageToExport: EnhancedMessage?
 
     /// Performance monitoring.
-    @StateObject private var performanceMonitor = PerformanceMonitor()
-    @State private var showingPerformanceMetrics = false
+    @StateObject var performanceMonitor = PerformanceMonitor()
+    @State var showingPerformanceMetrics = false
 
     /// Voice input/output management.
-    @ObservedObject private var voiceManager = VoiceManager.shared
-    @StateObject private var voiceBridge = VoiceChatBridge()
-    @State private var showVoiceAuthError = false
-    @State private var voiceAuthErrorMessage = ""
+    @ObservedObject var voiceManager = VoiceManager.shared
+    @StateObject var voiceBridge = VoiceChatBridge()
+    @State var showVoiceAuthError = false
+    @State var voiceAuthErrorMessage = ""
     
     /// API error notification
-    @State private var showAPIError = false
-    @State private var apiErrorMessage = ""
+    @State var showAPIError = false
+    @State var apiErrorMessage = ""
     
     /// Braille spinner busy indicator state
-    @State private var brailleSpinnerFrame = 0
-    @State private var busyStatusText: String = ""
-    private let brailleFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    @State var brailleSpinnerFrame = 0
+    @State var busyStatusText: String = ""
+    let brailleFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     /// Document import system for auto-importing attached files
-    @State private var documentImportSystem: DocumentImportSystem?
+    @State var documentImportSystem: DocumentImportSystem?
 
     /// Todo list manager (shared singleton)
-    @ObservedObject private var todoManager = TodoManager.shared
-    private let cachedFolderManager = FolderManager()
+    @ObservedObject var todoManager = TodoManager.shared
+    let cachedFolderManager = FolderManager()
 
     /// Memory management - Session Intelligence.
-    @State private var showingMemoryPanel = false
-    @State private var memoryStatistics: ConversationEngine.MemoryStatistics?
-    @State private var archiveStatistics: MemoryMap?
-    @State private var contextStatistics: ContextStatistics?
-    @State private var conversationMemories: [ConversationMemory] = []
-    @State private var memorySearchQuery = ""
-    @State private var searchInStored = true
-    @State private var searchInActive = false
-    @State private var searchInArchive = false
+    @State var showingMemoryPanel = false
+    @State var memoryStatistics: ConversationEngine.MemoryStatistics?
+    @State var archiveStatistics: MemoryMap?
+    @State var contextStatistics: ContextStatistics?
+    @State var conversationMemories: [ConversationMemory] = []
+    @State var memorySearchQuery = ""
+    @State var searchInStored = true
+    @State var searchInActive = false
+    @State var searchInArchive = false
 
     /// Working directory panel.
-    @State private var showingWorkingDirectoryPanel = false
+    @State var showingWorkingDirectoryPanel = false
 
     /// File attachments for current conversation.
     /// Files are copied to working directory and their paths stored here for context injection.
-    @State private var attachedFiles: [URL] = []
+    @State var attachedFiles: [URL] = []
 
     /// Flag to prevent sending while files are being copied
-    @State private var isAttachingFiles: Bool = false
+    @State var isAttachingFiles: Bool = false
 
     /// Agent todo list.
-    @State private var showingTodoListPopover = false
+    @State var showingTodoListPopover = false
     /// Agent todo list - computed from TodoManager (reactive to changes)
-    private var agentTodoList: [AgentTodoItem] {
+    var agentTodoList: [AgentTodoItem] {
         guard let conversationId = activeConversation?.id.uuidString else {
             return []
         }
@@ -237,7 +246,7 @@ public struct ChatWidget: View {
     }
 
     /// Check if input should be disabled (when model needs loading)
-    private var shouldDisableInput: Bool {
+    var shouldDisableInput: Bool {
         return endpointManager.isLocalModel(selectedModel) && !isLocalModelLoaded
     }
 
@@ -299,29 +308,9 @@ public struct ChatWidget: View {
 
     /// Conditional panels shown above input area
     @ViewBuilder
-    private var conditionalPanels: some View {
-        if showingPerformanceMetrics {
-            Divider()
-            UserInterface.PerformanceMetricsView(
-                performanceMonitor: performanceMonitor,
-                isVisible: $showingPerformanceMetrics
-            )
-        }
-
-        if showingMemoryPanel {
-            Divider()
-            sessionIntelligencePanel
-        }
-
-        if showingWorkingDirectoryPanel {
-            Divider()
-            workingDirectoryPanel
-        }
-
-    }
 
     /// Main content layout without modifiers
-    private var mainChatContent: some View {
+    var mainChatContent: some View {
         VStack(spacing: 0) {
             chatHeader
             Divider()
@@ -333,208 +322,17 @@ public struct ChatWidget: View {
         .background(Color(NSColor.controlBackgroundColor))
     }
 
-    private var mainChatView: some View {
+    var mainChatView: some View {
         mainChatContent
             .sheet(isPresented: $showingExportOptions) {
                 exportChatDialog
             }
             .onAppear(perform: performMainChatViewAppear)
             .onChange(of: activeConversation?.id) { _, newID in
-            /// FEATURE: Save draft message from previous conversation before switching
-            if let prevId = previousConversationId,
-               let prevConversation = conversationManager.conversations.first(where: { $0.id == prevId }) {
-                if !messageText.isEmpty {
-                    prevConversation.settings.draftMessage = messageText
-                    logger.debug("DRAFT_SAVE: Saved draft (\(messageText.count) chars) to conversation \(prevId.uuidString.prefix(8))")
-                }
-                
-                // Save performance metrics to previous conversation
-                prevConversation.performanceMetrics = performanceMonitor.getMetricsForConversation()
-                logger.debug("METRICS_SAVE: Saved \(prevConversation.performanceMetrics.count) metrics to conversation \(prevId.uuidString.prefix(8))")
-                
-                // Save immediately when switching (handles both draft and metrics)
-                conversationManager.saveConversations()
-            }
-
-            /// Cancel any pending debounced draft save
-            draftSaveTask?.cancel()
-            draftSaveTask = nil
-
-            /// Update previous conversation ID tracking
-            previousConversationId = newID
-
-            /// Log conversation switch
-            if let conv = activeConversation {
-                logger.debug("[CONVERSATION_OPENED] id=\(conv.id.uuidString.prefix(8)), title='\(conv.title)', messageCount=\(conv.messages.count)")
-
-                /// FEATURE: Restore draft message from new conversation
-                let draftMessage = conv.settings.draftMessage
-                if !draftMessage.isEmpty {
-                    messageText = draftMessage
-                    logger.debug("DRAFT_RESTORE: Restored draft (\(draftMessage.count) chars) from conversation \(conv.id.uuidString.prefix(8))")
-                } else {
-                    /// Clear input when switching to conversation with no draft
-                    messageText = ""
-                }
-                
-                // Restore performance metrics from new conversation
-                performanceMonitor.loadMetricsFromConversation(conv.performanceMetrics)
-                logger.debug("METRICS_RESTORE: Loaded \(conv.performanceMetrics.count) metrics from conversation \(conv.id.uuidString.prefix(8))")
-                
-                // Set up callback to persist metrics when recorded
-                // Uses weak reference to conversation to avoid capture issues
-                let weakConversation = conv
-                performanceMonitor.onMetricsRecorded = { [weak weakConversation] metrics in
-                    guard let conversation = weakConversation else { return }
-                    conversation.performanceMetrics.append(metrics)
-                    // Trim to 100 entries like PerformanceMonitor does
-                    if conversation.performanceMetrics.count > 100 {
-                        conversation.performanceMetrics = Array(conversation.performanceMetrics.suffix(100))
-                    }
-                }
-
-            }
-
-            /// Cancel active tasks when switching conversations.
-            /// Prevents ghost tasks from continuing and updating the wrong conversation.
-            streamingTask?.cancel()
-            streamingTask = nil
-            streamingUpdateTask?.cancel()
-            streamingUpdateTask = nil
-
-            /// Cancel local model generation if running.
-            Task {
-                await endpointManager.cancelLocalModelGeneration()
-            }
-
-            /// Restore UI state from StateManager (Task 18)
-            /// This ensures UI correctly reflects state when switching back to a conversation where agent is working
-            if let conversation = activeConversation {
-                logger.debug("CONVERSATION_SWITCH: Switching to conversation \(conversation.id), checking StateManager...")
-
-                /// Get runtime state from StateManager
-                if let state = conversationManager.stateManager.getState(conversationId: conversation.id) {
-                    logger.debug("CONVERSATION_SWITCH: Found state in StateManager: \(state.status)")
-
-                    /// Restore processing status from state
-                    switch state.status {
-                    case .idle:
-                        isSending = false
-                        processingStatus = .idle
-                        logger.debug("CONVERSATION_SWITCH: Restored idle state")
-                    case .processing(let toolName):
-                        isSending = true
-                        /// Use tool-specific status if available
-                        if let toolName = toolName {
-                            processingStatus = .processingTools(toolName: toolName)
-                            logger.debug("CONVERSATION_SWITCH: Restored processing state for tool: \(toolName)")
-                        } else {
-                            processingStatus = .generating
-                            logger.debug("CONVERSATION_SWITCH: Restored generic processing state")
-                        }
-                    case .streaming:
-                        isSending = true
-                        processingStatus = .generating
-                        logger.debug("CONVERSATION_SWITCH: Restored streaming state")
-                    case .error(let msg):
-                        isSending = false
-                        processingStatus = .idle
-                        logger.debug("CONVERSATION_SWITCH: Conversation has error state: \(msg)")
-                    }
-                } else {
-                    logger.debug("CONVERSATION_SWITCH: No state in StateManager, using fallback")
-                    /// No state in StateManager - use conversation.isProcessing as fallback
-                    isSending = conversation.isProcessing
-                    processingStatus = conversation.isProcessing ? .generating : .idle
-                }
-            } else {
-                isSending = false
-                processingStatus = .idle
-            }
-
-            /// Cancel previous subscription.
-            conversationSubscription?.cancel()
-            conversationSubscription = nil
-
-            syncWithActiveConversation()
-
-            /// Scroll to the newest message after conversation switch.
-            /// Delay lets SwiftUI complete the layout pass after sync.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if let lastMessage = messages.last {
-                    scrollProxy?.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
-                }
-                isInputFocused = true
-            }
-        }
-        .onAppear {
-            /// Sync messages on initial view appearance.
-            /// onChange(of: activeConversation?.id) doesn't fire if conversation is already set before view loads.
-            logger.debug("MESSAGE_LIFECYCLE: ChatWidget appeared, triggering initial sync")
-            syncWithActiveConversation()
-
-            /// Scroll to newest message on initial appearance
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if let lastMessage = messages.last {
-                    scrollProxy?.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
-                }
-                isInputFocused = true
-            }
-
-            /// FEATURE: Restore draft message on initial appearance
-            /// This handles the case where conversation is already set before view loads
-            if let conversation = activeConversation {
-                let draftMessage = conversation.settings.draftMessage
-                if !draftMessage.isEmpty {
-                    messageText = draftMessage
-                    logger.debug("DRAFT_RESTORE: Restored draft on appear (\(draftMessage.count) chars) from conversation \(conversation.id.uuidString.prefix(8))")
-                }
-                
-                // Restore performance metrics on initial appearance
-                performanceMonitor.loadMetricsFromConversation(conversation.performanceMetrics)
-                logger.debug("METRICS_RESTORE_APPEAR: Loaded \(conversation.performanceMetrics.count) metrics from conversation \(conversation.id.uuidString.prefix(8))")
-                
-                // Set up callback to persist metrics when recorded
-                let weakConversation = conversation
-                performanceMonitor.onMetricsRecorded = { [weak weakConversation] metrics in
-                    guard let conv = weakConversation else { return }
-                    conv.performanceMetrics.append(metrics)
-                    if conv.performanceMetrics.count > 100 {
-                        conv.performanceMetrics = Array(conv.performanceMetrics.suffix(100))
-                    }
-                }
-                
-                /// Track this conversation as previous for future switches
-                previousConversationId = conversation.id
-            }
+            handleConversationSwitch(newID)
         }
         .onChange(of: processingStatus) { oldValue, newValue in
-            /// Update braille spinner status text based on processing state.
-            switch newValue {
-            case .idle:
-                busyStatusText = ""
-            case .thinking:
-                busyStatusText = "Thinking..."
-            case .generating:
-                /// Don't overwrite rate-limit status text.
-                if !busyStatusText.contains("Rate limited") {
-                    busyStatusText = "Generating..."
-                }
-            case .processingTools(let toolName):
-                busyStatusText = "Running: \(toolName)"
-            case .loadingModel:
-                busyStatusText = "Loading model..."
-            }
-
-            /// Sync messages when processing completes
-            /// Problem: If message count doesn't change (placeholder updated), onChange doesn't fire
-            /// Solution: Explicitly sync when transitioning from thinking/generating to idle
-            if (oldValue == .thinking || oldValue == .generating) && newValue == .idle {
-                logger.debug("MESSAGE_LIFECYCLE: Processing completed, triggering sync")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    syncWithActiveConversation()
-                }
-            }
+            handleProcessingStatusChange(oldValue, newValue)
         }
         .onReceive(voiceBridge.$transcribedText) { newValue in
             /// Handle voice transcription updates
@@ -558,81 +356,10 @@ public struct ChatWidget: View {
             voiceBridge.shouldClearMessage = false
         }
         .onChange(of: selectedModel) { _, newValue in
-            /// Don't save settings or trigger preload if we're loading from conversation.
-            guard !isLoadingConversationSettings else { return }
-
-            /// Auto-select SAM Minimal for local models, SAM Default for remote models
-            /// Only auto-switch if currently using SAM Default (00000000-0000-0000-0000-000000000001)
-            /// Don't switch if user explicitly selected a different prompt
-            if let activeConv = conversationManager.activeConversation {
-                let samDefaultId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-                let samMinimalId = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
-                let currentPromptId = activeConv.settings.selectedSystemPromptId ?? samDefaultId
-
-                /// Only auto-switch between SAM Default <-> SAM Minimal
-                /// Don't touch if user explicitly chose a custom or workspace prompt
-                if currentPromptId == samDefaultId || currentPromptId == samMinimalId {
-                    let isLocalModel = newValue.lowercased().contains("gguf") ||
-                                      newValue.lowercased().contains("mlx") ||
-                                      newValue.lowercased().contains("local-llama")
-
-                    var updatedConv = activeConv
-                    let targetPromptId = isLocalModel ? samMinimalId : samDefaultId
-
-                    /// Only update if actually changing
-                    if currentPromptId != targetPromptId {
-                        updatedConv.settings.selectedSystemPromptId = targetPromptId
-                        logger.info("Auto-selected \(isLocalModel ? "SAM Minimal" : "SAM Default") for \(isLocalModel ? "local" : "remote") model: \(newValue)")
-
-                        /// Update conversation and save
-                        conversationManager.activeConversation = updatedConv
-                        conversationManager.saveConversations()
-
-                        /// CRITICAL: Also update systemPromptManager.selectedConfigurationId
-                        /// This is what generateSystemPrompt() uses to determine prompt content
-                        systemPromptManager.selectedConfigurationId = targetPromptId
-                    }
-                }
-            }
-
-            updateMaxContextForModel()
-            preloadModel()
-
-            /// Check loading status for local models.
-            Task {
-                if endpointManager.isLocalModel(newValue) {
-                    let loaded = await endpointManager.getModelLoadingStatus(newValue)
-                    await MainActor.run {
-                        isLocalModelLoaded = loaded
-                        /// FIXED: Tools now enabled for local models - they support Hermes-style tool calling via system prompt injection
-                    }
-                } else {
-                    /// Remote models are always "loaded"
-                    await MainActor.run {
-                        isLocalModelLoaded = false
-                        userManuallyEnabledTools = false
-                    }
-                }
-            }
+            handleModelChange(newValue)
         }
         .onChange(of: endpointManager.modelLoadingStatus) { _, newStatus in
-            /// Update button states when model loading status changes (fixes play/eject button not updating when model loads during conversation start)
-            guard endpointManager.isLocalModel(selectedModel) else { return }
-
-            if let status = newStatus[selectedModel] {
-                switch status {
-                case .loading(_):
-                    isLoadingLocalModel = true
-                    isLocalModelLoaded = false
-                case .loaded:
-                    isLoadingLocalModel = false
-                    isLocalModelLoaded = true
-                case .notLoaded:
-                    isLoadingLocalModel = false
-                    isLocalModelLoaded = false
-                }
-                logger.debug("BUTTON_STATE_UPDATE: Model \(selectedModel) status changed to \(status), isLoadingLocalModel=\(isLoadingLocalModel), isLocalModelLoaded=\(isLocalModelLoaded)")
-            }
+            handleModelLoadingStatusChange(newStatus)
         }
         .onChange(of: temperature) { _, _ in
             guard !isLoadingConversationSettings else { return }
@@ -651,18 +378,7 @@ public struct ChatWidget: View {
             syncSettingsToConversation()
         }
         .onChange(of: enableTools) { oldValue, newValue in
-            guard !isLoadingConversationSettings else { return }
-
-            /// Track if user manually enabled tools for a local model This prevents auto-disable from overriding user choice.
-            if endpointManager.isLocalModel(selectedModel) && newValue && !oldValue {
-                userManuallyEnabledTools = true
-                logger.info("CHATWIDGET: User manually enabled tools for local model: \(selectedModel)")
-            } else if !newValue {
-                /// Reset flag when user disables tools.
-                userManuallyEnabledTools = false
-            }
-
-            syncSettingsToConversation()
+            handleToolsChange(oldValue: oldValue, newValue: newValue)
         }
         .onChange(of: maxTokens) { _, _ in
             guard !isLoadingConversationSettings else { return }
@@ -680,64 +396,8 @@ public struct ChatWidget: View {
 
     // MARK: - UI Setup
 
-    private var sessionIntelligencePanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Session Intelligence")
-                    .font(.headline)
-                    .foregroundColor(.primary)
 
-                Spacer()
-
-                /// Close button.
-                Button(action: {
-                    withAnimation { showingMemoryPanel.toggle() }
-                }) {
-                    Image(systemName: "xmark")
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Close Session Intelligence panel")
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-
-            /// SECTION 1: Memory Status
-            memoryStatusSection
-                .padding(.horizontal, 16)
-
-            Divider()
-                .padding(.horizontal, 16)
-
-            /// SECTION 2: Context Management
-            contextManagementSection
-                .padding(.horizontal, 16)
-
-            Divider()
-                .padding(.horizontal, 16)
-
-            /// SECTION 3: Enhanced Search
-            enhancedSearchSection
-                .padding(.horizontal, 16)
-        }
-        .padding(.bottom, 8)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-        .onAppear {
-            loadMemoryStatistics()
-        }
-        .onChange(of: activeConversation?.id) { _, _ in
-            loadMemoryStatistics()
-            conversationMemories.removeAll()
-            memorySearchQuery = ""
-        }
-        .onChange(of: activeConversation?.settings.sharedTopicId) { _, _ in
-            loadMemoryStatistics()
-            conversationMemories.removeAll()
-            memorySearchQuery = ""
-        }
-    }
-
-    private var memoryStatusSection: some View {
+    var memoryStatusSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("MEMORY STATUS")
                 .font(.caption)
@@ -809,7 +469,7 @@ public struct ChatWidget: View {
         }
     }
 
-    private var contextManagementSection: some View {
+    var contextManagementSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("INTELLIGENCE ACTIVITY")
                 .font(.caption)
@@ -871,7 +531,7 @@ public struct ChatWidget: View {
     }
     
     /// Helper view for compact stat boxes
-    private func statBox(value: String, label: String) -> some View {
+    func statBox(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(.system(.body, design: .rounded))
@@ -883,7 +543,7 @@ public struct ChatWidget: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var enhancedSearchSection: some View {
+    var enhancedSearchSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SEARCH")
                 .font(.caption)
@@ -972,990 +632,28 @@ public struct ChatWidget: View {
         }
     }
 
-    private var workingDirectoryPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Working Directory")
-                    .font(.headline)
-                    .foregroundColor(.primary)
 
-                Spacer()
-
-                /// Close button.
-                Button(action: {
-                    withAnimation { showingWorkingDirectoryPanel.toggle() }
-                }) {
-                    Image(systemName: "xmark")
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Close working directory panel")
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-
-            /// Current working directory.
-            if let conversation = conversationManager.activeConversation {
-                VStack(alignment: .leading, spacing: 8) {
-                    /// Shared topic indicator (when enabled)
-                    if conversation.settings.useSharedData,
-                       let topicName = conversation.settings.sharedTopicName {
-                        HStack(spacing: 6) {
-                            Image(systemName: "tray.full")
-                                .font(.caption2)
-                                .foregroundColor(.mint)
-                            Text("Shared Topic: \(topicName)")
-                                .font(.caption)
-                                .foregroundColor(.mint)
-                        }
-                    }
-
-                    Text(conversation.settings.useSharedData ? "Current Directory (Shared):" : "Current Directory:")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    Text(conversationManager.getEffectiveWorkingDirectory(for: conversation))
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(conversation.settings.useSharedData ? .mint : .primary)
-                        .textSelection(.enabled)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(conversation.settings.useSharedData ?
-                            Color.mint.opacity(0.05) : Color(NSColor.textBackgroundColor))
-                        .cornerRadius(6)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(conversation.settings.useSharedData ? Color.mint.opacity(0.3) : Color.clear, lineWidth: 1)
-                        )
-
-                    Text(conversation.settings.useSharedData ?
-                        "Using shared topic workspace. All file operations use this shared directory across conversations." :
-                        "All file operations will use this directory unless an absolute path is specified.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .lineLimit(3)
-
-                    HStack(spacing: 8) {
-                        Button("Change...") {
-                            selectWorkingDirectory()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .help("Choose a different folder for SAM to work in")
-                        .disabled(conversation.settings.useSharedData)
-
-                        Button("Reveal in Finder") {
-                            revealWorkingDirectoryInFinder()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help("Open this folder in Finder")
-
-                        Button(conversation.settings.useSharedData ? "Disable Shared Topic" : "Reset to Default") {
-                            if conversation.settings.useSharedData {
-                                // Disable shared data
-                                useSharedData = false
-                                conversationManager.detachSharedTopic()
-                                syncSettingsToConversation()
-                            } else {
-                                resetWorkingDirectoryToDefault()
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help(conversation.settings.useSharedData ?
-                            "Switch back to conversation-specific directory" :
-                            "Return to using your home directory")
-                    }
-                }
-                .padding(.horizontal, 16)
-            } else {
-                Text("No active conversation")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
-            }
-        }
-        .padding(.bottom, 8)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-    }
-
-    private var chatHeader: some View {
-        VStack(spacing: 0) {
-            /// Conversation Info Header (when available).
-            if let conversation = activeConversation {
-                VStack(alignment: .leading, spacing: 0) {
-                    /// Line 1: Title + Shared indicator with topic name
-                    HStack {
-                        Text(conversation.title)
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                            .contextMenu {
-                                conversationHeaderContextMenu(conversation)
-                            }
-
-                        Spacer()
-
-                        /// Active mini-prompts (when sidebar closed) - shown on same line as title
-                        if !showingMiniPrompts {
-                            let miniPromptManager = MiniPromptManager.shared
-                            let enabledPrompts = miniPromptManager.miniPrompts
-                                .filter { conversation.enabledMiniPromptIds.contains($0.id) }
-                                .sorted { $0.displayOrder < $1.displayOrder }
-
-                            if !enabledPrompts.isEmpty {
-                                let promptNames = enabledPrompts.map { $0.name }.joined(separator: ", ")
-                                let displayText = promptNames.count > 80 ? String(promptNames.prefix(80)) + "..." : promptNames
-
-                                Text(displayText)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-
-                        /// Shared topic indicator with topic name
-                        if conversation.settings.useSharedData {
-                            HStack(spacing: 4) {
-                                Image(systemName: "link.circle.fill")
-                                    .foregroundColor(.mint)
-                                if let topicName = conversation.settings.sharedTopicName {
-                                    Text(topicName)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("Shared")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-
-                    }
-
-                    /// Line 2: Message count, ID, provider status
-                    HStack(spacing: 12) {
-                        /// Message count
-                        HStack(spacing: 4) {
-                            Image(systemName: "message.fill")
-                                .font(.caption)
-                            Text("\(conversation.messages.count) messages")
-                                .font(.caption)
-                        }
-                        .foregroundColor(.secondary)
-
-                        /// Conversation ID (full, selectable)
-                        Text("ID: \(conversation.id.uuidString)")
-                            .font(.system(.caption2, design: .monospaced))
-                            .fontWeight(.regular)
-                            .foregroundColor(.secondary.opacity(0.7))
-                            .textSelection(.enabled)
-
-                        Spacer()
-
-                        /// AI Credits usage indicator (GitHub Copilot only)
-                        let isGitHubCopilot = selectedModel.starts(with: "github_copilot/")
-
-                        if isGitHubCopilot, let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() {
-                            if let creditsUsed = quotaInfo.creditsUsed, creditsUsed > 0 {
-                                let creditsStr = String(format: "%.2f", creditsUsed)
-                                Text("AI Credits: \(creditsStr) used")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text("AI Credits billing")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    .padding(.top, 4)  /// Space from Line 1 (or Line 2 if shown)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color(NSColor.windowBackgroundColor))
-                .overlay(
-                    Rectangle()
-                        .frame(height: 1)
-                        .foregroundColor(Color(NSColor.separatorColor)),
-                    alignment: .bottom
-                )
-            }
-        }
-    }
 
     /// Chat management functions moved to context menu or main menu bar.
 
-    private var messageList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                if let activeConv = activeConversation {
-                    messagesVStack(for: activeConv)
-                        .id(activeConv.id)  /// Force recreation only when conversation changes
-                }
-            }
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
-            .onChange(of: messages.count) { _, _ in
-                /// New message added or removed - scroll if auto-scroll is active
-                guard scrollLockEnabled, let lastMessage = messages.last else { return }
-                performThrottledScroll(proxy: proxy, to: lastMessage)
-            }
-            .onChange(of: messages.last?.content.count) { _, _ in
-                /// Streaming content update - only scroll during active streaming
-                guard scrollLockEnabled,
-                      let lastMessage = messages.last,
-                      lastMessage.isStreaming else { return }
-                performThrottledScroll(proxy: proxy, to: lastMessage)
-            }
-            .onChange(of: messages.last?.type) { _, newType in
-                /// Tool card or thinking type change - scroll to make visible
-                guard scrollLockEnabled,
-                      let lastMessage = messages.last,
-                      newType == .toolExecution || newType == .thinking else { return }
-                performThrottledScroll(proxy: proxy, to: lastMessage)
-            }
-            .onChange(of: messages.last?.isStreaming) { oldValue, newValue in
-                /// Streaming completion scroll: when streaming ends, layout recomputes
-                /// (ProgressView removed, metrics added, content re-parsed).
-                /// Scroll to bottom anchor after layout settles to keep content visible.
-                if oldValue == true && newValue == false {
-                    guard scrollLockEnabled else { return }
-                    Task { @MainActor in
-                        /// 150ms allows layout to settle after streaming->complete transition
-                        try? await Task.sleep(for: .milliseconds(150))
-                        proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
-                    }
-                }
-            }
-            .onChange(of: messages) { _, newMessages in
-                /// Cache tool hierarchy and prune stale message cache
-                cachedToolHierarchy = buildToolHierarchy(messages: newMessages)
-                let currentMessageIds = Set(newMessages.map { $0.id })
-                cachedCleanedMessages = cachedCleanedMessages.filter { currentMessageIds.contains($0.key) }
-            }
-            .onAppear {
-                scrollProxy = proxy
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .scrollToTop)) { _ in
-                if let firstMessage = messages.first {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        proxy.scrollTo(firstMessage.id.uuidString, anchor: .top)
-                    }
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .scrollToBottom)) { _ in
-                withAnimation(.easeOut(duration: 0.3)) {
-                    proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .pageUp)) { _ in
-                pageScroll(proxy: proxy, direction: .up)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .pageDown)) { _ in
-                pageScroll(proxy: proxy, direction: .down)
-            }
-        }
-    }
-
-    /// Direction for page scrolling
-    private enum PageDirection {
-        case up, down
-    }
-
-    /// Page scroll by approximately one screen worth of messages
-    private func pageScroll(proxy: ScrollViewProxy, direction: PageDirection) {
-        /// Estimate approximately 5-7 messages per page
-        let pageSize = 6
-
-        guard !messages.isEmpty else { return }
-
-        /// Find current visible message index (approximation based on lastScrolledToId)
-        var currentIndex: Int
-        if let lastId = lastScrolledToId,
-           let idx = messages.firstIndex(where: { $0.id == lastId }) {
-            currentIndex = idx
-        } else {
-            /// Default to middle of conversation if no scroll tracked
-            currentIndex = messages.count / 2
-        }
-
-        /// Calculate target index
-        let targetIndex: Int
-        switch direction {
-        case .up:
-            targetIndex = max(0, currentIndex - pageSize)
-        case .down:
-            targetIndex = min(messages.count - 1, currentIndex + pageSize)
-        }
-
-        /// Scroll to target message
-        let targetMessage = messages[targetIndex]
-        withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(targetMessage.id.uuidString, anchor: direction == .up ? .top : .bottom)
-        }
-        lastScrolledToId = targetMessage.id
-    }
 
     /// Scroll to the latest content with simple throttling.
     ///
     /// Strategy:
     /// - For growing content (streaming, tools, thinking): scroll to the last message
-    ///   with `.bottom` anchor so the tail of the content stays visible as it grows.
-    /// - For completed content (user messages, finished assistant responses): scroll to
-    ///   the message with `.top` anchor so the beginning is visible.
-    /// - Throttled to ~10 updates/sec to prevent layout thrashing.
-    private func performThrottledScroll(proxy: ScrollViewProxy, to message: EnhancedMessage) {
-        let now = Date()
-        let timeSinceLastScroll = now.timeIntervalSince(lastScrollTime)
-
-        /// Content is growing if the message is streaming, or is a tool/thinking card
-        let isGrowingContent = message.isStreaming ||
-            message.type == .toolExecution ||
-            message.type == .thinking
-
-        if timeSinceLastScroll >= 0.1 {
-            /// Enough time passed - scroll immediately
-            lastScrollTime = now
-            lastScrolledToId = message.id
-
-            if isGrowingContent {
-                /// Growing content: scroll to the last message's bottom edge.
-                /// This keeps the newest content visible as it streams in without
-                /// overshooting past the content into empty space.
-                proxy.scrollTo(message.id.uuidString, anchor: .bottom)
-            } else {
-                /// Static content: scroll to the top of the message so user
-                /// can read from the beginning (handles large messages well).
-                proxy.scrollTo(message.id.uuidString, anchor: .top)
-            }
-        } else {
-            /// Too soon - debounce
-            pendingScrollTask?.cancel()
-            pendingScrollTask = Task {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let currentLast = messages.last else { return }
-                    lastScrollTime = Date()
-                    lastScrolledToId = currentLast.id
-
-                    let growing = currentLast.isStreaming ||
-                        currentLast.type == .toolExecution ||
-                        currentLast.type == .thinking
-
-                    if growing {
-                        proxy.scrollTo(currentLast.id.uuidString, anchor: .bottom)
-                    } else {
-                        proxy.scrollTo(currentLast.id.uuidString, anchor: .top)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func messagesVStack(for conversation: ConversationModel) -> some View {
-        /// PERFORMANCE: Use LazyVStack to allow SwiftUI to destroy off-screen views
-        /// Previous VStack kept ALL messages in memory causing massive slowdowns with many tool calls
-        /// LazyVStack + stable scroll anchor prevents scroll jumping while enabling view recycling
-        LazyVStack(spacing: 12) {
-                    /// PERFORMANCE FIX: Use cached tool hierarchy instead of rebuilding on every render
-                    /// buildToolHierarchy() is now called only when messages change, not on every view update
-                    let toolHierarchy = cachedToolHierarchy
-
-                    /// Filter out system-generated messages (e.g., auto-continue prompts)
-                    /// These messages are kept in conversation history for context but hidden from UI
-                    let visibleMessages = messages.filter { !$0.isSystemGenerated }
-
-                    ForEach(visibleMessages) { message in
-                        /// PERFORMANCE: Removed debug logging that fired on EVERY render pass
-                        /// Original: logger.debug("[CHAT_RENDER_LOOP]...") - caused 4tps drop with many messages
-
-                        /// FIX (Issue #4): Show subtasks WHILE running Only skip child messages if parent is COMPLETE (not running) This prevents subtasks from disappearing while executing.
-                        let shouldSkipAsChild: Bool = {
-                            guard message.isToolMessage, let parentName = message.parentToolName else {
-                                return false
-                            }
-
-                            /// Find parent message.
-                            if let parent = messages.first(where: { $0.toolName == parentName && $0.isToolMessage }) {
-                                /// Only hide if parent is complete (success or error).
-                                return parent.toolStatus == .success || parent.toolStatus == .error
-                            }
-
-                            /// No parent found, show the child.
-                            return false
-                        }()
-
-                        if shouldSkipAsChild {
-                            EmptyView()
-                        } else {
-                            /// Filter raw tool call JSON (assistant messages that are pure JSON tool invocations).
-                            /// IMPORTANT: Don't filter tool result messages - they should render as tool cards
-                            let isToolCallJSON = !message.isToolMessage && isToolCallJSONMessage(message)
-
-                            /// Filter empty messages (often incomplete streaming artifacts).
-                            /// Thinking messages should NOT be filtered if they have reasoningContent
-                            /// Even if content is empty, reasoningContent may contain the actual thinking data
-                            /// Image messages should NOT be filtered if they have contentParts
-                            /// Even if content is empty, contentParts may contain the actual image data
-                            /// CRITICAL: Tool execution messages should NEVER be filtered, even when empty
-                            /// Tool cards are created with empty content and filled in when tool completes
-                            let isEmpty = message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                                          message.type != .toolExecution &&  /// ALWAYS show tool cards, even when empty
-                                          (message.type != .thinking || (message.reasoningContent == nil || message.reasoningContent!.isEmpty)) &&
-                                          (message.contentParts == nil || message.contentParts!.isEmpty)
-
-                            /// Filter placeholder thinking messages (just "SUCCESS: Thinking..." with no actual content).
-                            let isPlaceholderThinking = message.type == .thinking &&
-                                message.content.trimmingCharacters(in: .whitespacesAndNewlines) == "SUCCESS: Thinking..." &&
-                                (message.reasoningContent == nil || message.reasoningContent!.isEmpty)
-
-                            /// Handle messages with thinking content - extract response when reasoning disabled.
-                            let displayMessage = getDisplayMessage(message, enableReasoning: enableReasoning)
-
-                            /// PERFORMANCE: Removed verbose filter logging that fired on every render
-                            let willRender = !isToolCallJSON && !isEmpty && !isPlaceholderThinking
-
-                            /// Only filter raw tool call JSON, empty messages, and placeholder thinking.
-                            if willRender {
-                                /// SCROLL BOUNCE FIX: Use STABLE IDs for ALL message types
-                                /// Previously tool messages used content.hashValue which forced
-                                /// view recreation on every content update → layout shift → bounce
-                                /// 
-                                /// SwiftUI handles content diffing internally - we just need stable IDs
-                                /// This prevents forced view recreation that causes scroll jumping
-                                let viewID: String = message.id.uuidString
-
-                                /// LAZYVSTACK FIX: Wrap in container with minimum height
-                                /// LazyVStack needs non-zero layout dimensions to properly render
-                                /// Without this, messages may appear empty until scrolled
-                                Group {
-                                    /// PERFORMANCE: Removed render-path diagnostic logging
-                                    /// Original logging fired on EVERY view render causing major slowdowns
-
-                                    /// Check message.type BEFORE isToolMessage to prevent thinking cards being rendered as tool cards
-                                    /// Thinking messages have isToolMessage=true but must render via MessageView → ThinkingCard
-                                    if message.type == .thinking {
-                                        MessageView(
-                                            message: getCachedCleanedMessage(displayMessage),
-                                            enableAnimations: enableAnimations,
-                                            conversation: conversation,
-                                            messageToExport: $messageToExport
-                                        )
-                                    } else if message.isToolMessage {
-                                        ToolMessageWithChildren(
-                                            message: getCachedCleanedMessage(displayMessage),
-                                            children: toolHierarchy[message.id] ?? [],
-                                            enableAnimations: enableAnimations,
-                                            conversation: conversation,
-                                            messageToExport: $messageToExport
-                                        )
-                                            .onAppear {
-                                                /// CRITICAL: Acknowledge tool card RENDERING (not just message creation)
-                                                /// This signals to orchestrator that card is VISIBLE, not just added to array
-                                                /// Note: Removed verbose timestamp logging for performance
-                                                if let toolCallId = message.toolCallId {
-                                                    currentOrchestrator?.toolCardsReady.insert(toolCallId)
-                                                }
-                                            }
-                                    } else {
-                                        /// PERFORMANCE: Use cached cleaned message to avoid regex on every render
-                                        MessageView(
-                                            message: getCachedCleanedMessage(displayMessage),
-                                            enableAnimations: enableAnimations,
-                                            conversation: conversation,
-                                            messageToExport: $messageToExport
-                                        )
-                                    }
-                                }
-                                /// LAZYVSTACK RENDER FIX: Force intrinsic content height for all messages.
-                                /// Without .fixedSize, LazyVStack may defer rendering and show empty placeholders.
-                                /// Previously toggled based on isStreaming, but the transition from
-                                /// streaming -> non-streaming caused massive layout recomputation
-                                /// that cleared the visible window (scroll position lost during relayout).
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(minHeight: 24)
-                                .id(viewID)
-                            } else {
-                                /// PERFORMANCE: Removed filter logging (fired on every render)
-                                EmptyView()
-                            }
-                        }
-                    }
-
-                    /// SCROLL ANCHOR: Invisible view at the bottom of the message list.
-                    /// Used for "scroll to bottom" commands.
-                    Color.clear
-                        .frame(height: 1)
-                        .id("scroll-bottom-anchor")
-                }
-                .id("messages-\(enableAnimations)")
-                .padding(.horizontal)  /// Only horizontal padding, no bottom padding
-                .padding(.top)
-    }
-
-    private var messageInput: some View {
-        VStack(spacing: 0) {
-            standardMessageInputUI
-
-            /// Status bar - always visible at the bottom of the window.
-            Divider()
-            statusBar
-        }
-        .background(Color(NSColor.controlBackgroundColor))
-        .onAppear {
-            loadGlobalMLXSettings()
-            loadGlobalLlamaSettings()
-        }
-    }
-
-    /// Status bar at the bottom of the chat window.
-    /// Always visible. Shows animated braille spinner and contextual status when busy,
-    /// or idle info (model name, provider) when not processing.
-    private var statusBar: some View {
-        HStack(spacing: 6) {
-            if isSending {
-                /// Animated braille spinner when processing.
-                Text(brailleFrames[brailleSpinnerFrame % brailleFrames.count])
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundColor(.accentColor)
-                    .frame(width: 14)
-                    .task {
-                        while !Task.isCancelled {
-                            try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s = 10fps
-                            brailleSpinnerFrame = (brailleSpinnerFrame + 1) % brailleFrames.count
-                        }
-                    }
-
-                Text(busyStatusText.isEmpty ? "Generating..." : busyStatusText)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            } else {
-                /// Idle state: ready indicator.
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 6))
-                    .foregroundColor(.green)
-                    .frame(width: 14)
-
-                Text("Ready.")
-                    .font(.caption)
-                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 3)
-        .frame(height: 20)
-        .background(Color(NSColor.windowBackgroundColor).opacity(0.6))
-    }
-
-    /// Standard text input for LLM chat.
-    private var standardMessageInputUI: some View {
-        VStack(spacing: 0) {
-            /// Text input area.
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: Binding(
-                    get: { messageText },
-                    set: { newValue in
-                        // Prevent typing if model not loaded
-                        if endpointManager.isLocalModel(selectedModel) && !isLocalModelLoaded {
-                            logger.warning("BLOCKED: Cannot type when model not loaded")
-                            return
-                        }
-                        messageText = newValue
-                    }
-                ))
-                    .font(.body)
-                    .disabled(shouldDisableInput || (isSending && !isAwaitingUserInput))
-                    .scrollContentBackground(.hidden)
-                    .background(
-                        isAwaitingUserInput
-                            ? Color(NSColor.controlBackgroundColor).opacity(0.95)
-                            : Color(NSColor.controlBackgroundColor)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(
-                                isAwaitingUserInput
-                                    ? Color.blue.opacity(0.6)
-                                    : Color(NSColor.separatorColor),
-                                lineWidth: isAwaitingUserInput ? 2 : 1
-                            )
-                    )
-                    .frame(minHeight: 45, maxHeight: 200)
-                    .frame(height: max(45, min(inputTextHeight, 200)))
-                    .focused($isInputFocused)
-                    .onChange(of: messageText) { oldValue, newValue in
-                        /// Prevent typing if model not loaded
-                        if shouldDisableInput && newValue != oldValue {
-                            logger.warning("BLOCKED TYPING: shouldDisableInput=true, reverting '\(newValue)' to '\(oldValue)'")
-                            messageText = oldValue
-                            return
-                        }
-                        /// Keep bridge in sync for voice manager readback
-                        voiceBridge.currentMessageText = newValue
-
-                        /// Auto-resize input height based on content
-                        recalculateInputHeight(for: newValue)
-
-                        /// FEATURE: Auto-save draft message to conversation with debounced disk persistence
-                        /// Save whenever text changes so it persists even if user quits app
-                        if let conversation = activeConversation, newValue != conversation.settings.draftMessage {
-                            conversation.settings.draftMessage = newValue
-
-                            /// Cancel previous save task and schedule new one (debounce)
-                            draftSaveTask?.cancel()
-                            draftSaveTask = Task {
-                                /// Wait 500ms before saving to disk (debounce rapid typing)
-                                try? await Task.sleep(nanoseconds: 500_000_000)
-                                guard !Task.isCancelled else { return }
-                                await MainActor.run {
-                                    conversationManager.saveConversations()
-                                    logger.debug("DRAFT_PERSIST: Saved draft to disk (\(newValue.count) chars)")
-                                }
-                            }
-                        }
-                    }
-                    .onKeyPress { keyPress in
-                        /// Handle Enter key behavior based on modifiers.
-                        if keyPress.key == .return {
-                            /// Shift+Enter: Insert newline (allow default behavior) Note: Cmd+Enter doesn't work reliably in SwiftUI TextEditor, use Shift+Enter instead.
-                            if keyPress.modifiers.contains(.shift) {
-                                return .ignored
-                            } else {
-                                /// Plain Enter: Send message.
-                                if isAwaitingUserInput {
-                                    submitUserResponse()
-                                } else if !isSending && !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    sendMessage()
-                                }
-                                return .handled
-                            }
-                        }
-                        return .ignored
-                    }
-
-                /// Placeholder text or collaboration prompt.
-                if messageText.isEmpty {
-                    if isAwaitingUserInput {
-                        /// Show simple waiting indicator instead of full prompt (agent's prompt now appears as a message in the chat above).
-                        HStack {
-                            Image(systemName: "hourglass")
-                                .foregroundColor(.blue)
-                            Text("Agent is waiting for your response...")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(8)
-                        .allowsHitTesting(false)
-                    } else if endpointManager.isLocalModel(selectedModel) && !isLocalModelLoaded {
-                        /// Show instruction to load local model.
-                        HStack {
-                            Image(systemName: "play.fill")
-                                .foregroundColor(.orange)
-                            Text("Click the Load Model button below to start chatting")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(8)
-                        .allowsHitTesting(false)
-                    } else {
-                        /// Show placeholder with voice or keyboard instructions
-                        if voiceManager.listeningMode {
-                            Text("Say \"Hey SAM\" and wait for chime, or type your message\n(Enter to send, Shift+Enter for newline)")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                                .allowsHitTesting(false)
-                                .padding(8)
-                        } else {
-                            Text("Ask SAM anything...\n(Enter to send, Shift+Enter for newline)")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                                .allowsHitTesting(false)
-                                .padding(8)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 6)
-
-            /// Unified bottom bar: pickers on left, controls on right.
-            HStack(spacing: 6) {
-                /// Model picker - opens directly as a menu.
-                ModelPickerView(
-                    selectedModel: $selectedModel,
-                    modelListManager: modelListManager,
-                    endpointManager: endpointManager
-                )
-
-                /// Local model load/eject controls.
-                if endpointManager.isLocalModel(selectedModel) {
-                    let currentStatus = endpointManager.modelLoadingStatus[selectedModel] ?? .notLoaded
-                    let isLoading: Bool = { if case .loading = currentStatus { return true }; return false }()
-                    if currentStatus == .loaded {
-                        Button(action: { ejectLocalModel() }) {
-                            HStack(spacing: 3) {
-                                Image(systemName: "eject.fill")
-                                    .font(.system(size: 10))
-                                Text("Eject")
-                                    .font(.caption2)
-                            }
-                            .foregroundColor(.green)
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Eject model")
-                    } else if isLoading {
-                        HStack(spacing: 3) {
-                            ProgressView()
-                                .scaleEffect(0.5)
-                                .frame(width: 12, height: 12)
-                            Text("Loading...")
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                        }
-                    } else {
-                        Button(action: { loadLocalModel() }) {
-                            HStack(spacing: 3) {
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 10))
-                                Text("Load")
-                                    .font(.caption2)
-                            }
-                            .foregroundColor(.orange)
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Load model into memory")
-                    }
-                }
-
-                /// System prompt picker - opens directly as a menu.
-                if let activeConv = conversationManager.activeConversation {
-                    let conversationConfigs = systemPromptManager.configurationsForConversation(
-                        workspacePath: activeConv.workingDirectory
-                    )
-                    if !conversationConfigs.isEmpty {
-                        let binding = Binding<UUID>(
-                            get: {
-                                activeConv.settings.selectedSystemPromptId
-                                ?? conversationConfigs.first?.id
-                                ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-                            },
-                            set: { newValue in
-                                if var conv = conversationManager.activeConversation {
-                                    conv.settings.selectedSystemPromptId = newValue
-
-                                    conversationManager.activeConversation = conv
-                                    conversationManager.saveConversations()
-                                }
-
-                                systemPromptManager.selectedConfigurationId = newValue
-                                if let config = conversationConfigs.first(where: { $0.id == newValue }) {
-                                    systemPromptManager.selectConfiguration(config)
-                                }
-                            }
-                        )
-
-                        PromptPickerView(
-                            selectedPromptId: binding,
-                            prompts: conversationConfigs
-                        )
-                    }
-
-                    /// Personality picker - opens directly as a menu.
-                    PersonalityPickerView(
-                        selectedPersonalityId: Binding<UUID?>(
-                            get: { activeConv.settings.selectedPersonalityId },
-                            set: { newValue in
-                                if var conv = conversationManager.activeConversation {
-                                    conv.settings.selectedPersonalityId = newValue
-                                    conversationManager.activeConversation = conv
-                                    conversationManager.saveConversations()
-                                }
-                            }
-                        )
-                    )
-                }
-
-                Divider()
-                    .frame(height: 14)
-
-                /// Panels menu button.
-                Button(action: { showingPanelsMenu.toggle() }) {
-                    Image(systemName: "square.grid.2x2")
-                        .foregroundColor(anyPanelOpen ? .accentColor : .secondary)
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.borderless)
-                .help("Panels")
-                .popover(isPresented: $showingPanelsMenu, arrowEdge: .top) {
-                    panelsMenuContent
-                        .frame(width: 220)
-                }
-
-                /// Settings button.
-                Button(action: { showingSettingsPopover.toggle() }) {
-                    Image(systemName: "slider.horizontal.3")
-                        .foregroundColor(showingSettingsPopover ? .accentColor : .secondary)
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.borderless)
-                .help("Parameters & settings")
-                .popover(isPresented: $showingSettingsPopover, arrowEdge: .top) {
-                    settingsPopoverContent
-                        .frame(width: 320)
-                }
-
-                /// Todo list button.
-                Button(action: { showingTodoListPopover.toggle() }) {
-                    ZStack {
-                        Image(systemName: "list.clipboard")
-                            .foregroundColor(showingTodoListPopover ? .accentColor : .secondary)
-                            .frame(width: 16, height: 16)
-
-                        if !agentTodoList.isEmpty {
-                            Text("\(agentTodoList.count)")
-                                .font(.system(size: 7, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(2)
-                                .background(Circle().fill(Color.accentColor))
-                                .offset(x: 8, y: -8)
-                        }
-                    }
-                }
-                .buttonStyle(.borderless)
-                .help("Agent todo list")
-                .popover(isPresented: $showingTodoListPopover, arrowEdge: .top) {
-                    todoListPopoverContent
-                        .frame(width: 320)
-                }
-
-                Spacer()
-
-                /// Attach files button.
-                Button(action: { attachFiles() }) {
-                    Image(systemName: attachedFiles.isEmpty ? "paperclip" : "paperclip.badge.ellipsis")
-                        .foregroundColor(attachedFiles.isEmpty ? .secondary : .accentColor)
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.borderless)
-                .help(attachedFiles.isEmpty ? "Attach files" : "Attached: \(attachedFiles.count)")
-
-                /// Speaker button.
-                Button(action: { voiceManager.toggleSpeaking() }) {
-                    Image(systemName: voiceManager.speakingMode ? "speaker.fill" : "speaker")
-                        .foregroundColor(voiceManager.speakingMode ? .accentColor : .secondary)
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.borderless)
-                .help("Speaking mode")
-
-                /// Microphone button.
-                Button(action: { voiceManager.toggleListening() }) {
-                    Image(systemName: voiceManager.listeningMode ? "mic.fill" : "mic")
-                        .foregroundColor(
-                            voiceManager.currentState == .activeListening ? .red :
-                            voiceManager.listeningMode ? .accentColor : .secondary
-                        )
-                        .frame(width: 16, height: 16)
-                }
-                .buttonStyle(.borderless)
-                .help("Listening mode")
-                .disabled(shouldDisableInput)
-
-                Divider()
-                    .frame(height: 14)
-
-                /// Send/Stop button.
-                Button(action: {
-                    if isAwaitingUserInput {
-                        submitUserResponse()
-                    } else if isSending {
-                        streamingTask?.cancel()
-                        streamingTask = nil
-                        isSending = false
-                        currentOrchestrator?.cancelWorkflow()
-                        currentOrchestrator = nil
-                        if let conversation = activeConversation {
-                            conversation.isProcessing = false
-                        }
-                        Task {
-                            await endpointManager.cancelLocalModelGeneration()
-                        }
-                    } else {
-                        sendMessage()
-                    }
-                }) {
-                    HStack(spacing: 4) {
-                        if isAwaitingUserInput {
-                            Image(systemName: "arrowshape.up.fill")
-                                .font(.caption)
-                            Text("Submit")
-                                .font(.caption)
-                        } else if isSending {
-                            Image(systemName: "stop.fill")
-                                .font(.caption)
-                            Text("Stop")
-                                .font(.caption)
-                        } else {
-                            Image(systemName: "arrowshape.up.fill")
-                                .font(.caption)
-                            Text("Send")
-                                .font(.caption)
-                        }
-                    }
-                    .foregroundColor(
-                        isSending ? .red :
-                        isAwaitingUserInput ? .white :
-                        messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .secondary : .white
-                    )
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        isSending ? Color.red.opacity(0.15) :
-                        isAwaitingUserInput ? Color.accentColor :
-                        messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.clear : Color.accentColor
-                    )
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.borderless)
-                .disabled(
-                    (!isAwaitingUserInput && !isSending && messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ||
-                    (!isAwaitingUserInput && shouldDisableInput)
-                )
-                .help(
-                    isAwaitingUserInput ? "Submit response" :
-                    isSending ? "Stop generation" :
-                    "Send message"
-                )
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-    }
-
-    /// NOTE: UI picker stores user preference, but actual dimension support depends on Core ML model capabilities.
-    /// Future enhancement: Query Core ML model metadata to get truly supported dimensions.
-
-    /// Detect if current model is Z-Image (or Qwen-Image)
+    /// Detected if current model is Z-Image (or Qwen-Image)
 
     /// - EDMDPMSolverMultistepScheduler produces garbage on MPS
 
     // MARK: - Bottom Bar Popovers
     /// Whether any panel is currently open.
-    private var anyPanelOpen: Bool {
+    var anyPanelOpen: Bool {
         showingWorkingDirectoryPanel || showingMemoryPanel || showingPerformanceMetrics ||
         showingTodoListPopover
     }
 
     /// Todo list popover content.
-    private var todoListPopoverContent: some View {
+    var todoListPopoverContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Agent Tasks")
                 .font(.headline)
@@ -2007,7 +705,7 @@ public struct ChatWidget: View {
     }
 
     /// Color for todo status.
-    private func todoStatusColor(_ status: String) -> Color {
+    func todoStatusColor(_ status: String) -> Color {
         switch status {
         case "completed": return .green
         case "in-progress": return .blue
@@ -2017,7 +715,7 @@ public struct ChatWidget: View {
     }
 
     /// Panels menu popover content.
-    private var panelsMenuContent: some View {
+    var panelsMenuContent: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Panels")
                 .font(.headline)
@@ -2068,7 +766,7 @@ public struct ChatWidget: View {
     }
 
     /// Helper for panel toggle rows in the panels menu.
-    private func panelToggleRow(icon: String, label: String, isOn: Binding<Bool>, disabled: Bool = false) -> some View {
+    func panelToggleRow(icon: String, label: String, isOn: Binding<Bool>, disabled: Bool = false) -> some View {
         Button(action: { if !disabled { isOn.wrappedValue.toggle() } }) {
             HStack {
                 Image(systemName: icon)
@@ -2091,7 +789,7 @@ public struct ChatWidget: View {
     }
 
     /// Settings popover content - all parameters, toggles, and advanced settings.
-    private var settingsPopoverContent: some View {
+    var settingsPopoverContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Settings")
                 .font(.headline)
@@ -2312,7 +1010,201 @@ public struct ChatWidget: View {
 
     // MARK: - Actions
 
-    private func performMainChatViewAppear() {
+
+    /// Handles conversation switch logic. Extracted from mainChatView to reduce
+    /// SwiftUI type-checker load in the massive view body.
+    func handleConversationSwitch(_ newID: UUID?) {
+        /// FEATURE: Save draft message from previous conversation before switching
+        if let prevId = previousConversationId,
+           let prevConversation = conversationManager.conversations.first(where: { $0.id == prevId }) {
+            if !messageText.isEmpty {
+                prevConversation.settings.draftMessage = messageText
+                logger.debug("DRAFT_SAVE: Saved draft (\(messageText.count) chars) to conversation \(prevId.uuidString.prefix(8))")
+            }
+            
+            // Save performance metrics to previous conversation
+            prevConversation.performanceMetrics = performanceMonitor.getMetricsForConversation()
+            logger.debug("METRICS_SAVE: Saved \(prevConversation.performanceMetrics.count) metrics to conversation \(prevId.uuidString.prefix(8))")
+            
+            // Save immediately when switching (handles both draft and metrics)
+            conversationManager.saveConversations()
+        }
+
+        /// Cancel any pending debounced draft save
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+
+        /// Update previous conversation ID tracking
+        previousConversationId = newID
+
+        /// Log conversation switch
+        if let conv = activeConversation {
+            logger.debug("[CONVERSATION_OPENED] id=\(conv.id.uuidString.prefix(8)), title='\(conv.title)', messageCount=\(conv.messages.count)")
+
+            /// FEATURE: Restore draft message from new conversation
+            let draftMessage = conv.settings.draftMessage
+            if !draftMessage.isEmpty {
+                messageText = draftMessage
+                logger.debug("DRAFT_RESTORE: Restored draft (\(draftMessage.count) chars) from conversation \(conv.id.uuidString.prefix(8))")
+            } else {
+                /// Clear input when switching to conversation with no draft
+                messageText = ""
+            }
+            
+            // Restore performance metrics from new conversation
+            let metricsCount = conv.performanceMetrics.count
+            performanceMonitor.loadMetricsFromConversation(conv.performanceMetrics)
+            logger.debug("METRICS_RESTORE: Loaded \(metricsCount) metrics from conversation \(conv.id.uuidString.prefix(8))")
+            
+            // Set up callback to persist metrics when recorded
+            // Uses weak reference to conversation to avoid capture issues
+            let weakConversation = conv
+            performanceMonitor.onMetricsRecorded = { [weak weakConversation] metrics in
+                guard let conversation = weakConversation else { return }
+                conversation.performanceMetrics.append(metrics)
+                // Trim to 100 entries like PerformanceMonitor does
+                if conversation.performanceMetrics.count > 100 {
+                    conversation.performanceMetrics = Array(conversation.performanceMetrics.suffix(100))
+                }
+            }
+
+        }
+
+        /// Cancel active tasks when switching conversations.
+        /// Prevents ghost tasks from continuing and updating the wrong conversation.
+        streamingTask?.cancel()
+        streamingTask = nil
+        streamingUpdateTask?.cancel()
+        streamingUpdateTask = nil
+
+        /// Cancel local model generation if running.
+        Task {
+            await endpointManager.cancelLocalModelGeneration()
+        }
+
+        /// Restore UI state from StateManager (Task 18)
+        /// This ensures UI correctly reflects state when switching back to a conversation where agent is working
+        if let conversation = activeConversation {
+            logger.debug("CONVERSATION_SWITCH: Switching to conversation \(conversation.id), checking StateManager...")
+
+            /// Get runtime state from StateManager
+            if let state = conversationManager.stateManager.getState(conversationId: conversation.id) {
+                logger.debug("CONVERSATION_SWITCH: Found state in StateManager: \(state.status)")
+
+                /// Restore processing status from state
+                switch state.status {
+                case .idle:
+                    isSending = false
+                    processingStatus = .idle
+                    logger.debug("CONVERSATION_SWITCH: Restored idle state")
+                case .processing(let toolName):
+                    isSending = true
+                    /// Use tool-specific status if available
+                    if let toolName = toolName {
+                        processingStatus = .processingTools(toolName: toolName)
+                        logger.debug("CONVERSATION_SWITCH: Restored processing state for tool: \(toolName)")
+                    } else {
+                        processingStatus = .generating
+                        logger.debug("CONVERSATION_SWITCH: Restored generic processing state")
+                    }
+                case .streaming:
+                    isSending = true
+                    processingStatus = .generating
+                    logger.debug("CONVERSATION_SWITCH: Restored streaming state")
+                case .error(let msg):
+                    isSending = false
+                    processingStatus = .idle
+                    logger.debug("CONVERSATION_SWITCH: Conversation has error state: \(msg)")
+                }
+            } else {
+                logger.debug("CONVERSATION_SWITCH: No state in StateManager, using fallback")
+                /// No state in StateManager - use conversation.isProcessing as fallback
+                isSending = conversation.isProcessing
+                processingStatus = conversation.isProcessing ? .generating : .idle
+            }
+        } else {
+            isSending = false
+            processingStatus = .idle
+        }
+
+        /// Cancel previous subscription.
+        conversationSubscription?.cancel()
+        conversationSubscription = nil
+
+        syncWithActiveConversation()
+
+        /// Scroll to the newest message after conversation switch.
+        /// Delay lets SwiftUI complete the layout pass after sync.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if let lastMessage = messages.last {
+                scrollProxy?.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+            }
+            isInputFocused = true
+        }
+    }
+
+    /// Extracted from mainChatView to reduce type-checker load.
+    func handleProcessingStatusChange(_ oldValue: ProcessingStatus, _ newValue: ProcessingStatus) {
+        /// Update braille spinner status text based on processing state.
+        switch newValue {
+        case .idle:
+            busyStatusText = ""
+        case .thinking:
+            busyStatusText = "Thinking..."
+        case .generating:
+            if !busyStatusText.contains("Rate limited") {
+                busyStatusText = "Generating..."
+            }
+        case .processingTools(let toolName):
+            busyStatusText = "Running: \(toolName)"
+        case .loadingModel:
+            busyStatusText = "Loading model..."
+        }
+
+        /// Sync messages when processing completes
+        if (oldValue == .thinking || oldValue == .generating) && newValue == .idle {
+            logger.debug("MESSAGE_LIFECYCLE: Processing completed, triggering sync")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.syncWithActiveConversation()
+            }
+        }
+    }
+
+    /// Extracted from mainChatView to reduce type-checker load.
+    func handleModelLoadingStatusChange(_ newStatus: [String: EndpointManager.ModelLoadingState]) {
+        guard endpointManager.isLocalModel(selectedModel) else { return }
+
+        if let status = newStatus[selectedModel] {
+            switch status {
+            case .loading(_):
+                isLoadingLocalModel = true
+                isLocalModelLoaded = false
+            case .loaded:
+                isLoadingLocalModel = false
+                isLocalModelLoaded = true
+            case .notLoaded:
+                isLoadingLocalModel = false
+                isLocalModelLoaded = false
+            }
+            logger.debug("BUTTON_STATE_UPDATE: Model \(selectedModel) status changed to \(status), isLoadingLocalModel=\(isLoadingLocalModel), isLocalModelLoaded=\(isLocalModelLoaded)")
+        }
+    }
+
+    /// Extracted from mainChatView to reduce type-checker load.
+    func handleToolsChange(oldValue: Bool, newValue: Bool) {
+        guard !isLoadingConversationSettings else { return }
+
+        if endpointManager.isLocalModel(selectedModel) && newValue && !oldValue {
+            userManuallyEnabledTools = true
+            logger.info("CHATWIDGET: User manually enabled tools for local model: \(selectedModel)")
+        } else if !newValue {
+            userManuallyEnabledTools = false
+        }
+
+        syncSettingsToConversation()
+    }
+
+    func performMainChatViewAppear() {
         SAMLog.chatViewAppear()
         
         // Initialize ModelListManager with dependencies
@@ -2390,9 +1282,48 @@ public struct ChatWidget: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             isInputFocused = true
         }
+
+        /// Sync messages on initial view appearance.
+        /// onChange(of: activeConversation?.id) doesn't fire if conversation is already set before view loads.
+        syncWithActiveConversation()
+
+        /// Scroll to newest message on initial appearance
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if let lastMessage = messages.last {
+                scrollProxy?.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+            }
+            isInputFocused = true
+        }
+
+        /// FEATURE: Restore draft message on initial appearance
+        /// This handles the case where conversation is already set before view loads
+        if let conversation = activeConversation {
+            let draftMessage = conversation.settings.draftMessage
+            if !draftMessage.isEmpty {
+                messageText = draftMessage
+                logger.debug("DRAFT_RESTORE: Restored draft on appear (\(draftMessage.count) chars) from conversation \(conversation.id.uuidString.prefix(8))")
+            }
+
+            // Restore performance metrics on initial appearance
+            performanceMonitor.loadMetricsFromConversation(conversation.performanceMetrics)
+            logger.debug("METRICS_RESTORE_APPEAR: Loaded \(conversation.performanceMetrics.count) metrics from conversation \(conversation.id.uuidString.prefix(8))")
+
+            // Set up callback to persist metrics when recorded
+            let weakConversation = conversation
+            performanceMonitor.onMetricsRecorded = { [weak weakConversation] metrics in
+                guard let conv = weakConversation else { return }
+                conv.performanceMetrics.append(metrics)
+                if conv.performanceMetrics.count > 100 {
+                    conv.performanceMetrics = Array(conv.performanceMetrics.suffix(100))
+                }
+            }
+
+            /// Track this conversation as previous for future switches
+            previousConversationId = conversation.id
+        }
     }
 
-    private func syncWithActiveConversation() {
+    func syncWithActiveConversation() {
         guard let conversation = activeConversation else {
             logger.debug("MESSAGE_LIFECYCLE: syncWithActiveConversation - no active conversation")
             /// REMOVED: messages.removeAll() - messages is now computed property
@@ -2527,7 +1458,53 @@ public struct ChatWidget: View {
     /// See ConversationModel.initializeMessageBus() (line ~590) for subscription setup
     /// See commits f682a847, 8943c473, 57b087e1 for implementation details
 
-    private func updateMaxContextForModel() {
+
+    /// Handles model selection changes. Extracted from view body to avoid
+    /// SwiftUI type-checker timeout in the massive ChatWidget.
+    func handleModelChange(_ newValue: String) {
+        guard !isLoadingConversationSettings else { return }
+
+        if let activeConv = conversationManager.activeConversation {
+            let samDefaultId = Self.samDefaultPromptId
+            let samMinimalId = Self.samMinimalPromptId
+            let currentPromptId = activeConv.settings.selectedSystemPromptId ?? samDefaultId
+
+            if currentPromptId == samDefaultId || currentPromptId == samMinimalId {
+                let isLocalModel = newValue.lowercased().contains("gguf") ||
+                                  newValue.lowercased().contains("mlx") ||
+                                  newValue.lowercased().contains("local-llama")
+
+                var updatedConv = activeConv
+                let targetPromptId = isLocalModel ? samMinimalId : samDefaultId
+
+                if currentPromptId != targetPromptId {
+                    updatedConv.settings.selectedSystemPromptId = targetPromptId
+                    logger.info("Auto-selected prompt for \(newValue)")
+                    conversationManager.activeConversation = updatedConv
+                    conversationManager.saveConversations()
+                    systemPromptManager.selectedConfigurationId = targetPromptId
+                }
+            }
+        }
+
+        updateMaxContextForModel()
+        preloadModel()
+
+        Task {
+            if endpointManager.isLocalModel(newValue) {
+                let loaded = await endpointManager.getModelLoadingStatus(newValue)
+                await MainActor.run {
+                    isLocalModelLoaded = loaded
+                }
+            } else {
+                await MainActor.run {
+                    isLocalModelLoaded = false
+                    userManuallyEnabledTools = false
+                }
+            }
+        }
+    }
+    func updateMaxContextForModel() {
         /// Query model capabilities from EndpointManager.
         logger.debug("Querying model capabilities for: \(selectedModel)")
 
@@ -2780,7 +1757,7 @@ public struct ChatWidget: View {
         }
     }
 
-    private func preloadModel() {
+    func preloadModel() {
         logger.debug("Pre-loading model: \(selectedModel)")
 
         /// Check if a different local model is currently loaded and unload it first This prevents memory leaks from keeping multiple large models loaded simultaneously.
@@ -2824,7 +1801,7 @@ public struct ChatWidget: View {
         }
     }
 
-    private func syncSettingsToConversation() {
+    func syncSettingsToConversation() {
         guard let conversation = activeConversation else { return }
 
         /// Update conversation settings from UI state.
@@ -2856,7 +1833,7 @@ public struct ChatWidget: View {
     }
 
     /// Save panel visibility state to conversation settings
-    private func savePanelState(panel: String, value: Bool) {
+    func savePanelState(panel: String, value: Bool) {
         logger.debug("PANEL_CHANGE: \(panel) panel changed to \(value), isLoading=\(isLoadingConversationSettings), hasConv=\(activeConversation != nil)")
 
         guard let conversation = activeConversation, !isLoadingConversationSettings else {
@@ -2885,7 +1862,7 @@ public struct ChatWidget: View {
     // MARK: - Local Model Loading
 
     /// Load a local model into memory and update UI parameters.
-    private func loadLocalModel() {
+    func loadLocalModel() {
         guard endpointManager.isLocalModel(selectedModel) else { return }
 
         /// Extract provider and model name from selectedModel (format: "provider/modelName").
@@ -2917,7 +1894,7 @@ public struct ChatWidget: View {
     }
 
     /// Actually load the model (called after memory check passes or user overrides).
-    private func performModelLoad() {
+    func performModelLoad() {
         guard endpointManager.isLocalModel(selectedModel) else { return }
 
         isLoadingLocalModel = true
@@ -2955,7 +1932,7 @@ public struct ChatWidget: View {
     }
 
     /// Eject (unload) a local model from memory.
-    private func ejectLocalModel() {
+    func ejectLocalModel() {
         guard endpointManager.isLocalModel(selectedModel) else { return }
 
         Task {
@@ -2969,7 +1946,7 @@ public struct ChatWidget: View {
         }
     }
 
-    private func sendMessage() {
+    func sendMessage() {
         guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !isSending else { return }
 
@@ -3271,7 +2248,7 @@ public struct ChatWidget: View {
     // MARK: - User Collaboration
 
     /// Submit user response to collaboration tool.
-    private func submitUserResponse() {
+    func submitUserResponse() {
         guard let toolCallId = userCollaborationToolCallId,
               let conversationId = activeConversation?.id else {
             logger.error("Cannot submit user response - missing toolCallId=\(userCollaborationToolCallId ?? "nil") conversationId=\(activeConversation?.id.uuidString ?? "nil")")
@@ -3310,7 +2287,7 @@ public struct ChatWidget: View {
     }
 
     /// Parse SSE event from streaming chunk Handles three event types: - [SAM_EVENT:user_input_required] - Requests user input during tool execution - [SAM_EVENT:agent_status_update] - Shows agent workflow status (CONTINUE, WORK_COMPLETE) - [SAM_EVENT:image_display] - Displays generated images in chat.
-    private func parseSSEEvent(from content: String) -> Bool {
+    func parseSSEEvent(from content: String) -> Bool {
         /// Check for image_display event first.
         if content.contains("[SAM_EVENT:image_display]") {
             let pattern = "\\[SAM_EVENT:image_display\\](.+)"
@@ -3419,7 +2396,7 @@ public struct ChatWidget: View {
     }
 
     /// FEATURE: Play completion sound when AI finishes response Uses same preference as user collaboration sound.
-    private func playCompletionSound() {
+    func playCompletionSound() {
         let enableSoundEffects = UserDefaults.standard.bool(forKey: "enableSoundEffects")
         let hasKey = UserDefaults.standard.object(forKey: "enableSoundEffects") != nil
         /// Default to true if never set (AppStorage default).
@@ -3449,7 +2426,7 @@ public struct ChatWidget: View {
     }
 
     /// Setup voice manager callbacks via bridge
-    private func setupVoiceCallbacks() {
+    func setupVoiceCallbacks() {
         /// Handle transcription updates
         voiceManager.onTranscriptionUpdate = { [weak voiceBridge] text in
             logger.debug("onTranscriptionUpdate called with: '\\(text)'")
@@ -3488,7 +2465,7 @@ public struct ChatWidget: View {
     }
 
     /// Complete all running tool executions when workflow finishes This ensures tool cards transition to "Complete" state instead of staying in "Running".
-    private func completeAllRunningTools() {
+    func completeAllRunningTools() {
         var updatedCount = 0
 
         /// Update all running tool messages to success status via MessageBus
@@ -3509,7 +2486,7 @@ public struct ChatWidget: View {
     }
 
     /// PERFORMANCE OPTIMIZATION: Throttled UI updates for streaming Batches rapid streaming updates to reduce SwiftUI redraw overhead Target: ~60fps (16ms) or better, with logging for performance analysis.
-    private func updateStreamingMessage(messageId: UUID, content: String) async {
+    func updateStreamingMessage(messageId: UUID, content: String) async {
         /// Store pending update.
         await MainActor.run {
             pendingStreamingUpdate = (messageId, content)
@@ -3546,7 +2523,7 @@ public struct ChatWidget: View {
         }
     }
 
-    private func processMessage(text: String) async {
+    func processMessage(text: String) async {
         let processId = UUID().uuidString.prefix(8)
         logger.error("🟢 PROCESS_MESSAGE_START: processId=\(processId)")
         SAMLog.chatProcessMessage(text)
@@ -4203,7 +3180,7 @@ public struct ChatWidget: View {
 
     // MARK: - SAM 1.0 PARTIAL CONTEXT IMPLEMENTATION
 
-    private func getRecentMessages(limit: Int, excludingId: UUID?) -> [Message] {
+    func getRecentMessages(limit: Int, excludingId: UUID?) -> [Message] {
         guard let messages = activeConversation?.messages else { return [] }
 
         /// Get messages excluding the specified ID (usually the placeholder assistant message).
@@ -4237,7 +3214,7 @@ public struct ChatWidget: View {
         return combined
     }
 
-    private func retrieveMemoryContext(query: String, conversationId: String?) async -> String {
+    func retrieveMemoryContext(query: String, conversationId: String?) async -> String {
         /// Use ConversationManager's memory context method (SAM 1.0 style).
         guard let conversation = activeConversation else {
             return ""
@@ -4246,7 +3223,7 @@ public struct ChatWidget: View {
         return await conversationManager.getMemoryContext(for: query, conversationId: conversation.id)
     }
 
-    private func enhanceSystemPromptWithMemory(originalPrompt: String, memoryContext: String, recentMessages: [Message]) -> String {
+    func enhanceSystemPromptWithMemory(originalPrompt: String, memoryContext: String, recentMessages: [Message]) -> String {
         var enhancedPrompt = originalPrompt
 
         /// Add memory capabilities information with anti-hallucination controls.
@@ -4285,7 +3262,7 @@ public struct ChatWidget: View {
 
     /// Load available models from EndpointManager with provider configuration consistency CRITICAL PATTERN: This method ensures ChatWidget sees the same models as the API server.
     /// Load shared topics list from SharedTopicManager
-    private func loadSharedTopics() async {
+    func loadSharedTopics() async {
         do {
             let list = try sharedTopicManager.listTopics()
             await MainActor.run {
@@ -4309,7 +3286,7 @@ public struct ChatWidget: View {
     }
 
     /// Beautify model name: "gpt-4.1" -> "GPT-4.1", "claude-sonnet-4.5" -> "Claude Sonnet 4.5"
-    private func beautifyModelName(_ modelId: String) -> String {
+    func beautifyModelName(_ modelId: String) -> String {
         /// Remove version dates
         var cleanId = modelId
         let datePattern = "-\\d{4}-\\d{2}-\\d{2}$"
@@ -4379,7 +3356,7 @@ public struct ChatWidget: View {
     }
 
     /// Beautify provider name: "github_copilot" -> "GitHub Copilot"
-    private func beautifyProviderName(_ provider: String) -> String {
+    func beautifyProviderName(_ provider: String) -> String {
         let providerMap: [String: String] = [
             "github_copilot": "GitHub Copilot",
             "openai": "OpenAI",
@@ -4392,7 +3369,7 @@ public struct ChatWidget: View {
 
     /// Format multiplier to avoid unnecessary decimals
     /// Load global MLX settings from preferences.
-    private func loadGlobalMLXSettings() {
+    func loadGlobalMLXSettings() {
         /// Load settings from UserDefaults (same keys as LocalModelOptimizationSection).
         let preset = UserDefaults.standard.string(forKey: "localModels.mlxPreset") ?? "balanced"
 
@@ -4434,13 +3411,13 @@ public struct ChatWidget: View {
     /// Load global llama.cpp settings from preferences. Mirror of
     /// loadGlobalMLXSettings so the log line at chat-start names the
     /// active llama preset and its topK/minP.
-    private func loadGlobalLlamaSettings() {
+    func loadGlobalLlamaSettings() {
         let llamaConfig = getGlobalLlamaConfiguration()
         logger.debug("Loaded global llama settings: nCtx=\(llamaConfig.nCtx) topP=\(llamaConfig.topP) temp=\(llamaConfig.temperature) repPenalty=\(llamaConfig.repetitionPenalty) topK=\(llamaConfig.topK) minP=\(llamaConfig.minP)")
     }
 
     /// Load system prompts - Ensure SystemPromptManager is initialized with default.
-    private func loadSystemPrompts() {
+    func loadSystemPrompts() {
         /// SystemPromptManager.init() should set selectedConfigurationId But if it's still nil (edge case), force it here to ensure UI shows a value.
         if systemPromptManager.selectedConfigurationId == nil {
             logger.warning("SystemPromptManager.selectedConfigurationId is nil in loadSystemPrompts() - forcing default")
@@ -4466,7 +3443,7 @@ public struct ChatWidget: View {
     // MARK: - Chat Management Methods
 
     /// Save the current chat as a session automatically.
-    private func saveCurrentChatSession() {
+    func saveCurrentChatSession() {
         guard !messages.isEmpty else { return }
 
         /// Update existing session or create new one.
@@ -4507,13 +3484,13 @@ public struct ChatWidget: View {
     }
 
     /// Load the most recent chat session on app startup.
-    private func loadRecentChatSession() {
+    func loadRecentChatSession() {
         if let currentSession = chatManager.currentSession {
             loadChatSession(currentSession)
         }
     }
 
-    private func loadChatSession(_ session: ChatSession) {
+    func loadChatSession(_ session: ChatSession) {
         /// REMOVED: messages = session.messages
         /// Messages is computed property reading activeConversation?.messages
         /// When activeConversation changes, computed property returns new messages
@@ -4527,7 +3504,7 @@ public struct ChatWidget: View {
         maxTokens = session.configuration.maxTokens ?? maxMaxTokens
     }
 
-    private var exportChatDialog: some View {
+    var exportChatDialog: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Export Chat")
@@ -4647,7 +3624,7 @@ public struct ChatWidget: View {
 
     // MARK: - Memory Management Methods
 
-    private func loadMemoryStatistics() {
+    func loadMemoryStatistics() {
         guard conversationManager.memoryInitialized,
               let conversation = activeConversation else {
             memoryStatistics = nil
@@ -4674,14 +3651,14 @@ public struct ChatWidget: View {
         }
     }
 
-    private func formatTokenCount(_ count: Int) -> String {
+    func formatTokenCount(_ count: Int) -> String {
         if count >= 1000 {
             return String(format: "%.1fK", Double(count) / 1000.0)
         }
         return "\(count)"
     }
 
-    private func performEnhancedSearch() {
+    func performEnhancedSearch() {
         guard conversationManager.memoryInitialized,
               let conversation = activeConversation,
               !memorySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -4716,7 +3693,7 @@ public struct ChatWidget: View {
         }
     }
 
-    private func clearConversationMemories() {
+    func clearConversationMemories() {
         guard let conversation = activeConversation else { return }
 
         Task {
@@ -4731,7 +3708,7 @@ public struct ChatWidget: View {
     // MARK: - Helper Methods
 
     /// Calculate text input height based on content for auto-growing input field.
-    private func recalculateInputHeight(for text: String) {
+    func recalculateInputHeight(for text: String) {
         let minHeight: CGFloat = 45
         let maxHeight: CGFloat = 200
         let lineHeight: CGFloat = 20
@@ -4749,7 +3726,7 @@ public struct ChatWidget: View {
 
     /// Context menu for conversation title in header (matches sidebar menu)
     @ViewBuilder
-    private func conversationHeaderContextMenu(_ conversation: ConversationModel) -> some View {
+    func conversationHeaderContextMenu(_ conversation: ConversationModel) -> some View {
         Button(conversation.isPinned ? "Unpin Conversation" : "Pin Conversation") {
             conversation.isPinned.toggle()
             conversationManager.saveConversations()
@@ -4824,7 +3801,7 @@ public struct ChatWidget: View {
 
     /// Calculate importance score for message based on content and type
     /// Higher scores (closer to 1.0) = more important, more likely to be retrieved in context
-    private func calculateMessageImportance(text: String, isUser: Bool) -> Double {
+    func calculateMessageImportance(text: String, isUser: Bool) -> Double {
         let lowercased = text.lowercased()
 
         /// BASE IMPORTANCE: User messages more important than assistant messages
@@ -4869,7 +3846,7 @@ public struct ChatWidget: View {
 
     /// Attach files to the conversation by copying them to the working directory.
     /// Opens NSOpenPanel for multi-file selection and copies selected files.
-    private func attachFiles() {
+    func attachFiles() {
         guard let conversation = conversationManager.activeConversation else {
             logger.warning("Cannot attach files - no active conversation")
             return
@@ -4961,12 +3938,12 @@ public struct ChatWidget: View {
     }
 
     /// Clear all attached files
-    private func clearAttachedFiles() {
+    func clearAttachedFiles() {
         attachedFiles.removeAll()
         logger.info("Cleared all attached files")
     }
 
-    private func selectWorkingDirectory() {
+    func selectWorkingDirectory() {
         guard let conversation = conversationManager.activeConversation else { return }
 
         let panel = NSOpenPanel()
@@ -4985,7 +3962,7 @@ public struct ChatWidget: View {
         }
     }
 
-    private func revealWorkingDirectoryInFinder() {
+    func revealWorkingDirectoryInFinder() {
         guard let conversation = conversationManager.activeConversation else { return }
 
         /// Use effective working directory (shared topic dir if enabled, else conversation dir)
@@ -5008,7 +3985,7 @@ public struct ChatWidget: View {
         logger.debug("Revealed working directory in Finder: \(effectiveWorkingDir)")
     }
 
-    private func resetWorkingDirectoryToDefault() {
+    func resetWorkingDirectoryToDefault() {
         guard let conversation = conversationManager.activeConversation else { return }
 
         /// Reset to {basePath}/<conversation-id>/ (per-conversation isolation, no bookmark needed - has entitlement).
@@ -5035,7 +4012,7 @@ public struct ChatWidget: View {
 
     // MARK: - Helper Methods
 
-    private func exportChatAsJSON() {
+    func exportChatAsJSON() {
         let chatSession = ChatSession(
             id: UUID(),
             name: "Exported Chat",
@@ -5063,7 +4040,7 @@ public struct ChatWidget: View {
         }
     }
 
-    private func exportChatAsText() {
+    func exportChatAsText() {
         let textContent = messages.map { message in
             "\(message.isFromUser ? "User" : "Assistant"): \(message.content)"
         }.joined(separator: "\n\n")
@@ -5082,7 +4059,7 @@ public struct ChatWidget: View {
     }
 
     @MainActor
-    private func exportChatAsPDF() {
+    func exportChatAsPDF() {
         guard let conversation = conversationManager.activeConversation else {
             logger.error("No active conversation to export")
             return
@@ -5124,7 +4101,7 @@ public struct ChatWidget: View {
     /// PERFORMANCE: Get cleaned message from cache or compute if needed
     /// Avoids running expensive regex operations (cleanSpecialTokens) on every render
     /// Cache key: message.id, Cache validation: content.hashValue
-    private func getCachedCleanedMessage(_ message: EnhancedMessage) -> EnhancedMessage {
+    func getCachedCleanedMessage(_ message: EnhancedMessage) -> EnhancedMessage {
         let contentHash = message.content.hashValue
 
         // Check cache - return if content hasn't changed
@@ -5142,7 +4119,7 @@ public struct ChatWidget: View {
         return cleaned
     }
 
-    private func createCleanedMessage(_ message: EnhancedMessage) -> EnhancedMessage {
+    func createCleanedMessage(_ message: EnhancedMessage) -> EnhancedMessage {
         /// PRESERVE original message type instead of re-classifying
         /// Re-classification causes thinking messages to become tool messages when content updates
         /// Only extract metadata if missing, but NEVER change the type
@@ -5197,7 +4174,7 @@ public struct ChatWidget: View {
     }
 
     /// Extract tool metadata from message content.
-    private func extractToolMetadata(from content: String) -> (String?, ToolStatus?, String?, [String]?) {
+    func extractToolMetadata(from content: String) -> (String?, ToolStatus?, String?, [String]?) {
         var toolName: String?
         var status: ToolStatus = .running
         var icon: String?
@@ -5247,7 +4224,7 @@ public struct ChatWidget: View {
     }
 
     /// Check if message is a system status message.
-    private func isSystemStatusMessage(_ content: String) -> Bool {
+    func isSystemStatusMessage(_ content: String) -> Bool {
         let systemPatterns = [
             "Model loaded",
             "Loading model",
@@ -5259,7 +4236,7 @@ public struct ChatWidget: View {
     }
 
     /// Clean special tokens and tool XML from accumulated message content Filters tokens that may leak through due to token-by-token streaming fragmentation Applied only at message finalization to minimize false positive risk.
-    private func cleanSpecialTokens(from content: String, isToolMessage: Bool = false) -> String {
+    func cleanSpecialTokens(from content: String, isToolMessage: Bool = false) -> String {
         var cleaned = content
 
         /// Remove EOS tokens (complete and fragmented patterns).
@@ -5350,7 +4327,7 @@ public struct ChatWidget: View {
     }
 
     /// Remove internal marker lines without trimming surrounding whitespace/newlines.
-    private func filterInternalMarkersNoTrim(from input: String) -> String {
+    func filterInternalMarkersNoTrim(from input: String) -> String {
         /// Split by newline preserving empty lines.
         var lines = input.components(separatedBy: CharacterSet.newlines)
 
@@ -5429,7 +4406,7 @@ public struct ChatWidget: View {
     }
 
     /// Extract tool name from tool execution message Format: "SUCCESS: - Using memory_search..." → "memory_search".
-    private func extractToolName(from content: String) -> String? {
+    func extractToolName(from content: String) -> String? {
         /// Pattern: "SUCCESS: - Using [toolname]...".
         if let range = content.range(of: "Using ", options: .caseInsensitive),
            let endRange = content[range.upperBound...].range(of: "...") {
@@ -5443,7 +4420,7 @@ public struct ChatWidget: View {
     // MARK: - UI Setup
 
     /// Calculate dynamic width for model dropdown based on longest model name Ensures all model names are fully visible without truncation.
-    private var modelDropdownWidth: CGFloat {
+    var modelDropdownWidth: CGFloat {
         /// Calculate width needed for longest model name Rough estimate: 8 points per character + 40 points for picker chrome.
         let longestModelName = modelListManager.availableModels.max(by: { $0.count < $1.count }) ?? ""
         let estimatedWidth = CGFloat(longestModelName.count) * 8.0 + 40.0
@@ -5471,7 +4448,7 @@ public struct ChatWidget: View {
     /// See SESSION_HANDOFF_2025-11-27_0745.md for complete architecture details
 
     /// Update an existing message's content (preserving ALL metadata) This is the ONLY place messages should be updated.
-    private func updateMessageContent(messageId: UUID, newContent: String, isComplete: Bool = false) {
+    func updateMessageContent(messageId: UUID, newContent: String, isComplete: Bool = false) {
         guard messages.firstIndex(where: { $0.id == messageId }) != nil else { return }
 
         /// Update message content and completion status via MessageBus
@@ -5487,7 +4464,7 @@ public struct ChatWidget: View {
 
     /// Update tool metadata for a message (when tool completes)
     /// Note: toolMetadata is not currently displayed in UI, but status updates are important
-    private func updateMessageMetadata(messageId: UUID, metadata: [String: String], toolStatus: String?) {
+    func updateMessageMetadata(messageId: UUID, metadata: [String: String], toolStatus: String?) {
         guard messages.firstIndex(where: { $0.id == messageId }) != nil else { return }
 
         /// Parse tool status
@@ -5519,7 +4496,7 @@ public struct ChatWidget: View {
 
     /// Refresh Copilot user info from the User API for quota display
     /// Non-blocking, updates cachedCopilotUserResponse state
-    private func refreshCopilotUserInfo() async {
+    func refreshCopilotUserInfo() async {
         do {
             let token = try await CopilotTokenStore.shared.getCopilotToken()
             let userResponse = try await CopilotUserAPIClient.shared.fetchUser(token: token)
@@ -5536,7 +4513,7 @@ public struct ChatWidget: View {
     }
 
     /// Check if message is a tool call JSON message.
-    private func isToolCallJSONMessage(_ message: EnhancedMessage) -> Bool {
+    func isToolCallJSONMessage(_ message: EnhancedMessage) -> Bool {
         /// Filter raw JSON from tool calls and tool results.
         guard !message.isFromUser else { return false }
 
@@ -5589,13 +4566,13 @@ public struct ChatWidget: View {
     /// We no longer filter thinking content - if model produces <think> tags, they are
     /// formatted by ThinkTagFormatter and displayed to the user. The enableReasoning toggle
     /// only controls whether /nothink instruction is sent, not whether thinking is hidden.
-    private func getDisplayMessage(_ message: EnhancedMessage, enableReasoning: Bool) -> EnhancedMessage {
+    func getDisplayMessage(_ message: EnhancedMessage, enableReasoning: Bool) -> EnhancedMessage {
         /// Always return the original message - no filtering.
         return message
     }
 
     /// Build parent-child hierarchy map for tool messages Maps parent message ID → array of child messages.
-    private func buildToolHierarchy(messages: [EnhancedMessage]) -> [UUID: [EnhancedMessage]] {
+    func buildToolHierarchy(messages: [EnhancedMessage]) -> [UUID: [EnhancedMessage]] {
         var hierarchy: [UUID: [EnhancedMessage]] = [:]
 
         /// Find all child messages and map them to their parents.
@@ -5618,7 +4595,7 @@ public struct ChatWidget: View {
     // MARK: - Helper Methods
 
     /// Estimate token count for text using a simple approximation This provides reasonable estimates for performance tracking without requiring exact tokenization.
-    private func estimateTokenCount(for text: String) -> Int {
+    func estimateTokenCount(for text: String) -> Int {
         /// Simple estimation: ~1 token per 4 characters for English text This is a rough approximation commonly used for monitoring.
         let baseTokenCount = max(1, text.count / 4)
 
@@ -5647,7 +4624,7 @@ public struct ChatWidget: View {
     // MARK: - Unified Conversation Processing
 
     /// Process conversation using AgentOrchestrator for identical behavior with API This ensures UI and external API use exactly the same conversation processing pipeline: - Same AgentOrchestrator with autonomous workflow support (maxIterations=100) - Same AI provider routing through EndpointManager - Same MCP tool injection and integration - Same memory and conversation management - Same streaming response handling.
-    private func makeInternalAPIRequest(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
+    func makeInternalAPIRequest(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
         logger.debug("AGENT_ORCHESTRATOR: Using AgentOrchestrator for autonomous workflow support")
 
         /// Get active conversation ID.

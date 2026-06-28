@@ -21,12 +21,11 @@ public class MessageExportService {
         let logger = Logger(label: "com.sam.documents.MessageExportService")
         logger.debug("Exporting message to PDF: \(message.id)")
         
-        // Use UnifiedPDFGenerator for reliable PDF generation
-        return try await UnifiedPDFGenerator.generatePDF(
+        // Use SimplePDFGenerator for reliable PDF generation
+        return try await SimplePDFGenerator.generatePDF(
             messages: [message],
             conversationTitle: conversationTitle,
-            modelName: modelName,
-            includeHeaders: false  // No headers for single message export
+            modelName: modelName
         )
     }
 
@@ -54,7 +53,7 @@ public class MessageExportService {
         logger.info("Printing message: \(message.id)")
 
         Task {
-            await UnifiedPDFGenerator.printMessages(
+            await SimplePDFGenerator.printMessages(
                 messages: [message],
                 conversationTitle: conversationTitle,
                 modelName: modelName

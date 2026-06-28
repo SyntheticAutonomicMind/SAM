@@ -5,12 +5,14 @@ import SwiftUI
 import APIFramework
 import AppKit
 import Logging
+import ConfigurationSystem
 
 private let logger = Logger(label: "com.sam.ui.localmodels.settings")
 
 /// Settings tab - storage, cache management, and optimization settings
 struct LocalModelsPreferencePane_SettingsTab: View {
     @State private var cacheSize: String = "Calculating..."
+    @EnvironmentObject private var endpointManager: EndpointManager
 
     var body: some View {
         ScrollView {
@@ -26,6 +28,22 @@ struct LocalModelsPreferencePane_SettingsTab: View {
                         .foregroundColor(.secondary)
 
                     LocalModelOptimizationSection()
+                }
+
+                Divider()
+
+                /// CachyLLama llama-server (lifecycle controls + SSD cache).
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("CachyLLama Server")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    Text("Spawn the CachyLLama llama-server binary as a child process to enable SSD-backed KV cache persistence, system-prompt caching, and per-conversation slot affinity.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    LocalLlamaServerPane()
+                        .environmentObject(endpointManager)
                 }
 
                 Divider()

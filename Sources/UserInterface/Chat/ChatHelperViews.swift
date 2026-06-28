@@ -189,6 +189,30 @@ struct EnhancedMemoryItemView: View {
     }
 }
 
+// MARK: - Processing Status
+
+enum ProcessingStatus: Equatable {
+    case loadingModel
+    case thinking
+    case processingTools(toolName: String)
+    case generating
+    case idle
+
+    static func == (lhs: ProcessingStatus, rhs: ProcessingStatus) -> Bool {
+        switch (lhs, rhs) {
+        case (.loadingModel, .loadingModel),
+             (.thinking, .thinking),
+             (.generating, .generating),
+             (.idle, .idle):
+            return true
+        case (.processingTools(let lhsName), .processingTools(let rhsName)):
+            return lhsName == rhsName
+        default:
+            return false
+        }
+    }
+}
+
 // MARK: - Enhanced Message Bubble
 
 struct EnhancedMessageBubble: View {
@@ -214,7 +238,8 @@ struct EnhancedMessageBubble: View {
                 /// Enhanced message content with beautiful markdown support ONLY show message bubble if there's actual content.
                 if !message.content.isEmpty {
                     HStack {
-                        MarkdownText(message.content)
+                        SelectableMarkdownTextView(markdown: message.content, isFromUser: message.isFromUser)
+                            .fixedSize(horizontal: false, vertical: true)
                             .id("markdown-\(message.id)")
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
@@ -296,32 +321,6 @@ struct EnhancedMessageBubble: View {
         showCopyConfirmation = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             showCopyConfirmation = false
-        }
-    }
-}
-
-// MARK: - Processing Status
-
-enum ProcessingStatus: Equatable {
-    case loadingModel
-    case thinking
-    case processingTools(toolName: String)
-    case generating
-    case idle
-
-    static func == (lhs: ProcessingStatus, rhs: ProcessingStatus) -> Bool {
-        switch (lhs, rhs) {
-        case (.loadingModel, .loadingModel),
-             (.thinking, .thinking),
-             (.generating, .generating),
-             (.idle, .idle):
-            return true
-
-        case (.processingTools(let lhsName), .processingTools(let rhsName)):
-            return lhsName == rhsName
-
-        default:
-            return false
         }
     }
 }

@@ -11,10 +11,15 @@ private let logger = Logger(label: "com.sam.ui.localmodels")
 /// Uses a tabbed interface for managing local models.
 public struct LocalModelsPreferencePane: View {
     @StateObject private var downloadManager: ModelDownloadManager
+    @EnvironmentObject private var endpointManager: EndpointManager
     @State private var selectedTab: LMTab = .installed
 
     public init(endpointManager: EndpointManager? = nil) {
-        _downloadManager = StateObject(wrappedValue: ModelDownloadManager(endpointManager: endpointManager))
+        if let endpointManager = endpointManager {
+            _downloadManager = StateObject(wrappedValue: ModelDownloadManager(endpointManager: endpointManager))
+        } else {
+            _downloadManager = StateObject(wrappedValue: ModelDownloadManager(endpointManager: nil))
+        }
     }
 
     enum LMTab: String, CaseIterable {
@@ -69,6 +74,7 @@ public struct LocalModelsPreferencePane: View {
                         .environmentObject(downloadManager)
                 case .settings:
                     LocalModelsPreferencePane_SettingsTab()
+                        .environmentObject(endpointManager)
                 }
             }
         }

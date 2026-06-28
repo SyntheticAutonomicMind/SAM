@@ -48,10 +48,10 @@ class MarkdownASTToNSAttributedString {
         switch node {
         case .document(let children):
             let result = NSMutableAttributedString()
-            for child in children {
-                result.append(convertNodeSync(child))
-            }
+            for child in children { result.append(convertNodeSync(child)) }
             return result
+
+        // MARK: Block elements
         case .heading(let level, let children):
             let fontSize: CGFloat = {
                 switch level {
@@ -60,60 +60,258 @@ class MarkdownASTToNSAttributedString {
                 }
             }()
             let font = NSFont.boldSystemFont(ofSize: fontSize)
-            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor]
             let result = NSMutableAttributedString()
             for child in children { result.append(convertNodeSync(child)) }
-            if result.length > 0 { result.addAttributes(attrs, range: NSRange(location: 0, length: result.length)) }
+            if result.length > 0 {
+                result.addAttributes([.font: font, .foregroundColor: NSColor.labelColor],
+                                     range: NSRange(location: 0, length: result.length))
+            }
             result.append(NSAttributedString(string: "\n\n"))
             return result
+
         case .paragraph(let children):
             let result = NSMutableAttributedString()
             for child in children { result.append(convertNodeSync(child)) }
             result.append(NSAttributedString(string: "\n\n"))
             return result
-        case .text(let string):
-            return NSAttributedString(string: string, attributes: baseAttributes())
-        case .strong(let children):
-            let attrs: [NSAttributedString.Key: Any] = [.font: boldFont, .foregroundColor: NSColor.labelColor]
+
+        case .blockquote(let depth, let children):
+            let indent = CGFloat(depth * 20)
+            let ps = NSMutableParagraphStyle()
+            ps.firstLineHeadIndent = indent
+            ps.headIndent = indent
+            ps.tailIndent = -20
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: baseFontSize),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: ps
+            ]
             let result = NSMutableAttributedString()
+            let bar = String(repeating: "│ ", count: depth)
+            result.append(NSAttributedString(string: bar, attributes: attrs))
             for child in children { result.append(convertNodeSync(child)) }
-            if result.length > 0 { result.addAttributes(attrs, range: NSRange(location: 0, length: result.length)) }
-            return result
-        case .emphasis(let children):
-            let italicFont = NSFont(descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic), size: baseFontSize) ?? baseFont
-            let attrs: [NSAttributedString.Key: Any] = [.font: italicFont, .foregroundColor: NSColor.labelColor]
-            let result = NSMutableAttributedString()
-            for child in children { result.append(convertNodeSync(child)) }
-            if result.length > 0 { result.addAttributes(attrs, range: NSRange(location: 0, length: result.length)) }
-            return result
-        case .inlineCode(let text):
-            return NSAttributedString(string: text, attributes: [.font: codeFont, .foregroundColor: NSColor.labelColor, .backgroundColor: NSColor.controlBackgroundColor])
-        case .codeBlock(let language, let code):
-            let result = NSMutableAttributedString()
-            if let language = language {
-                result.append(NSAttributedString(string: language + "\n", attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.secondaryLabelColor]))
-            }
-            result.append(NSAttributedString(string: code, attributes: [.font: codeFont, .foregroundColor: NSColor.labelColor, .backgroundColor: NSColor.controlBackgroundColor]))
-            result.append(NSAttributedString(string: "\n\n"))
-            return result
-        case .list(_, let items):
-            let result = NSMutableAttributedString()
-            for item in items {
-                result.append(NSAttributedString(string: "• ", attributes: baseAttributes()))
-                for child in item.children { result.append(convertNodeSync(child)) }
-            }
             result.append(NSAttributedString(string: "\n"))
             return result
+
+        case .codeBlock(let language, let code):
+            // Special handling for mermaid (sync fallback shows placeholder)
+            if language?.lowercased() == "mermaid" {
+                let ps = NSMutableParagraphStyle()
+                ps.alignment = .center
+                return NSAttributedString(
+                    string: "[mermaid diagram rendering...]\n\n",
+                    attributes: [.font: NSFont.systemFont(ofSize: 12),
+                                 .foregroundColor: NSColor.secondaryLabelColor,
+                                 .paragraphStyle: ps]
+                )
+            }
+            let result = NSMutableAttributedString()
+            if let language = language {
+                result.append(NSAttributedString(
+                    string: language + "\n",
+                    attributes: [.font: NSFont.systemFont(ofSize: 10),
+                                 .foregroundColor: NSColor.secondaryLabelColor]
+                ))
+            }
+            let ps = NSMutableParagraphStyle()
+            ps.firstLineHeadIndent = 10
+            ps.headIndent = 10
+            ps.tailIndent = -10
+            result.append(NSAttributedString(
+                string: code,
+                attributes: [.font: codeFont, .foregroundColor: NSColor.labelColor,
+                             .backgroundColor: NSColor.controlBackgroundColor, .paragraphStyle: ps]
+            ))
+            result.append(NSAttributedString(string: "\n\n"))
+            return result
+
+        case .list(let type, let items):
+            return convertListSync(type: type, items: items)
+
+        case .table(let headers, let alignments, let rows):
+            // Render table using monospace font with column alignment
+            let monoFont = NSFont.monospacedSystemFont(ofSize: baseFontSize - 1, weight: .regular)
+            let boldMonoFont = NSFont.monospacedSystemFont(ofSize: baseFontSize - 1, weight: .bold)
+            
+            // Calculate column widths
+            var colWidths = headers.map { $0.count }
+            for row in rows {
+                for (i, cell) in row.enumerated() {
+                    if i < colWidths.count { colWidths[i] = max(colWidths[i], cell.count) }
+                }
+            }
+            // Ensure minimum padding of 2
+            colWidths = colWidths.map { max($0, 3) + 2 }
+            
+            let ps = NSMutableParagraphStyle()
+            ps.lineSpacing = 2
+            
+            let result = NSMutableAttributedString()
+            
+            // Header row
+            let headerParts: [NSMutableAttributedString] = headers.enumerated().map { (i, h) in
+                let w = colWidths[i]
+                let padded = h.padding(toLength: w, withPad: " ", startingAt: 0)
+                return NSMutableAttributedString(string: padded, attributes: [.font: boldMonoFont, .foregroundColor: NSColor.labelColor])
+            }
+            let headerRow = NSMutableAttributedString()
+            for part in headerParts { headerRow.append(part) }
+            headerRow.append(NSAttributedString(string: "\n", attributes: [.font: monoFont]))
+            headerRow.addAttribute(.paragraphStyle, value: ps, range: NSRange(location: 0, length: headerRow.length))
+            result.append(headerRow)
+            
+            // Separator
+            let sepParts = colWidths.map { String(repeating: "-", count: $0) }
+            let sepLine = sepParts.joined() + "\n"
+            result.append(NSAttributedString(string: sepLine, attributes: [.font: monoFont, .foregroundColor: NSColor.secondaryLabelColor]))
+            
+            // Data rows
+            for row in rows {
+                let dataParts: [String] = row.enumerated().map { (i, cell) in
+                    let w = colWidths[min(i, colWidths.count - 1)]
+                    return cell.padding(toLength: w, withPad: " ", startingAt: 0)
+                }
+                let dataLine = dataParts.joined() + "\n"
+                let dataAttr = NSMutableAttributedString(string: dataLine, attributes: [.font: monoFont, .foregroundColor: NSColor.labelColor])
+                dataAttr.addAttribute(.paragraphStyle, value: ps, range: NSRange(location: 0, length: dataAttr.length))
+                result.append(dataAttr)
+            }
+            
+            result.append(NSAttributedString(string: "\n", attributes: baseAttributes()))
+            return result
+
+        case .horizontalRule:
+            return NSAttributedString(string: "────────────────────────────────\n\n", attributes: baseAttributes())
+
+        case .image(let altText, let url):
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: baseFontSize),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .link: URL(string: url) ?? url as Any
+            ]
+            return NSAttributedString(string: "[Image: \(altText.isEmpty ? url : altText)]\n\n", attributes: attrs)
+
+        // MARK: Inline elements
+        case .text(let string):
+            return NSAttributedString(string: string, attributes: baseAttributes())
+
+        case .strong(let children):
+            let result = NSMutableAttributedString()
+            for child in children { result.append(convertNodeSync(child)) }
+            if result.length > 0 {
+                let existingFont = result.attribute(.font, at: 0, effectiveRange: nil) as? NSFont ?? baseFont
+                let traits = existingFont.fontDescriptor.symbolicTraits.union(.bold)
+                let combinedFont = NSFont(descriptor: existingFont.fontDescriptor.withSymbolicTraits(traits), size: existingFont.pointSize) ?? boldFont
+                result.addAttributes([.font: combinedFont, .foregroundColor: NSColor.labelColor],
+                                     range: NSRange(location: 0, length: result.length))
+            }
+            return result
+
+        case .emphasis(let children):
+            let result = NSMutableAttributedString()
+            for child in children { result.append(convertNodeSync(child)) }
+            if result.length > 0 {
+                let existingFont = result.attribute(.font, at: 0, effectiveRange: nil) as? NSFont ?? baseFont
+                let traits = existingFont.fontDescriptor.symbolicTraits.union(.italic)
+                let combinedFont = NSFont(descriptor: existingFont.fontDescriptor.withSymbolicTraits(traits), size: existingFont.pointSize) ?? baseFont
+                result.addAttributes([.font: combinedFont, .foregroundColor: NSColor.labelColor],
+                                     range: NSRange(location: 0, length: result.length))
+            }
+            return result
+
+        case .strikethrough(let children):
+            let result = NSMutableAttributedString()
+            for child in children { result.append(convertNodeSync(child)) }
+            if result.length > 0 {
+                result.addAttributes([.strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                                      .foregroundColor: NSColor.secondaryLabelColor],
+                                     range: NSRange(location: 0, length: result.length))
+            }
+            return result
+
+        case .inlineCode(let text):
+            return NSAttributedString(string: text, attributes: [
+                .font: codeFont, .foregroundColor: NSColor.labelColor,
+                .backgroundColor: NSColor.controlBackgroundColor
+            ])
+
+        case .link(let text, let url):
+            let result = NSMutableAttributedString(string: text.isEmpty ? url : text)
+            if result.length > 0 {
+                result.addAttributes([
+                    .font: baseFont,
+                    .foregroundColor: NSColor.systemBlue,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .link: URL(string: url) ?? url as Any
+                ], range: NSRange(location: 0, length: result.length))
+            }
+            return result
+
         case .softBreak:
             return NSAttributedString(string: " ")
         case .hardBreak:
             return NSAttributedString(string: "\n")
-        case .horizontalRule:
-            return NSAttributedString(string: "────────────────────────────────\n\n", attributes: baseAttributes())
+
         default:
             return NSAttributedString(string: "", attributes: baseAttributes())
         }
     }
+
+    /// Synchronous version of list conversion. Combines bullet and content into
+    /// a single paragraph with shared paragraph style for correct multi-line indent.
+    private func convertListSync(type: MarkdownASTNode.ListType, items: [MarkdownASTNode.ListItemNode]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+
+        for (index, item) in items.enumerated() {
+            let contentStr = NSMutableAttributedString()
+            for child in item.children { contentStr.append(convertNodeSync(child)) }
+
+            let bullet: String
+            switch type {
+            case .unordered:
+                bullet = "\u{2022}\t"
+            case .ordered:
+                bullet = "\(item.number ?? (index + 1)).\t"
+            case .task:
+                bullet = (item.isChecked ?? false) ? "[x]\t" : "[ ]\t"
+            }
+
+            let indent = CGFloat(item.indentLevel * 20)
+            let tabStop = indent + 24  // 24pt = ~4-5 spaces width
+
+            let ps = NSMutableParagraphStyle()
+            ps.firstLineHeadIndent = indent
+            ps.headIndent = tabStop
+            ps.lineSpacing = 2
+            ps.defaultTabInterval = 24
+            if indent > 0 {
+                ps.tabStops = [NSTextTab(textAlignment: .left, location: tabStop, options: [:])]
+            }
+
+            let combined = NSMutableAttributedString()
+            combined.append(NSAttributedString(string: bullet, attributes: [
+                .font: baseFont, .foregroundColor: NSColor.labelColor, .paragraphStyle: ps
+            ]))
+
+            let rawContent = contentStr.string
+            let cleanContent = rawContent.hasSuffix("\n") ? String(rawContent.dropLast()) : rawContent
+            if !cleanContent.isEmpty {
+                combined.append(NSAttributedString(string: cleanContent))
+            }
+
+            let fullRange = NSRange(location: 0, length: combined.length)
+            combined.addAttribute(.paragraphStyle, value: ps, range: fullRange)
+            combined.addAttribute(.font, value: baseFont, range: fullRange)
+            combined.addAttribute(.foregroundColor, value: NSColor.labelColor, range: fullRange)
+
+            result.append(combined)
+            result.append(NSAttributedString(string: "\n"))
+        }
+
+        result.append(NSAttributedString(string: "\n"))
+        return result
+    }
+
 
     // MARK: - Node Conversion
 
@@ -342,41 +540,53 @@ class MarkdownASTToNSAttributedString {
         let result = NSMutableAttributedString()
 
         for (index, item) in items.enumerated() {
-            // Bullet or number
+            let contentStr = NSMutableAttributedString()
+            for child in item.children {
+                contentStr.append(await convertNode(child))
+            }
+
             let bullet: String
+            let bulletWidth: CGFloat
             switch type {
             case .unordered:
-                bullet = "• "
+                bullet = "\u{2022}  "
+                bulletWidth = 16
             case .ordered:
-                bullet = "\(item.number ?? (index + 1)). "
+                bullet = "\(item.number ?? (index + 1)).  "
+                bulletWidth = 24
             case .task:
-                bullet = (item.isChecked ?? false) ? "☑ " : "☐ "
+                bullet = (item.isChecked ?? false) ? "\u{2611}  " : "\u{2610}  "
+                bulletWidth = 20
             }
 
-            // Calculate indent based on nesting level (20pt per level)
             let indent = CGFloat(item.indentLevel * 20)
-            
+
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.firstLineHeadIndent = indent
-            paragraphStyle.headIndent = indent + 20  // Indent content more than bullet
+            paragraphStyle.headIndent = indent + bulletWidth
+            paragraphStyle.lineSpacing = 2
 
-            let bulletAttributes: [NSAttributedString.Key: Any] = [
-                .font: baseFont,
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: paragraphStyle
-            ]
+            let rawContent = contentStr.string
+            let cleanContent = rawContent.hasSuffix("\n") ? String(rawContent.dropLast()) : rawContent
 
-            result.append(NSAttributedString(string: bullet, attributes: bulletAttributes))
+            let combined = NSMutableAttributedString()
+            combined.append(NSAttributedString(
+                string: bullet + cleanContent,
+                attributes: [
+                    .font: baseFont,
+                    .foregroundColor: NSColor.labelColor,
+                    .paragraphStyle: paragraphStyle
+                ]
+            ))
 
-            // Item content
-            for child in item.children {
-                result.append(await convertNode(child))
-            }
+            result.append(combined)
+            result.append(NSAttributedString(string: "\n"))
         }
 
         result.append(NSAttributedString(string: "\n"))
         return result
     }
+
 
     private func convertTable(headers: [String], alignments: [MarkdownASTNode.TableAlignment], rows: [[String]]) -> NSAttributedString {
         logger.info("convertTable: START - rendering table with \(headers.count) columns, \(rows.count) rows")
@@ -633,7 +843,9 @@ class MarkdownASTToNSAttributedString {
 
         case .strong(let children):
             var attrs = baseAttributes
-            attrs[.font] = NSFont.boldSystemFont(ofSize: baseFontSize)
+            let existingFont = (baseAttributes[.font] as? NSFont) ?? baseFont
+            let traits = existingFont.fontDescriptor.symbolicTraits.union(.bold)
+            attrs[.font] = NSFont(descriptor: existingFont.fontDescriptor.withSymbolicTraits(traits), size: existingFont.pointSize) ?? NSFont.boldSystemFont(ofSize: baseFontSize)
             let result = NSMutableAttributedString()
             for child in children {
                 result.append(await convertInlineNode(child, baseAttributes: attrs))
@@ -642,8 +854,9 @@ class MarkdownASTToNSAttributedString {
 
         case .emphasis(let children):
             var attrs = baseAttributes
-            let italicFont = NSFont(descriptor: baseFont.fontDescriptor.withSymbolicTraits(.italic), size: baseFontSize) ?? baseFont
-            attrs[.font] = italicFont
+            let existingFont = (baseAttributes[.font] as? NSFont) ?? baseFont
+            let traits = existingFont.fontDescriptor.symbolicTraits.union(.italic)
+            attrs[.font] = NSFont(descriptor: existingFont.fontDescriptor.withSymbolicTraits(traits), size: existingFont.pointSize) ?? baseFont
             let result = NSMutableAttributedString()
             for child in children {
                 result.append(await convertInlineNode(child, baseAttributes: attrs))

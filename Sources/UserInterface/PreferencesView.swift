@@ -113,6 +113,7 @@ public struct PreferencesView: View {
 
         case .localModels:
             LocalModelsPreferencePane(endpointManager: endpointManager)
+                .environmentObject(endpointManager)
 
         case .serpAPI:
             SerpAPIPreferencesPane()

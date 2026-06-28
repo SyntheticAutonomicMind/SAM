@@ -259,6 +259,80 @@ public struct MainWindowView: View {
             .environmentObject(conversationManager)
     }
 
+    /// Top toolbar with sidebar/new/mini-prompts buttons. Extracted into a
+    /// computed property to keep the body of `MainWindowView` small enough
+    /// for the SwiftUI type-checker.
+    private var toolbarBar: some View {
+        HStack {
+            Button(action: {
+                withAnimation {
+                    showingSidebar.toggle()
+                }
+            }) {
+                Image(systemName: "sidebar.left")
+                    .foregroundColor(showingSidebar ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Toggle Sidebar (\\)")
+
+            if !showingSidebar {
+                Button(action: {
+                    conversationManager.createNewConversation()
+                }) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(showingOnboardingWizard ? .secondary : .accentColor)
+                }
+                .buttonStyle(.plain)
+                .help("New Conversation (N)")
+                .disabled(showingOnboardingWizard)
+            }
+
+            Spacer()
+
+            Button(action: {
+                withAnimation {
+                    showingMiniPrompts.toggle()
+                }
+            }) {
+                Image(systemName: "sidebar.right")
+                    .foregroundColor(showingMiniPrompts ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Mini-Prompts (⇧\\)")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    /// Main content area below the toolbar. Extracted into a computed
+    /// property for the same type-checker reasons as `toolbarBar`.
+    private var mainContent: some View {
+        HStack(spacing: 0) {
+            if showingOnboardingWizard {
+                onboardingWizardContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if conversationManager.conversations.isEmpty {
+                welcomeScreen
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let activeConv = conversationManager.activeConversation,
+                      let messageBus = activeConv.messageBus {
+                ChatWidget(activeConversation: activeConv, messageBus: messageBus, showingMiniPrompts: $showingMiniPrompts)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .environmentObject(conversationManager)
+                .environmentObject(endpointManager)
+            }
+
+            if showingMiniPrompts, let activeConversation = conversationManager.activeConversation {
+                Divider()
+                MiniPromptPanel(conversation: activeConversation, conversationManager: conversationManager)
+                    .background(.ultraThinMaterial)
+                    .frame(minWidth: 250, idealWidth: 280, maxWidth: 350)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: showingMiniPrompts)
+    }
 
     /// Sidebar content with conversation list.
     private var sidebarContent: some View {
@@ -315,72 +389,8 @@ public struct MainWindowView: View {
 
             /// Main content with toolbar and mini-prompts.
             VStack(spacing: 0) {
-                HStack {
-                    Button(action: {
-                        withAnimation {
-                            showingSidebar.toggle()
-                        }
-                    }) {
-                        Image(systemName: "sidebar.left")
-                            .foregroundColor(showingSidebar ? .accentColor : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Toggle Sidebar (\\)")
-
-                    if !showingSidebar {
-                        Button(action: {
-                            conversationManager.createNewConversation()
-                        }) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(showingOnboardingWizard ? .secondary : .accentColor)
-                        }
-                        .buttonStyle(.plain)
-                        .help("New Conversation (N)")
-                        .disabled(showingOnboardingWizard)
-                    }
-
-                    Spacer()
-
-                    Button(action: {
-                        withAnimation {
-                            showingMiniPrompts.toggle()
-                        }
-                    }) {
-                        Image(systemName: "sidebar.right")
-                            .foregroundColor(showingMiniPrompts ? .accentColor : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Mini-Prompts (⇧\\)")
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color(NSColor.windowBackgroundColor))
-
-                Divider()
-
-                HStack(spacing: 0) {
-                    if showingOnboardingWizard {
-                        onboardingWizardContent
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if conversationManager.conversations.isEmpty {
-                        welcomeScreen
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if let activeConv = conversationManager.activeConversation,
-                              let messageBus = activeConv.messageBus {
-                        ChatWidget(activeConversation: activeConv, messageBus: messageBus, showingMiniPrompts: $showingMiniPrompts)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .environmentObject(conversationManager)
-                    }
-
-                    if showingMiniPrompts, let activeConversation = conversationManager.activeConversation {
-                        Divider()
-                        MiniPromptPanel(conversation: activeConversation, conversationManager: conversationManager)
-                            .background(.ultraThinMaterial)
-                            .frame(minWidth: 250, idealWidth: 280, maxWidth: 350)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: showingMiniPrompts)
+                toolbarBar
+                mainContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

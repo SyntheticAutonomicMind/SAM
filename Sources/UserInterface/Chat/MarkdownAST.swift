@@ -6,7 +6,7 @@ import Foundation
 
 /// Abstract Syntax Tree node for markdown content
 /// Recursive structure that supports arbitrary nesting of markdown elements
-enum MarkdownASTNode {
+enum MarkdownASTNode: Sendable {
     /// Block-level elements
     case document(children: [MarkdownASTNode])
     case heading(level: Int, children: [MarkdownASTNode])
@@ -29,14 +29,14 @@ enum MarkdownASTNode {
     case hardBreak
 
     /// List-specific node
-    struct ListItemNode {
+    struct ListItemNode: Sendable {
         let children: [MarkdownASTNode]
         let isChecked: Bool?  // nil for regular lists, true/false for task lists
         let number: Int?      // nil for unordered lists, number for ordered lists
         let indentLevel: Int  // 0-based indentation level for nested lists
     }
 
-    enum ListType {
+    enum ListType: Sendable {
         case ordered
         case unordered
         case task

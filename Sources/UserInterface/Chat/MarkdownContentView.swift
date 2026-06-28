@@ -27,6 +27,7 @@ struct MarkdownContentView: View {
             if let ast = cachedAST {
                 /// Render parsed AST (normal case - parsing complete)
                 renderer.render(ast)
+                    .textSelection(.enabled)
             } else if isLoading {
                 /// Show loading indicator only when actively parsing
                 HStack {
