@@ -2288,7 +2288,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
     /// Quota information structure for UI display
     /// Supports both legacy PRU-based billing (annual plans) and AI Credit-based billing (monthly plans, June 2026+)
-    public struct QuotaInfo: Codable {
+    public struct QuotaInfo: Codable, Sendable {
         // Legacy PRU fields (annual plan subscribers)
         public let entitlement: Int
         public let used: Int

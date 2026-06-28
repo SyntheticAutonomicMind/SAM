@@ -13,11 +13,11 @@ public class SAMAPIServer: ObservableObject {
     private var app: Application?
     private let conversationManager: ConversationManager
     private let endpointManager: EndpointManager
-    private let toolRegistry: UniversalToolRegistry
-    private let modelDownloadManager: ModelDownloadManager
-    private let toolResultStorage: ToolResultStorage
-    private let sharedTopicManager: SharedTopicManager
-    private let folderManager: FolderManager
+    private var toolRegistry: UniversalToolRegistry!
+    private var modelDownloadManager: ModelDownloadManager!
+    private var toolResultStorage: ToolResultStorage!
+    private var sharedTopicManager: SharedTopicManager!
+    private var folderManager: FolderManager!
 
     @Published public var isRunning: Bool = false
     @MainActor @Published public var serverPort: Int = UserDefaults.standard.object(forKey: "apiServerPort") as? Int ?? 8080
@@ -39,13 +39,15 @@ public class SAMAPIServer: ObservableObject {
         self.conversationManager = conversationManager
         self.endpointManager = endpointManager
         self.sharedConversationService = sharedConversationService
+    logger.debug("Creating UniversalToolRegistry for API (external execution) with ConversationManager")
+    /// For API server, tools should run in non-blocking external mode.
+    MainActor.assumeIsolated {
         self.modelDownloadManager = ModelDownloadManager(endpointManager: endpointManager)
         self.toolResultStorage = ToolResultStorage()
         self.sharedTopicManager = SharedTopicManager()
         self.folderManager = FolderManager()
-    logger.debug("Creating UniversalToolRegistry for API (external execution) with ConversationManager")
-    /// For API server, tools should run in non-blocking external mode.
-    self.toolRegistry = UniversalToolRegistry(conversationManager: conversationManager, isExternalExecution: true)
+        self.toolRegistry = UniversalToolRegistry(conversationManager: conversationManager, isExternalExecution: true)
+    }
         logger.debug("UniversalToolRegistry created successfully")
         logger.debug("SAM_API_SERVER: Initialized with shared ConversationManager, EndpointManager, SharedConversationService, FolderManager, and ModelDownloadManager")
     }
@@ -154,7 +156,9 @@ public class SAMAPIServer: ObservableObject {
 
     /// Generate unique conversation title with sequential numbering (similar to ConversationManager.generateUniqueConversationTitle)
     private func generateUniqueAPIConversationTitle(baseName: String) -> String {
-        let existingTitles = Set(conversationManager.conversations.map { $0.title })
+        let existingTitles = MainActor.assumeIsolated {
+            Set(conversationManager.conversations.map { $0.title })
+        }
 
         if !existingTitles.contains(baseName) {
             return baseName
@@ -173,7 +177,8 @@ public class SAMAPIServer: ObservableObject {
 
     private func injectMCPToolDefinitions(_ request: OpenAIChatRequest) async throws -> OpenAIChatRequest {
         /// Get available MCP tools.
-        let availableTools = conversationManager.getAvailableMCPTools()
+        let mgr = conversationManager
+        let availableTools = await MainActor.run { mgr.getAvailableMCPTools() }
 
         /// If no tools available or tools already defined in request, return as-is.
         if availableTools.isEmpty || request.tools != nil {
@@ -516,7 +521,8 @@ private struct SimpleToolCall {
         /// Skip SAM's tool injection for local GGUF/MLX models - they provide their own tool schemas
         /// LlamaProvider and MLXProvider will add tool instructions in prepareMessages() 
         /// We still call this function to maintain the flow, but return early for local models
-        let providerType = endpointManager.getProviderTypeForModel(request.model)
+        let em = endpointManager
+        let providerType = await MainActor.run { em.getProviderTypeForModel(request.model) }
         if providerType == "LlamaProvider" || providerType == "MLXProvider" {
             logger.info("SAMAPIServer: Skipping SAM tool injection for local model '\(request.model)' - provider will add its own tool schemas")
             return request
@@ -757,15 +763,16 @@ AVAILABLE TOOLS:
         logger.debug("DEBUG: systemPromptId from request: \(request.samConfig?.systemPromptId ?? "nil")")
         /// Get the conversation for this session.
         logger.debug("DEBUG: About to call findOrCreateAPIConversation")
-        let apiConversation = await MainActor.run {
-            findOrCreateAPIConversation(
+        let (apiConversation, convId, convSysPromptId) = await MainActor.run { () -> (ConversationModel, String, String?) in
+            let conv = findOrCreateAPIConversation(
                 sessionId: sessionId,
                 model: request.model,
                 systemPromptId: request.samConfig?.systemPromptId,
                 request: request
             )
+            return (conv, conv.id.uuidString, conv.settings.selectedSystemPromptId?.uuidString)
         }
-        logger.debug("DEBUG: Got apiConversation: \(apiConversation.id), systemPromptId: \(apiConversation.settings.selectedSystemPromptId?.uuidString ?? "nil")")
+        logger.debug("DEBUG: Got apiConversation: \(convId), systemPromptId: \(convSysPromptId ?? "nil")")
 
         /// Extract user query for memory search.
         guard let userMessage = request.messages.last(where: { $0.role == "user" }),
@@ -1115,15 +1122,18 @@ AVAILABLE TOOLS:
         let sessionId: String? = chatRequest.conversationId ??
                                 chatRequest.sessionId ??
                                 chatRequest.contextId ??
-                                req.headers.first(name: "X-Session-Id")
+                               req.headers.first(name: "X-Session-Id")
+
+        let mgr = conversationManager
+        let memoryInit = await MainActor.run { mgr.memoryInitialized }
 
         if let sessionId = sessionId {
             logger.debug("DEBUG: Found session ID: \(sessionId) (from conversationId/sessionId/contextId)")
-            logger.debug("DEBUG_ROUTING: sessionId=\(sessionId.prefix(8)), memoryInit=\(conversationManager.memoryInitialized)")
+            logger.debug("DEBUG_ROUTING: sessionId=\(sessionId.prefix(8)), memoryInit=\(memoryInit)")
             logger.debug("Processing request with session ID: \(sessionId)")
         } else {
             logger.debug("DEBUG: No session ID found")
-            logger.debug("DEBUG_ROUTING: sessionId=nil, memoryInit=\(conversationManager.memoryInitialized)")
+            logger.debug("DEBUG_ROUTING: sessionId=nil, memoryInit=\(memoryInit)")
         }
 
         logger.debug("DEBUG: About to enhance request with memory")
@@ -1134,19 +1144,20 @@ AVAILABLE TOOLS:
 
         /// Enhance request with memory context if available.
         var enhancedRequest = trimmedRequest
-        if let sessionId = sessionId, conversationManager.memoryInitialized {
+        if let sessionId = sessionId, memoryInit {
             logger.debug("DEBUG: Calling enhanceRequestWithMemory for sessionId: \(sessionId)")
             enhancedRequest = try await enhanceRequestWithMemory(trimmedRequest, sessionId: sessionId)
             logger.debug("DEBUG: Enhanced request with memory - messages now: \(enhancedRequest.messages.count)")
         } else {
-            logger.debug("DEBUG: Skipping memory enhancement - sessionId: \(sessionId?.prefix(8) ?? "nil"), memoryInit: \(conversationManager.memoryInitialized)")
+            logger.debug("DEBUG: Skipping memory enhancement - sessionId: \(sessionId?.prefix(8) ?? "nil"), memoryInit: \(memoryInit)")
         }
 
         /// CONDITIONAL TOOL INJECTION: Only inject tools into system prompt for LOCAL models
         /// Remote models (OpenAI, GitHub Copilot) use native tools array from SharedConversationService
         /// Local models (GGUF/MLX via LlamaProvider/MLXProvider) need tools described in system prompt for tool calling
         /// But providers add their own tool schemas, so SAMAPIServer just triggers the flow
-        let providerType = endpointManager.getProviderTypeForModel(enhancedRequest.model)
+        let em = endpointManager
+        let providerType = await MainActor.run { em.getProviderTypeForModel(enhancedRequest.model) }
         let isLocalModel = providerType == "LlamaProvider" || providerType == "MLXProvider"
         if isLocalModel {
             logger.debug("DEBUG: LOCAL MODEL detected (provider=\(providerType ?? "unknown")) - injecting tools into system prompt for model: \(enhancedRequest.model)")
@@ -1339,13 +1350,18 @@ AVAILABLE TOOLS:
         let maxIterations = chatRequest.samConfig?.maxIterations ?? WorkflowConfiguration.defaultMaxIterations
 
         /// Create AgentOrchestrator instance.
-        let orchestrator = AgentOrchestrator(
-            endpointManager: endpointManager,
-            conversationService: sharedConversationService,
-            conversationManager: conversationManager,
-            maxIterations: maxIterations,
-            isExternalAPICall: true
-        )
+        let em = endpointManager
+        let scs = sharedConversationService
+        let cm = conversationManager
+        let orchestrator = await MainActor.run {
+            AgentOrchestrator(
+                endpointManager: em,
+                conversationService: scs,
+                conversationManager: cm,
+                maxIterations: maxIterations,
+                isExternalAPICall: true
+            )
+        }
 
 
         /// Run autonomous workflow.
@@ -1412,7 +1428,7 @@ AVAILABLE TOOLS:
     }
 
     /// Create OpenAI-compatible response from AgentResult This ensures /api/chat/completions returns standard OpenAI format while using AgentOrchestrator internally.
-    private func createOpenAICompatibleResponse(from result: AgentResult, originalRequest: OpenAIChatRequest, requestId: String) throws -> Response {
+    private func createOpenAICompatibleResponse(from result: AgentResult, originalRequest: OpenAIChatRequest, requestId: String) async throws -> Response {
         /// Create OpenAI-compatible response structure.
         let message = OpenAIChatMessage(
             role: "assistant",
@@ -1426,7 +1442,7 @@ AVAILABLE TOOLS:
         )
 
         /// Build SAM enhanced metadata
-        let samMetadata = buildSAMMetadata(
+        let samMetadata = await buildSAMMetadata(
             model: originalRequest.model,
             result: result
         )
@@ -1449,9 +1465,10 @@ AVAILABLE TOOLS:
     }
 
     /// Build SAM-specific metadata for API responses
-    private func buildSAMMetadata(model: String, result: AgentResult? = nil) -> SAMResponseMetadata {
+    private func buildSAMMetadata(model: String, result: AgentResult? = nil) async -> SAMResponseMetadata {
         /// Get provider information
-        let providerType = endpointManager.getProviderTypeForModel(model) ?? "unknown"
+        let emForMeta = endpointManager
+        let providerType = await MainActor.run { emForMeta.getProviderTypeForModel(model) } ?? "unknown"
         let isLocal = providerType == "LlamaProvider" || providerType == "MLXProvider"
 
         let providerInfo = SAMProviderInfo(
@@ -1750,23 +1767,26 @@ AVAILABLE TOOLS:
             actualSessionId = explicitId
         } else if let topicName = chatRequest.topic {
             /// No explicit ID but topic provided - look for existing conversation with this shared topic
-            let existingTopicConversation = await MainActor.run {
+            let existingTopicConversation = await MainActor.run { () -> (conv: ConversationModel?, idStr: String?) in
                 do {
                     if let sharedTopic = try self.findSharedTopicByName(topicName),
                        let topicId = UUID(uuidString: sharedTopic.id) {
-                        return conversationManager.conversations.first(where: {
+                        if let conv = conversationManager.conversations.first(where: {
                             $0.settings.sharedTopicId == topicId && $0.settings.useSharedData
-                        })
+                        }) {
+                            return (conv, conv.id.uuidString)
+                        }
                     }
                 } catch {
                     logger.error("Failed to lookup shared topic by name: \(error)")
                 }
-                return nil
+                return (nil, nil)
             }
 
-            if let existing = existingTopicConversation {
-                logger.debug("DEBUG_TOPIC_NONSTREAMING: Found existing conversation for shared topic '\(topicName)': \(existing.id)")
-                actualSessionId = existing.id.uuidString
+            let (_, idStr) = existingTopicConversation
+            if let idStr = idStr {
+                logger.debug("DEBUG_TOPIC_NONSTREAMING: Found existing conversation for shared topic '\(topicName)': \(idStr)")
+                actualSessionId = idStr
             } else {
                 /// No existing conversation for this topic - create new with generated UUID
                 actualSessionId = UUID().uuidString
@@ -1968,13 +1988,18 @@ AVAILABLE TOOLS:
 
         do {
             /// Create AgentOrchestrator instance.
-            let orchestrator = AgentOrchestrator(
-                endpointManager: endpointManager,
-                conversationService: sharedConversationService,
-                conversationManager: conversationManager,
-                maxIterations: maxIterations,
-                isExternalAPICall: true
-            )
+            let em = endpointManager
+            let scs = sharedConversationService
+            let cm = conversationManager
+            let orchestrator = await MainActor.run {
+                AgentOrchestrator(
+                    endpointManager: em,
+                    conversationService: scs,
+                    conversationManager: cm,
+                    maxIterations: maxIterations,
+                    isExternalAPICall: true
+                )
+            }
 
 
             /// Run autonomous workflow.
@@ -1998,7 +2023,7 @@ AVAILABLE TOOLS:
             }
 
             /// Convert AgentResult to OpenAI-compatible response format This ensures compatibility with existing API consumers.
-            return try createOpenAICompatibleResponse(from: result, originalRequest: chatRequest, requestId: requestId)
+            return try await createOpenAICompatibleResponse(from: result, originalRequest: chatRequest, requestId: requestId)
 
         } catch let endpointError as EndpointManagerError {
             logger.error("DEBUG_APISERVER: EndpointManager error: \(endpointError)")
@@ -2209,13 +2234,17 @@ AVAILABLE TOOLS:
                 actualSessionId = explicitId
             } else if let topic = chatRequest.topic {
                 /// No explicit ID but topic provided - look for existing conversation with this topic
-                let existingTopicConversation = await MainActor.run {
-                    conversationManager.conversations.first(where: { $0.folderId == topic })
+                let existingTopicConversation = await MainActor.run { () -> (conv: ConversationModel?, idStr: String?) in
+                    if let conv = conversationManager.conversations.first(where: { $0.folderId == topic }) {
+                        return (conv, conv.id.uuidString)
+                    }
+                    return (nil, nil)
                 }
 
-                if let existing = existingTopicConversation {
-                    logger.debug("Found existing conversation for topic '\(topic)': \(existing.id)")
-                    actualSessionId = existing.id.uuidString
+                let (_, idStr) = existingTopicConversation
+                if let idStr = idStr {
+                    logger.debug("Found existing conversation for topic '\(topic)': \(idStr)")
+                    actualSessionId = idStr
                 } else {
                     /// No existing conversation for this topic - create new with generated UUID
                     actualSessionId = UUID().uuidString
@@ -2344,13 +2373,18 @@ AVAILABLE TOOLS:
             }
 
             /// Create AgentOrchestrator instance.
-            let orchestrator = AgentOrchestrator(
-                endpointManager: endpointManager,
-                conversationService: sharedConversationService,
-                conversationManager: conversationManager,
-                maxIterations: WorkflowConfiguration.defaultMaxIterations,
-                isExternalAPICall: true
-            )
+            let em = endpointManager
+            let scs = sharedConversationService
+            let cm = conversationManager
+            let orchestrator = await MainActor.run {
+                AgentOrchestrator(
+                    endpointManager: em,
+                    conversationService: scs,
+                    conversationManager: cm,
+                    maxIterations: WorkflowConfiguration.defaultMaxIterations,
+                    isExternalAPICall: true
+                )
+            }
 
 
             /// Run streaming autonomous workflow.
@@ -2852,7 +2886,8 @@ AVAILABLE TOOLS:
     private func handleMCPToolsList(_ req: Request) async throws -> MCPToolsResponse {
         logger.debug("Listing available MCP tools")
 
-        let tools = conversationManager.getAvailableMCPTools()
+        let mgr = conversationManager
+        let tools = await MainActor.run { mgr.getAvailableMCPTools() }
         let toolInfos = tools.map { tool in
             MCPToolInfo(
                 name: tool.name,
@@ -2864,7 +2899,7 @@ AVAILABLE TOOLS:
         return MCPToolsResponse(
             tools: toolInfos,
             count: tools.count,
-            initialized: conversationManager.mcpInitialized
+            initialized: await MainActor.run { mgr.mcpInitialized }
         )
     }
 
@@ -3097,8 +3132,9 @@ AVAILABLE TOOLS:
         logger.debug("Updating conversation \(conversationId)")
 
         /// Update conversation on MainActor.
+        let mgr = conversationManager
         let result = await MainActor.run { () -> (Bool, String?, String?) in
-            guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+            guard let conversation = mgr.conversations.first(where: { $0.id == conversationId }) else {
                 return (false, nil, nil)
             }
             
@@ -3110,7 +3146,7 @@ AVAILABLE TOOLS:
                 conversation.folderId = folderId.isEmpty ? nil : folderId
             }
             
-            conversationManager.saveConversations()
+            mgr.saveConversations()
             return (true, conversation.title, conversation.folderId)
         }
 
@@ -3246,9 +3282,8 @@ AVAILABLE TOOLS:
         logger.debug("Listing system prompts")
 
         /// Get all system prompts from manager (defaults + user-created).
-        let systemPromptManager = SystemPromptManager.shared
         let allPrompts = await MainActor.run {
-            systemPromptManager.allConfigurations
+            SystemPromptManager.shared.allConfigurations
         }
 
         /// Map to simple response format.
@@ -3318,13 +3353,13 @@ AVAILABLE TOOLS:
         /// Map to response format.
         let instructionList = allCustomInstructions.map { instruction in
             [
-                "id": prompt.id.uuidString,
-                "name": prompt.name,
-                "content": prompt.content
+                "id": instruction.id.uuidString,
+                "name": instruction.name,
+                "content": instruction.content
             ]
         }
 
-        let response = ["prompts": promptList]
+        let response = ["custom_instructions": instructionList]
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         let jsonData = try encoder.encode(response)
@@ -3339,9 +3374,8 @@ AVAILABLE TOOLS:
         logger.debug("Listing personalities")
 
         /// Get all personalities from manager (defaults + user-created).
-        let personalityManager = PersonalityManager.shared
         let allPersonalities = await MainActor.run {
-            personalityManager.getAllPersonalities()
+            PersonalityManager.shared.getAllPersonalities()
         }
 
         /// Map to simple response format.
@@ -3418,7 +3452,8 @@ AVAILABLE TOOLS:
         }
         
         // Fall back to header-based quota info
-        guard let quotaInfo = endpointManager.getGitHubCopilotQuotaInfo() else {
+        let emQuota = endpointManager
+        guard let quotaInfo = await MainActor.run(body: { emQuota.getGitHubCopilotQuotaInfo() }) else {
             let response: [String: Any] = ["available": false, "reason": "No quota information available. Make an API call first or authenticate with GitHub."]
             let jsonData = try JSONSerialization.data(withJSONObject: response, options: .prettyPrinted)
             return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: jsonData))
@@ -3496,8 +3531,9 @@ AVAILABLE TOOLS:
 
         let createRequest = try req.content.decode(CreateFolderRequest.self)
 
+        let fm = folderManager!
         let folder = await MainActor.run {
-            folderManager.createFolder(name: createRequest.name, color: createRequest.color, icon: createRequest.icon)
+            fm.createFolder(name: createRequest.name, color: createRequest.color, icon: createRequest.icon)
         }
 
         let response = FolderResponse(
@@ -3531,8 +3567,9 @@ AVAILABLE TOOLS:
 
         let updateRequest = try req.content.decode(UpdateFolderRequest.self)
 
+        let fm = folderManager!
         let updated = await MainActor.run { () -> Bool in
-            guard var folder = folderManager.getFolder(by: folderId) else {
+            guard var folder = fm.getFolder(by: folderId) else {
                 return false
             }
 
@@ -3549,7 +3586,7 @@ AVAILABLE TOOLS:
                 folder.isCollapsed = isCollapsed
             }
 
-            folderManager.updateFolder(folder)
+            fm.updateFolder(folder)
             return true
         }
 
@@ -3871,12 +3908,15 @@ AVAILABLE TOOLS:
         }
 
         // Attach topic to conversation via ConversationManager
+        let mgr = conversationManager
+        let log = logger
+        let topicName = topic.name
         await MainActor.run {
-            if let conversation = conversationManager.conversations.first(where: { $0.id.uuidString == conversationId }) {
-                conversationManager.attachSharedTopic(topicId: topicUUID, topicName: topic.name)
-                logger.debug("Attached topic \(topic.name) to conversation \(conversationId)")
+            if let conversation = mgr.conversations.first(where: { $0.id.uuidString == conversationId }) {
+                mgr.attachSharedTopic(topicId: topicUUID, topicName: topicName)
+                log.debug("Attached topic \(topicName) to conversation \(conversationId)")
             } else {
-                logger.warning("Conversation \(conversationId) not found")
+                log.warning("Conversation \(conversationId) not found")
             }
         }
 

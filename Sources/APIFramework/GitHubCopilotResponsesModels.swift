@@ -95,7 +95,6 @@ public struct GitHubCopilotModelInfo: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, capabilities, enabled, policy, vendor, preview
-        case id, name, capabilities, enabled, billing, policy, vendor, preview
         case supportedEndpoints = "supported_endpoints"
         case modelPickerCategory = "model_picker_category"
         case modelPickerEnabled = "model_picker_enabled"
