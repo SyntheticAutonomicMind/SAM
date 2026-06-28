@@ -134,6 +134,11 @@ struct UserMessageBubble: View {
     /// Track display content for smooth resize animation
     @State private var currentContentLength: Int = 0
 
+    /// Cap bubble width so long unbreakable strings (URLs, hashes) can't
+    /// overflow the chat frame. Measured dynamically via GeometryReader.
+    private static let maxBubbleCap: CGFloat = 600
+    private static let minBubbleWidth: CGFloat = 200
+
     /// Filter out mini-prompt context from display (but keep in stored message for API).
     /// Handles both new XML format and legacy bracket format for backwards compatibility.
     private var displayContent: String {
@@ -159,17 +164,7 @@ struct UserMessageBubble: View {
             Spacer(minLength: 60)
 
             VStack(alignment: .trailing, spacing: 4) {
-                /// Message bubble.
-                MarkdownWebView(markdown: displayContent, isFromUser: true, bubbleWidth: $userBubbleWidth, bubbleHeight: $userBubbleHeight)
-                    .frame(width: userBubbleWidth, height: userBubbleHeight)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(Color.accentColor)
-                            .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
-                    )
-                    .clipped()
+                bubble
 
                 /// Timestamp with copy button.
                 HStack(spacing: 4) {
@@ -231,6 +226,36 @@ struct UserMessageBubble: View {
             }
         }
         .animation(enableAnimations ? .easeInOut(duration: 0.2) : nil, value: showCopyConfirmation)
+    }
+
+    /// Bubble wrapped in GeometryReader so the dynamic cap reflects actual
+    /// chat width. Without this, content with no breakable characters
+    /// (URLs, hashes) overflowed the chat frame.
+    private var bubble: some View {
+        GeometryReader { geo in
+            let cap = min(max(geo.size.width, Self.minBubbleWidth), Self.maxBubbleCap)
+
+            MarkdownWebView(
+                markdown: displayContent,
+                isFromUser: true,
+                maxBubbleWidth: cap,
+                bubbleWidth: Binding(
+                    get: { userBubbleWidth },
+                    set: { userBubbleWidth = min($0, cap) }
+                ),
+                bubbleHeight: $userBubbleHeight
+            )
+            .frame(width: userBubbleWidth, height: userBubbleHeight)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color.accentColor)
+                    .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
+            )
+            .clipped()
+        }
+        .frame(height: userBubbleHeight + 24)  /// bubble height + vertical padding (12 + 12)
     }
 
     private func reloadMessage() {
@@ -310,6 +335,11 @@ struct AssistantMessageBubble: View {
     /// SwiftUI updates MarkdownText content smoothly without rebuilding view hierarchy
     @State private var displayedContent: String = ""
 
+    /// Cap bubble width so long unbreakable strings (URLs, hashes) can't
+    /// overflow the chat frame. Measured dynamically via GeometryReader.
+    private static let maxBubbleCap: CGFloat = 700
+    private static let minBubbleWidth: CGFloat = 200
+
     private let logger = Logger(subsystem: "com.sam.chat.assistantbubble", category: "UserInterface")
 
     /// Filter out status signals from display (workflow control markers)
@@ -343,17 +373,7 @@ struct AssistantMessageBubble: View {
                 /// Message bubble - ALWAYS show container to prevent collapse/reappear flicker
                 /// Only hide if message has no content AND is not streaming AND has no contentParts
                 if !message.content.isEmpty || message.isStreaming || message.contentParts != nil {
-                    MarkdownWebView(markdown: displayedContent, isFromUser: false, bubbleWidth: $assistantBubbleWidth, bubbleHeight: $assistantBubbleHeight)
-                        .frame(width: assistantBubbleWidth, height: assistantBubbleHeight)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18)
-                                .fill(Color.primary.opacity(0.05))
-                                .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
-                        )
-                        .clipped()
+                    bubble
                 }                /// Render contentParts if present (images, etc.)
                 if let contentParts = message.contentParts {
                     ForEach(Array(contentParts.enumerated()), id: \.offset) { _, part in
@@ -466,6 +486,37 @@ struct AssistantMessageBubble: View {
         /// Force content refresh by re-filtering from source
         displayedContent = filterContent(message.content)
         logger.info("Reloading assistant message: \(message.id)")
+    }
+
+    /// Bubble wrapped in GeometryReader so the dynamic cap reflects actual
+    /// chat width. Without this, content with no breakable characters
+    /// (URLs, hashes) overflowed the chat frame.
+    private var bubble: some View {
+        GeometryReader { geo in
+            let cap = min(max(geo.size.width, Self.minBubbleWidth), Self.maxBubbleCap)
+
+            MarkdownWebView(
+                markdown: displayedContent,
+                isFromUser: false,
+                maxBubbleWidth: cap,
+                bubbleWidth: Binding(
+                    get: { assistantBubbleWidth },
+                    set: { assistantBubbleWidth = min($0, cap) }
+                ),
+                bubbleHeight: $assistantBubbleHeight
+            )
+            .frame(width: assistantBubbleWidth, height: assistantBubbleHeight)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color.primary.opacity(0.05))
+                    .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
+            )
+            .clipped()
+        }
+        .frame(height: assistantBubbleHeight + 24)  /// bubble height + vertical padding (12 + 12)
     }
 
     private func copyMessage() {

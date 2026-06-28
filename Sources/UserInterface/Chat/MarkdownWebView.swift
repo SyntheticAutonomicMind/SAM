@@ -14,6 +14,7 @@ import OSLog
 struct MarkdownWebView: NSViewRepresentable {
     let markdown: String
     let isFromUser: Bool
+    let maxBubbleWidth: CGFloat
     @Binding var bubbleWidth: CGFloat
     @Binding var bubbleHeight: CGFloat
 
@@ -32,6 +33,7 @@ struct MarkdownWebView: NSViewRepresentable {
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
+        context.coordinator.maxWidth = maxBubbleWidth
         return webView
     }
 
@@ -82,6 +84,7 @@ struct MarkdownWebView: NSViewRepresentable {
         }
         #content {
             display: inline-block;
+            max-width: \(Int(maxBubbleWidth))px;
             min-width: 1px;
         }
         h1 { font-size: 1.6em; margin: 0.8em 0 0.4em; }
@@ -151,7 +154,7 @@ struct MarkdownWebView: NSViewRepresentable {
 
         function reportSize() {
             var el = document.getElementById('content');
-            var w = el.scrollWidth;
+            var w = Math.min(el.scrollWidth, \(Int(maxBubbleWidth)));
             var h = el.scrollHeight;
             if (w > 0 && h > 0) {
                 webkit.messageHandlers.sizeHandler.postMessage({width: w, height: h});
@@ -196,6 +199,7 @@ struct MarkdownWebView: NSViewRepresentable {
         var lastMarkdown: String?
         weak var webView: WKWebView?
         var onSizeChange: ((CGFloat, CGFloat) -> Void)?
+        var maxWidth: CGFloat = 400
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == "sizeHandler",
@@ -208,7 +212,7 @@ struct MarkdownWebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(
-                "var el=document.getElementById('content');webkit.messageHandlers.sizeHandler.postMessage({width:el.scrollWidth,height:el.scrollHeight})",
+                "var el=document.getElementById('content');webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(Int(maxWidth))),height:el.scrollHeight})",
                 completionHandler: nil
             )
         }
