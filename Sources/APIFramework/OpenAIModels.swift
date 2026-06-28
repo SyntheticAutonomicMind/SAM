@@ -159,7 +159,7 @@ public struct OpenAIChatRequest: Content {
     /// SAM conversation ID (UUID) for conversation-scoped operations Maps to ConversationModel.id - used with exported conversations.
     public let conversationId: String?
 
-    /// GitHub Copilot session continuity marker (from previous response) Prevents multiple premium billing charges during tool calling iterations.
+    /// GitHub Copilot session continuity marker (from previous response). Ensures tool calling iterations share the same conversation session, reducing token cost.
     public let statefulMarker: String?
 
     /// Iteration number for tool calling loop (0 = initial user request, 1+ = agent continuation) Used to set X-Initiator header: 0 = 'user', 1+ = 'agent' (fixes billing bug).

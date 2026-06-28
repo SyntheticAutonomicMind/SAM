@@ -8,7 +8,6 @@ import ConfigurationSystem
 import MCPFramework
 import SharedData
 import Logging
-@MainActor
 public class SAMAPIServer: ObservableObject {
     private let logger = Logging.Logger(label: "com.sam.apiserver")
     private var app: Application?
@@ -21,8 +20,8 @@ public class SAMAPIServer: ObservableObject {
     private let folderManager: FolderManager
 
     @Published public var isRunning: Bool = false
-    @Published public var serverPort: Int = UserDefaults.standard.object(forKey: "apiServerPort") as? Int ?? 8080
-    @Published public var serverURL: String = {
+    @MainActor @Published public var serverPort: Int = UserDefaults.standard.object(forKey: "apiServerPort") as? Int ?? 8080
+    @MainActor @Published public var serverURL: String = {
         let port = UserDefaults.standard.object(forKey: "apiServerPort") as? Int ?? 8080
         return "http://127.0.0.1:\(port)"
     }()
@@ -53,6 +52,7 @@ public class SAMAPIServer: ObservableObject {
 
     // MARK: - Lifecycle
 
+    @MainActor
     public func startServer(port: Int? = nil) async throws {
         /// Use provided port, or get from user preferences, or default to 8080.
         let actualPort = port ?? (UserDefaults.standard.object(forKey: "apiServerPort") as? Int) ?? 8080
@@ -134,6 +134,7 @@ public class SAMAPIServer: ObservableObject {
         }
     }
 
+    @MainActor
     public func stopServer() async {
         guard let app = app, isRunning else {
             logger.warning("Server not running")

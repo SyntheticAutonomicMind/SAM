@@ -54,7 +54,7 @@ extension AgentOrchestrator {
             )
         }
 
-        /// CONTEXT MANAGEMENT: Use YARN exclusively CRITICAL Context pruning was causing premium billing charges because it calls GitHub API to generate summaries.
+        /// CONTEXT MANAGEMENT: Use YARN exclusively. Context pruning was causing unnecessary API calls because it calls GitHub API to generate summaries.
         logger.debug("CONTEXT_MANAGEMENT: Using YARN for context compression (no API calls, no premium charges)")
 
         /// Build messages array: system prompt + conversation messages + internal tool messages.
@@ -1103,7 +1103,7 @@ extension AgentOrchestrator {
             )
         }
 
-        /// CONTEXT MANAGEMENT: Use YARN exclusively CRITICAL Context pruning was causing premium billing charges because it calls GitHub API to generate summaries.
+        /// CONTEXT MANAGEMENT: Use YARN exclusively. Context pruning was causing unnecessary API calls because it calls GitHub API to generate summaries.
         logger.debug("CONTEXT_MANAGEMENT: Using YARN for context compression (no API calls, no premium charges)")
 
         /// Build messages array: system prompt + conversation messages + internal tool messages.
@@ -2010,7 +2010,7 @@ extension AgentOrchestrator {
                     streamingToolCalls.update(toolCallsArray: toolCalls)
                 }
 
-                /// Capture statefulMarker for GitHub Copilot session continuity Prevents multiple premium billing charges during tool calling iterations.
+                /// Capture statefulMarker for GitHub Copilot session continuity. Ensures tool calling iterations share the same conversation session, reducing token cost.
                 if let marker = delta.statefulMarker {
                     statefulMarker = marker
                     logger.debug("callLLMStreaming: Captured statefulMarker for session continuity: \(marker.prefix(20))...")

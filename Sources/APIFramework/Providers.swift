@@ -76,7 +76,20 @@ public class OpenAIProvider: AIProvider {
         let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
         for line in lines {
             let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmedLine.isEmpty else { continue }
+            if trimmedLine.isEmpty {
+                /// Preserve blank line (paragraph break) for markdown rendering
+                chunks.append(ServerOpenAIChatStreamChunk(
+                    id: response.id,
+                    object: "chat.completion.chunk",
+                    created: response.created,
+                    model: response.model,
+                    choices: [OpenAIChatStreamChoice(
+                        index: 0,
+                        delta: OpenAIChatDelta(content: "\n")
+                    )]
+                ))
+                continue
+            }
             
             let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
             for (index, word) in words.enumerated() {
@@ -509,8 +522,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         urlRequest.setValue("vscode/\(samVersion)", forHTTPHeaderField: "Editor-Version")
         urlRequest.setValue("GitHubCopilotChat/\(samVersion)", forHTTPHeaderField: "User-Agent")
 
-        /// Additional headers required for billing metadata (is_premium, multiplier)
-        /// GitHub Copilot API billing metadata requirements
+        /// Standard headers required for GitHub Copilot API requests
         urlRequest.setValue(UUID().uuidString, forHTTPHeaderField: "X-Request-Id")
         urlRequest.setValue("model-access", forHTTPHeaderField: "OpenAI-Intent")
         urlRequest.setValue("2025-05-01", forHTTPHeaderField: "X-GitHub-Api-Version")
@@ -915,9 +927,6 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                         self.minimumRequestInterval = self.baseInterval
                     }
 
-                    /// PREMIUM QUOTA TRACKING: Extract quota information from response headers.
-                    await processGitHubCopilotQuotaHeaders(httpResponse.allHeaderFields, requestId: requestId)
-
                     var incompleteBuffer = ""
                     var byteBuffer: [UInt8] = []
 
@@ -1057,9 +1066,6 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
             logger.debug("GitHub Copilot API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
 
-            /// PREMIUM QUOTA TRACKING: Extract quota information from response headers.
-            await processGitHubCopilotQuotaHeaders(httpResponse.allHeaderFields, requestId: requestId)
-
             /// Handle different HTTP status codes appropriately.
             guard 200...299 ~= httpResponse.statusCode else {
                 let errorMessage = String(data: data, encoding: .utf8) ?? "No error details available"
@@ -1095,7 +1101,6 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                         retryRequest.setValue("Bearer \(freshToken)", forHTTPHeaderField: "Authorization")
                         let (retryData, retryResponse) = try await URLSession.shared.data(for: retryRequest)
                         if let retryHttp = retryResponse as? HTTPURLResponse, 200...299 ~= retryHttp.statusCode {
-                            await processGitHubCopilotQuotaHeaders(retryHttp.allHeaderFields, requestId: requestId)
                             return try parseGitHubCopilotResponse(retryData, requestId: requestId)
                         }
                         // Retry also failed - fall through to error
@@ -1335,8 +1340,8 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         urlRequest.setValue("vscode/\(samVersion)", forHTTPHeaderField: "Editor-Version")
         urlRequest.setValue("copilot-chat/\(samVersion)", forHTTPHeaderField: "Editor-Plugin-Version")
 
-        /// X-Initiator controls premium billing:
-        /// 'user' (iteration 0): User-initiated request, charges premium quota
+        /// X-Initiator controls billing tier:
+        /// 'user' (iteration 0): User-initiated request, counts against quota
         /// 'agent' (iteration 1+): Tool-calling continuation, no additional charge
         let initiator = (request.iterationNumber ?? 0) == 0 ? "user" : "agent"
         urlRequest.setValue(initiator, forHTTPHeaderField: "X-Initiator")
@@ -1390,7 +1395,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             requestBody["copilot_thread_id"] = sessionId
             logger.debug("Including copilot_thread_id (from sessionId): \(sessionId) for session continuity")
         } else {
-            logger.warning("No conversationId or sessionId provided - GitHub Copilot will treat this as a new session (premium request will increment)")
+            logger.warning("No conversationId or sessionId provided - GitHub Copilot will treat this as a standalone request")
         }
 
         if let responseId = request.statefulMarker {
@@ -2024,7 +2029,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         urlRequest.setValue("vscode/\(samVersion)", forHTTPHeaderField: "Editor-Version")
         urlRequest.setValue("copilot-chat/\(samVersion)", forHTTPHeaderField: "Editor-Plugin-Version")
 
-        /// X-Initiator for premium billing control
+        /// X-Initiator for billing tier control
         let initiator = (request.iterationNumber ?? 0) == 0 ? "user" : "agent"
         urlRequest.setValue(initiator, forHTTPHeaderField: "X-Initiator")
         logger.debug("Copilot Responses API headers: initiator=\(initiator), request_id=\(requestId.prefix(8))")
@@ -2082,7 +2087,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         if let prevId = result.previousResponseId {
             logger.warning("WARNING: BILLING_DEBUG: Sending previousResponseId=\(prevId.prefix(20))... with \(input.count) input items - GitHub should recognize session continuity")
         } else {
-            logger.debug("INFO: BILLING_DEBUG: No previousResponseId - GitHub will treat as NEW premium session")
+            logger.debug("INFO: SESSION_DEBUG: No previousResponseId - GitHub will start a new conversation session")
         }
 
         let encoder = JSONEncoder()
@@ -2279,7 +2284,7 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         return true
     }
 
-    // MARK: - Premium Quota Tracking
+    // MARK: - Quota & Usage Tracking
 
     /// Quota information structure for UI display
     /// Supports both legacy PRU-based billing (annual plans) and AI Credit-based billing (monthly plans, June 2026+)
@@ -2305,7 +2310,6 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         
         /// Billing mode: PRU-based (legacy annual plans) or AI Credit-based (monthly plans)
         public enum BillingMode: String, Codable, Sendable {
-            case pruBased = "pru"          // Legacy: premium request units
             case aiCredits = "ai_credits"  // New: token-based AI credits
         }
 
@@ -2354,26 +2358,6 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
             self.creditsAllowance = creditsAllowance
             self.billingMode = billingMode
         }
-        
-        /// Create QuotaInfo from CopilotUserResponse premium quota (legacy PRU-based)
-        public static func from(userResponse: CopilotUserResponse) -> QuotaInfo? {
-            guard let premium = userResponse.premiumQuota else { return nil }
-            
-            return QuotaInfo(
-                entitlement: premium.entitlement,
-                used: premium.used,
-                percentRemaining: premium.percentRemaining,
-                overageUsed: Double(premium.overageCount ?? 0),
-                overagePermitted: premium.overagePermitted ?? false,
-                resetDate: userResponse.quotaResetDateUTC ?? "unknown",
-                overageCount: premium.overageCount,
-                login: userResponse.login,
-                copilotPlan: userResponse.copilotPlan,
-                remaining: premium.remaining,
-                billingMode: .pruBased
-            )
-        }
-        
         /// Create QuotaInfo from AI Credit usage data (June 2026+)
         public static func fromAICredits(creditsUsed: Double, creditsAllowance: Double, resetDate: String, login: String? = nil, copilotPlan: String? = nil) -> QuotaInfo {
             let percentRemaining = creditsAllowance > 0 ? ((creditsAllowance - creditsUsed) / creditsAllowance) * 100.0 : 0
@@ -2395,102 +2379,6 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
 
     /// Current quota information (updated after each API call)
     @Published public private(set) var currentQuotaInfo: QuotaInfo?
-
-    /// Static variable to track last known premium quota for delta detection.
-    @MainActor
-    private static var lastPremiumQuotaUsed: Int?
-    // NSLock removed - using @MainActor isolation instead
-
-    /// Process GitHub Copilot quota headers from API response
-    /// **Purpose**: Extract and track premium model usage to warn users before quota exhaustion
-    ///
-    /// **Legacy (PRU-based, annual plans)**: Quota headers contain premium request counts
-    /// - `x-quota-snapshot-premium_models`: Premium model usage (GPT-4, etc.)
-    /// - `x-quota-snapshot-premium_interactions`: Alternative header for premium usage
-    /// - `x-quota-snapshot-chat`: Free tier usage (GPT-3.5, etc.)
-    ///
-    /// **New (AI Credits, June 2026+)**: Quota headers may be absent.
-    /// Usage tracking is now in the response body via `copilot_usage` field.
-    /// This method handles both formats gracefully.
-    private func processGitHubCopilotQuotaHeaders(_ headers: [AnyHashable: Any], requestId: String) async {
-        /// Check for premium quota headers (legacy PRU-based billing).
-        let quotaHeader = headers["x-quota-snapshot-premium_models"] as? String
-            ?? headers["x-quota-snapshot-premium_interactions"] as? String
-            ?? headers["x-quota-snapshot-chat"] as? String
-
-        guard let quotaHeader = quotaHeader else {
-            /// No quota headers - normal for AI Credit-based billing (June 2026+).
-            /// Usage is tracked via copilot_usage in the response body instead.
-            return
-        }
-
-        /// Parse URL encoded string into key-value pairs.
-        guard let components = URLComponents(string: "http://dummy.com?\(quotaHeader)") else {
-            logger.warning("Failed to parse quota header format")
-            return
-        }
-
-        var quotaInfo: [String: String] = [:]
-        for item in components.queryItems ?? [] {
-            if let value = item.value {
-                quotaInfo[item.name] = value
-            }
-        }
-
-        /// Extract quota values.
-        let entitlement = Int(quotaInfo["ent"] ?? "0") ?? 0
-        let overageUsed = Double(quotaInfo["ov"] ?? "0.0") ?? 0.0
-        let overagePermitted = quotaInfo["ovPerm"] == "true"
-        let percentRemaining = Double(quotaInfo["rem"] ?? "0.0") ?? 0.0
-        let resetDate = quotaInfo["rst"] ?? "unknown"
-
-        /// Calculate used based on entitlement and remaining.
-        let used = max(0, Int(Double(entitlement) * (1.0 - percentRemaining / 100.0)))
-
-        /// Calculate delta (change from last request) for premium quota tracking.
-        /// Update published quota info for UI display
-        let deltaInfo = await MainActor.run { () -> String in
-            var delta = ""
-            if let lastUsed = GitHubCopilotProvider.lastPremiumQuotaUsed {
-                let change = used - lastUsed
-                if change > 0 {
-                    delta = " [+\(change) PREMIUM REQUEST CHARGED]"
-                } else if change < 0 {
-                    delta = " [WARNING: \(change) - quota decreased?]"
-                } else {
-                    delta = " [SUCCESS: +0 - NO CHARGE (session continuity working!)]"
-                }
-            } else {
-                delta = " [Initial request - baseline established]"
-            }
-            GitHubCopilotProvider.lastPremiumQuotaUsed = used
-
-            self.currentQuotaInfo = QuotaInfo(
-                entitlement: entitlement,
-                used: used,
-                percentRemaining: percentRemaining,
-                overageUsed: overageUsed,
-                overagePermitted: overagePermitted,
-                resetDate: resetDate
-            )
-            return delta
-        }
-
-        /// Save to cache for next session
-        saveQuotaCache()
-
-        /// Log quota information.
-        logger.debug("GitHub Copilot Premium Quota [req:\(requestId.prefix(8))]:")
-        logger.debug(" - Entitlement: \(entitlement == -1 ? "Unlimited" : "\(entitlement)")")
-        logger.debug(" - Used: \(used)\(deltaInfo)")
-        logger.debug(" - Remaining: \(String(format: "%.1f%%", percentRemaining))")
-        logger.debug(" - Overage: \(String(format: "%.1f", overageUsed)) (permitted: \(overagePermitted))")
-        logger.debug(" - Reset Date: \(resetDate)")
-
-        /// Calculate human-readable quota status.
-        let available = entitlement == -1 ? "unlimited" : "\(max(0, entitlement - used))"
-        logger.debug(" - Status: \(used)/\(entitlement == -1 ? "∞" : "\(entitlement)") premium requests used (\(available) available)")
-    }
 
     /// Process copilot_usage from a GitHub Copilot response body.
     /// As of June 2026, GitHub Copilot returns token-based billing data in the response body

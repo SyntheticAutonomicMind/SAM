@@ -1655,8 +1655,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     context.duplicateToolCallCount = 0
                 }
 
-                // Record all signatures for future duplicate detection.
-                context.previousToolCallSignatures.formUnion(currentSignatures)
+                // Record current signatures for next round's duplicate detection.
+                // Only compare against the most recent batch (not cumulative union)
+                // to avoid false negatives when the model adds new tools to a repeated batch.
+                context.previousToolCallSignatures = currentSignatures
 
                 context.toolsExecutedInWorkflow = true
 

@@ -85,7 +85,6 @@ public struct GitHubCopilotModelInfo: Codable {
     public let name: String?
     public let capabilities: ModelCapabilities?
     public let enabled: Bool?
-    public let billing: ModelBilling?  // Legacy: removed from API June 2026, kept for backward compat
     public let policy: ModelPolicy?
     public let supportedEndpoints: [ModelSupportedEndpoint]?
     public let modelPickerCategory: ModelPickerCategory?
@@ -95,6 +94,7 @@ public struct GitHubCopilotModelInfo: Codable {
     public let warningMessage: String?
 
     enum CodingKeys: String, CodingKey {
+        case id, name, capabilities, enabled, policy, vendor, preview
         case id, name, capabilities, enabled, billing, policy, vendor, preview
         case supportedEndpoints = "supported_endpoints"
         case modelPickerCategory = "model_picker_category"
@@ -192,32 +192,11 @@ public struct GitHubCopilotModelInfo: Codable {
         }
     }
 
-    public struct ModelBilling: Codable, Sendable {
-        /// Legacy fields kept for backward compat with cached responses.
-        /// billing field was removed from the GitHub Copilot /models API in June 2026.
-        public let isPremium: Bool
-        public let multiplier: Double?
-        public let restrictedTo: [String]?
-
-        enum CodingKeys: String, CodingKey {
-            case isPremium = "is_premium"
-            case multiplier
-            case restrictedTo = "restricted_to"
-        }
-
-        public init(isPremium: Bool, multiplier: Double?, restrictedTo: [String]?) {
-            self.isPremium = isPremium
-            self.multiplier = multiplier
-            self.restrictedTo = restrictedTo
-        }
-    }
-
-    public init(id: String, name: String?, capabilities: ModelCapabilities?, enabled: Bool?, billing: ModelBilling?) {
+    public init(id: String, name: String?, capabilities: ModelCapabilities?, enabled: Bool?) {
         self.id = id
         self.name = name
         self.capabilities = capabilities
         self.enabled = enabled
-        self.billing = billing
         self.policy = nil
         self.supportedEndpoints = nil
         self.modelPickerCategory = nil

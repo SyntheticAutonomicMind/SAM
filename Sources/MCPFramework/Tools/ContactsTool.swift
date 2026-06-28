@@ -370,6 +370,8 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
                 return MCPToolResult(success: false, output: MCPOutput(content: "Contact not found with ID: \(contactId)"))
             }
 
+            /// CNContact.mutableCopy() is documented by Apple to always return CNMutableContact.
+            /// The force-cast is safe; there's no scenario where mutableCopy() returns a different type.
             let mutable = existing.mutableCopy() as! CNMutableContact
 
             if let firstName = parameters["first_name"] as? String { mutable.givenName = firstName }

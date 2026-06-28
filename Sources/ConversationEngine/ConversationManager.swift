@@ -171,8 +171,10 @@ public class ConversationManager: ObservableObject {
 
         /// Use user's preferred default system prompt (or SAM Default if not set)
         let promptManager = SystemPromptManager.shared
+        let samDefaultUUIDString = "00000000-0000-0000-0000-000000000001"
         let defaultPromptUUID = UUID(uuidString: promptManager.defaultSystemPromptId)
-            ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+            ?? UUID(uuidString: samDefaultUUIDString)
+            ?? UUID()
 
         conversation.settings.selectedSystemPromptId = defaultPromptUUID
         logger.debug("Set new conversation to use default system prompt: \(defaultPromptUUID)")

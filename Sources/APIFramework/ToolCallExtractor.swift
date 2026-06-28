@@ -32,6 +32,18 @@ public class ToolCallExtractor {
         }
     }
 
+    /// Clean trailing quote from MLX/local model tool call arguments.
+    /// Some local models append an extra `"` to the JSON arguments string,
+    /// producing `{...}"` which breaks JSON parsing. This strips the trailing
+    /// quote when the arguments begin with `{` and end with `"`.
+    public static func cleanToolArguments(_ arguments: String) -> String {
+        var cleaned = arguments
+        if cleaned.hasSuffix("\"") && cleaned.hasPrefix("{") {
+            cleaned = String(cleaned.dropLast())
+        }
+        return cleaned
+    }
+
     public func extract(from content: String) -> ([ToolCall], String, ToolCallFormat) {
         /// STEP 0A: Qwen2-style format (for Qwen2.5-Coder models) Pattern: FUNCTION: tool_name\nARGS: {...} This uses unique Unicode flower characters that won't appear in normal conversation See: https://github.com/QwenLM/Qwen-Agent for canonical implementation.
         if content.contains("FUNCTION") || content.contains("ARGS") {

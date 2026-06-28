@@ -87,14 +87,7 @@ public class SharedConversationService: ObservableObject {
 
             do {
                 /// Strip trailing quote if present (MLX models add extra quote).
-                var cleanedArguments = toolCall.function.arguments
-                logger.debug("DEBUG_ARGS: Raw: [\(cleanedArguments)]")
-                logger.debug("DEBUG_ARGS: HasPrefix{: \(cleanedArguments.hasPrefix("{")), HasSuffix\": \(cleanedArguments.hasSuffix("\""))")
-
-                if cleanedArguments.hasSuffix("\"") && cleanedArguments.hasPrefix("{") {
-                    cleanedArguments = String(cleanedArguments.dropLast())
-                    logger.debug("DEBUG_ARGS: SUCCESS - Stripped trailing quote")
-                }
+                let cleanedArguments = ToolCallExtractor.cleanToolArguments(toolCall.function.arguments)
 
                 /// Parse tool arguments with cleaned string.
                 let argumentsData = cleanedArguments.data(using: .utf8) ?? Data()
@@ -190,14 +183,7 @@ public class SharedConversationService: ObservableObject {
 
             do {
                 /// Strip trailing quote if present (MLX models add extra quote).
-                var cleanedArguments = toolCall.function.arguments
-                logger.debug("DEBUG: Raw arguments before cleaning: [\(cleanedArguments)]")
-                logger.debug("DEBUG: Starts with {: \(cleanedArguments.hasPrefix("{")), Ends with \": \(cleanedArguments.hasSuffix("\""))")
-
-                if cleanedArguments.hasSuffix("\"") && cleanedArguments.hasPrefix("{") {
-                    cleanedArguments = String(cleanedArguments.dropLast())
-                    logger.debug("DEBUG: SUCCESS - Stripped trailing quote from arguments")
-                }
+                let cleanedArguments = ToolCallExtractor.cleanToolArguments(toolCall.function.arguments)
 
                 /// Parse tool arguments with cleaned string.
                 let argumentsData = cleanedArguments.data(using: .utf8) ?? Data()
@@ -766,7 +752,9 @@ public class SharedConversationService: ObservableObject {
 
         /// Maximum number of tool call iterations before forcing termination.
         /// Prevents infinite loops when the LLM keeps returning tool calls.
-        let maxIterations = originalRequest.samConfig?.maxIterations ?? 10
+        /// Uses WorkflowConfiguration.defaultMaxIterations (300) as the default
+        /// to match AgentOrchestrator's behavior. samConfig can override for external API calls.
+        let maxIterations = originalRequest.samConfig?.maxIterations ?? WorkflowConfiguration.defaultMaxIterations
 
         guard iteration <= maxIterations else {
             logger.warning("SHARED_SERVICE: Feedback loop reached max iterations (\(maxIterations)), terminating")
@@ -831,13 +819,7 @@ public class SharedConversationService: ObservableObject {
 
             do {
                 /// Strip trailing quote if present (MLX models add extra quote).
-                var cleanedArguments = toolCall.function.arguments
-                logger.debug("DEBUG_LOOP: Raw arguments: [\(cleanedArguments)]")
-
-                if cleanedArguments.hasSuffix("\"") && cleanedArguments.hasPrefix("{") {
-                    cleanedArguments = String(cleanedArguments.dropLast())
-                    logger.debug("DEBUG_LOOP: SUCCESS - Stripped trailing quote")
-                }
+                let cleanedArguments = ToolCallExtractor.cleanToolArguments(toolCall.function.arguments)
 
                 let argumentsData = cleanedArguments.data(using: .utf8) ?? Data()
                 let arguments = try JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] ?? [:]

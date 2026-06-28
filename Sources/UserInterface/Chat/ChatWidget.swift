@@ -220,6 +220,9 @@ public struct ChatWidget: View {
     /// Flag to prevent sending while files are being copied
     @State var isAttachingFiles: Bool = false
 
+    /// Counter to prevent infinite retry loop in sendMessage attachment wait
+    @State var attachmentRetryCount: Int = 0
+
     /// Agent todo list.
     @State var showingTodoListPopover = false
     /// Agent todo list - computed from TodoManager (reactive to changes)
@@ -1953,13 +1956,26 @@ public struct ChatWidget: View {
         /// RACE CONDITION FIX: Wait if files are still being copied
         /// This prevents the agent from trying to import files before the copy completes
         if isAttachingFiles {
-            logger.warning("Send blocked - waiting for file attachments to complete")
-            /// Schedule retry after a brief delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
-                self.sendMessage()
+            attachmentRetryCount += 1
+            guard attachmentRetryCount < 30 else {
+                logger.error("Attachment wait timed out after \(attachmentRetryCount) retries (3 seconds) - sending anyway")
+                /// Reset and continue with message
+                attachmentRetryCount = 0
+                isAttachingFiles = false
+                // Fall through to send
             }
-            return
+            if isAttachingFiles {
+                logger.warning("Send blocked - waiting for file attachments to complete")
+                /// Schedule retry after a brief delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
+                    self.sendMessage()
+                }
+                return
+            }
         }
+        
+        /// Reset attachment retry counter on successful send entry
+        attachmentRetryCount = 0
 
         let originalText = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         var textForAPI = originalText
