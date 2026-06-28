@@ -1,7 +1,7 @@
 {
   "releases": [
     {
-      "version": "20260628.1",
+      "version": "20260628.2",
       "release_date": "June 28, 2026",
       "introduction": "Local models get a new engine with explicit sampler controls you can tune per conversation. You can now select text in message bubbles and copy it - and print works properly again with correct multi-page formatting. The bottom bar is cleaner with one organized Controls popover instead of two separate menus. Mini-Prompts get a clearer name: Custom Instructions.",
       "highlights": [
