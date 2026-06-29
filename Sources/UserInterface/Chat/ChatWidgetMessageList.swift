@@ -23,76 +23,82 @@ extension ChatWidget {
     /// messageList to keep Swift's type-checker within its timeout budget
     /// (CI Xcode 26.2 was failing with "unable to type-check this expression
     /// in reasonable time" because the chained modifier graph was too deep).
+    /// Further split into 3 builder functions because Xcode 26.2 still
+    /// timed out on the 15-modifier chain in a single @ViewBuilder.
     @ViewBuilder
     func messageListScrollView(proxy: ScrollViewProxy) -> some View {
+        applyNotificationModifiers(
+            applyScrollTrackingModifiers(
+                baseScrollContent(),
+                proxy: proxy
+            ),
+            proxy: proxy
+        )
+    }
+
+    @ViewBuilder
+    func baseScrollContent() -> some View {
         ScrollView {
             if let activeConv = activeConversation {
                 messagesVStack(for: activeConv)
-                    .id(activeConv.id)  /// Force recreation only when conversation changes
+                    .id(activeConv.id)
             }
         }
-        .scrollPosition(id: $bottomVisibleItemId, anchor: .bottom)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
-        .onChange(of: bottomVisibleItemId) { _, newId in
-            /// FOLLOW-OUTPUT: track whether the bottom anchor is visible
-            /// at the bottom of the viewport. If not, the user has
-            /// scrolled away from the latest content and we should
-            /// pause auto-scroll to avoid yanking them back.
-            updateFollowingOutput(scrollItemId: newId)
-        }
+    }
+
+    @ViewBuilder
+    func applyScrollTrackingModifiers<Content: View>(_ content: Content, proxy: ScrollViewProxy) -> some View {
+        content
+            .scrollPosition(id: $bottomVisibleItemId, anchor: .bottom)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .onChange(of: bottomVisibleItemId) { _, newId in
+                updateFollowingOutput(scrollItemId: newId)
+            }
         .onChange(of: messages.count) { _, _ in
-            /// New message added or removed - scroll if auto-scroll is active
             guard scrollLockEnabled, isFollowingOutput, let lastMessage = messages.last else { return }
             performThrottledScroll(proxy: proxy, to: lastMessage)
         }
         .onChange(of: messages.last?.content.count) { _, _ in
-            /// Streaming content update - only scroll during active streaming
             guard scrollLockEnabled, isFollowingOutput,
                   let lastMessage = messages.last,
                   lastMessage.isStreaming else { return }
             performThrottledScroll(proxy: proxy, to: lastMessage)
         }
         .onChange(of: messages.last?.type) { _, newType in
-            /// Tool card or thinking type change - scroll to make visible
             guard scrollLockEnabled, isFollowingOutput,
                   let lastMessage = messages.last,
                   newType == .toolExecution || newType == .thinking else { return }
             performThrottledScroll(proxy: proxy, to: lastMessage)
         }
         .onChange(of: messages.last?.isStreaming) { oldValue, newValue in
-            /// Streaming completion scroll: when streaming ends, layout recomputes
-            /// (ProgressView removed, metrics added, content re-parsed).
-            /// Scroll to bottom anchor after layout settles to keep content visible.
             if oldValue == true && newValue == false {
                 guard scrollLockEnabled, isFollowingOutput else { return }
                 Task { @MainActor in
-                    /// 150ms allows layout to settle after streaming->complete transition
                     try? await Task.sleep(for: .milliseconds(150))
                     proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
                 }
             }
         }
         .onChange(of: messages) { _, newMessages in
-            /// Cache tool hierarchy and prune stale message cache
             cachedToolHierarchy = buildToolHierarchy(messages: newMessages)
             let currentMessageIds = Set(newMessages.map { $0.id })
             cachedCleanedMessages = cachedCleanedMessages.filter { currentMessageIds.contains($0.key) }
         }
         .onAppear {
             scrollProxy = proxy
-            /// Reset follow state on appear so a newly-opened chat starts
-            /// following the latest content.
             isFollowingOutput = true
         }
         .overlay(alignment: .bottom) {
-            /// "Jump to latest" pill: only visible when the user has
-            /// scrolled away from the bottom while scroll-lock is
-            /// enabled. Click to resume auto-follow.
             if scrollLockEnabled && !isFollowingOutput {
                 jumpToLatestPill(proxy: proxy)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .scrollToTop)) { _ in
+    }
+
+    @ViewBuilder
+    func applyNotificationModifiers<Content: View>(_ content: Content, proxy: ScrollViewProxy) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .scrollToTop)) { _ in
             if let firstMessage = messages.first {
                 withAnimation(.easeOut(duration: 0.3)) {
                     proxy.scrollTo(firstMessage.id.uuidString, anchor: .top)
@@ -103,14 +109,10 @@ extension ChatWidget {
             withAnimation(.easeOut(duration: 0.3)) {
                 proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
             }
-            /// Explicit scroll-to-bottom re-enables follow.
             isFollowingOutput = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .pageUp)) { _ in
             pageScroll(proxy: proxy, direction: .up)
-            /// PgUp is a manual scroll-up: pause auto-follow so the
-            /// user's reading position is preserved when more content
-            /// streams in.
             isFollowingOutput = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .pageDown)) { _ in
