@@ -1,6 +1,40 @@
 {
   "releases": [
     {
+      "version": "20260629.1",
+      "release_date": "June 29, 2026",
+      "introduction": "Message bubbles fit cleanly inside the chat column on both sides. Auto-scroll only moves when you're at the bottom of the conversation, so streaming content stays visible while you read. The copy button now lets you choose between raw source and formatted text.",
+      "highlights": [],
+      "improvements": [
+        {
+          "id": "copy-button-choice",
+          "icon": "doc.on.doc",
+          "title": "Copy Button Offers Source or Formatted Text",
+          "description": "The copy icon in message bubbles now opens a menu with two options: Copy Source for the raw markdown, or Copy Formatted for rich text with the rendered styling intact. Paste into TextEdit, Mail, or Slack to keep the formatting, or paste into a plain-text field to get the raw markdown."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "user-bubble-overflow",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed User Bubble Overflowing the Chat Column",
+          "description": "User message bubbles extended past the right edge of the chat column while assistant bubbles stayed inside. The bubble's horizontal padding was being added on top of the available width instead of being included in it. Both directions now use the same fitting math, so the bubble background sits inside its container."
+        },
+        {
+          "id": "autoscroll-content-disappear",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Auto-Scroll Hiding Streaming Content",
+          "description": "While the assistant was generating a response, the chat would scroll to the bottom of every new token even if you had scrolled up to read. The generated content went off-screen until you scrolled back to the top of the response. Now auto-scroll only kicks in when you're at the bottom of the conversation, and a small Latest pill appears when you scroll up so you can jump back to the current message when you're ready."
+        },
+        {
+          "id": "think-tag-leak",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed </think> Tags Leaking into Assistant Messages",
+          "description": "Reasoning tags from models that emit <think>...</think> blocks occasionally leaked through into the rendered message - either as the whole message or as a stray </think> fragment. The provider-side stripping now has a UI-level safety net that catches tags split across chunk boundaries."
+        }
+      ]
+    },
+    {
       "version": "20260628.2",
       "release_date": "June 28, 2026",
       "introduction": "Local models get a new engine with explicit sampler controls you can tune per conversation. You can now select text in message bubbles and copy it - and print works properly again with correct multi-page formatting. The bottom bar is cleaner with one organized Controls popover instead of two separate menus. Mini-Prompts get a clearer name: Custom Instructions.",
