@@ -31,6 +31,7 @@ struct MessageBubble: View {
     let displayContent: String
 
     @State private var showCopyConfirmation = false
+    @State private var showCopyMenu = false
     @State private var bubbleHeight: CGFloat = 100
     @State private var reloadTrigger = UUID()
 
@@ -151,21 +152,48 @@ struct MessageBubble: View {
             .foregroundColor(.secondary)
             .help("Reload message")
 
-            /// Copy menu: gives the user a choice between raw markdown
-            /// ("Copy Source") and the rendered message as formatted text
-            /// ("Copy Formatted"). A borderless Menu reads as a regular
-            /// icon button while exposing both options on click.
-            Menu {
-                Button("Copy Source") { copySource() }
-                Button("Copy Formatted") { copyFormatted() }
+            /// Copy button: regular Button (matches the surrounding icon buttons)
+            /// that opens a popover offering raw markdown ("Copy Source") or
+            /// the rendered message as rich text ("Copy Formatted"). Using a
+            /// Popover here rather than Menu keeps the icon visually identical
+            /// to the adjacent reload/export/print icons - Menu adds its own
+            /// internal padding for the indicator that doesn't go away with
+            /// .menuIndicator(.hidden).
+            Button {
+                showCopyMenu.toggle()
             } label: {
                 Image(systemName: showCopyConfirmation ? "checkmark" : "doc.on.doc")
                     .font(.caption2)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
             .foregroundColor(.secondary)
             .help("Copy message")
+            .popover(isPresented: $showCopyMenu, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Button {
+                        copySource()
+                        showCopyMenu = false
+                    } label: {
+                        Label("Copy Source", systemImage: "doc.plaintext")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+
+                    Button {
+                        copyFormatted()
+                        showCopyMenu = false
+                    } label: {
+                        Label("Copy Formatted", systemImage: "text.alignleft")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .padding(.vertical, 6)
+            }
 
             Button(action: { messageToExport = message }) {
                 Image(systemName: "square.and.arrow.up")
