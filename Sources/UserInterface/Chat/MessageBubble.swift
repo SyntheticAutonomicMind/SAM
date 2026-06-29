@@ -77,7 +77,10 @@ struct MessageBubble: View {
             }
         }
         .contextMenu {
-            Button("Copy Message") { copyMessage() }
+            Menu("Copy") {
+                Button("Copy Source") { copySource() }
+                Button("Copy Formatted") { copyFormatted() }
+            }
             Button("Reload Message") { reloadMessage() }
             Divider()
             Button("Export...") { messageToExport = message }
@@ -91,11 +94,18 @@ struct MessageBubble: View {
     /// (URLs, hashes) overflowed the chat frame.
     private var bubble: some View {
         GeometryReader { geo in
-            /// Cap the bubble to the chat column width (minus Spacer). Long
-            /// unbreakable strings (URLs, hashes) wrap via CSS word-wrap,
-            /// so no upper cap is needed. minBubbleWidth prevents awkwardly
-            /// narrow bubbles on tiny windows.
-            let width = max(geo.size.width, Self.minBubbleWidth)
+            /// Cap the bubble to the chat column width. Long unbreakable
+            /// strings (URLs, hashes) wrap via CSS word-wrap, so no upper
+            /// cap is needed. minBubbleWidth prevents awkwardly narrow
+            /// bubbles on tiny windows.
+            ///
+            /// Subtract 32pt for the 16pt horizontal padding on each side
+            /// so the bubble background fits within the parent VStack
+            /// instead of overflowing the chat column. The assistant bubble
+            /// had this same bug but the overflow was on the left where the
+            /// ScrollView clips it; the user bubble overflows on the right
+            /// where it is visible.
+            let width = max(geo.size.width - 32, Self.minBubbleWidth)
 
             MarkdownWebView(
                 markdown: displayContent,
@@ -141,11 +151,19 @@ struct MessageBubble: View {
             .foregroundColor(.secondary)
             .help("Reload message")
 
-            Button(action: copyMessage) {
+            /// Copy menu: gives the user a choice between raw markdown
+            /// ("Copy Source") and the rendered message as formatted text
+            /// ("Copy Formatted"). A borderless Menu reads as a regular
+            /// icon button while exposing both options on click.
+            Menu {
+                Button("Copy Source") { copySource() }
+                Button("Copy Formatted") { copyFormatted() }
+            } label: {
                 Image(systemName: showCopyConfirmation ? "checkmark" : "doc.on.doc")
                     .font(.caption2)
             }
-            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .foregroundColor(.secondary)
             .help("Copy message")
 
@@ -193,9 +211,42 @@ struct MessageBubble: View {
         logger.info("Reloading \(isFromUser ? "user" : "assistant") message: \(message.id)")
     }
 
-    private func copyMessage() {
+    private func copySource() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(displayContent, forType: .string)
+        flashCopyConfirmation()
+    }
+
+    /// Copy message with formatting preserved (RTF). Also includes plain text
+    /// so targets that can't read RTF still get usable text. Empty-result
+    /// fallback: if RTF generation fails, fall back to plain text only.
+    @MainActor
+    private func copyFormatted() {
+        let parser = MarkdownASTParser()
+        let ast = parser.parse(displayContent)
+        let converter = MarkdownASTToNSAttributedString()
+        let attributed = converter.convertSync(ast)
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+
+        /// Plain text for plain-text targets.
+        pasteboard.setString(displayContent, forType: .string)
+
+        /// RTF for rich-text targets (TextEdit, Mail, Slack, etc.). When the
+        /// RTF generation fails we leave just plain text on the pasteboard.
+        if let rtfData = try? attributed.data(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        ) {
+            pasteboard.setData(rtfData, forType: .rtf)
+        }
+
+        flashCopyConfirmation()
+    }
+
+    /// Briefly show the checkmark indicator after a copy action, then reset.
+    private func flashCopyConfirmation() {
         showCopyConfirmation = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             showCopyConfirmation = false

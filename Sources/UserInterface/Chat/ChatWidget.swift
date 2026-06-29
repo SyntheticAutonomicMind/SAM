@@ -85,6 +85,19 @@ public struct ChatWidget: View {
     /// Global and persistent across all conversations and app restarts.
     @AppStorage("scrollLockEnabled") var scrollLockEnabled: Bool = true
 
+    /// Follow-output tracking: true when the user is "at the bottom" of the
+    /// message list and auto-scroll should follow new content. Becomes false
+    /// when the user scrolls up to read earlier messages so we stop yanking
+    /// the viewport. Resumes via the "Jump to latest" pill.
+    /// Decoupled from scrollLockEnabled (which is the user-set toggle) so
+    /// the toggle can stay enabled while follow is temporarily paused.
+    @State var isFollowingOutput: Bool = true
+
+    /// Item currently visible at the bottom of the scroll viewport, tracked
+    /// via `.scrollPosition(id:anchor:.bottom)`. When this matches the
+    /// "scroll-bottom-anchor" sentinel, the user is at the bottom.
+    @State var bottomVisibleItemId: String?
+
     /// User collaboration state.
     @State var isAwaitingUserInput = false
     @State var userCollaborationPrompt = ""
@@ -1933,6 +1946,12 @@ public struct ChatWidget: View {
         guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !isSending else { return }
 
+        /// Re-enable follow-output when the user sends a message. Otherwise
+        /// if the user has scrolled up to read earlier content the new
+        /// response (which they explicitly asked for) wouldn't auto-scroll
+        /// and they'd have to manually click "Jump to latest".
+        isFollowingOutput = true
+
         /// RACE CONDITION FIX: Wait if files are still being copied
         /// This prevents the agent from trying to import files before the copy completes
         if isAttachingFiles {
@@ -2253,6 +2272,9 @@ public struct ChatWidget: View {
 
         let userInput = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !userInput.isEmpty else { return }
+
+        /// Resume follow-output so the agent's response scrolls into view.
+        isFollowingOutput = true
 
         logger.info("USER_COLLAB: Submitting user response for collaboration tool call: \(toolCallId)")
 
@@ -4252,6 +4274,27 @@ public struct ChatWidget: View {
         cleaned = cleaned
             .replacingOccurrences(of: "<tool_call>", with: "", options: .literal)
             .replacingOccurrences(of: "</tool_call>", with: "", options: .literal)
+
+        /// Remove <think>...</think> blocks (and any orphaned tags).
+        /// Some providers (MiniMax M2.x) emit reasoning inline as <think> tags.
+        /// The provider-side streaming parser usually strips these, but if a tag
+        /// arrives split across a chunk boundary the parser can miss it - this
+        /// is the safety net. Pattern uses [\\s\\S] instead of . because NSRegularExpression
+        /// doesn't match newlines without the dotMatchesLineSeparators flag.
+        if let thinkBlockPattern = try? NSRegularExpression(
+            pattern: "<think>[\\s\\S]*?</think>\\n*",
+            options: []
+        ) {
+            let range = NSRange(cleaned.startIndex..., in: cleaned)
+            cleaned = thinkBlockPattern.stringByReplacingMatches(
+                in: cleaned,
+                options: [],
+                range: range,
+                withTemplate: ""
+            )
+        }
+        cleaned = cleaned.replacingOccurrences(of: "<think>", with: "", options: .literal)
+        cleaned = cleaned.replacingOccurrences(of: "</think>", with: "", options: .literal)
 
         /// Remove fragmented special token patterns using regex Pattern: standalone angle brackets + pipes that likely form special tokens Only remove if they appear in isolation (not part of normal text like "x < 5 || y > 10").
         if let fragmentedPattern = try? NSRegularExpression(

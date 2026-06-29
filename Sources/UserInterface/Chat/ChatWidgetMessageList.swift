@@ -18,22 +18,30 @@ extension ChatWidget {
                         .id(activeConv.id)  /// Force recreation only when conversation changes
                 }
             }
+            .scrollPosition(id: $bottomVisibleItemId, anchor: .bottom)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .onChange(of: bottomVisibleItemId) { _, newId in
+                /// FOLLOW-OUTPUT: track whether the bottom anchor is visible
+                /// at the bottom of the viewport. If not, the user has
+                /// scrolled away from the latest content and we should
+                /// pause auto-scroll to avoid yanking them back.
+                updateFollowingOutput(scrollItemId: newId)
+            }
             .onChange(of: messages.count) { _, _ in
                 /// New message added or removed - scroll if auto-scroll is active
-                guard scrollLockEnabled, let lastMessage = messages.last else { return }
+                guard scrollLockEnabled, isFollowingOutput, let lastMessage = messages.last else { return }
                 performThrottledScroll(proxy: proxy, to: lastMessage)
             }
             .onChange(of: messages.last?.content.count) { _, _ in
                 /// Streaming content update - only scroll during active streaming
-                guard scrollLockEnabled,
+                guard scrollLockEnabled, isFollowingOutput,
                       let lastMessage = messages.last,
                       lastMessage.isStreaming else { return }
                 performThrottledScroll(proxy: proxy, to: lastMessage)
             }
             .onChange(of: messages.last?.type) { _, newType in
                 /// Tool card or thinking type change - scroll to make visible
-                guard scrollLockEnabled,
+                guard scrollLockEnabled, isFollowingOutput,
                       let lastMessage = messages.last,
                       newType == .toolExecution || newType == .thinking else { return }
                 performThrottledScroll(proxy: proxy, to: lastMessage)
@@ -43,7 +51,7 @@ extension ChatWidget {
                 /// (ProgressView removed, metrics added, content re-parsed).
                 /// Scroll to bottom anchor after layout settles to keep content visible.
                 if oldValue == true && newValue == false {
-                    guard scrollLockEnabled else { return }
+                    guard scrollLockEnabled, isFollowingOutput else { return }
                     Task { @MainActor in
                         /// 150ms allows layout to settle after streaming->complete transition
                         try? await Task.sleep(for: .milliseconds(150))
@@ -59,6 +67,17 @@ extension ChatWidget {
             }
             .onAppear {
                 scrollProxy = proxy
+                /// Reset follow state on appear so a newly-opened chat starts
+                /// following the latest content.
+                isFollowingOutput = true
+            }
+            .overlay(alignment: .bottom) {
+                /// "Jump to latest" pill: only visible when the user has
+                /// scrolled away from the bottom while scroll-lock is
+                /// enabled. Click to resume auto-follow.
+                if scrollLockEnabled && !isFollowingOutput {
+                    jumpToLatestPill(proxy: proxy)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .scrollToTop)) { _ in
                 if let firstMessage = messages.first {
@@ -71,14 +90,70 @@ extension ChatWidget {
                 withAnimation(.easeOut(duration: 0.3)) {
                     proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
                 }
+                /// Explicit scroll-to-bottom re-enables follow.
+                isFollowingOutput = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .pageUp)) { _ in
                 pageScroll(proxy: proxy, direction: .up)
+                /// PgUp is a manual scroll-up: pause auto-follow so the
+                /// user's reading position is preserved when more content
+                /// streams in.
+                isFollowingOutput = false
             }
             .onReceive(NotificationCenter.default.publisher(for: .pageDown)) { _ in
                 pageScroll(proxy: proxy, direction: .down)
             }
         }
+    }
+
+    /// Update isFollowingOutput based on the item currently visible at the
+    /// bottom anchor. nil means the binding hasn't been populated yet
+    /// (e.g. on first appear before layout settles); keep the existing
+    /// state in that case so we don't flicker the pill.
+    func updateFollowingOutput(scrollItemId: String?) {
+        guard let scrollItemId = scrollItemId else { return }
+        let atBottom = (scrollItemId == "scroll-bottom-anchor")
+        if atBottom != isFollowingOutput {
+            isFollowingOutput = atBottom
+        }
+    }
+
+    /// "Jump to latest" pill shown when the user has scrolled away from the
+    /// bottom. Clicking it scrolls to the bottom anchor and re-enables
+    /// follow-output so auto-scroll resumes for new content.
+    @ViewBuilder
+    func jumpToLatestPill(proxy: ScrollViewProxy) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+            }
+            /// Set immediately rather than waiting for the .scrollPosition
+            /// binding to update, so subsequent streaming updates are
+            /// auto-scrolled without waiting for the layout pass.
+            isFollowingOutput = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down")
+                    .font(.caption2.weight(.semibold))
+                Text("Latest")
+                    .font(.caption.weight(.medium))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(
+                Capsule()
+                    .fill(Color(NSColor.controlBackgroundColor))
+                    .shadow(color: .primary.opacity(0.15), radius: 3, x: 0, y: 1)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.bottom, 12)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .help("Jump to latest message")
     }
 
     /// Private enum for scroll direction tracking
