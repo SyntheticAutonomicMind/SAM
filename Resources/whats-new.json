@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "20260701.1",
+      "release_date": "July 1, 2026",
+      "introduction": "Message bubbles now fit their content instead of showing an oversized box with the text tucked into the top corner. Short messages sit in a compact bubble, not a tall one with empty space below.",
+      "highlights": [],
+      "improvements": [],
+      "bugfixes": [
+        {
+          "id": "bubble-oversized-height",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Message Bubbles Being Too Tall for Their Content",
+          "description": "Message bubbles sometimes rendered with a large empty area below the text, making short messages look like they were sitting at the top of a much taller container. The bubble height now matches the content - short messages get compact bubbles, and the empty space is gone."
+        }
+      ]
+    },
+    {
       "version": "20260629.1",
       "release_date": "June 29, 2026",
       "introduction": "Message bubbles fit cleanly inside the chat column on both sides. Auto-scroll only moves when you're at the bottom of the conversation, so streaming content stays visible while you read. The copy button now lets you choose between raw source and formatted text.",

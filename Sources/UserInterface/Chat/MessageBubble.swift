@@ -32,7 +32,12 @@ struct MessageBubble: View {
 
     @State private var showCopyConfirmation = false
     @State private var showCopyMenu = false
-    @State private var bubbleHeight: CGFloat = 100
+    /// Start at a single-line height (28pt ≈ one line of 14px text at 1.6 line-height).
+    /// The JS size callback in MarkdownWebView corrects this to the actual content
+    /// height within a few milliseconds. A lower default avoids the oversized-bubble
+    /// artifact when the callback is delayed or when the view is recycled by LazyVStack
+    /// without re-loading the web content.
+    @State private var bubbleHeight: CGFloat = 28
     @State private var reloadTrigger = UUID()
 
     /// Bubble width bounds. Min keeps short content from looking weirdly

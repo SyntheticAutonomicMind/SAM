@@ -38,9 +38,10 @@ struct MarkdownWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.lastMarkdown != markdown else { return }
-        context.coordinator.lastMarkdown = markdown
-
+        /// ALWAYS set onSizeChange before the guard, so the closure captures the
+        /// current bindings even when the content hasn't changed. Without this,
+        /// recycled views (LazyVStack) can end up with a stale closure that
+        /// updates a dead binding, leaving bubbleHeight at its initial default.
         context.coordinator.onSizeChange = { [weak webView] w, h in
             DispatchQueue.main.async {
                 webView?.frame.size = CGSize(width: w, height: h)
@@ -48,6 +49,19 @@ struct MarkdownWebView: NSViewRepresentable {
                 bubbleHeight = h
             }
         }
+
+        if context.coordinator.lastMarkdown == markdown {
+            /// Content unchanged, but the view may have been recycled with
+            /// fresh bindings. Force a JS size evaluation so the current
+            /// closures fire with the correct height.
+            let width = Int(maxBubbleWidth)
+            webView.evaluateJavaScript(
+                "var el=document.getElementById('content');if(el){webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(width)),height:el.scrollHeight})}",
+                completionHandler: nil
+            )
+            return
+        }
+        context.coordinator.lastMarkdown = markdown
 
         // Parse markdown AST and convert to HTML
         let parser = MarkdownASTParser()
