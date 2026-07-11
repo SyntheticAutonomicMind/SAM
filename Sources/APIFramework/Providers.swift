@@ -1348,13 +1348,14 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         logger.debug("Copilot headers: initiator=\(initiator), request_id=\(requestId.prefix(8))")
 
         /// YARN (YaRN Context Processor) handles all context management BEFORE provider
-        /// Provider should NEVER re-truncate - trust YARN compression output
-        /// See AgentOrchestrator.processAllMessagesWithYARN() for context management
+        /// MessageValidator handles all context management BEFORE the provider. Provider
+        /// should NEVER re-truncate - trust MessageValidator output as-is.
+        /// (YaRN was removed during the CLIO sync; MessageValidator's atomic unit grouping
+        /// and thread_summary compression own context management.)
         let modelWithoutPrefix = request.model.components(separatedBy: "/").last ?? request.model
         
-        /// Use messages as-is from YARN processing (no provider-level truncation)
-        /// YARN has already compressed context to fit model limits (see AgentOrchestrator line 5202-5218)
-        logger.debug("CHAT_COMPLETIONS: Using YARN-processed messages (\(request.messages.count) messages)")
+        /// Use messages as-is from MessageValidator processing (no provider-level truncation).
+        logger.debug("CHAT_COMPLETIONS: Using MessageValidator-processed messages (\(request.messages.count) messages)")
         
         if let marker = request.statefulMarker {
             logger.debug("CHAT_COMPLETIONS: Including stateful marker for context continuation: \(marker.prefix(20))...")

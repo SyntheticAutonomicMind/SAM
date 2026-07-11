@@ -84,18 +84,19 @@ public struct MessageValidator {
 
         let systemTokens = systemMsg != nil ? estimateTokens([systemMsg!]) : 0
 
-        // Find existing thread_summary
+        // Find existing thread_summary. Note: extractPreservedUnits already
+        // incremented startIdx past the summary, so we look just before startIdx.
         var existingSummaryMsg: OpenAIChatMessage?
         var summaryTokens = 0
-        for unit in units {
-            for msg in unit.messages {
-                if msg.role == "system" && (msg.content?.contains("<thread_summary>") ?? false) {
-                    existingSummaryMsg = msg
-                    summaryTokens = estimateTokens([msg])
-                    break
-                }
+        if startIdx > 0 && startIdx <= units.count {
+            let summaryIdx = startIdx - 1
+            let unit = units[summaryIdx]
+            if let msg = unit.messages.first,
+               msg.role == "system",
+               (msg.content?.contains("<thread_summary>") ?? false) {
+                existingSummaryMsg = msg
+                summaryTokens = unit.tokens
             }
-            if existingSummaryMsg != nil { break }
         }
 
         // Budget walk: newest to oldest
@@ -134,9 +135,15 @@ public struct MessageValidator {
         var summaryToUse: OpenAIChatMessage?
         if !droppedUnits.isEmpty {
             let previousSummary = existingSummaryMsg?.content ?? ""
-            summaryToUse = compressDropped(droppedUnits, lastUserUnit: lastUserUnit, previousSummary: previousSummary)
+            summaryToUse = compressDropped(
+                droppedUnits,
+                lastUserUnit: lastUserUnit,
+                previousSummary: previousSummary,
+                droppedMessagesContainFirstRequest: existingSummaryMsg == nil
+            )
         } else if let existing = existingSummaryMsg {
             summaryToUse = existing
+            logger.debug("PRESERVED_SUMMARY: No dropped messages - keeping existing thread_summary")
         }
 
         // Remove orphaned tool results from conversation
@@ -433,15 +440,39 @@ public struct MessageValidator {
     }
 
     /// Compress dropped message units into a thread_summary.
-    private static func compressDropped(
+    /// Preserves cumulative history across multiple trim cycles by parsing the
+    /// previous thread_summary and merging extracted buckets with new drops.
+    /// Also preserves the original (first) user request when many requests exist,
+    /// so the active task context is never lost across long sessions.
+    static func compressDropped(
         _ droppedUnits: [MessageUnit],
         lastUserUnit: MessageUnit?,
-        previousSummary: String
+        previousSummary: String,
+        droppedMessagesContainFirstRequest: Bool = true
     ) -> OpenAIChatMessage {
-        var taskSummary = ""
-        var recentRequests: [String] = []
-        var filesModified = Set<String>()
+        var currentTask = ""
+        var userRequests: [String] = []
+        var firstUserRequest: String?
+        var filesModified: [String] = []
+        var commits: [String] = []
+        var decisions: [String] = []
+        var collaborationExchanges: [(question: String, response: String)] = []
         var toolsUsed: [String: Int] = [:]
+
+        // Seed buckets from previous summary so accumulated history isn't lost
+        // across multiple trim cycles.
+        if !previousSummary.isEmpty {
+            parsePreviousSummary(
+                previousSummary,
+                commits: &commits,
+                filesModified: &filesModified,
+                decisions: &decisions,
+                toolsUsed: &toolsUsed
+            )
+        }
+
+        // Track interaction tool_call IDs so we can pair questions with responses.
+        var collabToolCalls: [String: String] = [:]
 
         // Extract info from dropped messages
         for unit in droppedUnits {
@@ -449,63 +480,343 @@ public struct MessageValidator {
                 let content = msg.content ?? ""
 
                 if msg.role == "user" {
-                    let preview = content.count > 150 ? String(content.prefix(147)) + "..." : content
-                    recentRequests.append(preview)
+                    let preview = content.count > 300 ? String(content.prefix(297)) + "..." : content
+                    userRequests.append(preview)
                 }
 
-                // Track file operations from content
-                extractFileRefs(from: content).forEach { filesModified.insert($0) }
-
-                // Track tool usage
+                // Track file paths from tool call arguments
                 if let toolCalls = msg.toolCalls {
                     for tc in toolCalls {
-                        toolsUsed[tc.function.name, default: 0] += 1
+                        let name = tc.function.name
+                        let args = tc.function.arguments
+                        toolsUsed[name, default: 0] += 1
+
+                        // Capture interact calls (agent questions) for pairing
+                        if name == "interact" {
+                            if let question = extractJsonStringValue(args, key: "message"), !question.isEmpty {
+                                collabToolCalls[tc.id] = question
+                            }
+                        }
+
+                        // Capture file paths from tool arguments
+                        if name == "file_operations" || name == "apply_patch" {
+                            for path in extractJsonStringValues(args, keys: ["path", "new_path", "old_path"]) {
+                                if !path.hasPrefix(".") && !filesModified.contains(path) {
+                                    filesModified.append(path)
+                                }
+                            }
+                        }
+
+                        // Capture decisions marked with [COLLABORATION]
+                        if name == "interact" && content.contains("[COLLABORATION]") {
+                            let dec = content
+                                .replacingOccurrences(of: "[COLLABORATION]", with: "")
+                                .replacingOccurrences(of: "\n", with: " ")
+                                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                                .trimmingCharacters(in: .whitespaces)
+                            let truncated = dec.count > 250 ? String(dec.prefix(250)) : dec
+                            if !truncated.isEmpty {
+                                decisions.append(truncated)
+                            }
+                        }
+                    }
+                }
+
+                if msg.role == "tool" {
+                    // Pair collaboration responses with their questions
+                    if let toolCallId = msg.toolCallId, let question = collabToolCalls[toolCallId] {
+                        let response = content
+                        let q = question.count > 1000 ? String(question.prefix(1000)) + "..." : question
+                        let r = response.count > 1000 ? String(response.prefix(1000)) + "..." : response
+                        collaborationExchanges.append((question: q, response: r))
+                        collabToolCalls.removeValue(forKey: toolCallId)
+                    }
+
+                    // Git commit results: [abc1234] Commit subject line
+                    let commitRegex = try? NSRegularExpression(
+                        pattern: "^\\[([a-f0-9]{7,12})\\]\\s+(.{1,100})",
+                        options: [.anchorsMatchLines]
+                    )
+                    if let regex = commitRegex {
+                        let nsContent = content as NSString
+                        let matches = regex.matches(
+                            in: content,
+                            range: NSRange(location: 0, length: nsContent.length)
+                        )
+                        for match in matches where match.numberOfRanges >= 3 {
+                            let hash = nsContent.substring(with: match.range(at: 1))
+                            let subject = nsContent.substring(with: match.range(at: 2))
+                            commits.append("\(hash): \(subject)")
+                        }
+                    }
+
+                    // git log --oneline output
+                    let logRegex = try? NSRegularExpression(
+                        pattern: "^([a-f0-9]{7,12})\\s+(.{1,100})",
+                        options: [.anchorsMatchLines]
+                    )
+                    if let regex = logRegex {
+                        let nsContent = content as NSString
+                        let matches = regex.matches(
+                            in: content,
+                            range: NSRange(location: 0, length: nsContent.length)
+                        )
+                        for match in matches where match.numberOfRanges >= 3 {
+                            let hash = nsContent.substring(with: match.range(at: 1))
+                            let subject = nsContent.substring(with: match.range(at: 2))
+                            let entry = "\(hash): \(subject)"
+                            if !commits.contains(entry) {
+                                commits.append(entry)
+                            }
+                        }
+                    }
+                }
+
+                // Track file references from content (fallback when no tool_call info)
+                for ref in extractFileRefs(from: content) where !filesModified.contains(ref) {
+                    filesModified.append(ref)
+                }
+            }
+        }
+
+        // Deduplicate and limit files
+        if filesModified.count > 30 {
+            filesModified = Array(filesModified.prefix(30))
+        }
+
+        // Deduplicate commits while preserving order
+        var seenCommits = Set<String>()
+        commits = commits.filter { seenCommits.insert($0).inserted }
+        if commits.count > 15 {
+            commits = Array(commits.prefix(15))
+        }
+
+        // Keep last 3 decisions
+        if decisions.count > 3 {
+            decisions = Array(decisions.suffix(3))
+        }
+
+        // Keep last 5 collaboration exchanges
+        if collaborationExchanges.count > 5 {
+            collaborationExchanges = Array(collaborationExchanges.suffix(5))
+        }
+
+        // Always preserve the FIRST user request (the original session task).
+        // When trimming to last N, we risk losing the original task context
+        // that started the session. Keep it separately if we have many requests.
+        if userRequests.count > 8 {
+            firstUserRequest = userRequests.first
+            userRequests = Array(userRequests.suffix(7))
+        }
+
+        // Find a substantive task description (>= 50 chars). Short confirmations
+        // like "yes" or "go ahead" are useless as task context - scan user_requests
+        // and the last user message for a better candidate.
+        let lastUserContent = lastUserUnit?.messages.first(where: { $0.role == "user" })?.content ?? ""
+        var allRequests: [String] = []
+        if let first = firstUserRequest { allRequests.append(first) }
+        allRequests.append(contentsOf: userRequests)
+        currentTask = findSubstantiveTask(candidate: lastUserContent, messages: allRequests)
+
+        // Build the structured thread_summary
+        var parts: [String] = []
+        parts.append("<thread_summary>")
+        parts.append("")
+
+        if !currentTask.isEmpty {
+            let taskPreview = currentTask.count > 300 ? String(currentTask.prefix(300)) : currentTask
+            parts.append("Current task: \(taskPreview)")
+            parts.append("")
+        }
+
+        // Collaboration exchanges go FIRST - they represent active design discussions
+        if !collaborationExchanges.isEmpty {
+            parts.append("Active discussion (agent-user collaboration exchanges):")
+            for (i, ex) in collaborationExchanges.enumerated() {
+                parts.append("  Agent asked: \(ex.question)")
+                parts.append("  User replied: \(ex.response)")
+                if i < collaborationExchanges.count - 1 {
+                    parts.append("")
+                }
+            }
+            parts.append("")
+        }
+
+        if !userRequests.isEmpty || firstUserRequest != nil {
+            parts.append("Recent user requests:")
+            if let first = firstUserRequest, !userRequests.contains(first) {
+                parts.append("- [original] \(first)")
+            }
+            for req in userRequests {
+                parts.append("- \(req)")
+            }
+            parts.append("")
+        }
+
+        if !commits.isEmpty {
+            parts.append("Git commits made during compressed period:")
+            for c in commits {
+                parts.append("- \(c)")
+            }
+            parts.append("")
+        }
+
+        if !filesModified.isEmpty {
+            parts.append("Files created/modified:")
+            for f in filesModified {
+                parts.append("- \(f)")
+            }
+            parts.append("")
+        }
+
+        if !decisions.isEmpty {
+            parts.append("Key decisions:")
+            for d in decisions {
+                parts.append("- \(d)")
+            }
+            parts.append("")
+        }
+
+        if !toolsUsed.isEmpty {
+            parts.append("Tool usage:")
+            for (tool, count) in toolsUsed.sorted(by: { $0.value > $1.value }) {
+                parts.append("- \(tool): \(count) calls")
+            }
+            parts.append("")
+        }
+
+        parts.append("</thread_summary>")
+
+        return OpenAIChatMessage(role: "system", content: parts.joined(separator: "\n"))
+    }
+
+    /// Parse structured sections from a previous thread_summary to seed extraction
+    /// buckets. This preserves accumulated history across multiple trim cycles.
+    static func parsePreviousSummary(
+        _ summaryText: String,
+        commits: inout [String],
+        filesModified: inout [String],
+        decisions: inout [String],
+        toolsUsed: inout [String: Int]
+    ) {
+        let cleaned = summaryText
+            .replacingOccurrences(of: "<thread_summary>", with: "")
+            .replacingOccurrences(of: "</thread_summary>", with: "")
+
+        // Parse each section by header (must match exact headers used in compressDropped)
+        if let commitsBlock = extractSection(text: cleaned, header: "Git commits made during compressed period") {
+            for line in commitsBlock.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("- ") {
+                    commits.append(String(trimmed.dropFirst(2)))
+                }
+            }
+        }
+
+        if let filesBlock = extractSection(text: cleaned, header: "Files created/modified") {
+            for line in filesBlock.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("- ") {
+                    filesModified.append(String(trimmed.dropFirst(2)))
+                }
+            }
+        }
+
+        if let decisionsBlock = extractSection(text: cleaned, header: "Key decisions") {
+            for line in decisionsBlock.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("- ") {
+                    decisions.append(String(trimmed.dropFirst(2)))
+                }
+            }
+        }
+
+        if let toolsBlock = extractSection(text: cleaned, header: "Tool usage") {
+            for line in toolsBlock.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("- ") {
+                    let payload = String(trimmed.dropFirst(2))
+                    if let colonIdx = payload.lastIndex(of: ":") {
+                        let name = String(payload[..<colonIdx]).trimmingCharacters(in: .whitespaces)
+                        let countStr = String(payload[payload.index(after: colonIdx)...])
+                            .replacingOccurrences(of: "calls", with: "")
+                            .trimmingCharacters(in: .whitespaces)
+                        if let count = Int(countStr) {
+                            toolsUsed[name, default: 0] += count
+                        }
                     }
                 }
             }
         }
+    }
 
-        // Extract current task from most recent user message
-        if let lastUser = lastUserUnit?.messages.first(where: { $0.role == "user" }) {
-            taskSummary = lastUser.content ?? ""
-            if taskSummary.count > 300 {
-                taskSummary = String(taskSummary.prefix(297)) + "..."
+    /// Extract the content of a named section from a thread_summary.
+    /// Sections are delimited by a header line ending in ":" and a blank line.
+    static func extractSection(text: String, header: String) -> String? {
+        guard let headerRange = text.range(of: header + ":") else { return nil }
+        let afterHeader = String(text[headerRange.upperBound...])
+        let lines = afterHeader.components(separatedBy: "\n")
+        var collected: [String] = []
+        for line in lines.dropFirst() {
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                break
+            }
+            collected.append(line)
+        }
+        return collected.isEmpty ? nil : collected.joined(separator: "\n")
+    }
+
+    /// Find a substantive task description (>= 50 chars). Falls back to the
+    /// candidate if no better option is found in the message history.
+    static func findSubstantiveTask(candidate: String, messages: [String]) -> String {
+        let minLength = 50
+
+        if candidate.count >= minLength {
+            return candidate
+        }
+
+        // Scan messages newest-first for a substantive user message
+        for msg in messages.reversed() where msg.count >= minLength {
+            return msg
+        }
+
+        return candidate
+    }
+
+    /// Extract a single string value for a given key from a JSON string.
+    /// Lightweight regex-based extractor (no full JSON parsing for performance).
+    static func extractJsonStringValue(_ json: String, key: String) -> String? {
+        let pattern = "\"\(NSRegularExpression.escapedPattern(for: key))\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\""
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.dotMatchesLineSeparators]
+        ) else { return nil }
+        let nsJson = json as NSString
+        let matches = regex.matches(in: json, range: NSRange(location: 0, length: nsJson.length))
+        guard let match = matches.first, match.numberOfRanges >= 2 else { return nil }
+        let raw = nsJson.substring(with: match.range(at: 1))
+        return raw
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "\\\"", with: "\"")
+            .replacingOccurrences(of: "\\\\", with: "\\")
+    }
+
+    /// Extract all string values for any of the given keys from a JSON string.
+    static func extractJsonStringValues(_ json: String, keys: [String]) -> [String] {
+        var results: [String] = []
+        for key in keys {
+            let pattern = "\"\(NSRegularExpression.escapedPattern(for: key))\"\\s*:\\s*\"([^\"]+)\""
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let nsJson = json as NSString
+            let matches = regex.matches(in: json, range: NSRange(location: 0, length: nsJson.length))
+            for match in matches where match.numberOfRanges >= 2 {
+                let value = nsJson.substring(with: match.range(at: 1))
+                if !value.isEmpty {
+                    results.append(value)
+                }
             }
         }
-
-        // Build thread_summary
-        var summary = "<thread_summary>\n"
-
-        if !taskSummary.isEmpty {
-            summary += "\nCurrent task: \(taskSummary)\n"
-        }
-
-        if !recentRequests.isEmpty {
-            let recent = recentRequests.suffix(3)
-            summary += "\nRecent user requests:\n"
-            for req in recent {
-                summary += "- \(req)\n"
-            }
-        }
-
-        if !filesModified.isEmpty {
-            let files = Array(filesModified).sorted().prefix(20)
-            summary += "\nFiles created/modified:\n"
-            for file in files {
-                summary += "- \(file)\n"
-            }
-        }
-
-        if !toolsUsed.isEmpty {
-            summary += "\nTool usage:\n"
-            for (tool, count) in toolsUsed.sorted(by: { $0.key < $1.key }) {
-                summary += "- \(tool): \(count) calls\n"
-            }
-        }
-
-        summary += "\n</thread_summary>"
-
-        return OpenAIChatMessage(role: "system", content: summary)
+        return results
     }
 
     /// Extract file paths from content strings.

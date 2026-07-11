@@ -104,7 +104,14 @@ extension AgentOrchestrator {
 
         /// Inject dynamic tool listing when tools are enabled
         if toolsEnabled {
+            // Per-conversation isolation: memory_operations is only exposed to
+            // conversations in a shared topic. Default conversations should not
+            // even know about LTM. Shared topics are the critical LTM use case.
+            let isSharedTopic = conversation.settings.useSharedData
+                && conversation.settings.sharedTopicId != nil
+                && conversation.settings.sharedTopicName != nil
             let tools = conversationManager.mcpManager.getAvailableTools()
+                .filter { $0.name != "memory_operations" || isSharedTopic }
             if !tools.isEmpty {
                 var listing = "\n\nAvailable Tools:"
                 for tool in tools {
@@ -161,9 +168,15 @@ extension AgentOrchestrator {
             logger.debug("callLLM: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }
 
-        /// LTM injection - can grow between turns as new memories are added
-        do {
-            let useSharedData = conversation.settings.useSharedData
+        /// LTM injection is gated to shared-topic conversations only. Per-conversation
+        /// isolation is the default in SAM: default conversations should not even know
+        /// about LTM. Shared topics are the critical LTM use case - the topic scope
+        /// is where structured knowledge persistence earns its keep.
+        let useSharedData = conversation.settings.useSharedData
+        let hasSharedTopic = useSharedData
+            && conversation.settings.sharedTopicId != nil
+            && conversation.settings.sharedTopicName != nil
+        if hasSharedTopic {
             let sharedTopicId = conversation.settings.sharedTopicId
             let sharedTopicName = conversation.settings.sharedTopicName
 
@@ -179,9 +192,11 @@ extension AgentOrchestrator {
                 let ltmBlock = ltm.formatForSystemPrompt()
                 if !ltmBlock.isEmpty {
                     dynamicContext += "\n\n" + ltmBlock
-                    logger.info("callLLM: Injected LTM (\(ltm.totalEntries) entries) into dynamic context")
+                    logger.info("callLLM: Injected shared-topic LTM (\(ltm.totalEntries) entries) into dynamic context")
                 }
             }
+        } else {
+            logger.debug("callLLM: LTM skipped - conversation is not in a shared topic (per-conversation isolation default)")
         }
 
         /// Session naming - only present on first turn, disappears after title is set
@@ -1154,7 +1169,14 @@ extension AgentOrchestrator {
 
         /// Inject dynamic tool listing when tools are enabled
         if toolsEnabled {
+            // Per-conversation isolation: memory_operations is only exposed to
+            // conversations in a shared topic. Default conversations should not
+            // even know about LTM. Shared topics are the critical LTM use case.
+            let isSharedTopic = conversation.settings.useSharedData
+                && conversation.settings.sharedTopicId != nil
+                && conversation.settings.sharedTopicName != nil
             let tools = conversationManager.mcpManager.getAvailableTools()
+                .filter { $0.name != "memory_operations" || isSharedTopic }
             if !tools.isEmpty {
                 var listing = "\n\nAvailable Tools:"
                 for tool in tools {
@@ -1211,9 +1233,15 @@ extension AgentOrchestrator {
             logger.debug("callLLMStreaming: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
         }
 
-        /// LTM injection - can grow between turns as new memories are added
-        do {
-            let useSharedData = conversation.settings.useSharedData
+        /// LTM injection is gated to shared-topic conversations only. Per-conversation
+        /// isolation is the default in SAM: default conversations should not even know
+        /// about LTM. Shared topics are the critical LTM use case - the topic scope
+        /// is where structured knowledge persistence earns its keep.
+        let useSharedData = conversation.settings.useSharedData
+        let hasSharedTopic = useSharedData
+            && conversation.settings.sharedTopicId != nil
+            && conversation.settings.sharedTopicName != nil
+        if hasSharedTopic {
             let sharedTopicId = conversation.settings.sharedTopicId
             let sharedTopicName = conversation.settings.sharedTopicName
 
@@ -1229,9 +1257,11 @@ extension AgentOrchestrator {
                 let ltmBlock = ltm.formatForSystemPrompt()
                 if !ltmBlock.isEmpty {
                     dynamicContext += "\n\n" + ltmBlock
-                    logger.info("callLLMStreaming: Injected LTM (\(ltm.totalEntries) entries) into dynamic context")
+                    logger.info("callLLMStreaming: Injected shared-topic LTM (\(ltm.totalEntries) entries) into dynamic context")
                 }
             }
+        } else {
+            logger.debug("callLLMStreaming: LTM skipped - conversation is not in a shared topic (per-conversation isolation default)")
         }
 
         /// Session naming - only present on first turn, disappears after title is set

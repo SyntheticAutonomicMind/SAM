@@ -192,31 +192,15 @@ extension AgentOrchestrator {
         }
 
         /// Include high-importance messages not yet pinned (>=0.8 threshold) CRITICAL FIX Track retrieved message IDs to prevent duplication across iterations - Problem: Phase 3 was pulling same messages on every iteration (from conversation history) - Solution: Track which message IDs already retrieved, only include NEW high-importance messages - This preserves context (unlike skipping Phase 3 entirely) while preventing exponential growth.
-        let newHighImportanceMessages = conversation.messages.filter {
-            !$0.isPinned &&
-            $0.importance >= 0.8 &&
-            !retrievedMessageIds.contains($0.id)
-        }
-
-        if !newHighImportanceMessages.isEmpty {
-            logger.debug("AUTO_RETRIEVAL: Found \(newHighImportanceMessages.count) NEW high-importance messages (iteration \(iteration), \(retrievedMessageIds.count) already retrieved)")
-
-            var importantContext = "\n=== HIGH IMPORTANCE MESSAGES (Auto-detected) ===\n"
-            for (index, msg) in newHighImportanceMessages.enumerated() {
-                let role = msg.isFromUser ? "USER" : "ASSISTANT"
-                importantContext += "\n[\(role) Message \(index + 1) - Importance: \(String(format: "%.2f", msg.importance))]:\n\(msg.content)\n"
-            }
-            contextParts.append(importantContext)
-
-            /// Track that we've retrieved these messages.
-            newHighImportanceMessages.forEach { retrievedMessageIds.insert($0.id) }
-        } else if !retrievedMessageIds.isEmpty {
-            logger.debug("AUTO_RETRIEVAL: No new high-importance messages (iteration \(iteration), \(retrievedMessageIds.count) already retrieved)")
-        }
+        /// Phase 3 (high-importance filter) was removed in the CLIO sync. It duplicated
+        /// context already preserved by MessageValidator's thread_summary compression,
+        /// added per-iteration scan cost, and could mislead the model by re-presenting
+        /// messages from history. MessageValidator now owns the "preserve important
+        /// context across long sessions" responsibility.
 
         /// Combine all context parts if any exist.
         if contextParts.isEmpty {
-            logger.debug("AUTO_RETRIEVAL: No additional context retrieved (no pinned messages, no relevant memories, no high-importance messages)")
+            logger.debug("AUTO_RETRIEVAL: No additional context retrieved (no pinned messages, no relevant memories)")
             return nil
         }
 
@@ -233,311 +217,19 @@ extension AgentOrchestrator {
         return fullContext
     }
 
-    /// Prune conversation history by summarizing oldest 50% of messages Returns the summary text that can replace the old messages.
-    @MainActor
-    func pruneConversationHistory(
-        conversation: ConversationModel,
-        model: String
-    ) async throws -> String {
-        logger.debug("CONTEXT_PRUNING: Starting conversation history pruning")
-
-        /// Initialize contextMessages from messages if not already set This ensures we start with full history on first prune.
-        if conversation.contextMessages == nil {
-            await MainActor.run {
-                conversation.contextMessages = conversation.messages
-            }
-        }
-
-        /// Get current context messages for pruning.
-        let currentContextMessages = await MainActor.run { conversation.contextMessages ?? conversation.messages }
-
-        /// Separate pinned messages from unpinned Pinned messages (first 3 user messages, constraints, etc.) NEVER pruned.
-        let pinnedMessages = currentContextMessages.filter { $0.isPinned }
-        let unpinnedMessages = currentContextMessages.filter { !$0.isPinned }
-
-        logger.debug("CONTEXT_PRUNING: Found \(pinnedMessages.count) pinned messages (will never be pruned)")
-        logger.debug("CONTEXT_PRUNING: Found \(unpinnedMessages.count) unpinned messages (candidates for pruning)")
-
-        /// Calculate how many messages to summarize (oldest 50% of UNPINNED messages).
-        let messagesToSummarize = max(1, unpinnedMessages.count / 2)
-        let oldMessages = Array(unpinnedMessages.prefix(messagesToSummarize))
-
-        logger.debug("CONTEXT_PRUNING: Summarizing \(messagesToSummarize) oldest unpinned messages (out of \(unpinnedMessages.count) total unpinned)")
-        logger.debug("CONTEXT_PRUNING: NOTE - Full message history (\(conversation.messages.count) messages) remains visible to user")
-
-        /// Build conversation text to summarize.
-        var conversationText = ""
-        for (_, message) in oldMessages.enumerated() {
-            let speaker = message.isFromUser ? "User" : "Assistant"
-            conversationText += "\(speaker): \(message.content)\n\n"
-        }
-
-        /// Build summarization request.
-        let summaryPrompt = """
-        Summarize this conversation history concisely in 200-500 tokens:
-
-        \(conversationText)
-
-        Provide a factual summary that captures:
-        - Main topics discussed
-        - Key decisions or conclusions
-        - Important context for future messages
-
-        Be concise but preserve essential information.
-        """
-
-        /// Call LLM to generate summary (without tools).
-        let summaryMessages = [
-            OpenAIChatMessage(role: "system", content: "You are a helpful assistant that creates concise conversation summaries."),
-            OpenAIChatMessage(role: "user", content: summaryPrompt)
-        ]
-
-        /// Include sessionId/conversationId for billing continuity!.
-        let summaryRequest = OpenAIChatRequest(
-            model: model,
-            messages: summaryMessages,
-            temperature: 0.3,
-            stream: false,
-            sessionId: conversation.id.uuidString
-        )
-
-        logger.debug("CONTEXT_PRUNING: Calling LLM to generate summary")
-        let response = try await endpointManager.processChatCompletion(summaryRequest)
-
-        guard let summary = response.choices.first?.message.content, !summary.isEmpty else {
-            throw NSError(domain: "AgentOrchestrator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate conversation summary"])
-        }
-
-        logger.debug("CONTEXT_PRUNING: Generated summary (\(summary.count) chars)")
-
-        /// Store summary in VectorRAG for future retrieval with ENHANCED METADATA.
-        logger.debug("CONTEXT_PRUNING: Storing summary in VectorRAG with structured metadata")
-
-        /// Extract key constraints and decisions from pinned/high importance messages for metadata.
-        let pinnedConstraints = pinnedMessages.filter { $0.isFromUser && $0.importance > 0.8 }.map { $0.content }
-
-        /// Build summary document content with STRUCTURED METADATA.
-        let summaryDocument = """
-        # Conversation Summary
-
-        **Conversation ID**: \(conversation.id.uuidString)
-        **Messages Summarized**: \(messagesToSummarize) out of \(unpinnedMessages.count) unpinned messages
-        **Pinned Messages Preserved**: \(pinnedMessages.count) critical messages
-
-        **Key Constraints/Requirements** (from pinned messages):
-        \(pinnedConstraints.isEmpty ? "None" : pinnedConstraints.map { "- \($0)" }.joined(separator: "\n"))
-
-        **Summary**:
-
-        \(summary)
-        """
-
-        /// Call document_operations tool with operation=import to store summary with importance tagging.
-        let importParameters: [String: Any] = [
-            "operation": "import",
-            "source_type": "text",
-            "content": summaryDocument,
-            "filename": "conversation_summary_\(conversation.id.uuidString).txt",
-            "importance": 0.9
-        ]
-
-        if let importResult = await conversationManager.executeMCPTool(
-            name: "document_operations",
-            parameters: importParameters,
-            conversationId: conversation.id,
-            isExternalAPICall: false
-        ) {
-            logger.debug("CONTEXT_PRUNING: Summary stored in VectorRAG: \(importResult.output.content)")
-        } else {
-            logger.warning("CONTEXT_PRUNING: Failed to store summary in VectorRAG")
-        }
-
-        /// Update contextMessages ONLY, not the main messages array This preserves full conversation history for the user while pruning LLM context.
-        await MainActor.run {
-            /// Start with ALL pinned messages (always preserved).
-            var newContextMessages = pinnedMessages
-
-            /// Preserve githubCopilotResponseId from the LAST summarized message This is essential for session continuity - without it, checkpoint slicing fails Result: Multiple premium charges per conversation
-            let lastSummarizedResponseId = oldMessages.last(where: { !$0.isFromUser })?.githubCopilotResponseId
-            if let responseId = lastSummarizedResponseId {
-                logger.debug("CONTEXT_PRUNING: Preserving GitHub Copilot response ID from summarized messages: \(responseId.prefix(20))...")
-            }
-
-            /// Add summary message (high importance for retrieval).
-            let summaryMessage = Message(
-                id: UUID(),
-                content: "**[Previous conversation summary]**\n\n\(summary)",
-                isFromUser: false,
-                timestamp: Date(),
-                githubCopilotResponseId: lastSummarizedResponseId,
-                isPinned: false,
-                importance: 0.9
-            )
-            newContextMessages.append(summaryMessage)
-
-            /// Add remaining unpinned messages (after the ones that were summarized).
-            let remainingUnpinned = Array(unpinnedMessages.dropFirst(messagesToSummarize))
-            newContextMessages.append(contentsOf: remainingUnpinned)
-
-            /// Sort by timestamp to maintain chronological order.
-            newContextMessages.sort { $0.timestamp < $1.timestamp }
-
-            /// Update contextMessages (messages array unchanged).
-            conversation.contextMessages = newContextMessages
-        }
-
-        logger.debug("CONTEXT_PRUNING: Pruning complete, context now has \(conversation.contextMessages?.count ?? 0) messages")
-        logger.debug("CONTEXT_PRUNING: - \(pinnedMessages.count) pinned (never pruned)")
-        logger.debug("CONTEXT_PRUNING: - 1 summary message")
-        logger.debug("CONTEXT_PRUNING: - \(unpinnedMessages.count - messagesToSummarize) remaining unpinned")
-        logger.debug("CONTEXT_PRUNING: User-visible history remains at \(conversation.messages.count) messages")
-
-        return summary
-    }
-
-    /// Check if context should be pruned before calling LLM Returns true if token count exceeds 70% of context size.
-    @MainActor
-    func shouldPruneContextBeforeLLMCall(
-        conversation: ConversationModel,
-        internalMessages: [OpenAIChatMessage],
-        currentMessage: String,
-        model: String
-    ) async -> (shouldPrune: Bool, currentTokens: Int, contextSize: Int) {
-        /// Get system prompt.
-        let defaultPromptId = await MainActor.run {
-            SystemPromptManager.shared.selectedConfigurationId
-        }
-        let promptId = conversation.settings.selectedSystemPromptId ?? defaultPromptId
-        let systemPrompt = await MainActor.run {
-            SystemPromptManager.shared.generateSystemPrompt(
-                for: promptId
-            )
-        }
-
-        /// Convert conversation messages to OpenAIChatMessage format for counting CRITICAL: Use contextMessages if available (after pruning), otherwise use full messages.
-        let messagesToCount = conversation.contextMessages ?? conversation.messages
-        var conversationMessages: [OpenAIChatMessage] = []
-        for historyMessage in messagesToCount {
-            let role = historyMessage.isFromUser ? "user" : "assistant"
-            conversationMessages.append(OpenAIChatMessage(role: role, content: historyMessage.content))
-        }
-        conversationMessages.append(contentsOf: internalMessages)
-
-        /// Detect if this is a local model.
-        let isLocal = model.lowercased().contains("local-llama") || model.lowercased().contains("gguf") || model.lowercased().contains("mlx")
-
-        /// Get context size for this model.
-        let contextSize = await tokenCounter.getContextSize(modelName: model)
-
-        /// Check if we should prune.
-        let (currentTokens, shouldPrune, _) = await tokenCounter.shouldPruneContext(
-            systemPrompt: systemPrompt,
-            conversationMessages: conversationMessages,
-            currentInput: currentMessage,
-            contextSize: contextSize,
-            model: nil,
-            /// WHY: llama.cpp models need model-specific tokenizer for accurate counts Current: Uses heuristic tokenization (works but less accurate) With model: Can call llama_tokenize() for exact counts Benefit: More accurate pruning decisions, better context management.
-            isLocal: isLocal
-        )
-
-        return (shouldPrune, currentTokens, contextSize)
-    }
-
+    // pruneConversationHistory and shouldPruneContextBeforeLLMCall removed during
+    // CLIO sync. Their responsibilities are now handled by MessageValidator:
+    // - proactive trim before every LLM call (not a 70% threshold check)
+    // - structured thread_summary compression (no LLM call required)
+    // - atomic unit grouping so tool_calls/results never split
+    // - last user message always re-injected
 
 
     /// Calculate hash of message array content for compression detection
-    func messageFingerprint(_ messages: [OpenAIChatMessage]) -> String {
-        let combined = messages.map { msg in
-            "\(msg.role):\(msg.content ?? "")"
-        }.joined(separator: "|")
+    // messageFingerprint and processAllMessagesWithYARN removed during CLIO sync.
+    // Context management is owned by MessageValidator (atomic unit grouping,
+    // budget walk, thread_summary compression). Providers trust messages as-is.
 
-        var hasher = Hasher()
-        hasher.combine(combined)
-        return String(hasher.finalize())
-    }
-
-    /// Process ALL messages (conversation + tool results) with YARN for intelligent context management This prevents HTTP 400 payload size errors from GitHub Copilot and other providers **CRITICAL**: This must be called on the COMPLETE message array (conversation + system + tools) BEFORE sending to LLM.
-    /// - Parameters:
-    ///   - allMessages: Complete message array (conversation + system + tools)
-    ///   - conversationId: The conversation UUID
-    ///   - modelContextLimit: The model's actual context limit (from TokenCounter)
-    func processAllMessagesWithYARN(
-        _ allMessages: [OpenAIChatMessage],
-        conversationId: UUID,
-        modelContextLimit: Int? = nil
-    ) async throws -> [OpenAIChatMessage] {
-
-        /// Initialize YARN processor if needed (lazy initialization).
-        if yarnProcessor == nil || !yarnProcessor!.isInitialized {
-            logger.debug("YARN: Initializing YaRNContextProcessor with mega 128M token profile")
-            try await yarnProcessor?.initialize()
-        }
-
-        guard let processor = yarnProcessor else {
-            logger.warning("YARN: Processor not available - returning original messages")
-            return allMessages
-        }
-
-        /// CRITICAL FIX: Use model's actual context limit, not universal 524K
-        /// This prevents 400 errors when using smaller models like GPT-4 (8K)
-        let effectiveTarget: Int
-        if let limit = modelContextLimit {
-            /// Target 70% of model's context to leave room for response
-            effectiveTarget = Int(Double(limit) * 0.70)
-            logger.debug("YARN: Using model-specific target: \(effectiveTarget) tokens (70% of \(limit) limit)")
-        } else {
-            /// Fallback to YaRN's default (for local models or when limit unknown)
-            effectiveTarget = Int(Double(processor.contextWindowSize) * 0.70)
-            logger.debug("YARN: Using default target: \(effectiveTarget) tokens (70% of \(processor.contextWindowSize))")
-        }
-
-        /// Convert OpenAIChatMessage to Message format for YARN processing.
-        let conversationMessages = allMessages.map { chatMsg -> Message in
-            Message(
-                id: UUID(),
-                content: chatMsg.content ?? "",
-                isFromUser: chatMsg.role == "user",
-                timestamp: Date(),
-                performanceMetrics: nil,
-                githubCopilotResponseId: nil,
-                isPinned: chatMsg.role == "system",
-                importance: chatMsg.role == "system" ? 1.0 : (chatMsg.role == "user" ? 0.9 : 0.7)
-            )
-        }
-
-        /// Process complete message context with YARN using model-specific target.
-        let processedContext = try await processor.processConversationContext(
-            messages: conversationMessages,
-            conversationId: conversationId,
-            targetTokenCount: effectiveTarget
-        )
-
-        /// Convert back to OpenAIChatMessage format.
-        let processedMessages = processedContext.messages.map { message -> OpenAIChatMessage in
-            let role = message.isFromUser ? "user" : (message.isPinned ? "system" : "assistant")
-            return OpenAIChatMessage(role: role, content: message.content)
-        }
-
-        /// Log compression statistics.
-        let stats = processor.getContextStatistics()
-        let originalTokens = stats.compressionRatio > 0 ? Int(Double(processedContext.tokenCount) / stats.compressionRatio) : processedContext.tokenCount
-        logger.debug("YARN: Processed \(allMessages.count) → \(processedMessages.count) messages", metadata: [
-            "original_tokens": "\(originalTokens)",
-            "compressed_tokens": "\(processedContext.tokenCount)",
-            "compression_ratio": "\(String(format: "%.2f", stats.compressionRatio))",
-            "compression_active": "\(stats.isCompressionActive)",
-            "method": "\(processedContext.processingMethod)"
-        ])
-        
-        /// Track compression telemetry if compression was applied
-        if processedContext.compressionApplied {
-            await conversationManager.incrementCompressionEvent(for: conversationId)
-        }
-
-        return processedMessages
-    }
-
-    /// Validate API request size before sending CRITICAL: Most timeouts occur because agent sends more data than API can handle This pre-flight check estimates request size and triggers compression if oversized Returns (estimatedTokens, isSafe, contextLimit).
     func validateRequestSize(
         messages: [OpenAIChatMessage],
         model: String,
