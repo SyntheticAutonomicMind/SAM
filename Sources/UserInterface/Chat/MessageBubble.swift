@@ -38,11 +38,20 @@ struct MessageBubble: View {
     /// artifact when the callback is delayed or when the view is recycled by LazyVStack
     /// without re-loading the web content.
     @State private var bubbleHeight: CGFloat = 28
+    /// Reported width of the rendered content from the WKWebView's JS size
+    /// callback. nil means we haven't received a measurement yet, in which
+    /// case the bubble fills the chat column. Once JS reports, the bubble
+    /// shrinks to fit the content (capped by the column width). Without
+    /// this, short messages like "Hi" rendered as a full-width bubble
+    /// with hundreds of pt of empty background - visually "much larger
+    /// than the content".
+    @State private var bubbleWidth: CGFloat?
     @State private var reloadTrigger = UUID()
 
-    /// Bubble width bounds. Min keeps short content from looking weirdly
-    /// narrow. No max - bubble fills the chat column. Long unbreakable
-    /// strings (URLs, hashes) wrap via CSS word-wrap, not by capping.
+    /// Bubble width bounds. minBubbleWidth keeps short content from looking
+    /// weirdly narrow. Long unbreakable strings (URLs, hashes) wrap via
+    /// CSS word-wrap, not by capping. The bubble shrinks to content width
+    /// once JS reports - before that, it fills the chat column.
     private static let minBubbleWidth: CGFloat = 200
 
     private var bubbleAlignment: HorizontalAlignment {
@@ -112,15 +121,21 @@ struct MessageBubble: View {
             /// ScrollView clips it; the user bubble overflows on the right
             /// where it is visible.
             let width = max(geo.size.width - 32, Self.minBubbleWidth)
+            /// Until the JS size callback fires, the bubble fills the chat
+            /// column (matches the legacy behavior). After the callback
+            /// reports a narrower content width, the bubble shrinks to fit
+            /// so short messages don't render as full-width bubbles with
+            /// hundreds of pt of empty background.
+            let frameWidth = bubbleWidth ?? width
 
             MarkdownWebView(
                 markdown: displayContent,
                 isFromUser: isFromUser,
                 maxBubbleWidth: width,
-                bubbleWidth: .constant(width),
+                bubbleWidth: $bubbleWidth,
                 bubbleHeight: $bubbleHeight
             )
-            .frame(width: width, height: bubbleHeight)
+            .frame(width: frameWidth, height: bubbleHeight)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(
@@ -129,14 +144,30 @@ struct MessageBubble: View {
                     .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
             )
             .clipped()
+            /// Reload trigger: changes the view identity so SwiftUI tears down the
+            /// WKWebView and creates a fresh one. Without this, writing to
+            /// reloadTrigger alone wouldn't cause a re-render because @State
+            /// values that aren't read by the view body are ignored by the
+            /// diffing engine. The reloadMessage() context-menu action wires
+            /// this up so the bubble actually rebuilds.
+            .id(reloadTrigger)
         }
-        .frame(height: bubbleHeight + 24)  /// bubble height + vertical padding (12 + 12)
+        /// Outer height still tracks bubbleHeight + 24 (SwiftUI vertical
+        /// padding). The width adapts automatically because the GeometryReader
+        /// inside fills whatever width the HStack gives it.
+        .frame(height: bubbleHeight + 24)
     }
 
     /// Always render the bubble while content exists or streaming is
     /// active so the container doesn't collapse and reappear (flicker).
     private var shouldShowBubble: Bool {
-        !message.content.isEmpty || message.isStreaming || message.contentParts != nil
+        /// Use displayContent (not message.content) so a message whose content
+        /// is only status markers like {"status": "continue"} - which the
+        /// assistant filter strips to empty - doesn't render an empty 52pt
+        /// bubble. Previously the bubble used message.content while the
+        /// metadata used displayContent, so an assistant message containing
+        /// only status markers showed an empty bubble with no metadata row.
+        !displayContent.isEmpty || message.isStreaming || message.contentParts != nil
     }
 
     private var shouldShowMetadata: Bool {
@@ -241,6 +272,16 @@ struct MessageBubble: View {
 
     private func reloadMessage() {
         reloadTrigger = UUID()
+        /// Reset bubbleHeight to the default so the rebuilt MarkdownWebView
+        /// doesn't briefly show the previous incarnation's measured height
+        /// before the new JS size callback arrives. Without this, a bubble
+        /// that was oversized would stay that way until the new callback.
+        bubbleHeight = 28
+        /// Clear bubbleWidth so the bubble expands back to full chat column
+        /// width before the new content's JS callback shrinks it back to fit.
+        /// Without this, a previously narrow bubble would stay narrow
+        /// against the new (potentially wider) content.
+        bubbleWidth = nil
         logger.info("Reloading \(isFromUser ? "user" : "assistant") message: \(message.id)")
     }
 

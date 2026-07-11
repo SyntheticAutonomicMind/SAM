@@ -15,7 +15,10 @@ struct MarkdownWebView: NSViewRepresentable {
     let markdown: String
     let isFromUser: Bool
     let maxBubbleWidth: CGFloat
-    @Binding var bubbleWidth: CGFloat
+    /// Optional width from the JS size callback. nil means no measurement
+    /// has arrived yet - the MessageBubble falls back to filling the chat
+    /// column in that case. Once JS reports, the bubble shrinks to fit.
+    @Binding var bubbleWidth: CGFloat?
     @Binding var bubbleHeight: CGFloat
 
     private static let logger = Logger(subsystem: "com.sam.ui.MarkdownWebView", category: "UserInterface")
@@ -38,46 +41,54 @@ struct MarkdownWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        /// ALWAYS set onSizeChange before the guard, so the closure captures the
-        /// current bindings even when the content hasn't changed. Without this,
-        /// recycled views (LazyVStack) can end up with a stale closure that
-        /// updates a dead binding, leaving bubbleHeight at its initial default.
-        context.coordinator.onSizeChange = { [weak webView] w, h in
+        /// Bump the generation counter BEFORE kicking off any new page load.
+        /// Any in-flight DispatchQueue.main.async blocks captured by the
+        /// previous updateNSView's closure carry the OLD generation and
+        /// will be rejected by the closure's generation check below. This
+        /// prevents a stale size report from a cancelled page load from
+        /// overwriting bubbleHeight with a value from content that's no
+        /// longer rendered.
+        if context.coordinator.lastMarkdown != markdown {
+            context.coordinator.currentGeneration &+= 1
+            context.coordinator.lastMarkdown = markdown
+        }
+
+        /// ALWAYS update onSizeChange (whether new content or same-content
+        /// recycle). Captures the current bindings AND the current generation
+        /// so the closure can reject size reports from cancelled page loads
+        /// while still firing immediately on same-content recycling.
+        let capturedGeneration = context.coordinator.currentGeneration
+        context.coordinator.onSizeChange = { [weak webView, weak coordinator = context.coordinator] w, h in
             DispatchQueue.main.async {
+                /// Generation check: ignore size reports from a page that has
+                /// since been superseded by a newer loadHTMLString. Without
+                /// this, a stale dispatch from a cancelled page load could
+                /// land after the new page has reported its size, overwriting
+                /// bubbleHeight with the previous content's height and
+                /// producing the "taller than content" artifact.
+                guard coordinator?.currentGeneration == capturedGeneration else { return }
                 webView?.frame.size = CGSize(width: w, height: h)
                 bubbleWidth = w
                 bubbleHeight = h
             }
         }
 
-        if context.coordinator.lastMarkdown == markdown {
-            /// Content unchanged, but the view may have been recycled with
-            /// fresh bindings. Force a JS size evaluation so the current
-            /// closures fire with the correct height.
-            let width = Int(maxBubbleWidth)
-            webView.evaluateJavaScript(
-                "var el=document.getElementById('content');if(el){webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(width)),height:el.scrollHeight})}",
-                completionHandler: nil
-            )
-            return
-        }
-        context.coordinator.lastMarkdown = markdown
+        if context.coordinator.lastMarkdown != markdown {
+            // Parse markdown AST and convert to HTML
+            let parser = MarkdownASTParser()
+            let ast = parser.parse(markdown)
+            let bodyHTML = MarkdownASTToHTML.convert(ast)
 
-        // Parse markdown AST and convert to HTML
-        let parser = MarkdownASTParser()
-        let ast = parser.parse(markdown)
-        let bodyHTML = MarkdownASTToHTML.convert(ast)
+            let isDark = NSApp.effectiveAppearance.name == .darkAqua
+            let fgColor = isFromUser ? "#ffffff" : (isDark ? "#e0e0e0" : "#1a1a1a")
+            let codeBg = isDark ? "#2d2d2d" : "#f5f5f5"
+            let borderColor = isDark ? "#555" : "#ddd"
+            let linkColor = isFromUser ? "#ffffff" : (isDark ? "#7eb8ff" : "#007acc")
+            let thBgColor = isDark ? "#333" : "#f0f0f0"
+            let stripedBg = isDark ? "#2a2a2a" : "#fafafa"
+            let bqColor = isDark ? "#aaa" : "#666"
 
-        let isDark = NSApp.effectiveAppearance.name == .darkAqua
-        let fgColor = isFromUser ? "#ffffff" : (isDark ? "#e0e0e0" : "#1a1a1a")
-        let codeBg = isDark ? "#2d2d2d" : "#f5f5f5"
-        let borderColor = isDark ? "#555" : "#ddd"
-        let linkColor = isFromUser ? "#ffffff" : (isDark ? "#7eb8ff" : "#007acc")
-        let thBgColor = isDark ? "#333" : "#f0f0f0"
-        let stripedBg = isDark ? "#2a2a2a" : "#fafafa"
-        let bqColor = isDark ? "#aaa" : "#666"
-
-        let html = """
+            let html = """
         <!DOCTYPE html>
         <html>
         <head>
@@ -208,12 +219,19 @@ struct MarkdownWebView: NSViewRepresentable {
         </html>
         """
 
-        webView.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
+            webView.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
+        }
     }
 
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var lastMarkdown: String?
         weak var webView: WKWebView?
+        /// Monotonic counter incremented before every loadHTMLString. The
+        /// onSizeChange closure captures the value at the time it was set,
+        /// and ignores any size report whose captured generation no longer
+        /// matches. Prevents stale DispatchQueue.main.async blocks from a
+        /// cancelled page load overwriting the new page's bubbleHeight.
+        var currentGeneration: UInt64 = 0
         var onSizeChange: ((CGFloat, CGFloat) -> Void)?
         var maxWidth: CGFloat = 400
 
