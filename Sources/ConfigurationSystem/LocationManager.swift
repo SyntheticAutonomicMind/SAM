@@ -101,6 +101,15 @@ public class LocationManager: NSObject, ObservableObject {
         locationManager.desiredAccuracy = kCLLocationAccuracyKilometer // City-level accuracy
         authorizationStatus = locationManager.authorizationStatus
 
+        /// If the user previously enabled precise location but the app was never
+        /// authorized (e.g. the toggle was on but the prompt was dismissed or
+        /// the previous session was killed), request authorization now so the
+        /// agent can actually see where the user is.
+        if usePreciseLocation && authorizationStatus == .notDetermined {
+            logger.info("Precise location was enabled previously but never authorized - requesting now")
+            requestLocationPermission()
+        }
+
         if usePreciseLocation && authorizationStatus == .authorized {
             requestSingleLocationUpdate()
         }
