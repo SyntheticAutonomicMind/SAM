@@ -35,8 +35,8 @@ jobs:
             VERSION="$INPUT_VERSION"
           else
             # Get the latest dev pre-release version from GitHub API
-            VERSION=$(gh api repos/${{ github.repository }}/releases --jq '.[] | select(.prerelease == true and .tag_name | endswith("-dev.")) | .tag_name' | head -1)
-            if [ -z "$VERSION" ]; then
+            VERSION=$(gh api repos/${{ github.repository }}/releases --jq 'map(select(.prerelease and (.tag_name | contains("-dev.")))) | .[0].tag_name')
+            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
               echo "ERROR: No development release found" >&2
               exit 1
             fi
