@@ -287,7 +287,10 @@ class MarkdownASTParser {
     }
 
     /// Parse list (ordered, unordered, or task)
-    private func parseList(_ lines: [String], startIndex: Int, context: MarkdownParserContext, depth: Int) -> ParseResult? {
+    /// - Parameter minIndent: minimum leading whitespace required for items.
+    ///   Used to prevent recursive calls from greedily consuming sibling items
+    ///   at lower indent belonging to an outer list.
+    private func parseList(_ lines: [String], startIndex: Int, context: MarkdownParserContext, depth: Int, minIndent: Int = 0) -> ParseResult? {
         let line = lines[startIndex]
         let trimmed = line.trimmingCharacters(in: .whitespaces)
 
@@ -318,12 +321,19 @@ class MarkdownASTParser {
 
         while currentIndex < lines.count {
             let itemLine = lines[currentIndex]
+            let lineIndent = itemLine.prefix(while: { $0.isWhitespace }).count
+
+            // Stop at lines below our minimum indent - they belong to an outer list.
+            if lineIndent < minIndent {
+                break
+            }
 
             guard let match = regex.firstMatch(in: itemLine, range: NSRange(itemLine.startIndex..., in: itemLine)) else {
                 break
             }
 
-            // Parse list item content
+            // Parse list item content - this also consumes nested list items at deeper
+            // indentation so they become children of this item, not siblings.
             let result = parseListItem(lines, startIndex: currentIndex, listType: listType, context: context, depth: depth)
             items.append(result.item)
             currentIndex += result.linesConsumed
@@ -337,14 +347,14 @@ class MarkdownASTParser {
         )
     }
 
-    /// Parse a single list item with nested content
+    /// Parse a single list item with nested content (including sub-lists)
     private func parseListItem(_ lines: [String], startIndex: Int, listType: MarkdownASTNode.ListType, context: MarkdownParserContext, depth: Int) -> (item: MarkdownASTNode.ListItemNode, linesConsumed: Int) {
         let line = lines[startIndex]
 
         var isChecked: Bool?
         var number: Int?
         var text = ""
-        var indent = 0
+        var itemIndent = 0
 
         switch listType {
         case .task:
@@ -352,7 +362,7 @@ class MarkdownASTParser {
                let indentRange = Range(match.range(at: 1), in: line),
                let checkRange = Range(match.range(at: 2), in: line),
                let textRange = Range(match.range(at: 3), in: line) {
-                indent = String(line[indentRange]).count
+                itemIndent = String(line[indentRange]).count
                 let checkChar = String(line[checkRange]).lowercased()
                 isChecked = (checkChar == "x")
                 text = String(line[textRange])
@@ -362,7 +372,7 @@ class MarkdownASTParser {
             if let match = try? NSRegularExpression(pattern: #"^(\s*)[-*+] (.+)$"#).firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
                let indentRange = Range(match.range(at: 1), in: line),
                let textRange = Range(match.range(at: 2), in: line) {
-                indent = String(line[indentRange]).count
+                itemIndent = String(line[indentRange]).count
                 text = String(line[textRange])
             }
 
@@ -371,53 +381,72 @@ class MarkdownASTParser {
                let indentRange = Range(match.range(at: 1), in: line),
                let numRange = Range(match.range(at: 2), in: line),
                let textRange = Range(match.range(at: 3), in: line) {
-                indent = String(line[indentRange]).count
+                itemIndent = String(line[indentRange]).count
                 number = Int(String(line[numRange]))
                 text = String(line[textRange])
             }
         }
 
         // Calculate indent level (0-based, each 2 spaces = 1 level)
-        let indentLevel = indent / 2
+        let indentLevel = itemIndent / 2
 
-        // Collect continuation lines (lines that belong to this list item)
-        var contentLines = [text]
+        // Collect continuation lines and detect nested lists.
+        // Two passes:
+        //   1. Lines that are part of this item's inline content (regular text continuations)
+        //   2. Lines at deeper indentation that form a nested sub-list - parsed recursively
+        //      and added as a child node so they nest inside this <li> properly.
+        var contentLines: [String] = [text]
+        var nestedChildren: [MarkdownASTNode] = []
         var currentIndex = startIndex + 1
 
+        // While the next line is a nested list item (deeper indent than this item),
+        // parse it as a sub-list and add to nestedChildren.
         while currentIndex < lines.count {
             let nextLine = lines[currentIndex]
             let trimmed = nextLine.trimmingCharacters(in: .whitespaces)
 
-            // Stop at blank line
             if trimmed.isEmpty {
                 break
             }
 
-            // Calculate indentation of next line
             let nextLineIndent = nextLine.prefix(while: { $0.isWhitespace }).count
 
-            // Stop at next list marker ONLY if at same or higher level (less indentation)
+            // Check if this is a list marker at deeper indentation - if so, parse as sub-list.
             let hasListMarker = trimmed.hasPrefix("-") || trimmed.hasPrefix("*") || trimmed.hasPrefix("+") ||
-                               trimmed.range(of: #"^\d+\. "#, options: .regularExpression) != nil
-            
-            if hasListMarker && nextLineIndent <= indent {
-                // List marker at same or higher level - end this item
+                               trimmed.range(of: #"^\d+\. "#, options: .regularExpression) != nil ||
+                               trimmed.range(of: #"^\[([ xX])\] "#, options: .regularExpression) != nil
+
+            if hasListMarker && nextLineIndent > itemIndent {
+                /// Recursively parse the nested list starting at this line.
+                if let nestedResult = parseList(lines, startIndex: currentIndex, context: context, depth: depth + 1, minIndent: nextLineIndent) {
+                    nestedChildren.append(nestedResult.node)
+                    currentIndex += nestedResult.linesConsumed
+                    continue
+                }
+            }
+
+            // Stop at list marker at same or lower indent - end this item.
+            if hasListMarker && nextLineIndent <= itemIndent {
                 break
             }
 
-            // CRITICAL: Include block elements as part of list item content
-            // They will be parsed recursively as nested markdown (including nested lists!)
-            // Only stop at headers (they should start new sections)
+            // Stop at headers - they should start new sections.
             if trimmed.hasPrefix("#") {
                 break
             }
 
+            // Include as inline content (continuation of this item's text).
             contentLines.append(trimmed)
             currentIndex += 1
         }
 
-        // Parse item content as blocks (supports nested markdown including blockquotes!)
-        let children = parseBlocks(contentLines, context: context, depth: depth + 1)
+        /// Parse the item's text content (excluding any nested sub-lists we already extracted).
+        var children: [MarkdownASTNode] = []
+        if !contentLines.isEmpty {
+            children.append(contentsOf: parseBlocks(contentLines, context: context, depth: depth + 1))
+        }
+        /// Append any nested sub-lists as children of this item.
+        children.append(contentsOf: nestedChildren)
 
         let item = MarkdownASTNode.ListItemNode(
             children: children,

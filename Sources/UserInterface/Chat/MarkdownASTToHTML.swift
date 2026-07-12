@@ -32,11 +32,16 @@ enum MarkdownASTToHTML {
         case .list(let type, let items):
             let tag = type == .ordered ? "ol" : "ul"
             let itemsHTML = items.map { item in
-                let content = item.children.map(convert).joined(separator: "\n")
+                /// Strip outer <p> wrapper if children is a single paragraph - prevents
+                /// line break between task list checkbox and label, and keeps nested
+                /// lists from being pushed onto a new line within the parent <li>.
+                let rendered = item.children.map(convert)
+                let stripped = stripWrappingParagraph(rendered)
+                let content = stripped.joined(separator: "\n")
                 let indent = item.indentLevel > 0 ? " style=\"margin-left:\(item.indentLevel * 20)px\"" : ""
                 if type == .task {
                     let checked = (item.isChecked ?? false) ? " checked" : ""
-                    return "<li class=\"task-item\"\(indent)><input type=\"checkbox\" disabled\(checked)>\(content)</li>"
+                    return "<li class=\"task-item\"\(indent)><label class=\"task-label\"><input type=\"checkbox\" disabled\(checked)><span class=\"task-text\">\(content)</span></label></li>"
                 }
                 return "<li\(indent)>\(content)</li>"
             }.joined(separator: "\n")
@@ -95,6 +100,19 @@ enum MarkdownASTToHTML {
         }
     }
     
+    /// Strip outer <p>...</p> wrapper if there's only a single paragraph in the
+    /// rendered child array. Used for list item content where a wrapping <p>
+    /// would force an unwanted line break (especially for task lists).
+    private static func stripWrappingParagraph(_ html: [String]) -> [String] {
+        guard html.count == 1 else { return html }
+        let single = html[0]
+        if single.hasPrefix("<p>") && single.hasSuffix("</p>") {
+            let inner = String(single.dropFirst(3).dropLast(4))
+            return [inner]
+        }
+        return html
+    }
+
     /// Convert inline-only nodes (for use inside paragraphs/headings).
     private static func convertInline(_ node: MarkdownASTNode) -> String {
         switch node {
