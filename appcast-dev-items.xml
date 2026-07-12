@@ -50,6 +50,34 @@
             <li>Development builds may contain bugs and incomplete features</li>
         </ul>
     ]]></description>
+    <pubDate>Sun, 12 Jul 2026 11:27:10 +0000</pubDate>
+    <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260705.1-dev.1</sparkle:releaseNotesLink>
+    <sparkle:channel>development</sparkle:channel>
+    <enclosure 
+        url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260705.1-dev.1/SAM-20260705.1-dev.1.zip"
+        sparkle:version="20260705.1-dev.1"
+        sparkle:shortVersionString="20260705.1-dev.1"
+        sparkle:edSignature="G3E8MdnJngU9B95jWmcboWbPnNTHmpolpyst67zqjwGfO2B3sKjLAluikxY2u0XJwuoARF2m9Xs5buv7482LDQ=="
+        length="57831003"
+        type="application/octet-stream"
+    />
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+</item>
+
+<item>
+    <title>SAM 20260705.1-dev.1</title>
+    <description><![CDATA[
+        <h2>SAM 20260705.1-dev.1 (Development Build)</h2>
+        <p><strong>⚠️ This is a DEVELOPMENT release for testing purposes.</strong></p>
+        <h3>What's New:</h3>
+        <ul>
+            <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260705.1-dev.1">GitHub Releases</a> for details</li>
+        </ul>
+        <h3>Known Issues:</h3>
+        <ul>
+            <li>Development builds may contain bugs and incomplete features</li>
+        </ul>
+    ]]></description>
     <pubDate>Sun, 12 Jul 2026 02:39:27 +0000</pubDate>
     <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260705.1-dev.1</sparkle:releaseNotesLink>
     <sparkle:channel>development</sparkle:channel>
