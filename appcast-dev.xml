@@ -8,6 +8,33 @@
 
 <!-- Development releases (from appcast-dev-items.xml) -->
 <item>
+    <title>SAM 20260705.1-dev.1</title>
+    <description><![CDATA[
+        <h2>SAM 20260705.1-dev.1 (Development Build)</h2>
+        <p><strong>⚠️ This is a DEVELOPMENT release for testing purposes.</strong></p>
+        <h3>What's New:</h3>
+        <ul>
+            <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260705.1-dev.1">GitHub Releases</a> for details</li>
+        </ul>
+        <h3>Known Issues:</h3>
+        <ul>
+            <li>Development builds may contain bugs and incomplete features</li>
+        </ul>
+    ]]></description>
+    <pubDate>Sun, 12 Jul 2026 02:39:27 +0000</pubDate>
+    <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260705.1-dev.1</sparkle:releaseNotesLink>
+    <sparkle:channel>development</sparkle:channel>
+    <enclosure 
+        url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260705.1-dev.1/SAM-20260705.1-dev.1.zip"
+        sparkle:version="20260705.1-dev.1"
+        sparkle:shortVersionString="20260705.1-dev.1"
+        sparkle:edSignature="G3E8MdnJngU9B95jWmcboWbPnNTHmpolpyst67zqjwGfO2B3sKjLAluikxY2u0XJwuoARF2m9Xs5buv7482LDQ=="
+        length="57831003"
+        type="application/octet-stream"
+    />
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+</item>
+<item>
     <title>SAM 20260307.1-dev.1</title>
     <description><![CDATA[
         <h2>SAM 20260307.1-dev.1 (Development Build)</h2>
@@ -873,6 +900,546 @@
 </item>
 
 <!-- Stable releases (fallback from appcast.xml) -->
+        <item>
+            <title>SAM 20260701.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260701.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260701.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Wed, 01 Jul 2026 23:32:06 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260701.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260701.1/SAM-20260701.1.zip"
+                sparkle:version="20260701.1"
+                sparkle:shortVersionString="20260701.1"
+                sparkle:edSignature="zrB8LCmrrRhrighGQ9bpMiPqoaSYKl8FSc6CzZXzGu3noo0Is6Fj24Nz+ShOtECf2RL1aoA2zlikJA28h+m7AA=="
+                length="57830996"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260629.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260629.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260629.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Tue, 30 Jun 2026 00:05:10 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260629.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260629.1/SAM-20260629.1.zip"
+                sparkle:version="20260629.1"
+                sparkle:shortVersionString="20260629.1"
+                sparkle:edSignature="R+7uPvxCp5QUVkppCNpqDse+8KJAwvcJb41gJ2pddBXYUlbuMBQjdbmxw62Qr0uzlo6X9y1SIwDtrCDxRcLgBg=="
+                length="57802554"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260628.2</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260628.2</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260628.2">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sun, 28 Jun 2026 18:50:40 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260628.2</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260628.2/SAM-20260628.2.zip"
+                sparkle:version="20260628.2"
+                sparkle:shortVersionString="20260628.2"
+                sparkle:edSignature="n+kAsEWVidH407GYxOBEcoP9qr9ZU2w/+z/+MoWvnwR04y9OBWcCUBb9gYaNnUF7HZ6LqFCxhA3HID8XMka7Dg=="
+                length="57778698"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260628.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260628.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260628.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sun, 28 Jun 2026 12:08:41 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260628.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260628.1/SAM-20260628.1.zip"
+                sparkle:version="20260628.1"
+                sparkle:shortVersionString="20260628.1"
+                sparkle:edSignature="xysqt5qEs+dHvE1TIUkFNEJSzF/7gIHTEJCfv1MbDfBkwyckalg+25SlyCjd/WunSxI+VSJODAZm3JjukRUPBg=="
+                length="57787200"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260603.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260603.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260603.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Wed, 03 Jun 2026 22:13:04 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260603.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260603.1/SAM-20260603.1.zip"
+                sparkle:version="20260603.1"
+                sparkle:shortVersionString="20260603.1"
+                sparkle:edSignature="zpJ+R0S+DGw6ZMN2rdvrZ2ybhG5rR8qbj0gxTNz6MKgY1gc0P6j4D8VAMducoEjKhE6zPtwWr2amhTp9dpAODQ=="
+                length="57626301"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260601.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260601.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260601.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Mon, 01 Jun 2026 12:20:50 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260601.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260601.1/SAM-20260601.1.zip"
+                sparkle:version="20260601.1"
+                sparkle:shortVersionString="20260601.1"
+                sparkle:edSignature="z0fV300Psv0W92nAh08bNQKkrdOnWz9ZhD5yfIbF1ppIpiJAeoeFLUl7CSbM+//hwQsjaHAA+tUT2MJYizHZAw=="
+                length="57567989"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260530.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260530.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260530.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sat, 30 May 2026 12:16:06 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260530.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260530.1/SAM-20260530.1.zip"
+                sparkle:version="20260530.1"
+                sparkle:shortVersionString="20260530.1"
+                sparkle:edSignature="E3174msQjMW6K8EE1HOa8jezl3zTR4rfVYB1o3skzOH/t+rjiqg+Mjr8LGEZ6AdhtU49SN/ACp9Mq6T8UbIaBw=="
+                length="57518160"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260528.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260528.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260528.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Thu, 28 May 2026 10:58:32 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260528.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260528.1/SAM-20260528.1.zip"
+                sparkle:version="20260528.1"
+                sparkle:shortVersionString="20260528.1"
+                sparkle:edSignature="4LAQ4ZIga1nMNUzvWCncgs5eHqTl1NQUuVuEjrCCa0u0F2n1Hx+JUbwty9umMYrfH+dYy83xr/96E0EXPTfGCQ=="
+                length="57509370"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260510.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260510.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260510.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sun, 10 May 2026 11:13:19 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260510.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260510.1/SAM-20260510.1.zip"
+                sparkle:version="20260510.1"
+                sparkle:shortVersionString="20260510.1"
+                sparkle:edSignature="ajpFw9izynBObDtqOQMbWZffHeB8FbYVPyaT8Be0O1qohbiMpO0yMw/QzTtHtPY3tHDUmNPTYp0WYUpKaTkkAg=="
+                length="57508733"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260506.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260506.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260506.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Thu, 07 May 2026 02:04:12 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260506.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260506.1/SAM-20260506.1.zip"
+                sparkle:version="20260506.1"
+                sparkle:shortVersionString="20260506.1"
+                sparkle:edSignature="8jb9phS6wT4F6cGjQG9IfcQxoh5NB5hQXDzNq3TwlJjuyq7X3wJvlb2olsOBFuGDfSOm4IT+Q3y/6gRSLy3tDQ=="
+                length="57507701"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260427.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260427.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260427.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Tue, 28 Apr 2026 00:09:57 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260427.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260427.1/SAM-20260427.1.zip"
+                sparkle:version="20260427.1"
+                sparkle:shortVersionString="20260427.1"
+                sparkle:edSignature="Cc7Or42gFVYPy+2dnyVV8RGTwTFOnSwk3nV6bPxkP6buxlRKfFhSKUu4mrZSLXEjgWw2UFYc82H61f8lOJcPDw=="
+                length="57481891"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260419.2</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260419.2</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260419.2">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sun, 19 Apr 2026 22:49:45 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260419.2</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260419.2/SAM-20260419.2.zip"
+                sparkle:version="20260419.2"
+                sparkle:shortVersionString="20260419.2"
+                sparkle:edSignature="m5jDNyXWsPZenhC1PeOufqwabIEKs4kPySnzZEAh8xqH1ngV3Haj9pSfOVq9LRSZgRgXA4gS0J5/lsyUjfQ6Cw=="
+                length="57484209"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260419.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260419.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260419.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sun, 19 Apr 2026 15:43:07 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260419.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260419.1/SAM-20260419.1.zip"
+                sparkle:version="20260419.1"
+                sparkle:shortVersionString="20260419.1"
+                sparkle:edSignature="rSwod4pWsQunFiYE0JuDLfAU5T5Oiy4nKbXrrZqfTKHRU+kizMpxCZe1OeMfldau0syUuQoro24TXOr+4B3HBQ=="
+                length="57468025"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260418.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260418.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260418.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sat, 18 Apr 2026 11:48:15 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260418.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260418.1/SAM-20260418.1.zip"
+                sparkle:version="20260418.1"
+                sparkle:shortVersionString="20260418.1"
+                sparkle:edSignature="5AcIQ14yTU+q2NnccSaR2bgCXGSj/5ROU4wEeu0KFb0pk9DCYOENoTyPCbIe29HrrGM7Pl5bplObM22cbYGFCg=="
+                length="57431466"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260411.2</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260411.2</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260411.2">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sat, 11 Apr 2026 15:38:24 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260411.2</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260411.2/SAM-20260411.2.zip"
+                sparkle:version="20260411.2"
+                sparkle:shortVersionString="20260411.2"
+                sparkle:edSignature="6lIBbFj/HiCkmAex7EktqaUV9dcqqaiRE7Vz5iB4RwXPBQkMlTG38RV/Yo8Pb01ZxDc8pzEfwjizZwRqIfIFBg=="
+                length="57405622"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260411.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260411.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260411.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sat, 11 Apr 2026 12:58:22 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260411.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260411.1/SAM-20260411.1.zip"
+                sparkle:version="20260411.1"
+                sparkle:shortVersionString="20260411.1"
+                sparkle:edSignature="IfZefJixlPt1Hv/3KUoxDD4u1am5i6r2nvFo3RuUtqfgwdAyTkAFPycMmBx8y1rQHgTDgL9uMoM5s09Qi/n3BQ=="
+                length="57218083"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260408.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260408.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260408.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Wed, 08 Apr 2026 23:03:54 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260408.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260408.1/SAM-20260408.1.zip"
+                sparkle:version="20260408.1"
+                sparkle:shortVersionString="20260408.1"
+                sparkle:edSignature="3vXlHtnEoOTr17l7GiCW4kdu87GH2/ytNd47SJ7uMs0NkubtgfleW7wOkeVr+qZnfHfYXQJKhXCHJEFtExv7Cw=="
+                length="57190108"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260404.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260404.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260404.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sat, 04 Apr 2026 20:51:56 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260404.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260404.1/SAM-20260404.1.zip"
+                sparkle:version="20260404.1"
+                sparkle:shortVersionString="20260404.1"
+                sparkle:edSignature="mhvcdn9ffGPBGneQ1kDfgYPvCk6/BzOshZ8hs6w07uhVhtLK+04v47RE06mAzE+qtWrGePE6gc85e9ogJROiDg=="
+                length="57199705"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260331.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260331.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260331.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Wed, 01 Apr 2026 01:01:56 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260331.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260331.1/SAM-20260331.1.zip"
+                sparkle:version="20260331.1"
+                sparkle:shortVersionString="20260331.1"
+                sparkle:edSignature="GjKNS+j3i1VJ1jVTOzfqvgHIyXU1rPalqV+TbIrVj6yZZILqsAkkGWDCLn0VZ57jNbuEayI1+/UAmuR73IpkBg=="
+                length="57153862"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260329.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260329.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260329.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Mon, 30 Mar 2026 15:48:21 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260329.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260329.1/SAM-20260329.1.zip"
+                sparkle:version="20260329.1"
+                sparkle:shortVersionString="20260329.1"
+                sparkle:edSignature="2cCxoW+eRGJYWz+xxgC+Spi5CNnyqVF38VWWjpn9jSGUqpvFCoyvhm2k8VJs8CxMck1vFjXxN68triGKFBXdAg=="
+                length="55987638"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260330.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260330.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260330.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Mon, 30 Mar 2026 15:48:07 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260330.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260330.1/SAM-20260330.1.zip"
+                sparkle:version="20260330.1"
+                sparkle:shortVersionString="20260330.1"
+                sparkle:edSignature="Ayvcyb6QoEiOR5u+mKTS/WI34Y25jOrMNXR8bop6l89YH1JTU216cylxsNS5rjosNwD03x6YAo/iy/dsAhRgBA=="
+                length="56042680"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260316.2</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260316.2</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260316.2">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Mon, 16 Mar 2026 23:11:15 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260316.2</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260316.2/SAM-20260316.2.zip"
+                sparkle:version="20260316.2"
+                sparkle:shortVersionString="20260316.2"
+                sparkle:edSignature="UG3T6GUKWF1qf2BjRL7XS/bEK5z9VLp8CeUqxpqsI+RRdBnhF4oR3epoUB1UfqX9y2QTqqv6/K6NzVMaSNQUAg=="
+                length="55968777"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260316.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260316.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260316.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Mon, 16 Mar 2026 11:00:25 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260316.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260316.1/SAM-20260316.1.zip"
+                sparkle:version="20260316.1"
+                sparkle:shortVersionString="20260316.1"
+                sparkle:edSignature="gfD37erjUwGAYWpCsyoHQk0BbEjDAX2yhoQRimX+ZK6CwiCYnKhglAhC5QGq2Rsj0YgCQCm026Gz8cyhE1NtDA=="
+                length="55494966"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260315.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260315.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260315.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Sun, 15 Mar 2026 15:53:49 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260315.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260315.1/SAM-20260315.1.zip"
+                sparkle:version="20260315.1"
+                sparkle:shortVersionString="20260315.1"
+                sparkle:edSignature="0rQ+GJyP90gVT79ME84Rleq1Zoe64MHvoA20oWyKWKbALxiC1vVpRBL3O/sDOMw37TLVcSaTRKwmNaFrKSKqCQ=="
+                length="55348699"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260313.3</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260313.3</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260313.3">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Fri, 13 Mar 2026 22:11:56 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260313.3</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260313.3/SAM-20260313.3.zip"
+                sparkle:version="20260313.3"
+                sparkle:shortVersionString="20260313.3"
+                sparkle:edSignature="G7QUnr2D7KriJQzBCjm5V73+iP3aaeM9WUA3scnzWtQ4LIiGiDB+qxzpprBRw5KaCO+FEQl8kk2wV2EImayXCg=="
+                length="55326734"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260313.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260313.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260313.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Fri, 13 Mar 2026 10:36:01 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260313.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260313.1/SAM-20260313.1.zip"
+                sparkle:version="20260313.1"
+                sparkle:shortVersionString="20260313.1"
+                sparkle:edSignature="/kppxEUy0tK6CjlRH7YQ3oVMJ4J39BfHXUK/3bnsjgPfIk7J0m6EXG00a1e9xirCBNNiOysf456FVDUezsnyBw=="
+                length="55329905"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
+        <item>
+            <title>SAM 20260312.1</title>
+            <description><![CDATA[
+                <h2>What's New in SAM 20260312.1</h2>
+                <ul>
+                    <li>See <a href="https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260312.1">GitHub Releases</a> for details</li>
+                </ul>
+            ]]></description>
+            <pubDate>Fri, 13 Mar 2026 00:56:29 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/SyntheticAutonomicMind/SAM/releases/tag/20260312.1</sparkle:releaseNotesLink>
+            <enclosure 
+                url="https://github.com/SyntheticAutonomicMind/SAM/releases/download/20260312.1/SAM-20260312.1.zip"
+                sparkle:version="20260312.1"
+                sparkle:shortVersionString="20260312.1"
+                sparkle:edSignature="xhrkc1M6MNSswxYjJuanIDrPpYbP43K7rCwDAd+/+vQZABqWdw+2gBHnG3wnRFxOkRWCHSwcAtHALLeOOghZAA=="
+                length="55329991"
+                type="application/octet-stream"
+            />
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+        </item>
         <item>
             <title>SAM 20260220.2</title>
             <description><![CDATA[
