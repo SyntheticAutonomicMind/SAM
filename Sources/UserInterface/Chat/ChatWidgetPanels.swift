@@ -72,7 +72,7 @@ extension ChatWidget {
                 .padding(.horizontal, 16)
         }
         .padding(.bottom, 8)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .background(Color.clear)
         .onAppear {
             loadMemoryStatistics()
         }
@@ -193,7 +193,7 @@ extension ChatWidget {
             }
         }
         .padding(.bottom, 8)
-        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .background(Color.clear)
     }
 
 }

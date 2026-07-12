@@ -334,7 +334,6 @@ public struct ChatWidget: View {
             Divider()
             messageInput
         }
-        .background(Color(NSColor.controlBackgroundColor))
     }
 
     var mainChatView: some View {

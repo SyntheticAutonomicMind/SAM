@@ -50,7 +50,7 @@ extension ChatWidget {
     func applyScrollTrackingModifiers<Content: View>(_ content: Content, proxy: ScrollViewProxy) -> some View {
         content
             .scrollPosition(id: $bottomVisibleItemId, anchor: .bottom)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+            .background(Color.clear)
             .onChange(of: bottomVisibleItemId) { _, newId in
                 updateFollowingOutput(scrollItemId: newId)
             }

@@ -19,7 +19,7 @@ extension ChatWidget {
             Divider()
             statusBar
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(Color.clear)
         .onAppear {
             loadGlobalMLXSettings()
             loadGlobalLlamaSettings()
@@ -63,7 +63,7 @@ extension ChatWidget {
         .padding(.horizontal, 16)
         .padding(.vertical, 3)
         .frame(height: 20)
-        .background(Color(NSColor.windowBackgroundColor).opacity(0.6))
+        .background(Color.clear)
     }
 
     var standardMessageInputUI: some View {
@@ -84,11 +84,7 @@ extension ChatWidget {
                     .font(.body)
                     .disabled(shouldDisableInput || (isSending && !isAwaitingUserInput))
                     .scrollContentBackground(.hidden)
-                    .background(
-                        isAwaitingUserInput
-                            ? Color(NSColor.controlBackgroundColor).opacity(0.95)
-                            : Color(NSColor.controlBackgroundColor)
-                    )
+                    .background(Color.clear)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(
