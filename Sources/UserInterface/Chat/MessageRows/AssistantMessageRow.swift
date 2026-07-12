@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Andrew Wyatt (Fewtarius)
 
 import SwiftUI
+import AppKit
 import ConfigurationSystem
 import ConversationEngine
 import APIFramework
@@ -59,10 +60,18 @@ struct AssistantMessageRow: View {
             if let attributed = cachedAttributed {
                 Text(attributed)
                     .textSelection(.enabled)
+                    .environment(\.openURL, OpenURLAction { url in
+                        NSWorkspace.shared.open(url)
+                        return .handled
+                    })
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text(displayedContent)
                     .textSelection(.enabled)
+                    .environment(\.openURL, OpenURLAction { url in
+                        NSWorkspace.shared.open(url)
+                        return .handled
+                    })
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

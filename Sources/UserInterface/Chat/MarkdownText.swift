@@ -2,6 +2,11 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 /// Enhanced SwiftUI component for beautiful markdown rendering using custom SAM parser Provides production-grade markdown rendering with enhanced visual styling and smooth animations Zero third-party dependencies - fully native Swift implementation.
 struct MarkdownText: View {
@@ -16,6 +21,14 @@ struct MarkdownText: View {
         /// Use custom MarkdownContentView instead of swift-markdown-ui.
         MarkdownContentView(content: content)
             .textSelection(.enabled)
+            .environment(\.openURL, OpenURLAction { url in
+                #if os(macOS)
+                NSWorkspace.shared.open(url)
+                #else
+                UIApplication.shared.open(url)
+                #endif
+                return .handled
+            })
             /// REMOVED: .animation() was causing layout recalculations during streaming
             /// Enhanced styling for better presentation.
             .padding(.vertical, 4)
