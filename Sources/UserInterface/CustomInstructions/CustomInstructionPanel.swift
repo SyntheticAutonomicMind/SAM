@@ -52,7 +52,9 @@ public struct CustomInstructionPanel: View {
                 .buttonStyle(.plain)
                 .help("Add new custom instruction")
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
 
             /// Filter text field.
             HStack {

@@ -5,6 +5,8 @@ import SwiftUI
 import WebKit
 import OSLog
 
+private let logger = Logger(subsystem: "com.sam.ui.MarkdownWebView", category: "UserInterface")
+
 /// Renders markdown as styled HTML in a WKWebView.
 ///
 /// Uses MarkdownASTToHTML for reliable parsing (Swift-side AST),
@@ -21,8 +23,6 @@ struct MarkdownWebView: NSViewRepresentable {
     @Binding var bubbleWidth: CGFloat?
     @Binding var bubbleHeight: CGFloat
 
-    private static let logger = Logger(subsystem: "com.sam.ui.MarkdownWebView", category: "UserInterface")
-
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -31,6 +31,7 @@ struct MarkdownWebView: NSViewRepresentable {
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
         config.userContentController.add(context.coordinator, name: "sizeHandler")
+        config.userContentController.add(context.coordinator, name: "linkHandler")
 
         let webView = NonScrollingWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -153,12 +154,16 @@ struct MarkdownWebView: NSViewRepresentable {
         tr:nth-child(even) { background: \(stripedBg); }
         ul, ol { margin: 0.3em 0; padding-left: 1.8em; }
         li { margin: 0.15em 0; }
+        /// Nested lists indent properly with consistent spacing.
+        li > ul, li > ol { margin: 0.15em 0; padding-left: 1.4em; }
         a { color: \(linkColor); text-decoration: underline; }
         hr { border: none; border-top: 1px solid \(borderColor); margin: 1em 0; }
-        img { max-width: 100%; height: auto; border-radius: 4px; }
+        img { max-width: 100%; height: auto; border-radius: 4px; display: block; margin: 0.4em 0; }
         .task-list { list-style: none; padding-left: 0.5em; }
         .task-item { margin: 0.2em 0; }
-        .task-item input { margin-right: 0.5em; }
+        .task-item label.task-label { display: inline-flex; align-items: baseline; gap: 0.4em; cursor: default; }
+        .task-item input[type="checkbox"] { margin: 0; vertical-align: middle; flex-shrink: 0; }
+        .task-item .task-text { display: inline; }
         @media print {
             body { background: #fff !important; color: #000 !important; font-size: 12pt; }
             #content { display: block !important; }
@@ -178,6 +183,19 @@ struct MarkdownWebView: NSViewRepresentable {
         <script>
         // Initialize mermaid
         mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")'});
+
+        // Intercept link clicks - open external URLs in the system browser
+        // instead of navigating the WKWebView (which would replace the
+        // bubble content with the link target).
+        document.addEventListener('click', function(e) {
+            var a = e.target;
+            while (a && a.tagName !== 'A') { a = a.parentElement; }
+            if (a && a.tagName === 'A' && a.href) {
+                e.preventDefault();
+                e.stopPropagation();
+                webkit.messageHandlers.linkHandler.postMessage(a.href);
+            }
+        }, true);
 
         function reportSize() {
             var el = document.getElementById('content');
@@ -236,12 +254,21 @@ struct MarkdownWebView: NSViewRepresentable {
         var maxWidth: CGFloat = 400
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "sizeHandler",
-                  let dict = message.body as? [String: Any],
-                  let w = dict["width"] as? CGFloat,
-                  let h = dict["height"] as? CGFloat,
-                  w > 0, h > 0 else { return }
-            onSizeChange?(w, h)
+            switch message.name {
+            case "sizeHandler":
+                guard let dict = message.body as? [String: Any],
+                      let w = dict["width"] as? CGFloat,
+                      let h = dict["height"] as? CGFloat,
+                      w > 0, h > 0 else { return }
+                onSizeChange?(w, h)
+            case "linkHandler":
+                guard let urlString = message.body as? String,
+                      let url = URL(string: urlString) else { return }
+                logger.info("[link-handler] opening: \(url.absoluteString)")
+                NSWorkspace.shared.open(url)
+            default:
+                break
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -249,6 +276,38 @@ struct MarkdownWebView: NSViewRepresentable {
                 "var el=document.getElementById('content');webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(Int(maxWidth))),height:el.scrollHeight})",
                 completionHandler: nil
             )
+        }
+
+        /// Intercept link taps. External http/https links open in the system
+        /// browser instead of navigating the WKWebView (which would replace
+        /// the bubble content with the link target). Same-page anchors and
+        /// other non-http schemes fall through to default behavior.
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            logger.debug("[link-tap] url=\(navigationAction.request.url?.absoluteString ?? "nil") navType=\(navigationAction.navigationType.rawValue)")
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            let scheme = url.scheme?.lowercased() ?? ""
+            /// http/https links always open in the system browser, regardless
+            /// of navigationType. Tap, long-press menu, back/forward, and any
+            /// other path into an external URL all funnel through here. We
+            /// cancel the WKWebView navigation so the bubble content isn't
+            /// replaced. Anchor links and other schemes fall through.
+            let isExternal = (scheme == "http" || scheme == "https")
+
+            if isExternal {
+                logger.info("[link-tap] opening external: \(url.absoluteString)")
+                let opened = NSWorkspace.shared.open(url)
+                logger.info("[link-tap] NSWorkspace.open returned: \(opened)")
+                decisionHandler(.cancel)
+                return
+            }
+
+            decisionHandler(.allow)
         }
     }
 }
