@@ -30,12 +30,16 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             VERSION="$INPUT_VERSION"
           else
-            VERSION="$HEAD_BRANCH"
+            # Get the latest dev pre-release version from GitHub API
+            VERSION=$(gh api repos/${{ github.repository }}/releases --jq '.[] | select(.prerelease == true and .tag_name | endswith("-dev.")) | .tag_name' | head -1)
+            if [ -z "$VERSION" ]; then
+              echo "ERROR: No development release found" >&2
+              exit 1
+            fi
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Updating dev appcast for version: $VERSION"
