@@ -50,6 +50,14 @@ jobs:
           ref: main
           fetch-depth: 0
           clean: true
+          submodules: recursive
+
+      - name: Build project to get sign_update binary
+        run: |
+          # Build to fetch Sparkle dependency and build sign_update
+          swift build --package-path . 2>&1 | tail -20
+          # Also build the sign_update tool specifically
+          swift build -c release --package-path . --product sign_update 2>&1 | tail -20
 
       - name: Download ZIP from pre-release
         env:
