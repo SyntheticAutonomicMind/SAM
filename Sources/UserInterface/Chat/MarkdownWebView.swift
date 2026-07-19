@@ -29,7 +29,6 @@ struct MarkdownWebView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> WKWebView {
-        Self.appendDebug("[MERMAID_DEBUG] makeNSView called markdownLen=\(markdown.count)")
         let config = WKWebViewConfiguration()
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
@@ -53,7 +52,6 @@ struct MarkdownWebView: NSViewRepresentable {
     }
 
         func updateNSView(_ webView: WKWebView, context: Context) {
-        Self.appendDebug("[MERMAID_DEBUG] updateNSView TOP markdownLen=\(markdown.count) lastMarkdownLen=\(context.coordinator.lastMarkdown?.count ?? -1)")
         /// Track whether content actually changed BEFORE we mutate any
         /// state. The bump-then-load pattern needs the original change
         /// status available for both decisions - if we set lastMarkdown
@@ -138,14 +136,6 @@ struct MarkdownWebView: NSViewRepresentable {
         /// as raw code in chat while still rendering in print and export
         /// (which use static script tags).
         let hasMermaid = markdown.range(of: "```mermaid", options: .caseInsensitive) != nil
-
-        logger.info("[MERMAID_DEBUG] hasMermaid=\(hasMermaid), markdownLen=\(markdown.count), hasMermaidScript=\(bodyHTML.contains("language-mermaid"))")
-
-        /// TEMP DIAGNOSTIC: also write to /tmp so we can read the value
-        /// regardless of os_log routing. The Logger call doesn't seem
-        /// to be making it into server.log.
-        let lastLen = context.coordinator.lastMarkdown?.count ?? -1
-        Self.appendDebug("[MERMAID_DEBUG] updateNSView HAS_MERMAID hasMermaid=\(hasMermaid) markdownLen=\(markdown.count) lastLen=\(lastLen)")
 
         let isDark = NSApp.effectiveAppearance.name == .darkAqua
         let fgColor = isFromUser ? "#ffffff" : (isDark ? "#e0e0e0" : "#1a1a1a")
@@ -261,17 +251,12 @@ struct MarkdownWebView: NSViewRepresentable {
         \(bodyHTML)
         </div>
 
-        /// Note the three slashes: sam-bundle:///mermaid.min.js.
-        /// For "scheme://host/path" forms, "sam-bundle://mermaid.min.js"
-        /// puts the file in the URL host (url.path is ""). Our handler
-        /// resolves the file via url.path, so we use three slashes to
-        /// put the file in url.path instead ("mermaid.min.js"). Standard
-        /// same-scheme fetch, same routing - just correct path storage.
-        /// Capture script load/syntax errors so we can see them from the
-        /// Swift-side evaluateJavaScript diagnostic. Without this, a
-        /// syntax error in mermaid.min.js leaves `typeof mermaid`
-        /// undefined with no visible cause.
-        <script>window.__samScriptErrors = []; window.__samIsStreaming = \(isStreaming ? "true" : "false"); window.addEventListener('error', function(e) { window.__samScriptErrors.push((e && (e.message || e.filename)) || String(e)); });</script>
+        /// Streaming flag for the mermaid IIFE below. Set BEFORE the
+        /// mermaid.min.js script tag so the IIFE sees it when it runs.
+        /// True during streaming -> show raw code blocks; False ->
+        /// render the SVG. See the onChange in MessageBubble that
+        /// forces a reload when this flips from true to false.
+        <script>window.__samIsStreaming = \(isStreaming ? "true" : "false");</script>
         \(hasMermaid ? "<script src=\"\(MermaidResourceSchemeHandler.scheme):///mermaid.min.js\"></script>" : "")
 
         <script>
@@ -311,38 +296,39 @@ struct MarkdownWebView: NSViewRepresentable {
         // Mermaid render. The Swift template conditionally includes
         // the script tag for mermaid.min.js (above this inline script) when
         // the bubble contains mermaid blocks; the static tag is parsed
-        // as part of the initial HTML load so WKWebView allows the file://
-        // fetch. If mermaid isn't loaded (no script tag), this falls
-        // through to reportSize() so the bubble still measures itself.
-        // When blocks ARE present the bubble renders the raw code first
-        // and mermaid replaces each block with SVG as it renders.
+        // as part of the initial HTML load so WKWebView's same-origin
+        // policy allows the sam-bundle:// fetch (script tags injected
+        // dynamically via document.head.appendChild are blocked for
+        // loadHTMLString pages because the document has a null origin).
+        // If mermaid isn't loaded (no script tag) or no blocks were
+        // found, reportSize() runs so the bubble still measures itself.
+        // While the parent message is streaming, holders receive the
+        // raw code text and reportSize runs immediately so the bubble
+        // doesn't reflow on every delta. SVG rendering kicks in once
+        // streaming completes and the bubble is rebuilt with
+        // __samIsStreaming = false.
         (function() {
-            window.__samScriptErrors.push('IIFE start blocks=' + document.querySelectorAll('#content pre code.language-mermaid').length + ' mermaid=' + typeof mermaid);
             var blocks = document.querySelectorAll('#content pre code.language-mermaid');
             if (blocks.length === 0) {
-                window.__samScriptErrors.push('IIFE early-return: zero blocks');
                 reportSize();
                 return;
             }
             if (typeof mermaid === 'undefined') {
-                window.__samScriptErrors.push('IIFE early-return: mermaid undefined');
                 reportSize();
                 return;
             }
-            /// Mermaid v11+ `mermaid.render(id, code, container?)` is
-            /// DOM-oriented: the third arg is a container Element and
-            /// the renderer WRITES the SVG into it. The 2-arg form
-            /// (no container) writes to <body>, which leaves the SVG
-            /// floating outside the bubble. Pass an explicit container
-            /// so the diagram lands in the bubble where it belongs.
-            /// The Promise resolves when the render is done (no payload),
-            /// so we don't try to read a result.svg.
-            try { mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")', securityLevel: 'loose'}); }
-            catch (e) { window.__samScriptErrors.push('init-error: ' + (e && e.message || String(e))); }
+            /// Mermaid v11: render(id, code, container) resolves with
+            /// {svg, diagramType, ...} and the v11 internal pipeline
+            /// writes the SVG into the container Element. Under
+            /// securityLevel: 'loose' the most reliable way to get
+            /// the SVG into the holder is to assign result.svg to
+            /// holder.innerHTML ourselves - the v11 renderer clears
+            /// container.innerHTML before drawing and the loose-mode
+            /// flow doesn't always re-populate that container.
+            mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")', securityLevel: 'loose'});
+            var skipRender = window.__samIsStreaming === true;
             var idx = 0;
             var pending = [];
-            var skipRender = window.__samIsStreaming === true;
-            if (skipRender) window.__samScriptErrors.push('render deferred: streaming');
             blocks.forEach(function(block) {
                 var code = block.textContent;
                 var pre = block.parentElement;
@@ -350,44 +336,19 @@ struct MarkdownWebView: NSViewRepresentable {
                 holder.className = 'mermaid-diagram';
                 holder.style.textAlign = 'center';
                 holder.style.overflow = 'auto';
-                try { pre.parentElement.insertBefore(holder, pre); pre.remove(); }
-                catch (e) { window.__samScriptErrors.push('insert-error: ' + (e && e.message || String(e))); }
+                pre.parentElement.insertBefore(holder, pre);
+                pre.remove();
                 if (skipRender) { holder.textContent = code; return; }
                 var id = 'mermaid-' + (idx++);
-                window.__samScriptErrors.push('render-call: ' + id + ' codeLen=' + (code || '').length);
-                try {
-                    pending.push(
-                        mermaid.render(id, code.trim(), holder)
-                            .then(function(result) {
-                                // v11 returns {svg, diagramType, ...}. Mermaid
-                                // may also have written the SVG into our
-                                // holder directly via the third arg, but that
-                                // path doesn't render when securityLevel is
-                                // 'loose' - we always use the returned SVG to
-                                // be safe.
-                                if (result && result.svg) { holder.innerHTML = result.svg; }
-                                window.__samScriptErrors.push('render-ok: ' + id + ' holderInnerLen=' + holder.innerHTML.length + ' hasSvg=' + !!(result && result.svg));
-                            })
-                            .catch(function(err) {
-                                window.__samScriptErrors.push('render-error: ' + id + ' ' + (err && err.message || String(err)));
-                            })
-                    );
-                } catch (e) {
-                    window.__samScriptErrors.push('render-sync-throw: ' + id + ' ' + (e && e.message || String(e)));
-                }
+                pending.push(
+                    mermaid.render(id, code.trim(), holder)
+                        .then(function(result) {
+                            if (result && result.svg) { holder.innerHTML = result.svg; }
+                        })
+                );
             });
-            var finalize = function() {
-                window.__samScriptErrors.push('all-rendered pending=' + pending.length);
-                /// Log the sizes reportSize is about to send so we can
-                /// catch the case where scrollHeight doesn't reflect
-                /// the rendered SVGs (e.g., layout hasn't reflowed yet,
-                /// or the SVGs are positioned off-screen).
-                var content = document.getElementById('content');
-                var mermaidDivs = document.querySelectorAll('#content .mermaid-diagram');
-                window.__samScriptErrors.push('sizing: contentScrollH=' + (content ? content.scrollHeight : -1) + ' svgDivs=' + mermaidDivs.length + ' firstSvgH=' + (mermaidDivs[0] ? mermaidDivs[0].offsetHeight : -1));
-                reportSize();
-            };
-            if (skipRender) finalize(); else Promise.all(pending).finally(finalize);
+            if (skipRender) reportSize();
+            else Promise.all(pending).finally(reportSize);
         })();
         </script>
         </body>
@@ -395,50 +356,6 @@ struct MarkdownWebView: NSViewRepresentable {
         """
 
         webView.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
-
-        /// Diagnostic: query the page state 2s after load and log it.
-        /// Captures whether mermaid.min.js actually fetched, how many
-        /// .language-mermaid blocks exist, and the body scroll height.
-        /// Will be removed once the underlying render failure is identified.
-        let diagGeneration = context.coordinator.currentGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak webView, weak coordinator = context.coordinator] in
-            guard let webView = webView,
-                  coordinator?.currentGeneration == diagGeneration else { return }
-            webView.evaluateJavaScript("""
-                (function() {
-                    // Report any script-tag error events so we can tell
-                    // whether mermaid.min.js parsed at all. The page's
-                    // load handlers capture error events from script
-                    // tags and add them to window.__samScriptErrors.
-                    var script = document.querySelector('script[src^="sam-bundle://"], script[src="mermaid.min.js"]');
-                    var errors = (window.__samScriptErrors || []).map(function(e){return String(e);});
-                    return JSON.stringify({
-                        mermaidLoaded: typeof mermaid,
-                        mermaidKeys: (typeof mermaid === 'object') ? Object.keys(mermaid).slice(0, 5) : null,
-                        bodyMermaidBlocks: document.querySelectorAll('#content pre code.language-mermaid').length,
-                        allPreCodes: document.querySelectorAll('#content pre code').length,
-                        sampleCodeClasses: Array.from(document.querySelectorAll('#content pre code')).slice(0, 3).map(function(el){return el.className;}),
-                        hasScriptTag: !!script,
-                        scriptSrc: script ? script.src : null,
-                        bodyScrollHeight: document.body.scrollHeight,
-                        scriptErrors: errors
-                    });
-                })()
-            """) { result, error in
-                if let result = result as? String {
-                    /// File-write instead of Logger: the os_log channel
-                    /// for com.sam.ui.MarkdownWebView isn't reaching
-                    /// server.log (subsystem-level filter), so we'd never
-                    /// see this result. /tmp/sam_mermaid_debug.log is
-                    /// the agreed-upon diagnostic channel.
-                    Self.appendDebug("[MERMAID_DEBUG] pageState=\(result)")
-                } else if let error = error {
-                    Self.appendDebug("[MERMAID_DEBUG] evalError=\(error.localizedDescription)")
-                } else {
-                    Self.appendDebug("[MERMAID_DEBUG] pageState no result")
-                }
-            }
-        }
     }
 
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -509,22 +426,7 @@ struct MarkdownWebView: NSViewRepresentable {
 
             decisionHandler(.allow)
         }
-    }
-
-    /// Append a single line to /tmp/sam_mermaid_debug.log so multiple
-    /// MarkdownWebView observations accumulate in order instead of
-    /// overwriting each other (Swift's write(toFile:) always overwrites).
-    private static func appendDebug(_ message: String) {
-        let entry = (message + "\n").data(using: .utf8) ?? Data()
-        let path = "/tmp/sam_mermaid_debug.log"
-        if let handle = FileHandle(forWritingAtPath: path) {
-            handle.seekToEndOfFile()
-            handle.write(entry)
-            try? handle.close()
-        } else {
-            try? (message + "\n").write(toFile: path, atomically: true, encoding: .utf8)
-        }
-    }
+}
 }
 
 /// WKWebView that passes scroll events to the responder chain instead of

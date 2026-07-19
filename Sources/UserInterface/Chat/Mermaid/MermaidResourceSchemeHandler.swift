@@ -22,7 +22,6 @@ final class MermaidResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     static let scheme = "sam-bundle"
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
-        Self.appendDebug("[MERMAID_DEBUG] scheme REQUEST: \(urlSchemeTask.request.url?.absoluteString ?? "nil")")
         guard let url = urlSchemeTask.request.url else {
             urlSchemeTask.didFailWithError(NSError(domain: "MermaidResourceScheme", code: 0))
             return
@@ -48,13 +47,9 @@ final class MermaidResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         guard FileManager.default.fileExists(atPath: fileURL.path),
               let data = try? Data(contentsOf: fileURL) else {
             schemeLogger.warning("[scheme] 404 for \(url.absoluteString) -> \(fileURL.path)")
-            Self.appendDebug("[MERMAID_DEBUG] scheme 404: \(url.absoluteString) -> \(fileURL.path)")
             urlSchemeTask.didFailWithError(NSError(domain: "MermaidResourceScheme", code: 404))
             return
         }
-
-        Self.appendDebug("[MERMAID_DEBUG] scheme SERVED: \(url.absoluteString) (\(data.count) bytes, \(Self.mimeType(for: fileURL.pathExtension)))")
-
 
         let mimeType = Self.mimeType(for: fileURL.pathExtension)
         let response = URLResponse(
@@ -86,18 +81,4 @@ final class MermaidResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         }
     }
 
-    /// Append a single line to /tmp/sam_mermaid_debug.log so we can see
-    /// every scheme fetch in order rather than only the last one.
-    /// write(toFile:) always overwrites so FileHandle.append is needed.
-    private static func appendDebug(_ message: String) {
-        let entry = (message + "\n").data(using: .utf8) ?? Data()
-        let path = "/tmp/sam_mermaid_debug.log"
-        if let handle = FileHandle(forWritingAtPath: path) {
-            handle.seekToEndOfFile()
-            handle.write(entry)
-            try? handle.close()
-        } else {
-            try? (message + "\n").write(toFile: path, atomically: true, encoding: .utf8)
-        }
-    }
 }
