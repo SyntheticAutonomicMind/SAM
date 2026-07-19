@@ -98,7 +98,7 @@ struct MarkdownWebView: NSViewRepresentable {
             /// closures fire with the correct height.
             let width = Int(maxBubbleWidth)
             webView.evaluateJavaScript(
-                "var el=document.getElementById('content');if(el){webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(width)),height:el.scrollHeight})}",
+                "var el=document.getElementById('content');if(el){webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(width)),height:el.scrollHeight+8})}",
                 completionHandler: nil
             )
             return
@@ -133,16 +133,20 @@ struct MarkdownWebView: NSViewRepresentable {
             margin: 0; padding: 0;
         }
         body {
-            /// Pad the body so descenders (p, g, j, q, y) clear the
-            /// line box's bottom edge and the row of text sits with
-            /// margin to spare above and below. Without this the
-            /// line box sits flush against the WKWebView's bottom
-            /// edge and descenders on the last line get clipped when
-            /// the WKWebView's reported height equals scrollHeight
-            /// exactly (which it does, after the JS size callback).
-            /// 4px top/bottom gives 8px of vertical breathing room
-            /// and centers the visible text row within the bubble's
-            /// 12pt vertical padding for content with descenders.
+            /// Pad the body so the line box doesn't sit flush against
+            /// the WKWebView's edges. Without this, on the last (or
+            /// only) line, descenders (p, g, j, q, y) extend below
+            /// the line box's reported bottom edge by a hair, and the
+            /// WKWebView's content view clips them when the frame is
+            /// set to exactly scrollHeight. 4px top/bottom gives 8px
+            /// of breathing room AND centers the visible text row
+            /// within the bubble's 12pt vertical padding for content
+            /// with descenders. The matching `+ 8` in the JS size
+            /// callback compensates for the fact that scrollHeight
+            /// (on #content) only reports content height - it does
+            /// NOT include this body's padding - so without the
+            /// manual addition the WKWebView ends up 8pt short and
+            /// the line box bottom gets clipped.
             padding: 4px 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             font-size: 14px; line-height: 1.6;
@@ -242,7 +246,14 @@ struct MarkdownWebView: NSViewRepresentable {
         function reportSize() {
             var el = document.getElementById('content');
             var w = Math.min(el.scrollWidth, \(Int(maxBubbleWidth)));
-            var h = el.scrollHeight;
+            /// scrollHeight on #content reports only the content area
+            /// height - it does NOT include the body's 4px top/bottom
+            /// padding set in CSS. Without this addition the Swift
+            /// callback sizes the WKWebView to the content height,
+            /// the body overflows by 8px at the bottom, and
+            /// overflow:hidden on body clips the descenders (p, g,
+            /// j, q, y) of the last (or only) line.
+            var h = el.scrollHeight + 8;
             if (w > 0 && h > 0) {
                 webkit.messageHandlers.sizeHandler.postMessage({width: w, height: h});
             }
@@ -337,7 +348,7 @@ struct MarkdownWebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(
-                "var el=document.getElementById('content');webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(Int(maxWidth))),height:el.scrollHeight})",
+                "var el=document.getElementById('content');webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(Int(maxWidth))),height:el.scrollHeight+8})",
                 completionHandler: nil
             )
         }
