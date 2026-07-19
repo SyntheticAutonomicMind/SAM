@@ -22,6 +22,7 @@ final class MermaidResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     static let scheme = "sam-bundle"
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        try? "[MERMAID_DEBUG] scheme REQUEST: \(urlSchemeTask.request.url?.absoluteString ?? "nil")\n".write(toFile: "/tmp/sam_mermaid_debug.log", atomically: true, encoding: .utf8)
         guard let url = urlSchemeTask.request.url else {
             urlSchemeTask.didFailWithError(NSError(domain: "MermaidResourceScheme", code: 0))
             return
