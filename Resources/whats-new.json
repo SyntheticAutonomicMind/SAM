@@ -1,9 +1,9 @@
 {
   "releases": [
     {
-      "version": "20260718.1",
-      "release_date": "July 18, 2026",
-      "introduction": "Long autonomous sessions now run on the same workflow primitives as CLIO, so multi-step work stays coherent as context grows. The chat UI catches up on a batch of small bugs: bubble race conditions, dark-mode backgrounds, link handling, markdown rendering, and a stale location permission prompt.",
+      "version": "20260719.1",
+      "release_date": "July 19, 2026",
+      "introduction": "Long autonomous sessions now run on the same workflow primitives as CLIO, so multi-step work stays coherent as context grows. SAM's default system prompt gains a User Data Boundaries component that hardens how numbers, assumptions, and user-supplied lists are handled. The chat UI catches up on a batch of small bugs: bubble race conditions, dark-mode backgrounds, link handling, markdown rendering, and a stale location permission prompt.",
       "highlights": [
         {
           "id": "unified-context-management",
@@ -12,7 +12,14 @@
           "description": "Long autonomous sessions now match CLIO's workflow loop. Thread summary compression is regex-based (no LLM call during trim), previous summaries are parsed and merged so commits and decisions accumulate across cycles, and findSubstantiveTask rejects short acknowledgements like 'yes' as task context. The fake YaRN scaling path and the four overlapping context searches per iteration are gone. LTM is now gated to shared-topic conversations - default conversations get no LTM prompt injection and no memory tool. SAM stays a helpful assistant; only the workflow loop primitives are unified with CLIO."
         }
       ],
-      "improvements": [],
+      "improvements": [
+        {
+          "id": "user-data-boundaries",
+          "icon": "lock.shield",
+          "title": "User Data Boundaries in the Default System Prompt",
+          "description": "A new User Data Boundaries component ships in SAM Default. It covers numerical integrity - any value flowing into a downstream decision, projection, comparison, or recommendation must come from a tool call (math_operations or equivalent), and framing numbers that do not enter a calculation are the only exception. It covers assumption discipline - no silent decomposition of user-stated totals, show derivations when a value is derived, flag every assumption with [ASSUMPTION: ...], re-derive dependent outputs when an assumption changes, and ask before stacking guessed values into a recommendation. And it covers user-controlled lists - a list the user supplied is the user's input; concerns about a list item surface as warnings adjacent to the list, not as silent removals. The component is default-enabled, applies in conversational mode as well as task execution, and is intentionally not added to SAM Minimal."
+        }
+      ],
       "bugfixes": [
         {
           "id": "bubble-residual-races",
