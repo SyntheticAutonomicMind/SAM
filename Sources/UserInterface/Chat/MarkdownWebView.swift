@@ -133,6 +133,17 @@ struct MarkdownWebView: NSViewRepresentable {
             margin: 0; padding: 0;
         }
         body {
+            /// Pad the body so descenders (p, g, j, q, y) clear the
+            /// line box's bottom edge and the row of text sits with
+            /// margin to spare above and below. Without this the
+            /// line box sits flush against the WKWebView's bottom
+            /// edge and descenders on the last line get clipped when
+            /// the WKWebView's reported height equals scrollHeight
+            /// exactly (which it does, after the JS size callback).
+            /// 4px top/bottom gives 8px of vertical breathing room
+            /// and centers the visible text row within the bubble's
+            /// 12pt vertical padding for content with descenders.
+            padding: 4px 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             font-size: 14px; line-height: 1.6;
             color: \(fgColor); background: transparent;
