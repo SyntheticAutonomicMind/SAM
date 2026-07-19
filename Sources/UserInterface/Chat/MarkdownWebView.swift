@@ -320,26 +320,36 @@ struct MarkdownWebView: NSViewRepresentable {
                 reportSize();
                 return;
             }
-            mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")'});
-            var promises = [];
+            /// Mermaid v11+ `mermaid.render(id, code, container?)` is
+            /// DOM-oriented: the third arg is a container Element and
+            /// the renderer WRITES the SVG into it. The 2-arg form
+            /// (no container) writes to <body>, which leaves the SVG
+            /// floating outside the bubble. Pass an explicit container
+            /// so the diagram lands in the bubble where it belongs.
+            /// The Promise resolves when the render is done (no payload),
+            /// so we don't try to read a result.svg.
+            mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")', securityLevel: 'loose'});
             var idx = 0;
+            var pending = [];
             blocks.forEach(function(block) {
-                try {
-                    var code = block.textContent;
-                    var pre = block.parentElement;
-                    var i = idx++;
-                    promises.push(
-                        mermaid.render('mermaid-' + i, code).then(function(result) {
-                            var div = document.createElement('div');
-                            div.className = 'mermaid-diagram';
-                            div.innerHTML = result.svg;
-                            div.style.textAlign = 'center';
-                            pre.parentElement.replaceChild(div, pre);
+                var code = block.textContent;
+                var pre = block.parentElement;
+                var holder = document.createElement('div');
+                holder.className = 'mermaid-diagram';
+                holder.style.textAlign = 'center';
+                holder.style.overflow = 'auto';
+                pre.parentElement.insertBefore(holder, pre);
+                pre.remove();
+                var id = 'mermaid-' + (idx++);
+                window.__samScriptErrors.push('render-call: ' + id + ' codeLen=' + (code || '').length);
+                pending.push(
+                    mermaid.render(id, code.trim(), holder)
+                        .catch(function(err) {
+                            window.__samScriptErrors.push('render-error: ' + id + ' ' + (err && err.message || String(err)));
                         })
-                    );
-                } catch(e) {}
+                );
             });
-            Promise.all(promises).finally(function() { reportSize(); });
+            Promise.all(pending).finally(function() { reportSize(); });
         })();
         </script>
         </body>
