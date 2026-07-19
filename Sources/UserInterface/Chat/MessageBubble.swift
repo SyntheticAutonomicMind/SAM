@@ -123,6 +123,7 @@ struct MessageBubble: View {
                 markdown: displayContent,
                 isFromUser: isFromUser,
                 maxBubbleWidth: width,
+                isStreaming: message.isStreaming,
                 bubbleHeight: $bubbleHeight
             )
             .frame(width: width, height: bubbleHeight)
