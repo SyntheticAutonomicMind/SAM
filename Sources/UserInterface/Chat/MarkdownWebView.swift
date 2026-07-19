@@ -18,7 +18,6 @@ struct MarkdownWebView: NSViewRepresentable {
     let markdown: String
     let isFromUser: Bool
     let maxBubbleWidth: CGFloat
-    @Binding var bubbleWidth: CGFloat
     @Binding var bubbleHeight: CGFloat
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -33,16 +32,6 @@ struct MarkdownWebView: NSViewRepresentable {
 
         let webView = NonScrollingWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
-        /// Disable the internal scroll bars and zero out the content
-        /// insets. Without this, WKWebView reserves ~15pt for the
-        /// vertical scroller and the body's content area is narrower
-        /// than the bubble's intended width, which then forces #content
-        /// to wrap before reaching the bubble edge.
-        if let scroll = webView.internalScrollView {
-            scroll.hasHorizontalScroller = false
-            scroll.hasVerticalScroller = false
-            scroll.contentInsets = NSEdgeInsetsZero
-        }
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
         context.coordinator.maxWidth = maxBubbleWidth
@@ -89,7 +78,7 @@ struct MarkdownWebView: NSViewRepresentable {
         /// container and #content wraps early, before reaching the
         /// bubble edge.
         let intendedWidth = maxBubbleWidth
-        context.coordinator.onSizeChange = { [weak webView, weak coordinator = context.coordinator] w, h in
+        context.coordinator.onSizeChange = { [weak webView, weak coordinator = context.coordinator] _, h in
             DispatchQueue.main.async {
                 /// Generation check: ignore size reports from a page that has
                 /// since been superseded by a newer loadHTMLString. Without
@@ -99,7 +88,6 @@ struct MarkdownWebView: NSViewRepresentable {
                 /// producing the "taller than content" artifact.
                 guard coordinator?.currentGeneration == capturedGeneration else { return }
                 webView?.frame.size = CGSize(width: intendedWidth, height: h)
-                bubbleWidth = w
                 bubbleHeight = h
             }
         }
@@ -383,13 +371,5 @@ struct MarkdownWebView: NSViewRepresentable {
 private class NonScrollingWebView: WKWebView {
     override func scrollWheel(with event: NSEvent) {
         nextResponder?.scrollWheel(with: event)
-    }
-
-    /// Expose the underlying scroll view so callers can disable the
-    /// scrollers and zero the content insets. WKWebView's scrollView
-    /// isn't part of the public Swift API yet, so we reach for it via
-    /// the Obj-C selector.
-    var internalScrollView: NSScrollView? {
-        value(forKey: "scrollView") as? NSScrollView
     }
 }
