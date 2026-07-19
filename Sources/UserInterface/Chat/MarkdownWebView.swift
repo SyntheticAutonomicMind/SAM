@@ -255,7 +255,13 @@ struct MarkdownWebView: NSViewRepresentable {
         \(bodyHTML)
         </div>
 
-        \(hasMermaid ? "<script src=\"\(MermaidResourceSchemeHandler.scheme)://mermaid.min.js\"></script>" : "")
+        /// Note the three slashes: sam-bundle:///mermaid.min.js.
+        /// For "scheme://host/path" forms, "sam-bundle://mermaid.min.js"
+        /// puts the file in the URL host (url.path is ""). Our handler
+        /// resolves the file via url.path, so we use three slashes to
+        /// put the file in url.path instead ("mermaid.min.js"). Standard
+        /// same-scheme fetch, same routing - just correct path storage.
+        \(hasMermaid ? "<script src=\"\(MermaidResourceSchemeHandler.scheme):///mermaid.min.js\"></script>" : "")
 
         <script>
         // Intercept link clicks - open external URLs in the system browser

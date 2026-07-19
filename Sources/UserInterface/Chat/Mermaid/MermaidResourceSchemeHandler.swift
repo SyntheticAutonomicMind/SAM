@@ -28,15 +28,21 @@ final class MermaidResourceSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
 
-        /// url.path is "/mermaid.min.js" for "sam-bundle://mermaid.min.js".
-        /// Resolve against the bundle's Resources directory.
+        /// Resolve the resource path. Form is either:
+        ///   sam-bundle:///mermaid.min.js  ->  url.host="", url.path="/mermaid.min.js"
+        ///   sam-bundle://mermaid.min.js   ->  url.host="mermaid.min.js", url.path=""
+        /// We support both by combining host and path. The MarkdownWebView
+        /// template uses the three-slash form so the file lands in url.path;
+        /// the two-slash form is accepted for callers that prefer it.
         guard let resourcePath = Bundle.main.resourcePath else {
             urlSchemeTask.didFailWithError(NSError(domain: "MermaidResourceScheme", code: 1))
             return
         }
 
-        /// Strip leading slash so we don't end up with "Resources//mermaid.min.js".
-        let relativePath = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+        let host = url.host ?? ""
+        let path = url.path
+        let combined = host + path
+        let relativePath = combined.hasPrefix("/") ? String(combined.dropFirst()) : combined
         let fileURL = URL(fileURLWithPath: resourcePath).appendingPathComponent(relativePath)
 
         guard FileManager.default.fileExists(atPath: fileURL.path),
