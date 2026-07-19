@@ -50,6 +50,16 @@ struct MarkdownWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        /// Track whether content actually changed BEFORE we mutate any
+        /// state. The bump-then-load pattern needs the original change
+        /// status available for both decisions - if we set lastMarkdown
+        /// during the bump and then test lastMarkdown == markdown, the
+        /// condition is always true (we just wrote that value), so the
+        /// HTML load path would never run. Capturing isChanged up front
+        /// preserves the distinction: changed -> bump + load HTML,
+        /// unchanged -> force JS size evaluation only.
+        let isChanged = context.coordinator.lastMarkdown != markdown
+
         /// Bump the generation counter BEFORE capturing it in the closure
         /// when content changes. The closure compares its captured value
         /// against the live currentGeneration at the time the size report
@@ -61,9 +71,8 @@ struct MarkdownWebView: NSViewRepresentable {
         /// can fire reportSize successfully. Bumping only on changed
         /// content means the same-content recycle path keeps its
         /// capturedGeneration == currentGeneration invariant intact.
-        if context.coordinator.lastMarkdown != markdown {
+        if isChanged {
             context.coordinator.currentGeneration &+= 1
-            context.coordinator.lastMarkdown = markdown
         }
 
         /// ALWAYS set onSizeChange before the guard, so the closure captures the
@@ -106,6 +115,8 @@ struct MarkdownWebView: NSViewRepresentable {
             )
             return
         }
+
+        context.coordinator.lastMarkdown = markdown
 
         // Parse markdown AST and convert to HTML
         let parser = MarkdownASTParser()
