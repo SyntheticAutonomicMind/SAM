@@ -106,6 +106,15 @@ struct MessageBubble: View {
             Button("Print Message...") { printMessage() }
         }
         .animation(enableAnimations ? .easeInOut(duration: 0.2) : nil, value: showCopyConfirmation)
+        /// When isStreaming flips from true -> false, force-rebuild the
+        /// MarkdownWebView so its HTML is reloaded with __samIsStreaming
+        /// = false and the IIFE actually runs mermaid.render. Without
+        /// this, a streaming-then-complete transition that doesn't change
+        /// message.content (final delta == last streamed delta) leaves
+        /// the bubble's HTML showing the streaming-deferred variant.
+        .onChange(of: message.isStreaming) { _, streaming in
+            if !streaming { reloadMessage() }
+        }
     }
 
     /// Bubble wrapped in GeometryReader so the dynamic cap reflects actual
