@@ -311,12 +311,15 @@ struct MarkdownWebView: NSViewRepresentable {
         // When blocks ARE present the bubble renders the raw code first
         // and mermaid replaces each block with SVG as it renders.
         (function() {
+            window.__samScriptErrors.push('IIFE start blocks=' + document.querySelectorAll('#content pre code.language-mermaid').length + ' mermaid=' + typeof mermaid);
             var blocks = document.querySelectorAll('#content pre code.language-mermaid');
             if (blocks.length === 0) {
+                window.__samScriptErrors.push('IIFE early-return: zero blocks');
                 reportSize();
                 return;
             }
             if (typeof mermaid === 'undefined') {
+                window.__samScriptErrors.push('IIFE early-return: mermaid undefined');
                 reportSize();
                 return;
             }
@@ -328,7 +331,8 @@ struct MarkdownWebView: NSViewRepresentable {
             /// so the diagram lands in the bubble where it belongs.
             /// The Promise resolves when the render is done (no payload),
             /// so we don't try to read a result.svg.
-            mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")', securityLevel: 'loose'});
+            try { mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")', securityLevel: 'loose'}); }
+            catch (e) { window.__samScriptErrors.push('init-error: ' + (e && e.message || String(e))); }
             var idx = 0;
             var pending = [];
             blocks.forEach(function(block) {
@@ -338,18 +342,26 @@ struct MarkdownWebView: NSViewRepresentable {
                 holder.className = 'mermaid-diagram';
                 holder.style.textAlign = 'center';
                 holder.style.overflow = 'auto';
-                pre.parentElement.insertBefore(holder, pre);
-                pre.remove();
+                try { pre.parentElement.insertBefore(holder, pre); pre.remove(); }
+                catch (e) { window.__samScriptErrors.push('insert-error: ' + (e && e.message || String(e))); }
                 var id = 'mermaid-' + (idx++);
                 window.__samScriptErrors.push('render-call: ' + id + ' codeLen=' + (code || '').length);
-                pending.push(
-                    mermaid.render(id, code.trim(), holder)
-                        .catch(function(err) {
-                            window.__samScriptErrors.push('render-error: ' + id + ' ' + (err && err.message || String(err)));
-                        })
-                );
+                try {
+                    pending.push(
+                        mermaid.render(id, code.trim(), holder)
+                            .then(function() { window.__samScriptErrors.push('render-ok: ' + id + ' holderInnerLen=' + holder.innerHTML.length); })
+                            .catch(function(err) {
+                                window.__samScriptErrors.push('render-error: ' + id + ' ' + (err && err.message || String(err)));
+                            })
+                    );
+                } catch (e) {
+                    window.__samScriptErrors.push('render-sync-throw: ' + id + ' ' + (e && e.message || String(e)));
+                }
             });
-            Promise.all(pending).finally(function() { reportSize(); });
+            Promise.all(pending).finally(function() {
+                window.__samScriptErrors.push('all-rendered pending=' + pending.length);
+                reportSize();
+            });
         })();
         </script>
         </body>
