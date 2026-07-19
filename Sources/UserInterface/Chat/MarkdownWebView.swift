@@ -303,7 +303,7 @@ struct MarkdownWebView: NSViewRepresentable {
         }
 
         // Mermaid render. The Swift template conditionally includes
-        // <script src="mermaid.min.js"></script> above this script when
+        // the script tag for mermaid.min.js (above this inline script) when
         // the bubble contains mermaid blocks; the static tag is parsed
         // as part of the initial HTML load so WKWebView allows the file://
         // fetch. If mermaid isn't loaded (no script tag), this falls
