@@ -207,11 +207,7 @@ struct MarkdownWebView: NSViewRepresentable {
         \(bodyHTML)
         </div>
 
-        <script src="mermaid.min.js"></script>
         <script>
-        // Initialize mermaid
-        mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")'});
-
         // Intercept link clicks - open external URLs in the system browser
         // instead of navigating the WKWebView (which would replace the
         // bubble content with the link target).
@@ -225,6 +221,10 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         }, true);
 
+        // reportSize: send the rendered content's dimensions back to
+        // Swift so MessageBubble can size itself correctly. Called
+        // immediately for non-mermaid content and from the mermaid
+        // onload after diagram rendering completes.
         function reportSize() {
             var el = document.getElementById('content');
             var w = Math.min(el.scrollWidth, \(Int(maxBubbleWidth)));
@@ -234,31 +234,54 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         }
 
-        // Render mermaid diagrams then report size
+        // Mermaid library (~3MB minified) loads lazily only when the page
+        // actually contains mermaid code blocks. Previously the template
+        // included <script src="mermaid.min.js"></script> unconditionally,
+        // which made the WebContent process fetch + parse 3MB of JS on
+        // every bubble render - even for messages with no mermaid (the
+        // vast majority). Combined with the 30 FPS delta sync throttle
+        // during streaming, this compounded to ~20 second delays before
+        // a code-block-heavy bubble finished rendering. Now we check the
+        // DOM for mermaid blocks first and skip the script load entirely
+        // when none exist; reportSize fires immediately so the bubble
+        // appears at full size. When blocks ARE present the bubble still
+        // renders the raw code right away (so the user sees content
+        // immediately) and mermaid replaces it with SVG once the script
+        // finishes loading.
         (function() {
-            if (typeof mermaid === 'undefined') { reportSize(); return; }
             var blocks = document.querySelectorAll('#content pre code.language-mermaid');
-            if (blocks.length === 0) { reportSize(); return; }
-
-            var promises = [];
-            var idx = 0;
-            blocks.forEach(function(block) {
-                try {
-                    var code = block.textContent;
-                    var pre = block.parentElement;
-                    var i = idx++;
-                    promises.push(
-                        mermaid.render('mermaid-' + i, code).then(function(result) {
-                            var div = document.createElement('div');
-                            div.className = 'mermaid-diagram';
-                            div.innerHTML = result.svg;
-                            div.style.textAlign = 'center';
-                            pre.parentElement.replaceChild(div, pre);
-                        })
-                    );
-                } catch(e) {}
-            });
-            Promise.all(promises).finally(function() { reportSize(); });
+            if (blocks.length === 0) {
+                reportSize();
+                return;
+            }
+            var s = document.createElement('script');
+            s.src = 'mermaid.min.js';
+            s.onload = function() {
+                mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")'});
+                var promises = [];
+                var idx = 0;
+                blocks.forEach(function(block) {
+                    try {
+                        var code = block.textContent;
+                        var pre = block.parentElement;
+                        var i = idx++;
+                        promises.push(
+                            mermaid.render('mermaid-' + i, code).then(function(result) {
+                                var div = document.createElement('div');
+                                div.className = 'mermaid-diagram';
+                                div.innerHTML = result.svg;
+                                div.style.textAlign = 'center';
+                                pre.parentElement.replaceChild(div, pre);
+                            })
+                        );
+                    } catch(e) {}
+                });
+                Promise.all(promises).finally(function() { reportSize(); });
+            };
+            s.onerror = function() {
+                reportSize();
+            };
+            document.head.appendChild(s);
         })();
         </script>
         </body>
