@@ -261,6 +261,11 @@ struct MarkdownWebView: NSViewRepresentable {
         /// resolves the file via url.path, so we use three slashes to
         /// put the file in url.path instead ("mermaid.min.js"). Standard
         /// same-scheme fetch, same routing - just correct path storage.
+        /// Capture script load/syntax errors so we can see them from the
+        /// Swift-side evaluateJavaScript diagnostic. Without this, a
+        /// syntax error in mermaid.min.js leaves `typeof mermaid`
+        /// undefined with no visible cause.
+        <script>window.__samScriptErrors = []; window.addEventListener('error', function(e) { window.__samScriptErrors.push((e && (e.message || e.filename)) || String(e)); });</script>
         \(hasMermaid ? "<script src=\"\(MermaidResourceSchemeHandler.scheme):///mermaid.min.js\"></script>" : "")
 
         <script>
@@ -353,22 +358,36 @@ struct MarkdownWebView: NSViewRepresentable {
                   coordinator?.currentGeneration == diagGeneration else { return }
             webView.evaluateJavaScript("""
                 (function() {
+                    // Report any script-tag error events so we can tell
+                    // whether mermaid.min.js parsed at all. The page's
+                    // load handlers capture error events from script
+                    // tags and add them to window.__samScriptErrors.
                     var script = document.querySelector('script[src^="sam-bundle://"], script[src="mermaid.min.js"]');
+                    var errors = (window.__samScriptErrors || []).map(function(e){return String(e);});
                     return JSON.stringify({
                         mermaidLoaded: typeof mermaid,
-                        blocks: document.querySelectorAll('#content pre code.language-mermaid').length,
+                        mermaidKeys: (typeof mermaid === 'object') ? Object.keys(mermaid).slice(0, 5) : null,
+                        bodyMermaidBlocks: document.querySelectorAll('#content pre code.language-mermaid').length,
+                        allPreCodes: document.querySelectorAll('#content pre code').length,
+                        sampleCodeClasses: Array.from(document.querySelectorAll('#content pre code')).slice(0, 3).map(function(el){return el.className;}),
                         hasScriptTag: !!script,
                         scriptSrc: script ? script.src : null,
-                        bodyScrollHeight: document.body.scrollHeight
+                        bodyScrollHeight: document.body.scrollHeight,
+                        scriptErrors: errors
                     });
                 })()
             """) { result, error in
                 if let result = result as? String {
-                    logger.info("[MERMAID_DEBUG] pageState=\(result)")
+                    /// File-write instead of Logger: the os_log channel
+                    /// for com.sam.ui.MarkdownWebView isn't reaching
+                    /// server.log (subsystem-level filter), so we'd never
+                    /// see this result. /tmp/sam_mermaid_debug.log is
+                    /// the agreed-upon diagnostic channel.
+                    Self.appendDebug("[MERMAID_DEBUG] pageState=\(result)")
                 } else if let error = error {
-                    logger.error("[MERMAID_DEBUG] evalError=\(error.localizedDescription)")
+                    Self.appendDebug("[MERMAID_DEBUG] evalError=\(error.localizedDescription)")
                 } else {
-                    logger.warning("[MERMAID_DEBUG] no result")
+                    Self.appendDebug("[MERMAID_DEBUG] pageState no result")
                 }
             }
         }
