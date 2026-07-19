@@ -17,7 +17,11 @@ private let logger = Logger(subsystem: "com.sam.chat", category: "messagebubble"
 /// fill vs neutral fill) differ.
 ///
 /// Bubble width is set by GeometryReader to the chat column width (capped).
-/// Text wraps normally inside the bubble - no shrink-wrap to content.
+/// MarkdownWebView is laid out as a block-level element that fills the
+/// bubble's inner width, so text wraps at the bubble edge instead of
+/// shrinking to its intrinsic width. Long unbreakable strings (URLs,
+/// hashes) still wrap via CSS word-wrap on the body, capped at the
+/// bubble width.
 /// Layout:
 ///   HStack { bubble; Spacer(minLength: 60) }   // assistant (left)
 ///   HStack { Spacer(minLength: 60); bubble }   // user     (right)
@@ -38,20 +42,13 @@ struct MessageBubble: View {
     /// artifact when the callback is delayed or when the view is recycled by LazyVStack
     /// without re-loading the web content.
     @State private var bubbleHeight: CGFloat = 28
-    /// Reported width of the rendered content from the WKWebView's JS size
-    /// callback. nil means we haven't received a measurement yet, in which
-    /// case the bubble fills the chat column. Once JS reports, the bubble
-    /// shrinks to fit the content (capped by the column width). Without
-    /// this, short messages like "Hi" rendered as a full-width bubble
-    /// with hundreds of pt of empty background - visually "much larger
-    /// than the content".
-    @State private var bubbleWidth: CGFloat?
     @State private var reloadTrigger = UUID()
 
-    /// Bubble width bounds. minBubbleWidth keeps short content from looking
-    /// weirdly narrow. Long unbreakable strings (URLs, hashes) wrap via
-    /// CSS word-wrap, not by capping. The bubble shrinks to content width
-    /// once JS reports - before that, it fills the chat column.
+    /// Bubble width bounds. Min keeps short content from looking weirdly
+    /// narrow. No upper cap - the bubble fills the chat column and the
+    /// inner MarkdownWebView is laid out as block-level content so text
+    /// wraps at the bubble edge. Long unbreakable strings (URLs, hashes)
+    /// wrap via CSS word-wrap inside the WKWebView, not by capping.
     private static let minBubbleWidth: CGFloat = 200
 
     private var bubbleAlignment: HorizontalAlignment {
@@ -59,7 +56,14 @@ struct MessageBubble: View {
     }
 
     private var backgroundFill: Color {
-        isFromUser ? Color.accentColor : Color.primary.opacity(0.05)
+        if isFromUser {
+            return Color.accentColor
+        }
+        /// Adaptive assistant bubble background. Using Color.primary.opacity(0.05)
+        /// produced a near-white background in dark mode that made light-gray
+        /// text invisible. Use platform-adaptive control background so the
+        /// bubble stays subtle but legible in both light and dark mode.
+        return Color(NSColor.controlBackgroundColor)
     }
 
     var body: some View {
@@ -113,29 +117,16 @@ struct MessageBubble: View {
             /// strings (URLs, hashes) wrap via CSS word-wrap, so no upper
             /// cap is needed. minBubbleWidth prevents awkwardly narrow
             /// bubbles on tiny windows.
-            ///
-            /// Subtract 32pt for the 16pt horizontal padding on each side
-            /// so the bubble background fits within the parent VStack
-            /// instead of overflowing the chat column. The assistant bubble
-            /// had this same bug but the overflow was on the left where the
-            /// ScrollView clips it; the user bubble overflows on the right
-            /// where it is visible.
             let width = max(geo.size.width - 32, Self.minBubbleWidth)
-            /// Until the JS size callback fires, the bubble fills the chat
-            /// column (matches the legacy behavior). After the callback
-            /// reports a narrower content width, the bubble shrinks to fit
-            /// so short messages don't render as full-width bubbles with
-            /// hundreds of pt of empty background.
-            let frameWidth = bubbleWidth ?? width
 
             MarkdownWebView(
                 markdown: displayContent,
                 isFromUser: isFromUser,
                 maxBubbleWidth: width,
-                bubbleWidth: $bubbleWidth,
+                bubbleWidth: .constant(width),
                 bubbleHeight: $bubbleHeight
             )
-            .frame(width: frameWidth, height: bubbleHeight)
+            .frame(width: width, height: bubbleHeight)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(
@@ -144,29 +135,19 @@ struct MessageBubble: View {
                     .shadow(color: .primary.opacity(0.1), radius: 2, x: 0, y: 1)
             )
             .clipped()
-            /// Reload trigger: changes the view identity so SwiftUI tears down the
-            /// WKWebView and creates a fresh one. Without this, writing to
-            /// reloadTrigger alone wouldn't cause a re-render because @State
-            /// values that aren't read by the view body are ignored by the
-            /// diffing engine. The reloadMessage() context-menu action wires
-            /// this up so the bubble actually rebuilds.
+            /// Reload trigger: changes the view identity so SwiftUI tears down
+            /// the WKWebView and creates a fresh one. Without this, writing
+            /// to reloadTrigger alone wouldn't cause a rebuild because
+            /// @State values that aren't read by the view body are ignored
+            /// by the diffing engine.
             .id(reloadTrigger)
         }
-        /// Outer height still tracks bubbleHeight + 24 (SwiftUI vertical
-        /// padding). The width adapts automatically because the GeometryReader
-        /// inside fills whatever width the HStack gives it.
-        .frame(height: bubbleHeight + 24)
+        .frame(height: bubbleHeight + 24)  /// bubble height + vertical padding (12 + 12)
     }
 
     /// Always render the bubble while content exists or streaming is
     /// active so the container doesn't collapse and reappear (flicker).
     private var shouldShowBubble: Bool {
-        /// Use displayContent (not message.content) so a message whose content
-        /// is only status markers like {"status": "continue"} - which the
-        /// assistant filter strips to empty - doesn't render an empty 52pt
-        /// bubble. Previously the bubble used message.content while the
-        /// metadata used displayContent, so an assistant message containing
-        /// only status markers showed an empty bubble with no metadata row.
         !displayContent.isEmpty || message.isStreaming || message.contentParts != nil
     }
 
@@ -272,16 +253,10 @@ struct MessageBubble: View {
 
     private func reloadMessage() {
         reloadTrigger = UUID()
-        /// Reset bubbleHeight to the default so the rebuilt MarkdownWebView
-        /// doesn't briefly show the previous incarnation's measured height
-        /// before the new JS size callback arrives. Without this, a bubble
-        /// that was oversized would stay that way until the new callback.
+        /// Reset bubbleHeight so the rebuilt MarkdownWebView doesn't briefly
+        /// show the previous incarnation's measured height before the new JS
+        /// size callback arrives.
         bubbleHeight = 28
-        /// Clear bubbleWidth so the bubble expands back to full chat column
-        /// width before the new content's JS callback shrinks it back to fit.
-        /// Without this, a previously narrow bubble would stay narrow
-        /// against the new (potentially wider) content.
-        bubbleWidth = nil
         logger.info("Reloading \(isFromUser ? "user" : "assistant") message: \(message.id)")
     }
 
@@ -299,18 +274,15 @@ struct MessageBubble: View {
         let parser = MarkdownASTParser()
         let ast = parser.parse(displayContent)
         let converter = MarkdownASTToNSAttributedString()
-        let attributed = converter.convertSync(ast)
+        let attributedString = converter.convertSync(ast)
 
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
 
-        /// Plain text for plain-text targets.
         pasteboard.setString(displayContent, forType: .string)
 
-        /// RTF for rich-text targets (TextEdit, Mail, Slack, etc.). When the
-        /// RTF generation fails we leave just plain text on the pasteboard.
-        if let rtfData = try? attributed.data(
-            from: NSRange(location: 0, length: attributed.length),
+        if let rtfData = try? attributedString.data(
+            from: NSRange(location: 0, length: attributedString.length),
             documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
         ) {
             pasteboard.setData(rtfData, forType: .rtf)
@@ -319,47 +291,10 @@ struct MessageBubble: View {
         flashCopyConfirmation()
     }
 
-    /// Briefly show the checkmark indicator after a copy action, then reset.
     private func flashCopyConfirmation() {
         showCopyConfirmation = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             showCopyConfirmation = false
-        }
-    }
-
-    @MainActor
-    private func exportMessageToPDF() {
-        Task.detached(priority: .userInitiated) {
-            do {
-                let fileURL = try await MessageExportService.exportMessageToPDFAsync(
-                    message: message,
-                    conversationTitle: "Conversation",
-                    modelName: nil
-                )
-
-                await MainActor.run {
-                    let savePanel = NSSavePanel()
-                    savePanel.allowedContentTypes = [.pdf]
-                    savePanel.nameFieldStringValue = "SAM_Message_\(message.timestamp.formatted(date: .abbreviated, time: .shortened).replacingOccurrences(of: "/", with: "-")).pdf"
-                    savePanel.message = "Export message to PDF"
-
-                    let result = savePanel.runModal()
-                    if result == .OK, let url = savePanel.url {
-                        do {
-                            if FileManager.default.fileExists(atPath: url.path) {
-                                try FileManager.default.removeItem(at: url)
-                            }
-                            try FileManager.default.copyItem(at: fileURL, to: url)
-                            try? FileManager.default.removeItem(at: fileURL)
-                            NSWorkspace.shared.open(url)
-                        } catch {
-                            logger.error("Failed to save PDF: \(error)")
-                        }
-                    }
-                }
-            } catch {
-                logger.error("Failed to export message to PDF: \(error)")
-            }
         }
     }
 
