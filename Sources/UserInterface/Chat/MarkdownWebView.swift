@@ -111,6 +111,19 @@ struct MarkdownWebView: NSViewRepresentable {
         let ast = parser.parse(markdown)
         let bodyHTML = MarkdownASTToHTML.convert(ast)
 
+        /// Detect mermaid code blocks before building the HTML template.
+        /// The script tag for the bundled mermaid.min.js is only included
+        /// when the bubble actually has mermaid blocks - the 3MB library
+        /// is otherwise a noticeable cost on every chat bubble. Static
+        /// <script> tags parsed from the initial HTML are allowed by
+        /// WKWebView without any extra configuration; dynamic
+        /// document.head.appendChild fetches from a loadHTMLString
+        /// document (null origin) are blocked, which is why the previous
+        /// JS-side lazy-load IIFE silently failed and diagrams showed up
+        /// as raw code in chat while still rendering in print and export
+        /// (which use static script tags).
+        let hasMermaid = markdown.range(of: "```mermaid", options: .caseInsensitive) != nil
+
         let isDark = NSApp.effectiveAppearance.name == .darkAqua
         let fgColor = isFromUser ? "#ffffff" : (isDark ? "#e0e0e0" : "#1a1a1a")
         let codeBg = isDark ? "#2d2d2d" : "#f5f5f5"
@@ -225,6 +238,8 @@ struct MarkdownWebView: NSViewRepresentable {
         \(bodyHTML)
         </div>
 
+        \(hasMermaid ? "<script src=\"mermaid.min.js\"></script>" : "")
+
         <script>
         // Intercept link clicks - open external URLs in the system browser
         // instead of navigating the WKWebView (which would replace the
@@ -259,54 +274,44 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         }
 
-        // Mermaid library (~3MB minified) loads lazily only when the page
-        // actually contains mermaid code blocks. Previously the template
-        // included <script src="mermaid.min.js"></script> unconditionally,
-        // which made the WebContent process fetch + parse 3MB of JS on
-        // every bubble render - even for messages with no mermaid (the
-        // vast majority). Combined with the 30 FPS delta sync throttle
-        // during streaming, this compounded to ~20 second delays before
-        // a code-block-heavy bubble finished rendering. Now we check the
-        // DOM for mermaid blocks first and skip the script load entirely
-        // when none exist; reportSize fires immediately so the bubble
-        // appears at full size. When blocks ARE present the bubble still
-        // renders the raw code right away (so the user sees content
-        // immediately) and mermaid replaces it with SVG once the script
-        // finishes loading.
+        // Mermaid render. The Swift template conditionally includes
+        // <script src="mermaid.min.js"></script> above this script when
+        // the bubble contains mermaid blocks; the static tag is parsed
+        // as part of the initial HTML load so WKWebView allows the file://
+        // fetch. If mermaid isn't loaded (no script tag), this falls
+        // through to reportSize() so the bubble still measures itself.
+        // When blocks ARE present the bubble renders the raw code first
+        // and mermaid replaces each block with SVG as it renders.
         (function() {
             var blocks = document.querySelectorAll('#content pre code.language-mermaid');
             if (blocks.length === 0) {
                 reportSize();
                 return;
             }
-            var s = document.createElement('script');
-            s.src = 'mermaid.min.js';
-            s.onload = function() {
-                mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")'});
-                var promises = [];
-                var idx = 0;
-                blocks.forEach(function(block) {
-                    try {
-                        var code = block.textContent;
-                        var pre = block.parentElement;
-                        var i = idx++;
-                        promises.push(
-                            mermaid.render('mermaid-' + i, code).then(function(result) {
-                                var div = document.createElement('div');
-                                div.className = 'mermaid-diagram';
-                                div.innerHTML = result.svg;
-                                div.style.textAlign = 'center';
-                                pre.parentElement.replaceChild(div, pre);
-                            })
-                        );
-                    } catch(e) {}
-                });
-                Promise.all(promises).finally(function() { reportSize(); });
-            };
-            s.onerror = function() {
+            if (typeof mermaid === 'undefined') {
                 reportSize();
-            };
-            document.head.appendChild(s);
+                return;
+            }
+            mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")'});
+            var promises = [];
+            var idx = 0;
+            blocks.forEach(function(block) {
+                try {
+                    var code = block.textContent;
+                    var pre = block.parentElement;
+                    var i = idx++;
+                    promises.push(
+                        mermaid.render('mermaid-' + i, code).then(function(result) {
+                            var div = document.createElement('div');
+                            div.className = 'mermaid-diagram';
+                            div.innerHTML = result.svg;
+                            div.style.textAlign = 'center';
+                            pre.parentElement.replaceChild(div, pre);
+                        })
+                    );
+                } catch(e) {}
+            });
+            Promise.all(promises).finally(function() { reportSize(); });
         })();
         </script>
         </body>

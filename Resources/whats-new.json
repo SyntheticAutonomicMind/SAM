@@ -56,6 +56,12 @@
           "icon": "rectangle.compress.vertical",
           "title": "Custom Instructions Panel Padding Tightened",
           "description": "The Custom Instructions panel header used 12pt top and bottom padding, which made it taller than the rest of the left sidebar's controls. It now uses 8pt top and bottom to match the visual rhythm of the sidebar search bar."
+        },
+        {
+          "id": "mermaid-render-in-chat",
+          "icon": "arrow.down.circle.fill",
+          "title": "Mermaid Diagrams Render in Chat Bubbles",
+          "description": "Mermaid diagrams were rendering correctly in exported and printed output but appearing as raw code in chat bubbles. The chat path had switched to a JS-side lazy-load that dynamically appended a script tag for the bundled mermaid.min.js, but WKWebView blocks dynamic file:// fetches from a loadHTMLString document. Static script tags parsed as part of the initial HTML load are allowed, which is why print and export continued to work. The chat template now detects mermaid blocks in Swift and conditionally includes a static <script> tag for mermaid.min.js in the HTML - so the library is only fetched for bubbles that need it, and the fetch is allowed. Export and print paths are unchanged."
         }
       ]
     },
