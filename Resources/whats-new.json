@@ -1,6 +1,58 @@
 {
   "releases": [
     {
+      "version": "20260718.1",
+      "release_date": "July 18, 2026",
+      "introduction": "Long autonomous sessions now run on the same workflow primitives as CLIO, so multi-step work stays coherent as context grows. The chat UI catches up on a batch of small bugs: bubble race conditions, dark-mode backgrounds, link handling, markdown rendering, and a stale location permission prompt.",
+      "highlights": [
+        {
+          "id": "unified-context-management",
+          "icon": "arrow.triangle.merge",
+          "title": "Unified Context Management with CLIO Primitives",
+          "description": "Long autonomous sessions now match CLIO's workflow loop. Thread summary compression is regex-based (no LLM call during trim), previous summaries are parsed and merged so commits and decisions accumulate across cycles, and findSubstantiveTask rejects short acknowledgements like 'yes' as task context. The fake YaRN scaling path and the four overlapping context searches per iteration are gone. LTM is now gated to shared-topic conversations - default conversations get no LTM prompt injection and no memory tool. SAM stays a helpful assistant; only the workflow loop primitives are unified with CLIO."
+        }
+      ],
+      "improvements": [],
+      "bugfixes": [
+        {
+          "id": "bubble-residual-races",
+          "icon": "arrow.down.circle.fill",
+          "title": "Closed Residual Bubble Race Conditions",
+          "description": "The previous bubble-height fix stopped the most common cause of oversized bubbles, but a few cases remained. A monotonic generation counter on the markdown view's Coordinator now lets the size-report closure reject stale dispatches from cancelled page loads - the most robust fix yet for the cancelled-page race. The 'Reload Message' button now actually rebuilds the view (its trigger was being set but never read), and bubbles containing only status markers that get filtered to empty no longer render as a 52pt empty box."
+        },
+        {
+          "id": "chat-dark-mode-backgrounds",
+          "icon": "moon.fill",
+          "title": "Chat Backgrounds Now Follow Dark Mode",
+          "description": "The main chat content, message list, input bar, status bar, and conditional panels were using NSColor.controlBackgroundColor (grey) instead of transparent. The chat area is now black in dark mode and white in light mode, matching the rest of the window."
+        },
+        {
+          "id": "open-markdown-links",
+          "icon": "link",
+          "title": "Markdown Links Now Open in the Browser",
+          "description": "Tapping a link in a chat bubble used to do nothing. Markdown rendering now installs an openURL handler, and the underlying WKWebView adds a JS click interceptor plus a navigation-policy delegate as a second line of defense for taps that bypass the JS path (long-press menu, back/forward). http and https URLs open in the user's default browser instead of replacing the bubble content with the link target. Same-page anchors and other schemes fall through to default behavior."
+        },
+        {
+          "id": "markdown-nested-lists",
+          "icon": "list.bullet.indent",
+          "title": "Nested Lists and Task Lists Render Correctly",
+          "description": "Nested lists at deeper indentation levels were being consumed as siblings of their parents, so the rendered structure flattened out. The parser now recurses into sub-lists with a minIndent guard. Task list items no longer pick up an unwanted paragraph wrapper, and the checkbox and label are properly associated."
+        },
+        {
+          "id": "location-permission-rerequest",
+          "icon": "location.fill",
+          "title": "Location Permission Re-requested If Previously Enabled but Never Authorized",
+          "description": "If precise location was toggled on but the macOS authorization prompt was dismissed or the previous session was killed before authorization happened, the agent silently had no location access. On init, SAM now detects this state and requests authorization so the toggle actually takes effect."
+        },
+        {
+          "id": "custom-instruction-panel-padding",
+          "icon": "rectangle.compress.vertical",
+          "title": "Custom Instructions Panel Padding Tightened",
+          "description": "The Custom Instructions panel header used 12pt top and bottom padding, which made it taller than the rest of the left sidebar's controls. It now uses 8pt top and bottom to match the visual rhythm of the sidebar search bar."
+        }
+      ]
+    },
+    {
       "version": "20260701.1",
       "release_date": "July 1, 2026",
       "introduction": "Message bubbles now fit their content instead of showing an oversized box with the text tucked into the top corner. Short messages sit in a compact bubble, not a tall one with empty space below.",
