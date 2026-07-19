@@ -378,6 +378,13 @@ struct MarkdownWebView: NSViewRepresentable {
             });
             var finalize = function() {
                 window.__samScriptErrors.push('all-rendered pending=' + pending.length);
+                /// Log the sizes reportSize is about to send so we can
+                /// catch the case where scrollHeight doesn't reflect
+                /// the rendered SVGs (e.g., layout hasn't reflowed yet,
+                /// or the SVGs are positioned off-screen).
+                var content = document.getElementById('content');
+                var mermaidDivs = document.querySelectorAll('#content .mermaid-diagram');
+                window.__samScriptErrors.push('sizing: contentScrollH=' + (content ? content.scrollHeight : -1) + ' svgDivs=' + mermaidDivs.length + ' firstSvgH=' + (mermaidDivs[0] ? mermaidDivs[0].offsetHeight : -1));
                 reportSize();
             };
             if (skipRender) finalize(); else Promise.all(pending).finally(finalize);
