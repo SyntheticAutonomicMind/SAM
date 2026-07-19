@@ -18,6 +18,12 @@ struct MarkdownWebView: NSViewRepresentable {
     let markdown: String
     let isFromUser: Bool
     let maxBubbleWidth: CGFloat
+    /// Whether the parent message is still streaming deltas. Mermaid
+    /// rendering is deferred while streaming so partial / incomplete
+    /// diagrams don't trigger a render-resize-reflow on every delta.
+    /// Raw code blocks are shown during streaming; SVGs render once
+    /// the stream completes and isStreaming flips to false.
+    let isStreaming: Bool
     @Binding var bubbleHeight: CGFloat
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -265,7 +271,7 @@ struct MarkdownWebView: NSViewRepresentable {
         /// Swift-side evaluateJavaScript diagnostic. Without this, a
         /// syntax error in mermaid.min.js leaves `typeof mermaid`
         /// undefined with no visible cause.
-        <script>window.__samScriptErrors = []; window.addEventListener('error', function(e) { window.__samScriptErrors.push((e && (e.message || e.filename)) || String(e)); });</script>
+        <script>window.__samScriptErrors = []; window.__samIsStreaming = \(isStreaming ? "true" : "false"); window.addEventListener('error', function(e) { window.__samScriptErrors.push((e && (e.message || e.filename)) || String(e)); });</script>
         \(hasMermaid ? "<script src=\"\(MermaidResourceSchemeHandler.scheme):///mermaid.min.js\"></script>" : "")
 
         <script>
@@ -335,6 +341,8 @@ struct MarkdownWebView: NSViewRepresentable {
             catch (e) { window.__samScriptErrors.push('init-error: ' + (e && e.message || String(e))); }
             var idx = 0;
             var pending = [];
+            var skipRender = window.__samIsStreaming === true;
+            if (skipRender) window.__samScriptErrors.push('render deferred: streaming');
             blocks.forEach(function(block) {
                 var code = block.textContent;
                 var pre = block.parentElement;
@@ -344,6 +352,7 @@ struct MarkdownWebView: NSViewRepresentable {
                 holder.style.overflow = 'auto';
                 try { pre.parentElement.insertBefore(holder, pre); pre.remove(); }
                 catch (e) { window.__samScriptErrors.push('insert-error: ' + (e && e.message || String(e))); }
+                if (skipRender) { holder.textContent = code; return; }
                 var id = 'mermaid-' + (idx++);
                 window.__samScriptErrors.push('render-call: ' + id + ' codeLen=' + (code || '').length);
                 try {
@@ -367,10 +376,11 @@ struct MarkdownWebView: NSViewRepresentable {
                     window.__samScriptErrors.push('render-sync-throw: ' + id + ' ' + (e && e.message || String(e)));
                 }
             });
-            Promise.all(pending).finally(function() {
+            var finalize = function() {
                 window.__samScriptErrors.push('all-rendered pending=' + pending.length);
                 reportSize();
-            });
+            };
+            if (skipRender) finalize(); else Promise.all(pending).finally(finalize);
         })();
         </script>
         </body>
