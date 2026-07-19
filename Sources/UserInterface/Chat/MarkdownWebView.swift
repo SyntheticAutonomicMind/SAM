@@ -349,7 +349,16 @@ struct MarkdownWebView: NSViewRepresentable {
                 try {
                     pending.push(
                         mermaid.render(id, code.trim(), holder)
-                            .then(function() { window.__samScriptErrors.push('render-ok: ' + id + ' holderInnerLen=' + holder.innerHTML.length); })
+                            .then(function(result) {
+                                // v11 returns {svg, diagramType, ...}. Mermaid
+                                // may also have written the SVG into our
+                                // holder directly via the third arg, but that
+                                // path doesn't render when securityLevel is
+                                // 'loose' - we always use the returned SVG to
+                                // be safe.
+                                if (result && result.svg) { holder.innerHTML = result.svg; }
+                                window.__samScriptErrors.push('render-ok: ' + id + ' holderInnerLen=' + holder.innerHTML.length + ' hasSvg=' + !!(result && result.svg));
+                            })
                             .catch(function(err) {
                                 window.__samScriptErrors.push('render-error: ' + id + ' ' + (err && err.message || String(err)));
                             })
