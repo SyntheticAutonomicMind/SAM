@@ -27,6 +27,13 @@ struct MarkdownWebView: NSViewRepresentable {
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
+        /// Register a custom URL scheme handler so the bubble page can fetch
+        /// bundled resources (mermaid.min.js, future helpers) via
+        /// "sam-bundle://". Pages loaded with loadHTMLString on macOS
+        /// have a null origin, so file:// fetches from a baseURL are blocked
+        /// even with allowFileAccessFromFileURLs set; a same-scheme resource
+        /// load via WKURLSchemeHandler sidesteps that policy entirely.
+        config.setURLSchemeHandler(MermaidResourceSchemeHandler(), forURLScheme: MermaidResourceSchemeHandler.scheme)
         config.userContentController.add(context.coordinator, name: "sizeHandler")
         config.userContentController.add(context.coordinator, name: "linkHandler")
 
@@ -123,6 +130,8 @@ struct MarkdownWebView: NSViewRepresentable {
         /// as raw code in chat while still rendering in print and export
         /// (which use static script tags).
         let hasMermaid = markdown.range(of: "```mermaid", options: .caseInsensitive) != nil
+
+        logger.info("[MERMAID_DEBUG] hasMermaid=\(hasMermaid), markdownLen=\(markdown.count), hasMermaidScript=\(bodyHTML.contains("language-mermaid"))")
 
         let isDark = NSApp.effectiveAppearance.name == .darkAqua
         let fgColor = isFromUser ? "#ffffff" : (isDark ? "#e0e0e0" : "#1a1a1a")
@@ -238,7 +247,7 @@ struct MarkdownWebView: NSViewRepresentable {
         \(bodyHTML)
         </div>
 
-        \(hasMermaid ? "<script src=\"mermaid.min.js\"></script>" : "")
+        \(hasMermaid ? "<script src=\"\(MermaidResourceSchemeHandler.scheme)://mermaid.min.js\"></script>" : "")
 
         <script>
         // Intercept link clicks - open external URLs in the system browser
@@ -319,6 +328,36 @@ struct MarkdownWebView: NSViewRepresentable {
         """
 
         webView.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
+
+        /// Diagnostic: query the page state 2s after load and log it.
+        /// Captures whether mermaid.min.js actually fetched, how many
+        /// .language-mermaid blocks exist, and the body scroll height.
+        /// Will be removed once the underlying render failure is identified.
+        let diagGeneration = context.coordinator.currentGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak webView, weak coordinator = context.coordinator] in
+            guard let webView = webView,
+                  coordinator?.currentGeneration == diagGeneration else { return }
+            webView.evaluateJavaScript("""
+                (function() {
+                    var script = document.querySelector('script[src^="sam-bundle://"], script[src="mermaid.min.js"]');
+                    return JSON.stringify({
+                        mermaidLoaded: typeof mermaid,
+                        blocks: document.querySelectorAll('#content pre code.language-mermaid').length,
+                        hasScriptTag: !!script,
+                        scriptSrc: script ? script.src : null,
+                        bodyScrollHeight: document.body.scrollHeight
+                    });
+                })()
+            """) { result, error in
+                if let result = result as? String {
+                    logger.info("[MERMAID_DEBUG] pageState=\(result)")
+                } else if let error = error {
+                    logger.error("[MERMAID_DEBUG] evalError=\(error.localizedDescription)")
+                } else {
+                    logger.warning("[MERMAID_DEBUG] no result")
+                }
+            }
+        }
     }
 
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
