@@ -23,7 +23,7 @@ struct MarkdownWebView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> WKWebView {
-        try? "[MERMAID_DEBUG] makeNSView called\n".write(toFile: "/tmp/sam_mermaid_debug.log", atomically: true, encoding: .utf8)
+        Self.appendDebug("[MERMAID_DEBUG] makeNSView called markdownLen=\(markdown.count)")
         let config = WKWebViewConfiguration()
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
@@ -46,8 +46,8 @@ struct MarkdownWebView: NSViewRepresentable {
         return webView
     }
 
-    func updateNSView(_ webView: WKWebView, context: Context) {
-        try? "[MERMAID_DEBUG] updateNSView markdownLen=\(markdown.count)\n".write(toFile: "/tmp/sam_mermaid_debug.log", atomically: true, encoding: .utf8)
+        func updateNSView(_ webView: WKWebView, context: Context) {
+        Self.appendDebug("[MERMAID_DEBUG] updateNSView TOP markdownLen=\(markdown.count) lastMarkdownLen=\(context.coordinator.lastMarkdown?.count ?? -1)")
         /// Track whether content actually changed BEFORE we mutate any
         /// state. The bump-then-load pattern needs the original change
         /// status available for both decisions - if we set lastMarkdown
@@ -139,8 +139,7 @@ struct MarkdownWebView: NSViewRepresentable {
         /// regardless of os_log routing. The Logger call doesn't seem
         /// to be making it into server.log.
         let lastLen = context.coordinator.lastMarkdown?.count ?? -1
-        let stamp = "[MERMAID_DEBUG] updateNSView hasMermaid=\(hasMermaid) markdownLen=\(markdown.count) lastMarkdownLen=\(lastLen)\n"
-        try? stamp.write(toFile: "/tmp/sam_mermaid_debug.log", atomically: true, encoding: .utf8)
+        Self.appendDebug("[MERMAID_DEBUG] updateNSView HAS_MERMAID hasMermaid=\(hasMermaid) markdownLen=\(markdown.count) lastLen=\(lastLen)")
 
         let isDark = NSApp.effectiveAppearance.name == .darkAqua
         let fgColor = isFromUser ? "#ffffff" : (isDark ? "#e0e0e0" : "#1a1a1a")
@@ -436,6 +435,21 @@ struct MarkdownWebView: NSViewRepresentable {
             }
 
             decisionHandler(.allow)
+        }
+    }
+
+    /// Append a single line to /tmp/sam_mermaid_debug.log so multiple
+    /// MarkdownWebView observations accumulate in order instead of
+    /// overwriting each other (Swift's write(toFile:) always overwrites).
+    private static func appendDebug(_ message: String) {
+        let entry = (message + "\n").data(using: .utf8) ?? Data()
+        let path = "/tmp/sam_mermaid_debug.log"
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(entry)
+            try? handle.close()
+        } else {
+            try? (message + "\n").write(toFile: path, atomically: true, encoding: .utf8)
         }
     }
 }
