@@ -50,12 +50,26 @@ struct MarkdownWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        /// Bump the generation counter BEFORE capturing it in the closure
+        /// when content changes. The closure compares its captured value
+        /// against the live currentGeneration at the time the size report
+        /// fires; if the bump happened after the capture, the live value
+        /// would always be one ahead and every legitimate size report
+        /// from the current page would be rejected (bubbleHeight stays
+        /// at its initial 28pt). Bumping first makes the closure capture
+        /// the NEW generation so the page that THIS updateNSView started
+        /// can fire reportSize successfully. Bumping only on changed
+        /// content means the same-content recycle path keeps its
+        /// capturedGeneration == currentGeneration invariant intact.
+        if context.coordinator.lastMarkdown != markdown {
+            context.coordinator.currentGeneration &+= 1
+            context.coordinator.lastMarkdown = markdown
+        }
+
         /// ALWAYS set onSizeChange before the guard, so the closure captures the
         /// current bindings even when the content hasn't changed. Without this,
         /// recycled views (LazyVStack) can end up with a stale closure that
         /// updates a dead binding, leaving bubbleHeight at its initial default.
-        /// The closure also captures the current generation so stale size
-        /// reports from a cancelled page load are rejected below.
         let capturedGeneration = context.coordinator.currentGeneration
         /// Capture the bubble's intended width so the manual frame set
         /// below uses the same width SwiftUI's .frame() will apply. If we
@@ -70,11 +84,10 @@ struct MarkdownWebView: NSViewRepresentable {
             DispatchQueue.main.async {
                 /// Generation check: ignore size reports from a page that has
                 /// since been superseded by a newer loadHTMLString. Without
-                /// this, a stale DispatchQueue.main.async from a cancelled
-                /// page load could land after the new page has reported its
-                /// size, overwriting bubbleHeight with the previous
-                /// content's height and producing the "taller than content"
-                /// artifact.
+                /// this, a stale dispatch from a cancelled page load could
+                /// land after the new page has reported its size, overwriting
+                /// bubbleHeight with the previous content's height and
+                /// producing the "taller than content" artifact.
                 guard coordinator?.currentGeneration == capturedGeneration else { return }
                 webView?.frame.size = CGSize(width: intendedWidth, height: h)
                 bubbleWidth = w
@@ -93,15 +106,6 @@ struct MarkdownWebView: NSViewRepresentable {
             )
             return
         }
-        /// Bump the generation BEFORE kicking off the new page load. Any
-        /// in-flight DispatchQueue.main.async blocks captured by the
-        /// previous updateNSView's closure carry the OLD generation and
-        /// are rejected by the closure's generation check above. Without
-        /// this, a stale size report from a cancelled page load could
-        /// overwrite bubbleHeight with a value from content that's no
-        /// longer rendered.
-        context.coordinator.currentGeneration &+= 1
-        context.coordinator.lastMarkdown = markdown
 
         // Parse markdown AST and convert to HTML
         let parser = MarkdownASTParser()
