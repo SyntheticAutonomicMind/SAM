@@ -81,8 +81,12 @@ SAM needs at least one provider before it can respond.
    - **Google Gemini**
    - **MiniMax**
    - **OpenRouter**
+   - **Ollama Cloud**
+   - **Z.AI (Chat)**
+   - **Z.AI (Coding)**
    - **Local MLX**
    - **Local llama.cpp**
+   - **Remote llama.cpp**
    - **Custom OpenAI-compatible endpoint**
 
 For setup details, see [Providers Guide](PROVIDERS.md).

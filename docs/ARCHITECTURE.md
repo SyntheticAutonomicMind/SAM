@@ -18,7 +18,7 @@ This document is a starting point for understanding SAM's design. For deep imple
 graph TB
     UI["UserInterface<br/>ChatWidget - Preferences - Documents - Help - Search"]
     API["APIFramework<br/>AgentOrchestrator - Providers - EndpointManager<br/>ToolCallExtractor - TokenCounter - SAMAPIServer"]
-    MCP["MCPFramework<br/>Tools - 8 consolidated"]
+    MCP["MCPFramework<br/>Tools - 12 consolidated"]
     CONV["ConversationEngine<br/>Memory - VectorRAG"]
     CONFIG["ConfigurationSystem<br/>Preferences - Prompts"]
     MLX["MLXIntegration<br/>Local Models"]
@@ -88,13 +88,13 @@ The largest module. Handles all AI communication, orchestration, and the local A
   - `AgentOrchestrator+ContextManagement.swift` - Context window management
 
 - **Providers** - Implementations for each AI provider:
-  - `Providers.swift` - OpenAI, Anthropic, GitHub Copilot
-  - `ExtendedProviders.swift` - DeepSeek, Google Gemini, MiniMax, Custom
+  - `Providers.swift` - OpenAI, GitHub Copilot
+  - `ExtendedProviders.swift` - DeepSeek, Google Gemini, MiniMax, Z.AI (Chat), Z.AI (Coding), Ollama Cloud, Custom
   - `OpenRouterProvider.swift` - OpenRouter multi-model gateway
   - `ALICEProvider.swift` - ALICE image generation
   - `MLXProvider.swift` - Local MLX models
   - `LlamaProvider.swift` - Local llama.cpp models
-  - `OpenRouterProvider.swift` - OpenRouter multi-provider
+  - `RemoteLlamaProvider.swift` - Remote llama.cpp servers
 
 - **EndpointManager** - Routes requests to the correct provider, manages model lists, handles authentication
 - **SAMAPIServer** - Local HTTP server (Vapor-based) for SAM-Web and external integrations
@@ -111,7 +111,7 @@ The tool system. Implements the Model Context Protocol pattern where tools are r
 - **Authorization/** - Path-based authorization for file access
 - **Internal/** - Sub-tools dispatched by consolidated tools
 
-SAM exposes 8 consolidated tools to the AI, which internally dispatch to ~21 sub-tools. This keeps the tool interface clean for the AI while providing fine-grained functionality.
+SAM exposes 12 consolidated tools to the AI, which internally dispatch to ~80 sub-operations. This keeps the tool interface clean for the AI while providing fine-grained functionality.
 
 ### ConversationEngine
 

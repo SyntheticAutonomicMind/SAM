@@ -21,8 +21,12 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 | **Google Gemini** | Pay-per-token | Fast | Cloud | Google ecosystem, multimodal |
 | **MiniMax** | Pay-per-token | Fast | Cloud | Cost-effective, large context |
 | **OpenRouter** | Varies by model | Varies | Cloud | Access to 100+ models |
+| **Ollama Cloud** | Pay-per-token | Varies | Cloud | Cloud-hosted Ollama models |
+| **Z.AI (Chat)** | Pay-per-token | Fast | Cloud | GLM models, Chinese/English bilingual |
+| **Z.AI (Coding)** | Pay-per-token | Fast | Cloud | GLM coding models |
 | **MLX (Local)** | Free | Varies | Full privacy | Offline use, sensitive data, Apple Silicon |
 | **llama.cpp (Local)** | Free | Varies | Full privacy | Offline use, Intel or Apple Silicon |
+| **Remote llama.cpp** | Free | Varies | Self-hosted | Self-hosted inference servers |
 | **Custom Endpoint** | Varies | Varies | Self-hosted | Self-hosted servers, Ollama, LM Studio |
 
 ---
@@ -49,17 +53,9 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ---
 
-### Anthropic (Claude)
-
-SAM does not include a direct Anthropic provider. Claude-family models are available through:
-
-- **OpenRouter** - Access Claude 3.5 Sonnet, Claude 4, and others through OpenRouter's unified gateway
-
----
-
 ### GitHub Copilot
 
-**What you get:** Access to GPT-4o, Claude 3.5 Sonnet, o1, and other models through your Copilot subscription.
+**What you get:** Access to GPT-4o, Claude 3.5, o1, and other models through your Copilot subscription.
 
 **Setup:**
 1. You need an active GitHub Copilot subscription (Individual, Business, or Enterprise)
@@ -124,7 +120,7 @@ SAM does not include a direct Anthropic provider. Claude-family models are avail
 
 ### MiniMax
 
-**What you get:** MiniMax-M2.7, MiniMax-M2.5, and high-speed variants
+**What you get:** MiniMax-M3, MiniMax-M2.7, MiniMax-M2.5, and high-speed variants
 
 **Setup:**
 1. Create an account at [minimax.io](https://www.minimax.io)
@@ -133,9 +129,9 @@ SAM does not include a direct Anthropic provider. Claude-family models are avail
 4. Paste your API key
 
 **Model Recommendations:**
-- **MiniMax-M2.7** - Latest model, best quality
-- **MiniMax-M2.7-highspeed** - Faster variant with slightly lower quality
-- **MiniMax-M2.5** - Previous generation, still capable
+- **MiniMax-M3** - Latest model, best quality
+- **MiniMax-M3-highspeed** - Faster variant with slightly lower quality
+- **MiniMax-M2.7** - Previous generation, still capable
 
 **Advantages:**
 - 128K token context window
@@ -163,6 +159,62 @@ SAM does not include a direct Anthropic provider. Claude-family models are avail
 
 **Recommended Model for New Users:**
 - **minimax/minimax-m2.7** - Excellent all-around model with 1M token context, strong reasoning, and competitive pricing. A great starting point when using OpenRouter.
+
+---
+
+### Ollama Cloud
+
+**What you get:** Cloud-hosted Ollama models without managing your own server.
+
+**Setup:**
+1. Create an account at [ollama.com](https://ollama.com)
+2. Create an API key
+3. In SAM Settings > AI Providers, add Ollama Cloud
+4. Paste your API key
+5. Select a model from the available list
+
+**Advantages:**
+- No local infrastructure needed
+- Access to popular Ollama models in the cloud
+- Pay-per-token pricing
+
+---
+
+### Z.AI (Chat)
+
+**What you get:** Z.AI's GLM models optimized for general conversation and reasoning.
+
+**Setup:**
+1. Create an account at [z.ai](https://z.ai)
+2. Create an API key
+3. In SAM Settings > AI Providers, add Z.AI (Chat)
+4. Paste your API key
+
+**Models:** GLM-5.1, GLM-4.9
+
+**Features:**
+- Strong bilingual capabilities (Chinese/English)
+- Chain-of-thought reasoning
+- Competitive pricing
+
+---
+
+### Z.AI (Coding)
+
+**What you get:** Z.AI's GLM models optimized for coding tasks.
+
+**Setup:**
+1. Create an account at [z.ai](https://z.ai)
+2. Create an API key
+3. In SAM Settings > AI Providers, add Z.AI (Coding)
+4. Paste your API key
+
+**Models:** GLM-5.1, GLM-4.9
+
+**Features:**
+- Specialized for code generation and analysis
+- Supports chain-of-thought reasoning for complex coding tasks
+- Large context windows
 
 ---
 
@@ -234,6 +286,26 @@ SAM does not include a direct Anthropic provider. Claude-family models are avail
 
 ---
 
+### Remote llama.cpp
+
+**What you get:** Connect to a remote llama.cpp server (e.g., running on a GPU server) for local-model inference without local hardware requirements.
+
+**Setup:**
+1. Run a llama.cpp server on your remote machine:
+   ```bash
+   ./llama-server -m model.gguf --host 0.0.0.0 --port 8080
+   ```
+2. In SAM Settings > AI Providers, add Remote llama.cpp
+3. Enter the server URL (e.g., `http://192.168.1.100:8080`)
+4. Configure authentication if needed
+
+**Use Cases:**
+- Offload inference to a dedicated GPU server
+- Run larger models than your local machine can handle
+- Share a model server across multiple machines
+
+---
+
 ## Custom Endpoints
 
 ### OpenAI-Compatible Servers
@@ -248,7 +320,7 @@ SAM can connect to any server that implements the OpenAI chat completions API. T
 
 **Setup:**
 1. In SAM Settings > AI Providers, add a Custom provider
-2. Enter the endpoint URL
+2. Enter the endpoint URL (e.g., `http://localhost:11434/v1`)
 3. Enter an API key if required (some local servers don't need one)
 4. Configure the model name
 5. Test the connection

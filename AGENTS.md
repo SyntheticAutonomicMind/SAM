@@ -156,12 +156,12 @@ SAM uses **Swift 6 strict concurrency checking**. All code MUST follow these rul
 
 3. **Capture Before Crossing Actor Boundaries**
    ```swift
-   // ❌ BAD
+   // [FAIL] BAD
    await withTaskGroup { group in
        group.addTask { await self.property.doSomething() }
    }
    
-   // ✅ GOOD
+   // [OK] GOOD
    let property = self.property
    await withTaskGroup { group in
        group.addTask { await property.doSomething() }
@@ -212,13 +212,13 @@ Sources/
 │   ├── AppConfig.swift
 │   └── PropertiesStorage/
 ├── APIFramework/               - Multi-provider support, orchestration
-│   ├── APIProvider.swift (protocol)
-│   ├── Providers/ (OpenAI, Anthropic, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter)
+│   ├── AIProvider.swift (protocol)
+│   ├── Providers/ (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Z.AI, Ollama Cloud, Local MLX, Local llama.cpp, Remote llama.cpp, Custom)
 │   ├── AgentOrchestrator.swift (multi-step workflows)
 │   └── ToolCallExtractor.swift
 ├── MCPFramework/               - Model Context Protocol tools
 │   ├── MCPTool.swift (protocol)
-│   ├── Tools/ (8 tools, 60+ operations)
+│   ├── Tools/ (12 consolidated tools, 80+ operations)
 │   ├── ToolRegistry.swift
 │   └── ToolResult.swift
 ├── SharedData/                 - Shared types, thread-safe storage
@@ -419,7 +419,7 @@ When adding UI state that should persist per conversation:
 ### Adding a New AI Provider
 
 1. Create provider in `Sources/APIFramework/Providers/MyProvider.swift`
-2. Implement `APIProvider` protocol
+2. Implement `AIProvider` protocol
 3. Handle streaming responses
 4. Add tests with mock responses
 5. Register in `ProviderRegistry`

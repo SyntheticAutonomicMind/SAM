@@ -25,11 +25,11 @@ For multi-step work, SAM can chain tool calls together and track progress with a
 
 ## Current Tool Surface
 
-The current built-in tool set includes:
+The current built-in tool set includes 12 consolidated tools:
 
 - `user_collaboration`
-- `memory_operations`
 - `todo_operations`
+- `memory_operations`
 - `web_operations`
 - `document_operations`
 - `file_operations`
@@ -124,15 +124,18 @@ Used for reading, searching, and managing files.
 
 **Write and management operations**
 - `create_file`
+- `write_file`
+- `append_file`
 - `replace_string`
 - `multi_replace_string`
-- `insert_edit`
+- `insert_at_line`
 - `rename_file`
 - `delete_file`
+- `create_directory`
 
 **Authorization model**
 - Inside the working directory: auto-approved
-- Outside the working directory: requires authorization
+- Outside working directory: requires authorization
 
 ### `document_operations`
 
@@ -193,6 +196,9 @@ Used for real math, conversions, and structured formulas.
 - `formula`
 
 This tool uses Python-backed computation rather than model guesswork.
+
+**Available Formulas:**
+tip, mortgage, bmi, compound_interest, percentage, markup, discount, area_circle, area_rectangle, volume_cylinder, speed_distance_time, sales_tax, gpa, fuel_cost, cooking, retirement, debt_payoff, debt_strategy, budget, loan_comparison, savings_goal, net_worth, paycheck, and inflation.
 
 ### `image_generation`
 

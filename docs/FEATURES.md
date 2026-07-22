@@ -73,13 +73,25 @@ Each conversation stores its own UI state:
 - Strong multimodal capabilities
 
 **MiniMax**
-- Models: MiniMax-M2.7, MiniMax-M2.5, high-speed variants
+- Models: MiniMax-M3, MiniMax-M2.7, MiniMax-M2.5, and high-speed variants
 - 128K token context window
 - Competitive pricing with good tool use
 
 **OpenRouter**
 - Access 100+ models from multiple providers through a single API
 - Automatic model routing and load balancing
+
+**Ollama Cloud**
+- Cloud-hosted Ollama models without managing your own server
+- Pay-per-token pricing
+
+**Z.AI (Chat)**
+- GLM models optimized for general conversation and reasoning
+- Strong bilingual capabilities (Chinese/English)
+
+**Z.AI (Coding)**
+- GLM models optimized for coding tasks
+- Supports chain-of-thought reasoning for complex coding tasks
 
 > **Note on Claude models:** SAM does not include a direct Anthropic provider. Claude-family models are available through OpenRouter.
 
@@ -97,6 +109,11 @@ Each conversation stores its own UI state:
 - Runs GGUF-format models on Apple Silicon or Intel
 - Compiled as a native framework (included as git submodule)
 - CPU and GPU inference modes
+
+**Remote llama.cpp**
+- Connect to a remote llama.cpp server (e.g., running on a GPU server)
+- Offload inference to dedicated hardware
+- Run larger models than your local machine can handle
 
 ### Model Download Manager
 
@@ -116,7 +133,7 @@ Connect to any OpenAI-compatible API:
 
 ## Autonomous Tool System
 
-SAM has 8 consolidated tools that the AI uses autonomously to accomplish tasks. Each consolidated tool contains multiple operations.
+SAM has 13 consolidated tools that the AI uses autonomously to accomplish tasks. Each consolidated tool contains multiple operations.
 
 ### File Operations
 
@@ -132,9 +149,11 @@ SAM has 8 consolidated tools that the AI uses autonomously to accomplish tasks. 
 | `semantic_search` | Find files by meaning using NLP |
 | `list_usages` | Find all references to a symbol |
 | `create_file` | Create a new file with content |
+| `write_file` | Write content to a file (overwrites) |
+| `append_file` | Append content to a file |
 | `replace_string` | Find and replace text in a file |
 | `multi_replace_string` | Batch replacements across files |
-| `insert_edit` | Insert content at a specific location |
+| `insert_at_line` | Insert content at a specific line |
 | `rename_file` | Rename or move a file |
 | `delete_file` | Delete a file or directory |
 | `create_directory` | Create a directory (with parents) |
@@ -161,7 +180,7 @@ SAM has 8 consolidated tools that the AI uses autonomously to accomplish tasks. 
 | Operation | What It Does |
 |-----------|-------------|
 | `document_import` | Import PDF, DOCX, XLSX, or TXT files into the conversation |
-| `document_create` | Generate PDF, DOCX, PPTX, TXT, or Markdown files |
+| `document_create` | Generate PDF, DOCX, PPTX, TXT, Markdown, RTF, or XLSX files |
 | `get_doc_info` | Get document metadata |
 
 Imported documents are chunked and indexed with vector embeddings for semantic search.
@@ -171,9 +190,19 @@ Imported documents are chunked and indexed with vector embeddings for semantic s
 | Operation | What It Does |
 |-----------|-------------|
 | `search_memory` | Semantic search across conversation memories |
-| `store_memory` | Save important information for later |
+| `store_memory` | Save important information for later recall |
 | `list_collections` | List available memory collections |
 | `recall_history` | Recall conversation history by topic |
+| `store` | Store key-value pair (key, content) |
+| `retrieve` | Get stored value by key |
+| `search_kv` | Search key-value store |
+| `list_keys` | List all stored keys |
+| `delete_key` | Delete a key from the store |
+| `add_discovery` | Add a discovery to long-term memory |
+| `add_solution` | Add a solution to long-term memory |
+| `add_pattern` | Add a pattern to long-term memory |
+| `ltm_stats` | Show long-term memory statistics |
+| `prune_ltm` | Prune old long-term memory entries |
 
 ### Todo Operations
 
@@ -205,6 +234,7 @@ All math is computed by a real Python 3 interpreter - no AI approximation.
 | Operation | What It Does |
 |-----------|-------------|
 | `generate` | Generate images from text descriptions |
+| `list_models` | List available models on the ALICE server |
 
 Connects to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for GPU-accelerated Stable Diffusion image generation. Supports multiple models, automatic model discovery, and server health monitoring.
 
@@ -215,6 +245,67 @@ Connects to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) se
 | `request_input` | Pause and ask the user a question |
 
 Used by the AI when it needs clarification, confirmation for destructive operations, or user decisions.
+
+### Calendar Operations
+
+Uses EventKit to work with calendars and reminders.
+
+**Calendar operations**
+- `list_events`
+- `create_event`
+- `search_events`
+- `delete_event`
+
+**Reminder operations**
+- `list_reminders`
+- `create_reminder`
+- `complete_reminder`
+- `delete_reminder`
+- `list_reminder_lists`
+
+### Contacts Operations
+
+Uses the Contacts framework.
+
+**Operations**
+- `search`
+- `get_contact`
+- `create_contact`
+- `update_contact`
+- `list_groups`
+- `search_group`
+
+### Notes Operations
+
+Works with Apple Notes.
+
+**Operations**
+- `search`
+- `get_note`
+- `create_note`
+- `list_folders`
+- `list_notes`
+- `append_note`
+
+### Spotlight Search
+
+Uses macOS Spotlight for file and metadata search.
+
+**Operations**
+- `search`
+- `search_content`
+- `search_metadata`
+- `file_info`
+- `recent_files`
+
+### Weather Operations
+
+Uses Open-Meteo and SAM's configured location information.
+
+**Operations**
+- `current`
+- `forecast`
+- `hourly`
 
 ---
 
@@ -406,16 +497,16 @@ SAM uses structured logging via swift-log:
 
 | Shortcut | Action |
 |----------|--------|
-| ⌘N | New conversation |
-| ⌘K | Clear current conversation |
-| ⇧⌘R | Rename conversation |
-| ⇧⌘D | Duplicate conversation |
-| ⇧⌘E | Export conversation |
-| ⌘⌫ | Delete conversation |
-| ⌘F | Search conversations |
-| ⇧⌘/ | Show help |
-| ⌘, | Open Settings |
-| ⌘W | Close window |
+| N | New conversation |
+| K | Clear current conversation |
+| ⇧R | Rename conversation |
+| ⇧D | Duplicate conversation |
+| ⇧E | Export conversation |
+|  | Delete conversation |
+| F | Search conversations |
+| ⇧/ | Show help |
+| , | Open Settings |
+| W | Close window |
 | Enter | Send message |
 | Shift+Enter | New line in message |
 
