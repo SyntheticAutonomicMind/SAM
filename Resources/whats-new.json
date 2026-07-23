@@ -1,6 +1,34 @@
 {
   "releases": [
     {
+      "version": "20260723.1",
+      "release_date": "July 23, 2026",
+      "introduction": "The assistant stops ending every reply with 'let me know if you want to take a break' and starts waiting for you to actually say so. The new User Autonomy rule in the default system prompt puts you in charge of when the conversation is over. Two small chat-bubble rendering bugs fall out along the way.",
+      "highlights": [],
+      "improvements": [
+        {
+          "id": "user-autonomy",
+          "icon": "person.fill",
+          "title": "User Autonomy in the Default System Prompt",
+          "description": "SAM Default gains a User Autonomy component (v21) that asserts the user is the authority on their own time, attention, session boundaries, response length, and topic transitions. The agent does not manage these on the user's behalf. The trigger is generic ('when the user is discussing any subject with an agent') - no user-class or subject gating, so the rule applies in any conversation: technical work, creative help, casual discussion, task execution, long debug sessions, anything. The agent does not act as a time, energy, or attention manager. It does not suggest the user is tired, overwhelmed, or in need of rest. It does not suggest stopping, pausing, or continuing 'tomorrow' or 'later' unless the user initiates that. It does not imply the user needs fewer words, simpler explanations, or protective framing. It does not manufacture conversation endings, unsolicited recaps, or invitations to continue. It does not default to summary, recap, or transition language after substantive responses. A thoroughly-addressed topic does not signal that the conversation is ending. The user's message determines the appropriate response length and depth - the protocol does not impose a completion timeline, length limit, or session boundary. Workflow Mode retains its phase-boundary recaps as an operational reporting step, not as a user-management behavior, and the user's preference overrides the default if they say otherwise. Wired into both SAM Default (full content) and SAM Minimal (short form). Surgical edits to the existing Communication, Execution Standards, Operational Modes, and Pre-Response Checklist components remove the anti-patterns that drove the old behavior - 'Conversational Partner Protocol' is gone, the manufactured-decision-point rules in Communication 'Best practices' are gone, the 'When complete' recap mandate is gone, and the 'Never say' list now covers recap invitations and session-boundary nudges. The change applied to both directions but was a single rewrite - one MessageBubble and one MarkdownWebView, shared by user and assistant."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "assistant-bubble-bottom-clipping",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Bottom Row of Assistant Messages Getting Cut Off",
+          "description": "The last line of assistant messages was being clipped through the middle while the top of the bubble rendered correctly. The JS size callback was measuring #content.scrollHeight and adding a hardcoded +8 to compensate for the body's 4+4 padding, but that compensation did not account for the 1px border on <pre> code blocks, the bottom margin on <p>/<li>, or descender glyph extent past the line box's reported bottom edge. Short user messages without complex elements were close enough to fit; assistant messages with code blocks, lists, or descender text rendered a few pixels short and the body's overflow:hidden clipped the bottom. The callback now measures document.body.scrollHeight directly (which includes the body's own padding plus every in-flow child's full box, including borders on pre/table) and adds a +2 buffer for descender glyphs. User bubbles without complex content see no visible change. Assistant bubbles with code blocks, lists, or descender text gain a few pixels of height that prevents the bottom row from being cut off."
+        },
+        {
+          "id": "swift-doc-comments-leaking-into-bubbles",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Swift Doc Comments Showing as Text in Chat Bubbles",
+          "description": "Several /// Swift doc comment blocks were placed inside the let html = \"\"\"...\"\"\" multi-line string literal in MarkdownWebView. Since the string is interpolated directly into the HTML that loadHTMLString feeds to the WKWebView, the /// lines rendered as visible text inside the chat bubble - one block ('Streaming flag for the mermaid IIFE below...') sat between </div> and the inline setup script and was the most visible. The previous bubble-height bug had been clipping this text along with the bottom of the assistant's content; once the height fix landed, the previously-hidden text became visible in every bubble. Stripped all 32 /// lines from inside the multi-line string. The // (double-slash) comments inside <script> are unaffected and remain as valid JS comments."
+        }
+      ]
+    },
+    {
       "version": "20260719.1",
       "release_date": "July 19, 2026",
       "introduction": "Long autonomous sessions now run on the same workflow primitives as CLIO, so multi-step work stays coherent as context grows. SAM's default system prompt gains a User Data Boundaries component that hardens how numbers, assumptions, and user-supplied lists are handled. The chat UI catches up on a batch of small bugs: bubble race conditions, dark-mode backgrounds, link handling, markdown rendering, and a stale location permission prompt.",
