@@ -159,12 +159,6 @@ struct MarkdownWebView: NSViewRepresentable {
             margin: 0; padding: 0;
         }
         body {
-            /// Pad the body so the line box doesn't sit flush against
-            /// the WKWebView's edges. 4px top/bottom centers the visible
-            /// text row within the bubble's 12pt vertical padding for
-            /// content with descenders. The JS size callback (see
-            /// reportSize below) measures document.body directly and
-            /// includes a +2 buffer for descender glyph extent.
             padding: 4px 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             font-size: 14px; line-height: 1.6;
@@ -218,7 +212,6 @@ struct MarkdownWebView: NSViewRepresentable {
         tr:nth-child(even) { background: \(stripedBg); }
         ul, ol { margin: 0.3em 0; padding-left: 1.8em; }
         li { margin: 0.15em 0; }
-        /// Nested lists indent properly with consistent spacing.
         li > ul, li > ol { margin: 0.15em 0; padding-left: 1.4em; }
         a { color: \(linkColor); text-decoration: underline; }
         hr { border: none; border-top: 1px solid \(borderColor); margin: 1em 0; }
@@ -243,11 +236,6 @@ struct MarkdownWebView: NSViewRepresentable {
         \(bodyHTML)
         </div>
 
-        /// Streaming flag for the mermaid IIFE below. Set BEFORE the
-        /// mermaid.min.js script tag so the IIFE sees it when it runs.
-        /// True during streaming -> show raw code blocks; False ->
-        /// render the SVG. See the onChange in MessageBubble that
-        /// forces a reload when this flips from true to false.
         <script>window.__samIsStreaming = \(isStreaming ? "true" : "false");</script>
         \(hasMermaid ? "<script src=\"\(MermaidResourceSchemeHandler.scheme):///mermaid.min.js\"></script>" : "")
 
@@ -270,18 +258,6 @@ struct MarkdownWebView: NSViewRepresentable {
         // immediately for non-mermaid content and from the mermaid
         // onload after diagram rendering completes.
         function reportSize() {
-            /// Measure document.body directly. body.scrollHeight includes
-            /// the body's own padding plus every in-flow child's full box
-            /// (including borders on <pre>/<table>), so it gives the
-            /// actual body height without manually reconstructing it. The
-            /// +2 buffer leaves breathing room for descender glyphs (p, g,
-            /// j, q, y) that extend a hair below the line box's reported
-            /// bottom edge - without it, the last line's descender would
-            /// be clipped by the body's overflow:hidden even though the
-            /// line box itself fits. User bubbles without complex content
-            /// see no visible change; assistant bubbles with code blocks,
-            /// lists, or descender text gain a few pixels of height that
-            /// prevents the bottom row from being cut off.
             var body = document.body;
             var w = Math.min(body.scrollWidth, \(Int(maxBubbleWidth)));
             var h = body.scrollHeight + 2;
@@ -314,14 +290,6 @@ struct MarkdownWebView: NSViewRepresentable {
                 reportSize();
                 return;
             }
-            /// Mermaid v11: render(id, code, container) resolves with
-            /// {svg, diagramType, ...} and the v11 internal pipeline
-            /// writes the SVG into the container Element. Under
-            /// securityLevel: 'loose' the most reliable way to get
-            /// the SVG into the holder is to assign result.svg to
-            /// holder.innerHTML ourselves - the v11 renderer clears
-            /// container.innerHTML before drawing and the loose-mode
-            /// flow doesn't always re-populate that container.
             mermaid.initialize({startOnLoad: false, theme: '\(isDark ? "dark" : "default")', securityLevel: 'loose'});
             var skipRender = window.__samIsStreaming === true;
             var idx = 0;
