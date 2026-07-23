@@ -111,7 +111,7 @@ struct MarkdownWebView: NSViewRepresentable {
             /// closures fire with the correct height.
             let width = Int(maxBubbleWidth)
             webView.evaluateJavaScript(
-                "var el=document.getElementById('content');if(el){webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(width)),height:el.scrollHeight+8})}",
+                "var el=document.body;if(el){webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(width)),height:el.scrollHeight+2})}",
                 completionHandler: nil
             )
             return
@@ -160,19 +160,11 @@ struct MarkdownWebView: NSViewRepresentable {
         }
         body {
             /// Pad the body so the line box doesn't sit flush against
-            /// the WKWebView's edges. Without this, on the last (or
-            /// only) line, descenders (p, g, j, q, y) extend below
-            /// the line box's reported bottom edge by a hair, and the
-            /// WKWebView's content view clips them when the frame is
-            /// set to exactly scrollHeight. 4px top/bottom gives 8px
-            /// of breathing room AND centers the visible text row
-            /// within the bubble's 12pt vertical padding for content
-            /// with descenders. The matching `+ 8` in the JS size
-            /// callback compensates for the fact that scrollHeight
-            /// (on #content) only reports content height - it does
-            /// NOT include this body's padding - so without the
-            /// manual addition the WKWebView ends up 8pt short and
-            /// the line box bottom gets clipped.
+            /// the WKWebView's edges. 4px top/bottom centers the visible
+            /// text row within the bubble's 12pt vertical padding for
+            /// content with descenders. The JS size callback (see
+            /// reportSize below) measures document.body directly and
+            /// includes a +2 buffer for descender glyph extent.
             padding: 4px 0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             font-size: 14px; line-height: 1.6;
@@ -278,16 +270,21 @@ struct MarkdownWebView: NSViewRepresentable {
         // immediately for non-mermaid content and from the mermaid
         // onload after diagram rendering completes.
         function reportSize() {
-            var el = document.getElementById('content');
-            var w = Math.min(el.scrollWidth, \(Int(maxBubbleWidth)));
-            /// scrollHeight on #content reports only the content area
-            /// height - it does NOT include the body's 4px top/bottom
-            /// padding set in CSS. Without this addition the Swift
-            /// callback sizes the WKWebView to the content height,
-            /// the body overflows by 8px at the bottom, and
-            /// overflow:hidden on body clips the descenders (p, g,
-            /// j, q, y) of the last (or only) line.
-            var h = el.scrollHeight + 8;
+            /// Measure document.body directly. body.scrollHeight includes
+            /// the body's own padding plus every in-flow child's full box
+            /// (including borders on <pre>/<table>), so it gives the
+            /// actual body height without manually reconstructing it. The
+            /// +2 buffer leaves breathing room for descender glyphs (p, g,
+            /// j, q, y) that extend a hair below the line box's reported
+            /// bottom edge - without it, the last line's descender would
+            /// be clipped by the body's overflow:hidden even though the
+            /// line box itself fits. User bubbles without complex content
+            /// see no visible change; assistant bubbles with code blocks,
+            /// lists, or descender text gain a few pixels of height that
+            /// prevents the bottom row from being cut off.
+            var body = document.body;
+            var w = Math.min(body.scrollWidth, \(Int(maxBubbleWidth)));
+            var h = body.scrollHeight + 2;
             if (w > 0 && h > 0) {
                 webkit.messageHandlers.sizeHandler.postMessage({width: w, height: h});
             }
@@ -390,7 +387,7 @@ struct MarkdownWebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(
-                "var el=document.getElementById('content');webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(Int(maxWidth))),height:el.scrollHeight+8})",
+                "var el=document.body;webkit.messageHandlers.sizeHandler.postMessage({width:Math.min(el.scrollWidth,\(Int(maxWidth))),height:el.scrollHeight+2})",
                 completionHandler: nil
             )
         }
