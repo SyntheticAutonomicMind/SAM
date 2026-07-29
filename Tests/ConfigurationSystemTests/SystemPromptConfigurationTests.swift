@@ -29,11 +29,11 @@ final class SystemPromptConfigurationTests: XCTestCase {
 
     // MARK: - Version
 
-    func testCurrentVersionIs22() {
+    func testCurrentVersionIs23() {
         XCTAssertEqual(
             SystemPromptConfiguration.currentVersion,
-            22,
-            "Prompt system must be on version 22 after the Scope Honesty revision."
+            23,
+            "Prompt system must be on version 23 after the Tool-Backed Claims revision."
         )
     }
 
@@ -314,6 +314,203 @@ extension SystemPromptConfigurationTests {
             component.content.count,
             defaultContent.count,
             "SAM Minimal Scope Honesty should be more concise than SAM Default."
+        )
+    }
+}
+
+// MARK: - v23 Tool-Backed Claims regression guards
+
+/// v23 added a Tool-Backed Claims component addressing the pattern of
+/// agents fabricating specifics (prices, ratings, URLs) by extending a
+/// prior tool-verified response template without re-running the tools.
+/// The failure mode: a recent prior turn already used a tool pattern,
+/// the new turn "feels similar", and the model narrates a search while
+/// producing fabricated results.
+///
+/// These tests pin the component's presence, its core rules, and the
+/// cross-links to related components so future prompt edits cannot
+/// silently regress the protection.
+extension SystemPromptConfigurationTests {
+
+    func testSAMDefaultIncludesToolBackedClaimsComponent() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Tool-Backed Claims" }),
+            "SAM Default must include a Tool-Backed Claims component."
+        )
+    }
+
+    func testSAMMinimalIncludesToolBackedClaimsComponent() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Tool-Backed Claims" }),
+            "SAM Minimal must include a Tool-Backed Claims component."
+        )
+    }
+
+    func testToolBackedClaimsIsDefaultEnabled() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        guard let component = config.components.first(where: { $0.title == "Tool-Backed Claims" }) else {
+            XCTFail("Tool-Backed Claims component missing from SAM Default.")
+            return
+        }
+        XCTAssertTrue(
+            component.isEnabled,
+            "Tool-Backed Claims must be default-enabled to actually take effect."
+        )
+    }
+
+    func testToolBackedClaimsAppearsInGeneratedPrompt() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Tool-Backed Claims"),
+            "Generated SAM Default prompt must include the Tool-Backed Claims section header."
+        )
+        XCTAssertTrue(
+            prompt.contains("a verified lookup must BE a verified lookup"),
+            "Tool-Backed Claims must state the core principle that a response that looks verified must BE verified."
+        )
+    }
+
+    /// Pin the four core rules guarding against the failure mode. If any
+    /// of these phrases are removed from the prompt, the rule has lost
+    /// one of its load-bearing statements and the regression risk returns.
+    func testToolBackedClaimsContainsCoreAntiPatterns() {
+        let prompt = generatedPrompt(for: samDefault())
+        let requiredPhrases = [
+            "Recent-session history is irrelevant",
+            "Format inertia is not a tool call",
+            "Tool call must precede the matching text",
+            "Self-check before specific claims",
+        ]
+        for phrase in requiredPhrases {
+            XCTAssertTrue(
+                prompt.contains(phrase),
+                "Tool-Backed Claims must include the rule: \"\(phrase)\"."
+            )
+        }
+    }
+
+    /// Pin the explicit per-session-history exemption line. This is the
+    /// rule that addresses the exact failure mode (the model reasoning
+    /// "I already searched X this session" and skipping the tool call).
+    func testToolBackedClaimsHasPerSessionHistoryRule() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("I already searched for X") &&
+            prompt.contains("does not exempt the next query"),
+            "Tool-Backed Claims must explicitly address the per-session-history exemption pattern."
+        )
+    }
+
+    /// The Workflow Loop "I'll search" rule must now reference fabrication
+    /// framing so the model sees narrating a search without doing one as
+    /// a data-integrity violation, not just a workflow lapse.
+    func testWorkflowLoopSearchRuleHasFabricationFraming() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("data fabrication") &&
+            prompt.contains("See Tool-Backed Claims"),
+            "Workflow Loop 'I'll search' rule must frame narrating without doing as data fabrication and cross-link Tool-Backed Claims."
+        )
+    }
+
+    /// Tool Usage RESEARCH > "Multiple sources" must be clarified as
+    /// per-query, not session-aggregate. A prior turn's searches do not
+    /// satisfy this for the current turn.
+    func testToolUsageResearchClarifiesPerQuery() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Multiple sources PER CURRENT QUERY") ||
+            prompt.contains("per-query, not session-aggregate"),
+            "Tool Usage RESEARCH rule must clarify that multiple sources means per-query."
+        )
+    }
+
+    /// Pre-Response Checklist item #1 must reference that prior searches
+    /// in this session do not satisfy the requirement for a new query.
+    func testPreResponseChecklistAddressesSessionHistory() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Prior searches in this session do not satisfy this for a new query") ||
+            prompt.contains("each verifiable question gets its own tool call"),
+            "Pre-Response Checklist must address the per-session-history exemption."
+        )
+    }
+
+    /// Cross-link from User Data Boundaries Section A so the data-integrity
+    /// framing extends to web-sourced specifics, not just math.
+    func testToolBackedClaimsCrossLinkedFromUserDataBoundaries() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Web-sourced specifics") &&
+            prompt.contains("See Tool-Backed Claims"),
+            "User Data Boundaries Section A must cross-link to Tool-Backed Claims for web-sourced specifics."
+        )
+    }
+
+    /// The rule must be domain-neutral - no user-class or subject
+    /// conditional. (Mirror of the v21/v22 tests that established this
+    /// pattern.)
+    func testToolBackedClaimsIsNotGatedOnSubject() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertFalse(
+            prompt.contains("competent adult"),
+            "Tool-Backed Claims must not gate on a user-class conditional."
+        )
+        XCTAssertFalse(
+            prompt.contains("shopping only") || prompt.contains("medical only") || prompt.contains("legal only"),
+            "Tool-Backed Claims must not gate on a subject conditional."
+        )
+    }
+
+    /// SAM Minimal is for local small models - the rule there is a tight
+    /// one-liner. Pin the essential message so future rewrites keep the
+    /// four-rule signal (session-history exemption, format inertia,
+    /// narration-without-action, self-check before specific claims).
+    func testSAMMinimalToolBackedClaimsIsConcise() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        guard let component = config.components.first(where: { $0.title == "Tool-Backed Claims" }) else {
+            XCTFail("Tool-Backed Claims component missing from SAM Minimal.")
+            return
+        }
+        XCTAssertTrue(
+            component.content.contains("Recent-session history is irrelevant"),
+            "SAM Minimal Tool-Backed Claims must mention session-history exemption."
+        )
+        XCTAssertTrue(
+            component.content.contains("Format inertia is not a tool call"),
+            "SAM Minimal Tool-Backed Claims must mention format inertia."
+        )
+        XCTAssertTrue(
+            component.content.contains("data fabrication") ||
+            component.content.contains("fabrication"),
+            "SAM Minimal Tool-Backed Claims must frame narrating-without-action as fabrication."
+        )
+        XCTAssertTrue(
+            component.content.contains("specific price"),
+            "SAM Minimal Tool-Backed Claims must mention self-check before specific claims."
+        )
+        // SAM Minimal is for small models; the rule there should be
+        // substantially shorter than the full SAM Default version.
+        let defaultContent = samDefault()?.components
+            .first(where: { $0.title == "Tool-Backed Claims" })?.content ?? ""
+        XCTAssertLessThan(
+            component.content.count,
+            defaultContent.count,
+            "SAM Minimal Tool-Backed Claims should be more concise than SAM Default."
         )
     }
 }
