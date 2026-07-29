@@ -29,11 +29,11 @@ final class SystemPromptConfigurationTests: XCTestCase {
 
     // MARK: - Version
 
-    func testCurrentVersionIs23() {
+    func testCurrentVersionIs24() {
         XCTAssertEqual(
             SystemPromptConfiguration.currentVersion,
-            23,
-            "Prompt system must be on version 23 after the Tool-Backed Claims revision."
+            24,
+            "Prompt system must be on version 24 after the Completion Criteria / agent framing revision."
         )
     }
 
@@ -511,6 +511,108 @@ extension SystemPromptConfigurationTests {
             component.content.count,
             defaultContent.count,
             "SAM Minimal Tool-Backed Claims should be more concise than SAM Default."
+        )
+    }
+}
+
+// MARK: - v24 Agent framing + Completion Criteria regression guards
+
+/// v24 made two related changes:
+/// 1. Rewrote Core Identity with CLIO's "YOU ARE AN AGENT" framing so the
+///    model self-identifies as an agent that works to completion.
+/// 2. Added a Completion Criteria component so the model has an explicit
+///    rule that narrating a tool action and ending without the tool call is
+///    abandonment, not completion.
+extension SystemPromptConfigurationTests {
+
+    func testSAMDefaultIncludesCompletionCriteriaComponent() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Completion Criteria" }),
+            "SAM Default must include a Completion Criteria component."
+        )
+    }
+
+    func testSAMMinimalIncludesCompletionCriteriaComponent() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Completion Criteria" }),
+            "SAM Minimal must include a Completion Criteria component."
+        )
+    }
+
+    func testCompletionCriteriaIsDefaultEnabled() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        guard let component = config.components.first(where: { $0.title == "Completion Criteria" }) else {
+            XCTFail("Completion Criteria component missing from SAM Default.")
+            return
+        }
+        XCTAssertTrue(
+            component.isEnabled,
+            "Completion Criteria must be default-enabled to actually take effect."
+        )
+    }
+
+    /// Pin the core anti-abandonment phrases. If any of these are removed,
+    /// the rule loses its load-bearing signal and the bug returns.
+    func testCompletionCriteriaContainsCoreAntiAbandonmentPhrases() {
+        let prompt = generatedPrompt(for: samDefault())
+        let requiredPhrases = [
+            "PUSH TO ACTUAL LIMIT",
+            "abandonment, not completion",
+            "User's stated goal is achieved",
+        ]
+        for phrase in requiredPhrases {
+            XCTAssertTrue(
+                prompt.contains(phrase),
+                "Completion Criteria must include the phrase: \"\(phrase)\"."
+            )
+        }
+    }
+
+    /// The agent framing must be present in Core Identity so the model
+    /// self-identifies as an agent that works to completion.
+    func testCoreIdentityHasAgentFraming() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("YOU ARE AN AGENT"),
+            "Core Identity must include the 'YOU ARE AN AGENT' framing."
+        )
+        XCTAssertTrue(
+            prompt.contains("work autonomously"),
+            "Core Identity must include 'work autonomously' from the agent framing."
+        )
+    }
+
+    /// The Workflow Loop section must include the explicit "agent's job is
+    /// to do the work, not announce it" framing - this is the section that
+    /// reaches the model first when it is mid-workflow.
+    func testWorkflowLoopHasDoTheWorkNotAnnounceFraming() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("agent's job is to do the work, not announce it") ||
+            prompt.contains("do the work, not announce it"),
+            "Workflow Loop must include the 'do the work, not announce it' framing."
+        )
+    }
+
+    /// Personalities must not be able to override the agent framing. The
+    /// Completion Criteria component explicitly states that personality
+    /// doesn't override completion.
+    func testCompletionCriteriaPersonalityNonOverride() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Personalities") && prompt.contains("do not override"),
+            "Completion Criteria must state that personalities do not override the completion rule."
         )
     }
 }

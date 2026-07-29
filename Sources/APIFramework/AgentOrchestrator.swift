@@ -1590,14 +1590,50 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         }
                     }
 
-                    /// Model returned content with no tool calls - workflow is done.
-                    /// Trust the model's judgment (CLIO principle).
-                    logger.info("WORKFLOW_COMPLETE: Natural termination - model returned content without tool calls", metadata: [
-                        "iteration": .stringConvertible(context.iteration),
-                        "conversationId": .string(conversationId.uuidString),
-                        "responseLength": .stringConvertible(context.lastResponse.count)
-                    ])
-                    completeIteration(context: &context, responseStatus: "natural_completion")
+                    /// Model returned content with no tool calls - workflow may be done.
+                    /// Two distinct cases must be distinguished here:
+                    ///
+                    /// 1. **Narration-without-tool-call**: response begins with
+                    ///    tool-action phrases ("I'll search", "Let me look",
+                    ///    "I'll check") but ends with no tool call made.
+                    ///    This is abandonment, not completion - the agent
+                    ///    narrated a tool action it never took. Treat as
+                    ///    a failure status so it surfaces in metrics and
+                    ///    the prompt bug (Tool-Backed Claims / Completion
+                    ///    Criteria) is observable.
+                    ///
+                    /// 2. **Genuine natural completion**: response contains
+                    ///    real content (answer, summary, final result) with
+                    ///    no tool-action narration. Trust the model's
+                    ///    judgment (CLIO principle).
+                    let responseContent = context.lastResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let narrationPhrases = [
+                        "i'll search", "let me look", "let me check",
+                        "i'll look up", "let me search", "i'll search for",
+                        "i'll look into", "let me look up", "let me search for",
+                        "i'll check"
+                    ]
+                    let lowerContent = responseContent.lowercased()
+                    let beginsWithNarration = narrationPhrases.contains { phrase in
+                        lowerContent.hasPrefix(phrase)
+                    }
+
+                    if beginsWithNarration {
+                        logger.error("NARRATION_WITHOUT_TOOL_CALL: Model narrated a tool action but ended with no tool call (possible abandonment)", metadata: [
+                            "iteration": .stringConvertible(context.iteration),
+                            "conversationId": .string(conversationId.uuidString),
+                            "contentPreview": .string(String(responseContent.prefix(200))),
+                            "contentLength": .stringConvertible(responseContent.count)
+                        ])
+                        completeIteration(context: &context, responseStatus: "narration_without_tool_call")
+                    } else {
+                        logger.info("WORKFLOW_COMPLETE: Natural termination - model returned content without tool calls", metadata: [
+                            "iteration": .stringConvertible(context.iteration),
+                            "conversationId": .string(conversationId.uuidString),
+                            "responseLength": .stringConvertible(context.lastResponse.count)
+                        ])
+                        completeIteration(context: &context, responseStatus: "natural_completion")
+                    }
                     break
                 }
 
