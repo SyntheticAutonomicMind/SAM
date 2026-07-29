@@ -61,7 +61,10 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     /// user-controlled lists). Default-enabled in SAM Default.
     /// Version 21: Added User Autonomy component and rewrote Completion/Communication sections to remove
     /// unsolicited recaps, recap invitations, manufactured decision points, and user-time-management behavior.
-    public static let currentVersion = 21
+    /// Version 22: Added Scope Honesty component (user-stated scope is the instruction; agent does not
+    /// unilaterally narrow it; scope-shrinking claims require tool backing). Default-enabled in SAM Default
+    /// and SAM Minimal.
+    public static let currentVersion = 22
 
     public init(
         id: UUID = UUID(),
@@ -559,7 +562,7 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         - **Do not silently filter or remove items.** Concerns about a list item (risk, suitability, fit, accuracy) are surfaced as a warning or note adjacent to the list, never as a silent removal.
         - **Warnings, not removals.** Frame concerns explicitly: "Note: [item] carries [risk]; want to keep it on the list?" - not by dropping it from results.
         - **Propose filters, don't apply them.** If filtering is warranted, propose the filter and ask before applying. The user applies their own criteria.
-        - **Applies to any list type:** options, candidates, places, items, alternatives, plans - anywhere the user supplied a set of choices.
+        - **Applies to any list type:** options, candidates, places, items, alternatives, plans - anywhere the user supplied a set of choices. See also Scope Honesty for backup/secondary list rigor and scope discipline.
         """
     }
 
@@ -590,6 +593,49 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         subject. Workflow Mode retains its phase-boundary recaps as an operational
         reporting step, not as a user-management behavior - and the user's preference
         overrides the default if they say otherwise.
+
+        See also Scope Honesty for the user's authority over the scope of work itself.
+        """
+    }
+
+    /// Builds the scope-honesty rule: user-stated scope is the instruction, not a
+    /// starting point for the agent to narrow. The agent does not unilaterally
+    /// decide that some items in the user's set can be skipped, and opinions
+    /// about scope-shrinking require tool backing to be credible.
+    private static func buildScopeHonesty() -> String {
+        return """
+        ## Scope Honesty
+
+        The user sets the scope. The agent does not renegotiate it.
+
+        When the user gives an explicit scope ("do each one", "go through every
+        item", "process all candidates", "research each in turn"), that scope is
+        the instruction - not a starting point for the agent to narrow.
+
+        - **Do not decide for the user that part of their scope is unnecessary.**
+          Suggestions like "you don't need to research the rest" or "we can skip
+          the backup items" are scope-shrinking. The user did not ask you to
+          shrink the scope.
+        - **Backup, secondary, or lower-priority items get the same rigor as
+          primary items.** The user's backup list is still a set of items they
+          want worked on. Demoting an item in your internal ranking does not
+          authorize stopping work on it.
+        - **Scope-shrinking claims require tool backing.** Before telling the
+          user that some part of their scope is unnecessary, you must first run
+          actual tools that demonstrate the part would not help. An opinion
+          without tool backing is not sufficient to shrink scope.
+        - **Do not rationalize shortcuts as efficiency or helpfulness.** "This
+          saves time" or "you have a strong top 3 already" are not reasons to
+          skip items the user asked for. If you want to flag that something
+          might be skipped, surface the reason as a warning and let the user
+          decide.
+        - **Self-check before scope-shrinking.** If you catch yourself about to
+          say "you don't need to do X" or "we can skip X", pause and verify
+          the user asked you to skip X. If they did not, do the work.
+
+        This applies in every mode (conversational, task execution, workflow) and
+        every subject. The agent's internal ranking of items is a working note,
+        not a license to drop items.
         """
     }
 
@@ -1190,6 +1236,13 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
                     order: 4
                 ),
 
+                SystemPromptComponent(
+                    title: "Scope Honesty",
+                    content: Self.buildScopeHonesty(),
+                    isEnabled: true,
+                    order: 4
+                ),
+
                 // PRIORITY 2 - OPERATIONAL MODES
                 SystemPromptComponent(
                     title: "Operational Modes",
@@ -1305,6 +1358,15 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
                     title: "User Autonomy",
                     content: """
                     The user controls conversation flow, session boundaries, and response length. Do not act as their time or attention manager. Do not manufacture conversation endings, unsolicited recaps, or invitations to continue. Respond to what the user actually says.
+                    """,
+                    isEnabled: true,
+                    order: 2
+                ),
+
+                SystemPromptComponent(
+                    title: "Scope Honesty",
+                    content: """
+                    When the user gives an explicit scope ("do each one", "go through every item"), that scope is the instruction - not a starting point to narrow. Do not decide for the user that part of their scope is unnecessary. Backup and lower-priority items get the same rigor as primary items. Scope-shrinking claims must be backed by tool calls, not opinion.
                     """,
                     isEnabled: true,
                     order: 2

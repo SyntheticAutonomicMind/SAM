@@ -29,11 +29,11 @@ final class SystemPromptConfigurationTests: XCTestCase {
 
     // MARK: - Version
 
-    func testCurrentVersionIs21() {
+    func testCurrentVersionIs22() {
         XCTAssertEqual(
             SystemPromptConfiguration.currentVersion,
-            21,
-            "Prompt system must be on version 21 after the User Autonomy revision."
+            22,
+            "Prompt system must be on version 22 after the Scope Honesty revision."
         )
     }
 
@@ -167,6 +167,153 @@ final class SystemPromptConfigurationTests: XCTestCase {
         XCTAssertFalse(
             prompt.contains("their own health") || prompt.contains("their own body") || prompt.contains("their own diagnoses"),
             "User Autonomy must not gate on a subject conditional (health/medical)."
+        )
+    }
+}
+
+// MARK: - v22 Scope Honesty regression guards
+
+/// v22 added a Scope Honesty component addressing the pattern of agents
+/// unilaterally narrowing user-stated scope ("you don't need to research the
+/// rest", treating backup lists as filler, rationalizing shortcuts as
+/// efficiency). These tests pin the component's presence and its core rules
+/// so future prompt edits cannot silently regress.
+extension SystemPromptConfigurationTests {
+
+    func testSAMDefaultIncludesScopeHonestyComponent() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Scope Honesty" }),
+            "SAM Default must include a Scope Honesty component."
+        )
+    }
+
+    func testSAMMinimalIncludesScopeHonestyComponent() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Scope Honesty" }),
+            "SAM Minimal must include a Scope Honesty component."
+        )
+    }
+
+    func testScopeHonestyIsDefaultEnabled() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        guard let component = config.components.first(where: { $0.title == "Scope Honesty" }) else {
+            XCTFail("Scope Honesty component missing from SAM Default.")
+            return
+        }
+        XCTAssertTrue(
+            component.isEnabled,
+            "Scope Honesty must be default-enabled to actually take effect."
+        )
+    }
+
+    func testScopeHonestyAppearsInGeneratedPrompt() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Scope Honesty"),
+            "Generated SAM Default prompt must include the Scope Honesty section header."
+        )
+        XCTAssertTrue(
+            prompt.contains("The user sets the scope"),
+            "Scope Honesty must state the core principle that the user sets the scope."
+        )
+    }
+
+    /// Pin the five core anti-patterns the rule guards against. If any of
+    /// these phrases are removed from the prompt, the rule has lost one of
+    /// its load-bearing statements and the regression risk returns.
+    func testScopeHonestyContainsCoreAntiPatterns() {
+        let prompt = generatedPrompt(for: samDefault())
+        let requiredPhrases = [
+            "Do not decide for the user that part of their scope is unnecessary",
+            "Backup, secondary, or lower-priority items get the same rigor",
+            "Scope-shrinking claims require tool backing",
+            "Do not rationalize shortcuts as efficiency or helpfulness",
+            "Self-check before scope-shrinking",
+        ]
+        for phrase in requiredPhrases {
+            XCTAssertTrue(
+                prompt.contains(phrase),
+                "Scope Honesty must include the rule: \"\(phrase)\"."
+            )
+        }
+    }
+
+    /// Scope Honesty is part of the user-authority axis alongside User
+    /// Autonomy and User Data Boundaries. Verify the cross-link from User
+    /// Autonomy exists so the editor view surfaces both rules together.
+    func testScopeHonestyCrossLinkedFromUserAutonomy() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("See also Scope Honesty"),
+            "User Autonomy must cross-link to Scope Honesty so the related rule is discoverable."
+        )
+    }
+
+    /// User Data Boundaries Section C ("lists are user-controlled") is
+    /// adjacent to Scope Honesty. The Section C closing line should mention
+    /// the new component so backup-list rigor is discoverable from there too.
+    func testScopeHonestyCrossLinkedFromUserDataBoundaries() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("See also Scope Honesty for backup/secondary list rigor"),
+            "User Data Boundaries must cross-link to Scope Honesty for backup/secondary list rigor."
+        )
+    }
+
+    /// The rule must be domain-neutral - no user-class or subject
+    /// conditional. (Mirror of the User Autonomy test that established this
+    /// pattern.)
+    func testScopeHonestyIsNotGatedOnSubject() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertFalse(
+            prompt.contains("competent adult"),
+            "Scope Honesty must not gate on a user-class conditional."
+        )
+        XCTAssertFalse(
+            prompt.contains("real estate") || prompt.contains("medical") || prompt.contains("legal advice"),
+            "Scope Honesty must not gate on a subject conditional."
+        )
+    }
+
+    /// SAM Minimal is for local small models - the rule there is a tight
+    /// one-liner. Pin the essential message so future rewrites keep the
+    /// scope-discipline signal.
+    func testSAMMinimalScopeHonestyIsConcise() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        guard let component = config.components.first(where: { $0.title == "Scope Honesty" }) else {
+            XCTFail("Scope Honesty component missing from SAM Minimal.")
+            return
+        }
+        XCTAssertTrue(
+            component.content.contains("scope is the instruction"),
+            "SAM Minimal Scope Honesty must keep the 'scope is the instruction' message."
+        )
+        XCTAssertTrue(
+            component.content.contains("backed by tool calls"),
+            "SAM Minimal Scope Honesty must mention tool backing."
+        )
+        // SAM Minimal is for small models; the rule there should be
+        // substantially shorter than the full SAM Default version.
+        let defaultContent = samDefault()?.components
+            .first(where: { $0.title == "Scope Honesty" })?.content ?? ""
+        XCTAssertLessThan(
+            component.content.count,
+            defaultContent.count,
+            "SAM Minimal Scope Honesty should be more concise than SAM Default."
         )
     }
 }
