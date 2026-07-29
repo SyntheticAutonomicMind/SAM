@@ -14,6 +14,21 @@ import OSLog
 public enum WKWebViewPrintService {
     private static let logger = Logger(subsystem: "com.sam.ui.WebViewPrint", category: "UserInterface")
 
+    /// Retain WKWebView references until their print operation completes.
+    /// WKWebView is a local variable in renderAndPrint, but PDF save from
+    /// the print dialog defers rendering asynchronously. If the webview
+    /// is deallocated before the asynchronous PDF capture, the output is
+    /// blank. This array holds a strong reference until the print job
+    /// finishes. Capped at 4 entries to prevent accumulation from rapid
+    /// print-then-cancel cycles.
+    private static var activeWebViews: [WKWebView] = [] {
+        didSet {
+            if activeWebViews.count > 4 {
+                activeWebViews.removeFirst(activeWebViews.count - 4)
+            }
+        }
+    }
+
     /// Print a single message's markdown content.
     public static func printMessage(markdown: String, isFromUser: Bool, title: String) {
         let html = buildPrintHTML(markdown: markdown, isFromUser: isFromUser, title: title)
@@ -198,6 +213,12 @@ public enum WKWebViewPrintService {
     private static func renderAndPrint(html: String) {
         let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 612, height: 792))
 
+        // Retain webView until its print operation completes. The print
+        // dialog's PDF > Save as PDF defers actual rendering asynchronously
+        // after printOp.run() returns. If webView is deallocated before the
+        // async capture, the result is blank pages.
+        activeWebViews.append(webView)
+
         let delegate = PrintNavigationDelegate {
             // Wait for mermaid rendering to complete, then print
             waitForPrintReady(webView: webView)
@@ -290,6 +311,17 @@ public enum WKWebViewPrintService {
         printOp.showsPrintPanel = true
         printOp.showsProgressPanel = true
         printOp.run()
+
+        // The print dialog's PDF > Save as PDF path defers actual PDF
+        // rendering asynchronously after the save panel closes. The webView
+        // must stay alive until the async capture completes. Retain it for
+        // 5 seconds - longer than any reasonable save-sheet interaction.
+        // Use an ObjectIdentifier for cleanup to avoid keeping a retain
+        // cycle through the dispatch block itself.
+        let webViewId = ObjectIdentifier(webView)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            activeWebViews.removeAll { ObjectIdentifier($0) == webViewId }
+        }
     }
 
     /// Show error alert
