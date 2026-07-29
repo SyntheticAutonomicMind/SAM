@@ -225,42 +225,34 @@ extension AgentOrchestrator {
     // - last user message always re-injected
 
 
-    /// Calculate hash of message array content for compression detection
-    // messageFingerprint and processAllMessagesWithYARN removed during CLIO sync.
-    // Context management is owned by MessageValidator (atomic unit grouping,
-    // budget walk, thread_summary compression). Providers trust messages as-is.
-
+    /// Diagnostic-only request size check. Context management is owned by
+    /// MessageValidator (run earlier in the pipeline). This function only
+    /// logs a warning if the request exceeds the model's context budget -
+    /// it does NOT cascade into compression. Uses MessageValidator's
+    /// local estimate (chars/4) to avoid network calls for diagnostics.
     func validateRequestSize(
         messages: [OpenAIChatMessage],
         model: String,
         tools: [OpenAITool]? = nil
     ) async -> (estimatedTokens: Int, isSafe: Bool, contextLimit: Int) {
-        /// Get model's known context limit.
         let contextLimit = await tokenCounter.getContextSize(modelName: model)
 
-        /// Estimate total tokens in request.
-        var totalTokens = 0
-        for message in messages {
-            let content = message.content ?? ""
-            totalTokens += await tokenCounter.estimateTokensRemote(text: content)
-        }
+        var totalTokens = MessageValidator.estimateTokens(messages)
 
-        /// Include tool schema/token cost in estimation (tools can be large).
         if let tools = tools, !tools.isEmpty {
-            let toolTokens = await tokenCounter.calculateToolTokens(tools: tools, model: nil, isLocal: false)
-            totalTokens += toolTokens
-            logger.debug("REQUEST_SIZE_VALIDATION: Added tool token estimate: \(toolTokens) tokens for \(tools.count) tools")
+            /// Rough estimate for tool schema overhead.
+            for tool in tools {
+                totalTokens += (tool.function.name.count + tool.function.description.count + tool.function.parametersJson.count) / 4
+            }
         }
 
-        /// SAFETY THRESHOLD: 85% of context limit Why 85%?.
         let safetyThreshold = Int(Float(contextLimit) * 0.85)
         let isSafe = totalTokens <= safetyThreshold
 
         if !isSafe {
-            logger.warning("REQUEST_SIZE_VALIDATION: Request too large - \(totalTokens) tokens exceeds 85% threshold (\(safetyThreshold)/\(contextLimit))")
-            logger.warning("REQUEST_SIZE_VALIDATION: This will likely cause timeout. Recommend triggering additional YARN compression.")
+            logger.warning("REQUEST_SIZE_VALIDATION: Request exceeds 85% of context (\(totalTokens)/\(contextLimit))")
         } else {
-            logger.debug("REQUEST_SIZE_VALIDATION: Request size OK - \(totalTokens) tokens / \(contextLimit) limit (\(Int(Float(totalTokens)/Float(contextLimit)*100))%)")
+            logger.debug("REQUEST_SIZE_VALIDATION: Request within budget (\(totalTokens)/\(contextLimit))")
         }
 
         return (totalTokens, isSafe, contextLimit)

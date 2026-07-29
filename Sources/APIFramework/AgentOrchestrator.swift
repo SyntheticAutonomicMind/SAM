@@ -61,11 +61,9 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// Performance monitor for workflow metrics (optional) When set, reports workflow, loop detection, and context filtering metrics.
     public weak var performanceMonitor: PerformanceMonitor?
 
-    /// Universal tool call extractor - supports all formats (OpenAI, Ministral, Qwen, Hermes).
+    /// Universal tool call extractor - supports the two instructed formats
+    /// (`<tool_call>` XML tags and JSON code blocks).
     internal let toolCallExtractor = ToolCallExtractor()
-
-    /// YaRN Context Processor for intelligent context management Uses mega 128M token profile supporting massive document analysis (60-100MB+ documents).
-    internal var yarnProcessor: YaRNContextProcessor?
 
     /// Tool call stack for tracking nested tool hierarchy When tool A calls tool B, A is on the stack, enabling B to know its parent Stack entries are tool names (e.g., ["researching", "web_operations"]).
     internal var toolCallStack: [String] = []
@@ -90,16 +88,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         self.maxIterations = maxIterations
         self.onProgress = onProgress
         self.isExternalAPICall = isExternalAPICall
-
-        /// Initialize YARN processor with mega 128M token profile for massive document workflows.
-        self.yarnProcessor = YaRNContextProcessor(
-            memoryManager: conversationManager.memoryManager,
-            tokenEstimator: { [weak tokenCounter] text in
-                guard let tokenCounter = tokenCounter else { return text.count / 4 }
-                return await tokenCounter.estimateTokensRemote(text: text)
-            },
-            config: .mega
-        )
     }
 
     /// Cancel any ongoing autonomous workflow
@@ -1075,6 +1063,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     ) async throws -> AgentResult {
         let workflowStartTime = Date()
 
+        /// Reset cancellation flag from any previous workflow (matches
+        /// runStreamingAutonomousWorkflow's behavior - prevents a cancel
+        /// on a prior workflow from leaking state into this one).
+        isCancellationRequested = false
+
         /// WORKFLOW_START - Comprehensive workflow initialization logging.
         logger.debug("WORKFLOW_START", metadata: [
             "conversationId": .string(conversationId.uuidString),
@@ -1436,24 +1429,34 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 }
 
                 /// PERSISTENCE FIX: Add message to conversation immediately (matches streaming path behavior) This ensures all workflow messages (planning, individual steps, etc.) are saved Previously, only the FINAL response was saved, causing all intermediate messages to disappear.
-                if !context.lastResponse.isEmpty,
+                /// CRITICAL: Persist even if lastResponse is empty when the LLM returned tool_calls -
+                /// otherwise tool result messages have no parent assistant message, breaking OpenAI
+                /// alternation and causing MessageValidator to strip them as orphans on reload.
+                let responseHasToolCalls = response.toolCalls?.isEmpty == false
+                if (!context.lastResponse.isEmpty || responseHasToolCalls),
                    let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                    /// Check for duplicates before adding.
-                    let isDuplicate = conversation.messages.contains(where: {
+                    /// Check for duplicates before adding (skip when only tool_calls present,
+                    /// since two tool-only responses with the same tool_calls would be deduplicated).
+                    let isDuplicate = !responseHasToolCalls && conversation.messages.contains(where: {
                         !$0.isFromUser && $0.content == context.lastResponse
                     })
 
                     if !isDuplicate {
-                        logger.debug("MESSAGE_PERSISTENCE: Adding response to conversation (iteration=\(context.iteration), length=\(context.lastResponse.count))")
+                        logger.debug("MESSAGE_PERSISTENCE: Adding response to conversation (iteration=\(context.iteration), length=\(context.lastResponse.count), hasToolCalls=\(responseHasToolCalls))")
                         /// CRITICAL FIX: In STREAMING mode, MessageBus creates messages during chunking
                         /// In NON-STREAMING mode, no MessageBus involvement - we must create message here
                         /// Check streamContinuation to determine which mode we're in
+                        let simpleToolCalls = responseHasToolCalls
+                            ? Self.makeSimpleToolCalls(response.toolCalls!)
+                            : nil
                         if streamContinuation == nil {
-                            /// Non-streaming mode - manually add message
+                            /// Non-streaming mode - manually add message WITH tool_calls so the
+                            /// assistant's prior tool usage is preserved on conversation reload.
                             conversation.messageBus?.addAssistantMessage(
                                 id: UUID(),
                                 content: context.lastResponse,
-                                timestamp: Date()
+                                timestamp: Date(),
+                                toolCalls: simpleToolCalls
                             )
                             logger.debug("MESSAGE_PERSISTENCE: Created message via MessageBus (non-streaming mode)")
                         } else {
@@ -1634,6 +1637,26 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         // Model has called the same tools with same args 3+ times total.
                         // Return cached results with a strong directive to stop calling tools.
                         logger.error("DUPLICATE_LOOP_BREAK: Forcing stop after \(context.duplicateToolCallCount + 1) identical tool call batches")
+
+                        /// Add an assistant+tool_calls message to internalMessages BEFORE the
+                        /// synthetic tool results so the LLM sees a valid OpenAI alternation
+                        /// sequence. Without this, the synthetic tool results become orphans
+                        /// and MessageValidator strips them on the next iteration - which is
+                        /// exactly what this loop-break is supposed to prevent.
+                        let duplicateOpenAIToolCalls = actualToolCalls.map { toolCall -> OpenAIToolCall in
+                            let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments, options: [])
+                            let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                            return OpenAIToolCall(
+                                id: toolCall.id,
+                                type: "function",
+                                function: OpenAIFunctionCall(name: toolCall.name, arguments: argsString)
+                            )
+                        }
+                        context.internalMessages.append(OpenAIChatMessage(
+                            role: "assistant",
+                            content: "",
+                            toolCalls: duplicateOpenAIToolCalls
+                        ))
 
                         // Build synthetic tool results pointing back to earlier results.
                         for toolCall in actualToolCalls {
@@ -2035,11 +2058,17 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// In NON-STREAMING mode, no MessageBus involvement - we must create message here
                 /// Check streamContinuation to determine which mode we're in
                 if streamContinuation == nil {
-                    /// Non-streaming mode - manually add final message
+                    /// Non-streaming mode - manually add final message.
+                    /// Pass tool_calls (if any) so conversation reload preserves them.
+                    let finalToolCalls = context.continuationToolCalls
+                    let simpleToolCalls = (finalToolCalls?.isEmpty == false)
+                        ? Self.makeSimpleToolCalls(finalToolCalls!)
+                        : nil
                     conversation.messageBus?.addAssistantMessage(
                         id: UUID(),
                         content: cleanedResponse,
-                        timestamp: Date()
+                        timestamp: Date(),
+                        toolCalls: simpleToolCalls
                     )
                     conversationManager.saveConversations()
                     logger.debug("DEBUG_MISSING_RESPONSE: Created final message via MessageBus (non-streaming mode)")
@@ -2313,17 +2342,8 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
         /// Log detected format for visibility.
         switch detectedFormat {
-        case .openai:
-            logger.debug("Universal extractor detected OpenAI format - \(toolCalls.count) tool calls")
-
-        case .ministral:
-            logger.debug("Universal extractor detected Ministral [TOOL_CALLS] format - \(toolCalls.count) tool calls")
-
-        case .qwen:
-            logger.debug("Universal extractor detected Qwen <function_call> format - \(toolCalls.count) tool calls")
-
-        case .hermes:
-            logger.debug("Universal extractor detected Hermes format - \(toolCalls.count) tool calls")
+        case .xmlTag:
+            logger.debug("Universal extractor detected <tool_call> XML tag format - \(toolCalls.count) tool calls")
 
         case .jsonCodeBlock:
             logger.debug("Universal extractor detected JSON code block format - \(toolCalls.count) tool calls")
@@ -2410,40 +2430,27 @@ func stripUserContextBlock(from content: String) -> String {
     return result.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
-/// Clean tool call markers from content Removes <function_call>, <tool_call>, [TOOL_CALLS] blocks that pollute conversation history These markers are used for tool extraction but should not be shown to LLM in subsequent turns.
-func cleanToolCallMarkers(from content: String) -> String {
-    var cleaned = content
+/// Clean tool call markers from content so they don't pollute conversation history.
+    /// Only `<tool_call>` tags are emitted by instructed local models and need cleanup.
+    func cleanToolCallMarkers(from content: String) -> String {
+        var cleaned = content
 
-    /// Remove <function_call>...</function_call> blocks (Qwen, Ministral).
-    cleaned = cleaned.replacingOccurrences(
-        of: "<function_call>[\\s\\S]*?</function_call>",
-        with: "",
-        options: .regularExpression
-    )
+        /// Remove <tool_call>...</tool_call> blocks.
+        cleaned = cleaned.replacingOccurrences(
+            of: "<tool_call>[\\s\\S]*?</tool_call>",
+            with: "",
+            options: .regularExpression
+        )
 
-    /// Remove <tool_call>...</tool_call> blocks (Hermes).
-    cleaned = cleaned.replacingOccurrences(
-        of: "<tool_call>[\\s\\S]*?</tool_call>",
-        with: "",
-        options: .regularExpression
-    )
+        /// Clean up multiple newlines left by removal.
+        cleaned = cleaned.replacingOccurrences(
+            of: "\n\n\n+",
+            with: "\n\n",
+            options: .regularExpression
+        )
 
-    /// Remove [TOOL_CALLS]...[/TOOL_CALLS] blocks.
-    cleaned = cleaned.replacingOccurrences(
-        of: "\\[TOOL_CALLS\\][\\s\\S]*?\\[/TOOL_CALLS\\]",
-        with: "",
-        options: .regularExpression
-    )
-
-    /// Clean up multiple newlines left by removal.
-    cleaned = cleaned.replacingOccurrences(
-        of: "\n\n\n+",
-        with: "\n\n",
-        options: .regularExpression
-    )
-
-    return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-}
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
 /// Convert an EnhancedMessage to an OpenAIChatMessage, preserving tool call structure.
 /// This ensures assistant messages with tool_calls and tool result messages retain
@@ -2507,6 +2514,30 @@ struct ToolCall: @unchecked Sendable {
     let id: String
     let name: String
     let arguments: [String: Any]
+}
+
+/// Convert internal ToolCall (with [String: Any] arguments) to SimpleToolCall
+/// (with JSON-string arguments) for persistence in EnhancedMessage.toolCalls.
+///
+/// Without this conversion, the assistant message in conversation.messages
+/// loses its tool_calls on disk reload, breaking OpenAI alternation. The
+/// LLMContext then has orphan tool result messages (no parent assistant)
+/// that MessageValidator strips, causing the agent to lose context.
+extension AgentOrchestrator {
+    static func makeSimpleToolCalls(_ toolCalls: [ToolCall]) -> [ConfigurationSystem.SimpleToolCall] {
+        return toolCalls.map { toolCall in
+            let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments)
+            let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            return ConfigurationSystem.SimpleToolCall(
+                id: toolCall.id,
+                type: "function",
+                function: ConfigurationSystem.SimpleFunctionCall(
+                    name: toolCall.name,
+                    arguments: argsString
+                )
+            )
+        }
+    }
 }
 
 /// Sendable wrapper for tool arguments dictionary

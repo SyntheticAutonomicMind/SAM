@@ -54,230 +54,46 @@ extension AgentOrchestrator {
             )
         }
 
-        /// CONTEXT MANAGEMENT: Use YARN exclusively. Context pruning was causing unnecessary API calls because it calls GitHub API to generate summaries.
-        logger.debug("CONTEXT_MANAGEMENT: Using YARN for context compression (no API calls, no premium charges)")
+        /// CONTEXT MANAGEMENT: Context trimming is owned by MessageValidator (run later in this
+        /// function). MessageValidator performs a budget walk with atomic unit grouping and
+        /// compresses dropped context into a thread_summary - no LLM calls, no API charges.
+        logger.debug("CONTEXT_MANAGEMENT: MessageValidator handles context trimming (budget walk + thread_summary compression)")
 
         /// Build messages array: system prompt + conversation messages + internal tool messages.
         var messages: [OpenAIChatMessage] = []
 
         /// Add user-configured system prompt (includes guard rails) FIRST This was the architectural gap - API requests never included SystemPromptManager prompts.
-        let defaultPromptId = await MainActor.run {
-            SystemPromptManager.shared.selectedConfigurationId
-        }
-        let promptId = conversation.settings.selectedSystemPromptId ?? defaultPromptId
-        logger.debug("DEBUG_ORCH_CONV: callLLM using conversation \(conversation.id), selectedSystemPromptId: \(conversation.settings.selectedSystemPromptId?.uuidString ?? "nil"), promptId: \(promptId?.uuidString ?? "nil")")
+        /// System prompt + dynamic context (shared with callLLMStreaming via
+        /// buildSystemPromptAndDynamicContext).
+        let (systemPromptContent, dynamicContext) = await buildSystemPromptAndDynamicContext(
+            conversation: conversation,
+            conversationId: conversationId,
+            model: model,
+            samConfig: samConfig,
+            loggerPrefix: "callLLM"
+        )
 
-        let toolsEnabled = samConfig?.mcpToolsEnabled ?? true
-        var userSystemPrompt = await MainActor.run {
-            SystemPromptManager.shared.generateSystemPrompt(
-                for: promptId,
-                toolsEnabled: toolsEnabled,
-                model: model
-            )
-        }
-
-        /// Merge personality if selected
-        if let personalityId = conversation.settings.selectedPersonalityId {
-            let personalityManager = PersonalityManager()
-            if let personality = personalityManager.getPersonality(id: personalityId),
-               personality.id != Personality.assistant.id {  // Skip if Assistant (default)
-                let personalityInstructions = personality.generatePromptAdditions()
-                userSystemPrompt += "\n\n" + personalityInstructions
-                logger.info("Merged personality '\(personality.name)' into system prompt (\(personalityInstructions.count) chars)")
-            }
-        }
-
-        // SECURITY: Sanitize system prompt to remove invisible character injection vectors
-        // Custom instructions loaded from files could contain hidden Unicode payloads
-        userSystemPrompt = SecurityPipeline.sanitizeInputNonNil(userSystemPrompt)
-
-        /// KV CACHE OPTIMIZATION: System prompt must be STATIC across turns.
-        /// Only the user-configured system prompt + personality goes in the system message.
-        /// All dynamic per-turn content (conversation ID, tools, working directory, LTM, etc.)
-        /// goes into <userContext> in the last user message so the system prompt prefix
-        /// stays byte-identical across turns, enabling full KV cache reuse.
-
-        var dynamicContext = ""
-
-        /// Conversation ID for memory operations.
-        dynamicContext += "CONVERSATION_ID: \(conversationId.uuidString)"
-
-        /// Inject dynamic tool listing when tools are enabled
-        if toolsEnabled {
-            // Per-conversation isolation: memory_operations is only exposed to
-            // conversations in a shared topic. Default conversations should not
-            // even know about LTM. Shared topics are the critical LTM use case.
-            let isSharedTopic = conversation.settings.useSharedData
-                && conversation.settings.sharedTopicId != nil
-                && conversation.settings.sharedTopicName != nil
-            let tools = conversationManager.mcpManager.getAvailableTools()
-                .filter { $0.name != "memory_operations" || isSharedTopic }
-            if !tools.isEmpty {
-                var listing = "\n\nAvailable Tools:"
-                for tool in tools {
-                    let desc = tool.description.components(separatedBy: "\n").first ?? tool.description
-                    listing += "\n- \(tool.name): \(desc)"
-                }
-                listing += "\n\nUse tools when the task requires action. Respond naturally for conversation."
-                dynamicContext += listing
-            }
-        }
-
-        /// Working directory context - changes when conversation title changes
-        if toolsEnabled {
-            let effectiveWorkingDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-            dynamicContext += """
+        logger.debug("callLLM: System prompt length=\(systemPromptContent.count) chars, dynamic context=\(dynamicContext.count) chars")
 
 
-            # WORKING DIRECTORY CONTEXT
+        /// CLAUDE USERCONTEXT INJECTION (Claude-specific pinned-message context).
+        appendClaudePinnedUserContext(
+            to: &messages,
+            conversation: conversation,
+            model: model,
+            loggerPrefix: "callLLM"
+        )
 
-            Your current working directory is: `\(effectiveWorkingDir)`
-
-            All file operations will execute relative to this directory by default.
-            You do not need to run 'pwd' or ask about the starting directory - this IS your working directory.
-            """
-        }
-
-        /// SHARED TOPIC CONTEXT INJECTION
-        /// When a conversation is attached to a shared topic, inject topic awareness
-        /// so the agent knows about the shared context and can use recall_history with topic_id
-        if conversation.settings.useSharedData,
-           let topicId = conversation.settings.sharedTopicId,
-           let topicName = conversation.settings.sharedTopicName {
-            dynamicContext += """
-
-
-            # SHARED TOPIC CONTEXT
-
-            You are working within the shared topic: "\(topicName)"
-            Topic ID: \(topicId.uuidString)
-
-            **IMPORTANT: You already have access to data from this topic.** Context from other conversations
-            in the "\(topicName)" topic is automatically retrieved and injected into your context on every request.
-            Look for the "SHARED TOPIC CONVERSATION HISTORY" and "HIGH IMPORTANCE MESSAGES" sections in your
-            system context - these contain real data from the topic that you should use to answer questions.
-
-            This conversation shares memory and working files with other conversations in this topic.
-            When answering questions, ALWAYS check the injected topic context first before claiming you
-            don't have information. The data is already in your context.
-
-            If you need MORE context beyond what was auto-injected, use the `recall_history` tool with:
-            - topic_id: "\(topicId.uuidString)" to search across ALL conversations in this topic
-            - Or omit topic_id to search only this conversation's archived history
-            """
-            logger.debug("callLLM: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
-        }
-
-        /// LTM injection is gated to shared-topic conversations only. Per-conversation
-        /// isolation is the default in SAM: default conversations should not even know
-        /// about LTM. Shared topics are the critical LTM use case - the topic scope
-        /// is where structured knowledge persistence earns its keep.
-        let useSharedData = conversation.settings.useSharedData
-        let hasSharedTopic = useSharedData
-            && conversation.settings.sharedTopicId != nil
-            && conversation.settings.sharedTopicName != nil
-        if hasSharedTopic {
-            let sharedTopicId = conversation.settings.sharedTopicId
-            let sharedTopicName = conversation.settings.sharedTopicName
-
-            let ltmPath = LongTermMemory.resolveFilePath(
-                conversationId: conversationId,
-                sharedTopicId: sharedTopicId,
-                sharedTopicName: sharedTopicName,
-                useSharedData: useSharedData
-            )
-
-            let ltm = LongTermMemory.load(from: ltmPath)
-            if ltm.totalEntries > 0 {
-                let ltmBlock = ltm.formatForSystemPrompt()
-                if !ltmBlock.isEmpty {
-                    dynamicContext += "\n\n" + ltmBlock
-                    logger.info("callLLM: Injected shared-topic LTM (\(ltm.totalEntries) entries) into dynamic context")
-                }
-            }
-        } else {
-            logger.debug("callLLM: LTM skipped - conversation is not in a shared topic (per-conversation isolation default)")
-        }
-
-        /// Session naming - only present on first turn, disappears after title is set
-        if conversation.title.hasPrefix("New Conversation") {
-            dynamicContext += """
-
-
-            ## Session Title [MANDATORY]
-
-            This conversation has no title. You MUST include this marker as the LAST line of your FIRST response:
-
-            <!--session:{"title":"Your 3-6 Word Title"}-->
-
-            Requirements:
-            - 3-6 words, title case, specific to the topic
-            - LAST line of response, on its own line
-            - First response ONLY, never repeat
-            - Example: <!--session:{"title":"Fix Authentication Token Bug"}-->
-            """
-            logger.debug("callLLM: Injected session naming instruction for unnamed conversation")
-        }
-
-        /// System prompt is ONLY the static user-configured prompt + personality.
-        /// This ensures the system message prefix is byte-identical across turns for KV cache reuse.
-        let systemPromptContent = userSystemPrompt
-
-        logger.debug("callLLM: Generated system prompt from ID: \(promptId?.uuidString ?? "default"), length: \(systemPromptContent.count) chars, toolsEnabled: \(toolsEnabled)")
-        logger.debug("callLLM: Guard rails present: \(systemPromptContent.contains("TOOL SCHEMA CONFIDENTIALITY"))")
-        logger.debug("callLLM: Dynamic context length: \(dynamicContext.count) chars (injected into user message)")
-
-        if !userSystemPrompt.isEmpty {
-            messages.append(OpenAIChatMessage(role: "system", content: systemPromptContent))
-            logger.debug("callLLM: Added user-configured system prompt to messages (static prefix)")
-        }
-
-        /// CLAUDE USERCONTEXT INJECTION
-        /// Per Claude Messages API best practices: Extract important context from ALL pinned messages
-        /// and inject as system message on EVERY request (context doesn't persist in conversation history)
-        /// Reference: claude-messages.txt - "Do not rely on Turn 1 staying in history forever"
-        let modelLower = model.lowercased()
-        if modelLower.contains("claude") {
-            /// Extract userContext from ALL pinned messages
-            let pinnedMessages = conversation.messages.filter { $0.isPinned }
-            var extractedContexts: [String] = []
-            
-            for pinnedMessage in pinnedMessages {
-                let content = pinnedMessage.content
-                if let userContextStart = content.range(of: "\n\n<userContext>\n"),
-                   let userContextEnd = content.range(of: "\n</userContext>", range: userContextStart.upperBound..<content.endIndex) {
-                    /// Extract userContext content (without tags)
-                    let userContextContent = String(content[userContextStart.upperBound..<userContextEnd.lowerBound])
-                    extractedContexts.append(userContextContent)
-                }
-            }
-            
-            /// If we found any userContext blocks in pinned messages, inject them
-            if !extractedContexts.isEmpty {
-                let claudeContextMessage = """
-                ## User Context (Persistent)
-                
-                This context was provided in pinned messages and applies to all turns of this conversation:
-                
-                \(extractedContexts.joined(separator: "\n\n---\n\n"))
-                """
-                
-                messages.append(OpenAIChatMessage(role: "system", content: claudeContextMessage))
-                logger.info("CLAUDE_CONTEXT: Injected userContext from \(extractedContexts.count) pinned message(s) as system content (\(claudeContextMessage.count) chars)")
-            }
-        }
-
-        /// AUTOMATIC CONTEXT RETRIEVAL Inject pinned messages + semantic search results BEFORE conversation messages This ensures critical context (initial request, key decisions) is always available CRITICAL FIX: Pass iteration number to skip Phase 3 (high-importance) for iterations > 0 - Phase 1 (pinned) and Phase 2 (semantic search) still run - they provide unique context - Phase 3 (high-importance) skipped for iterations > 0 - prevents duplicate context from internalMessages.
-        if let retrievedContext = await retrieveRelevantContext(
+        /// AUTOMATIC CONTEXT RETRIEVAL (pinned + semantic search).
+        await appendContextRetrieval(
+            to: &messages,
             conversation: conversation,
             currentUserMessage: message,
             iteration: iteration,
-            caller: "callLLM_NON_STREAMING_line3189",
-            retrievedMessageIds: &retrievedMessageIds
-        ) {
-            messages.append(OpenAIChatMessage(role: "system", content: retrievedContext))
-            logger.debug("callLLM: Added automatic context retrieval (\(retrievedContext.count) chars) for iteration \(iteration)")
-        }
+            retrievedMessageIds: &retrievedMessageIds,
+            caller: "callLLM",
+            loggerPrefix: "callLLM"
+        )
 
         /// REMINDER INJECTION: Deferred to right before user message for better salience
         /// (VS Code Copilot pattern: inject todo context immediately before user query)
@@ -298,30 +114,21 @@ extension AgentOrchestrator {
             todoReminderContent = nil
         }
 
-        /// DOCUMENT IMPORT REMINDER INJECTION Tell agent what documents are already imported so they search memory instead of re-importing
-        if DocumentImportReminderInjector.shared.shouldInjectReminder(conversationId: conversation.id) {
-            if let docReminder = DocumentImportReminderInjector.shared.formatDocumentReminder(conversationId: conversation.id) {
-                messages.append(createSystemReminder(content: docReminder, model: model))
-                logger.debug("callLLM: Injected document import reminder (\(DocumentImportReminderInjector.shared.getImportedCount(for: conversation.id)) docs)")
-            }
-        }
+        /// Document import + memory reminders (shared with streaming path).
+        appendImportAndMemoryReminders(
+            to: &messages,
+            conversation: conversation,
+            model: model,
+            loggerPrefix: "callLLM"
+        )
 
-        /// MEMORY REMINDER INJECTION: Tell agent what memories were recently stored to prevent duplicate stores
-        /// This addresses the bug where agents re-store the same content across auto-continue iterations
-        if MemoryReminderInjector.shared.shouldInjectReminder(conversationId: conversation.id) {
-            if let memoryReminder = MemoryReminderInjector.shared.formatMemoryReminder(conversationId: conversation.id) {
-                messages.append(createSystemReminder(content: memoryReminder, model: model))
-                logger.debug("callLLM: Injected memory reminder (\(MemoryReminderInjector.shared.getStoredCount(for: conversation.id)) memories)")
-            }
-        }
-
-        /// Add conversation messages (user requests + LLM responses only, no tool results) CRITICAL: Use contextMessages if available (after pruning), otherwise use full messages This allows context pruning to work transparently - UI shows full history, LLM gets pruned context.
+        /// Add conversation messages (user requests + LLM responses only, no tool results).
         /// Filter out tool messages and assistant messages with tool_calls (when internalMessages exist).
         /// Tool messages and assistant+tool_calls messages are stored by MessageBus during execution
         /// but the properly-structured versions (with correct assistant+tool_calls -> tool result ordering)
         /// are in internalMessages. Including them here creates ordering violations.
         let hasInternalMsgs = !internalMessages.isEmpty
-        var messagesToSend = (conversation.contextMessages ?? conversation.messages).filter { msg in
+        var messagesToSend = conversation.messages.filter { msg in
             if msg.isToolMessage { return false }
             if !msg.isFromUser && hasInternalMsgs {
                 let hasToolCalls = msg.toolCalls != nil && !(msg.toolCalls?.isEmpty ?? true)
@@ -540,55 +347,18 @@ extension AgentOrchestrator {
             }
         }
 
-        /// Get model's actual context limit for MessageValidator budget calculation
-        let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
-        logger.debug("CONTEXT: Model '\(model)' has context limit of \(modelContextLimit) tokens")
-
-        /// CONTEXT MANAGEMENT: Use MessageValidator (CLIO-style) for budget-based context trimming.
-        /// Preserves tool_call/tool_result pairs, compresses dropped context into thread_summary,
-        /// always keeps system prompt + most recent user message.
-        let originalMessageCount = messages.count
-        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
+        /// CONTEXT MANAGEMENT: MessageValidator performs budget walk with atomic unit
+        /// grouping and compresses dropped context into a thread_summary. Shared helper
+        /// ensures both call paths apply the same logic.
+        messages = await validateAndArchiveContext(
             messages: messages,
-            maxPromptTokens: modelContextLimit
+            conversationId: conversationId,
+            model: model,
+            loggerPrefix: "callLLM"
         )
-        messages = truncationResult.messages
-        let wasTrimmed = truncationResult.wasTrimmed
-        if wasTrimmed {
-            logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages (\(truncationResult.droppedMessages.count) dropped)")
 
-            // Archive dropped messages for later recall
-            if !truncationResult.droppedMessages.isEmpty {
-                Task {
-                    do {
-                        let droppedAsEnhanced = truncationResult.droppedMessages.compactMap { msg -> EnhancedMessage? in
-                            guard let content = msg.content, !content.isEmpty else { return nil }
-                            return EnhancedMessage(
-                                content: content,
-                                isFromUser: msg.role == "user"
-                            )
-                        }
-                        if !droppedAsEnhanced.isEmpty {
-                            _ = try await self.conversationManager.contextArchiveManager.archiveMessages(
-                                droppedAsEnhanced,
-                                conversationId: conversationId,
-                                reason: .conversationTrimmed
-                            )
-                            self.logger.debug("CONTEXT: Archived \(droppedAsEnhanced.count) dropped messages for recall")
-                        }
-                    } catch {
-                        self.logger.warning("CONTEXT: Failed to archive dropped messages: \(error)")
-                    }
-                }
-            }
-        } else {
-            logger.debug("CONTEXT: Messages within budget, no trimming needed")
-        }
-
-        /// Determine statefulMarker for session continuity.
-        /// Use currentMarker (may be cleared if trimming occurred) instead of statefulMarker.
-        /// Note: With usage-based billing (June 2026+), we always use the marker for session continuity
-        /// since billing is based on actual tokens consumed, not premium multipliers.
+        /// Determine statefulMarker for session continuity (may have been cleared
+        /// by MessageValidator if trimming occurred).
         let checkpointMarker: String? = currentMarker ?? conversation.lastGitHubCopilotResponseId
         if let marker = checkpointMarker {
             logger.debug("Using statefulMarker for session continuity: \(marker.prefix(20))...")
@@ -596,319 +366,41 @@ extension AgentOrchestrator {
             logger.debug("No statefulMarker available (may have been cleared by payload trimming)")
         }
 
-        /// Inject isExternalAPICall flag into samConfig for tool filtering. External API calls should never have user_collaboration tool (no UI to interact with).
-        let enhancedSamConfig: SAMConfig?
-        if let samConfig = samConfig {
-            enhancedSamConfig = SAMConfig(
-                sharedMemoryEnabled: samConfig.sharedMemoryEnabled,
-                mcpToolsEnabled: samConfig.mcpToolsEnabled,
-                memoryCollectionId: samConfig.memoryCollectionId,
-                conversationTitle: samConfig.conversationTitle,
-                maxIterations: samConfig.maxIterations,
-                enableReasoning: samConfig.enableReasoning,
-                workingDirectory: samConfig.workingDirectory,
-                systemPromptId: samConfig.systemPromptId,
-                isExternalAPICall: isExternalAPICall,
-                thinking: samConfig.thinking
-            )
-        } else if isExternalAPICall {
-            /// No samConfig provided but we're external API call - create one with just the flag.
-            enhancedSamConfig = SAMConfig(isExternalAPICall: true)
-        } else {
-            enhancedSamConfig = nil
-        }
-
-        /// Build OpenAI request WITHOUT tools (we'll inject them next) Use conversation's maxTokens setting (user-configured, defaults to 8192).
-        /// CRITICAL: Ensure maxTokens is at least 4096 to prevent truncated responses
-        let effectiveMaxTokens = max(conversation.settings.maxTokens ?? 8192, 4096)
-        /// User-configured sampling parameters (per-conversation sliders in chat popover).
-        /// These used to be hardcoded at 0.7 — that meant every chat ran at the same temperature
-        /// regardless of what the user set. Wires conversation.settings -> OpenAIChatRequest -> provider.
-        let samplingTemperature = conversation.settings.temperature
-        let samplingTopP = conversation.settings.topP
-        /// Repetition penalty is per-provider (MLX config / llama.cpp config), not per-conversation.
-        /// Passed through when set by the request, otherwise provider uses its default.
-        let samplingRepetitionPenalty: Double? = nil
-        let baseRequest = OpenAIChatRequest(
-            model: model,
+        /// Build base request (without tools) + inject MCP tools + apply alternation
+        /// and tool pair validation. Shared helper ensures both call paths apply the
+        /// same logic for SAMConfig, sampling params, tool injection, and alternation.
+        let baseRequest = buildBaseRequest(
             messages: messages,
-            temperature: samplingTemperature,
-            topP: samplingTopP,
-            repetitionPenalty: samplingRepetitionPenalty,
-            maxTokens: effectiveMaxTokens,
-            stream: false,
-            samConfig: enhancedSamConfig,
-            sessionId: conversationId.uuidString,
+            conversation: conversation,
+            conversationId: conversationId,
+            model: model,
+            iteration: iteration,
+            samConfig: samConfig,
             statefulMarker: checkpointMarker,
-            iterationNumber: iteration
+            streaming: false
+        )
+        let finalRequest = await finalizeRequestWithToolsAndAlternation(
+            baseRequest: baseRequest,
+            loggerPrefix: "callLLM"
         )
 
-        /// Inject MCP tools using SharedConversationService This ensures tools are properly formatted in OpenAI format.
-        logger.debug("callLLM: Injecting MCP tools via SharedConversationService")
-        let requestWithTools = await conversationService.injectMCPToolsIntoRequest(baseRequest)
-
-        /// Claude via Copilot/OpenRouter: no batching needed - proxies handle conversion
-        var messagesToProcess = requestWithTools.messages
-
-        /// CRITICAL: Ensure message alternation for Claude API compatibility
-        /// Claude requires strict user/assistant alternation with no empty messages
-        /// Apply this AFTER all message construction is complete but BEFORE sending to API
-        var fixedMessages = ensureMessageAlternation(messagesToProcess)
-        /// Safety net: validate tool message pairs after alternation
-        fixedMessages = MessageValidator.validateToolMessagePairs(fixedMessages)
-        let finalRequest = OpenAIChatRequest(
-            model: requestWithTools.model,
-            messages: fixedMessages,
-            temperature: requestWithTools.temperature,
-            topP: requestWithTools.topP,
-            repetitionPenalty: requestWithTools.repetitionPenalty,
-            maxTokens: requestWithTools.maxTokens,
-            stream: requestWithTools.stream,
-            tools: requestWithTools.tools,
-            samConfig: requestWithTools.samConfig,
-            sessionId: requestWithTools.sessionId,
-            statefulMarker: requestWithTools.statefulMarker,
-            iterationNumber: requestWithTools.iterationNumber
-        )
-        logger.debug("callLLM: Applied message alternation validation for Claude compatibility")
-
-        /// Validate request size before sending Most timeouts occur because agent sends too much data to API.
+        /// Context management is owned entirely by MessageValidator (run earlier in this function).
+        /// Any request that still exceeds the safe threshold here means either:
+        /// - The model's reported context size is wrong (use a more conservative model config)
+        /// - A provider-specific hard limit is smaller than the model's nominal context
+        /// - A bug in MessageValidator's budget walk
+        /// In all three cases the right fix is upstream - this code path intentionally does NOT
+        /// cascade into YaRN/force-trim because that masked the real issue and produced
+        /// requests with corrupt tool_call/tool_result pairing.
         let (estimatedTokens, isSafe, contextLimit) = await validateRequestSize(
             messages: finalRequest.messages,
             model: model,
             tools: finalRequest.tools
         )
-
         if !isSafe {
-            logger.warning("API_REQUEST_SIZE: Request exceeds safe threshold (\(estimatedTokens) tokens / \(contextLimit) limit)")
-            logger.warning("API_REQUEST_SIZE: Forcing aggressive YaRN compression to 70% target to prevent 400 errors")
-
-            /// Force aggressive compression when request too large
-            /// This prevents 400 Bad Request errors that cause infinite workflow loops
-            let targetTokens = Int(Double(contextLimit) * 0.70) // Target 70% instead of 85%
-
-            if let processor = yarnProcessor {
-                logger.debug("YARN_FORCED: Applying emergency compression from \(estimatedTokens) to target \(targetTokens) tokens")
-
-                /// Convert OpenAIChatMessage to Message format for YaRN processing
-                let conversationMessages = messages.map { chatMsg -> Message in
-                    Message(
-                        id: UUID(),
-                        content: chatMsg.content ?? "",
-                        isFromUser: chatMsg.role == "user",
-                        timestamp: Date(),
-                        performanceMetrics: nil,
-                        githubCopilotResponseId: nil,
-                        isPinned: chatMsg.role == "system",
-                        importance: chatMsg.role == "system" ? 1.0 : (chatMsg.role == "user" ? 0.9 : 0.7)
-                    )
-                }
-
-                do {
-                    /// Force aggressive compression with explicit target
-                    let processedContext = try await processor.processConversationContext(
-                        messages: conversationMessages,
-                        conversationId: conversationId,
-                        targetTokenCount: targetTokens
-                    )
-
-                    /// Convert back to OpenAIChatMessage
-                    messages = processedContext.messages.map { message -> OpenAIChatMessage in
-                        let role = message.isFromUser ? "user" : (message.isPinned ? "system" : "assistant")
-                        return OpenAIChatMessage(role: role, content: message.content)
-                    }
-
-                    logger.debug("YARN_FORCED: Successfully compressed to \(processedContext.tokenCount) tokens (target was \(targetTokens))")
-
-                    /// Track compression telemetry
-                    await conversationManager.incrementCompressionEvent(for: conversationId)
-
-                    /// Rebuild request with compressed messages
-                    /// Need to create new baseRequest with compressed messages
-                    let compressedBaseRequest = OpenAIChatRequest(
-                        model: model,
-                        messages: messages,
-                        temperature: samplingTemperature,
-                        topP: samplingTopP,
-                        repetitionPenalty: samplingRepetitionPenalty,
-                        maxTokens: conversation.settings.maxTokens ?? 8192,
-                        stream: false,
-                        samConfig: enhancedSamConfig,
-                        sessionId: conversationId.uuidString,
-                        statefulMarker: checkpointMarker,
-                        iterationNumber: iteration
-                    )
-
-                    /// Re-inject tools with compressed messages
-                    let compressedRequestWithTools = await conversationService.injectMCPToolsIntoRequest(compressedBaseRequest)
-
-                    /// Claude via Copilot/OpenRouter: no batching needed
-                    var compressedMessagesToProcess = compressedRequestWithTools.messages
-
-                    /// CRITICAL: Ensure message alternation for Claude API compatibility
-                    let fixedCompressedMessages = ensureMessageAlternation(compressedMessagesToProcess)
-                    
-                    /// CRITICAL: Re-validate size after compression to prevent 400 errors
-                    /// GitHub Copilot and other providers enforce hard token limits (e.g., 64K for GitHub Copilot)
-                    /// If compression didn't bring us under limit, force aggressive message trimming
-                    var finalMessages = fixedCompressedMessages
-                    let (postCompressionTokens, postCompressionSafe, _) = await validateRequestSize(
-                        messages: finalMessages,
-                        model: model,
-                        tools: compressedRequestWithTools.tools
-                    )
-                    
-                    if !postCompressionSafe {
-                        logger.warning("POST_COMPRESSION_CHECK: Still exceeds limit (\(postCompressionTokens) tokens), forcing message trimming to prevent 400 error")
-                        
-                        /// Force trim to 70% of context limit by removing oldest messages
-                        let targetTokens = Int(Double(contextLimit) * 0.70)
-                        var currentTokens = postCompressionTokens
-                        var trimCount = 0
-                        
-                        while currentTokens > targetTokens && finalMessages.count > 2 {
-                            /// Remove oldest message (keep system prompt at index 0 if present)
-                            let startIndex = finalMessages[0].role == "system" ? 1 : 0
-                            if finalMessages.count > startIndex {
-                                let removed = finalMessages.remove(at: startIndex)
-                                let removedTokens = await tokenCounter.estimateTokensRemote(text: removed.content ?? "")
-                                currentTokens -= removedTokens
-                                trimCount += 1
-                            } else {
-                                break
-                            }
-                        }
-                        
-                        logger.warning("POST_COMPRESSION_TRIM: Removed \(trimCount) oldest messages, \(postCompressionTokens) → \(currentTokens) tokens")
-                    }
-                    
-                    let finalCompressedRequest = OpenAIChatRequest(
-                        model: compressedRequestWithTools.model,
-                        messages: finalMessages,
-                        temperature: compressedRequestWithTools.temperature,
-                        topP: compressedRequestWithTools.topP,
-                        repetitionPenalty: compressedRequestWithTools.repetitionPenalty,
-                        maxTokens: compressedRequestWithTools.maxTokens,
-                        stream: compressedRequestWithTools.stream,
-                        tools: compressedRequestWithTools.tools,
-                        samConfig: compressedRequestWithTools.samConfig,
-                        sessionId: compressedRequestWithTools.sessionId,
-                        statefulMarker: compressedRequestWithTools.statefulMarker,
-                        iterationNumber: compressedRequestWithTools.iterationNumber
-                    )
-                    logger.debug("callLLM: Applied message alternation validation to compressed request")
-
-                    /// Proceed with compressed request
-                    logger.debug("callLLM: Calling EndpointManager.processChatCompletion() with compressed request and retry policy")
-
-                    let retryPolicy = RetryPolicy.default
-                    let response = try await retryPolicy.execute(
-                        operation: { [self] in
-                            try await self.endpointManager.processChatCompletion(finalCompressedRequest)
-                        },
-                        onRetry: { [self] attempt, delay, error in
-                            self.logger.warning("API_RETRY: Non-streaming attempt \(attempt)/\(retryPolicy.maxRetries) after \(delay)s delay - \(errorDescription(for: error))")
-                        }
-                    )
-
-                    /// Continue with response processing (code below will handle it)
-                    guard let firstChoice = response.choices.first else {
-                        logger.error("callLLM: No choices in LLM response")
-                        return LLMResponse(
-                            content: "ERROR: No response choices from LLM",
-                            finishReason: "error",
-                            toolCalls: nil,
-                            statefulMarker: nil
-                        )
-                    }
-
-                    let choiceWithTools = response.choices.first(where: { $0.message.toolCalls != nil && !$0.message.toolCalls!.isEmpty })
-                    let contentChoice = response.choices.first(where: { $0.message.content != nil && !$0.message.content!.isEmpty }) ?? firstChoice
-
-                    var finishReason: String
-                    if let toolChoice = choiceWithTools {
-                        finishReason = toolChoice.finishReason
-                    } else {
-                        if firstChoice.finishReason == "tool_calls" && firstChoice.message.toolCalls?.isEmpty != false {
-                            logger.warning("BUG_FIX: GitHub Copilot returned finish_reason='tool_calls' with NO tool_calls array - overriding to 'stop'")
-                            finishReason = "stop"
-                        } else {
-                            finishReason = firstChoice.finishReason
-                        }
-                    }
-                    var content = contentChoice.message.content ?? ""
-
-                    /// Strip <think>...</think> tags from non-streaming responses.
-                    /// Some providers (MiniMax) include thinking inline.
-                    /// Preserve raw content for API round-trips (MiniMax requires it).
-                    let rawContentBeforeThinkStrip = content
-                    var hadThinkTags = false
-                    if content.contains("<think>") || content.contains("</think>") {
-                        hadThinkTags = true
-                        while let startRange = content.range(of: "<think>"),
-                              let endRange = content.range(of: "</think>", range: startRange.upperBound..<content.endIndex) {
-                            content.removeSubrange(startRange.lowerBound..<endRange.upperBound)
-                        }
-                        content = content.replacingOccurrences(of: "<think>", with: "")
-                        content = content.replacingOccurrences(of: "</think>", with: "")
-                        content = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-
-                    logger.debug("callLLM: Response has \(response.choices.count) choices, finishReason=\(finishReason), choiceWithTools=\(choiceWithTools != nil)")
-
-                    var toolCalls: [ToolCall]?
-                    if let choice = choiceWithTools, let openAIToolCalls = choice.message.toolCalls {
-                        logger.debug("callLLM: Parsing \(openAIToolCalls.count) tool calls")
-                        toolCalls = []
-
-                        for toolCall in openAIToolCalls {
-                            let argumentsString = toolCall.function.arguments.trimmingCharacters(in: .whitespacesAndNewlines)
-                            var arguments: [String: Any] = [:]
-                            
-                            // Handle empty arguments (some tools take no params)
-                            if !argumentsString.isEmpty && argumentsString != "{}" {
-                                let argumentsData = argumentsString.data(using: String.Encoding.utf8) ?? Data()
-                                if let parsedArgs = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] {
-                                    arguments = parsedArgs
-                                } else {
-                                    logger.warning("callLLM: Failed to parse arguments JSON for tool '\(toolCall.function.name)': \(argumentsString)")
-                                    // Still create the tool call with empty arguments - don't skip it!
-                                }
-                            }
-                            
-                            toolCalls?.append(ToolCall(
-                                id: toolCall.id,
-                                name: toolCall.function.name,
-                                arguments: arguments
-                            ))
-                            logger.debug("callLLM: Parsed tool call '\(toolCall.function.name)' (id: \(toolCall.id))")
-                        }
-                    }
-
-                    /// Extract statefulMarker from response
-                    let responseMarker = response.statefulMarker
-                    if let marker = responseMarker {
-                        logger.debug("callLLM: Received statefulMarker for future billing continuity: \(marker.prefix(20))...")
-                    }
-
-                    return LLMResponse(
-                        content: content,
-                        finishReason: finishReason,
-                        toolCalls: toolCalls,
-                        statefulMarker: responseMarker,
-                        rawContent: hadThinkTags ? rawContentBeforeThinkStrip : nil
-                    )
-
-                } catch {
-                    logger.error("YARN_FORCED: Emergency compression failed: \(error)")
-                    logger.warning("YARN_FORCED: Proceeding with original request - may result in 400 error")
-                    /// Fall through to normal request handling below
-                }
-            } else {
-                logger.error("YARN_FORCED: No processor available - cannot compress oversized request")
-                logger.warning("YARN_FORCED: Proceeding anyway - high risk of 400 error")
-            }
+            logger.warning("API_REQUEST_SIZE: Request exceeds safe threshold (\(estimatedTokens) tokens / \(contextLimit) limit) - MessageValidator output will be sent as-is")
         }
+
 
         /// DIAGNOSTIC: Log full message array to understand what LLM actually sees
         logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1041,7 +533,9 @@ extension AgentOrchestrator {
 
         logger.debug("callLLM: LLM response - finishReason=\(finishReason), content length=\(content.count), toolCalls=\(toolCalls?.count ?? 0)")
 
-        /// MLX Tool Call Parser - Extract tool calls from JSON code blocks MLX models don't have native tool calling support, they output JSON blocks or [TOOL_CALLS] format We need to parse these and create ToolCall objects.
+        /// MLX Tool Call Parser - Extract tool calls from <tool_call> XML tags or JSON code blocks.
+        /// Local models don't have native tool calling support - they emit text-only responses
+        /// in the formats instructed by AppleMLXAdapter's system prompt.
         var finalContent = content
         var finalToolCalls = toolCalls
 
@@ -1118,239 +612,57 @@ extension AgentOrchestrator {
             )
         }
 
-        /// CONTEXT MANAGEMENT: Use YARN exclusively. Context pruning was causing unnecessary API calls because it calls GitHub API to generate summaries.
-        logger.debug("CONTEXT_MANAGEMENT: Using YARN for context compression (no API calls, no premium charges)")
+        /// CONTEXT MANAGEMENT: Context trimming is owned by MessageValidator (run later in this
+        /// function). MessageValidator performs a budget walk with atomic unit grouping and
+        /// compresses dropped context into a thread_summary - no LLM calls, no API charges.
+        logger.debug("CONTEXT_MANAGEMENT: MessageValidator handles context trimming (budget walk + thread_summary compression)")
 
         /// Build messages array: system prompt + conversation messages + internal tool messages.
         var messages: [OpenAIChatMessage] = []
 
-        /// Add user-configured system prompt (includes guard rails) FIRST This was the architectural gap - API requests never included SystemPromptManager prompts.
-        let defaultPromptId = await MainActor.run {
-            SystemPromptManager.shared.selectedConfigurationId
-        }
-        let promptId = conversation.settings.selectedSystemPromptId ?? defaultPromptId
+        /// System prompt + dynamic context (shared with callLLM via
+        /// buildSystemPromptAndDynamicContext).
+        let (systemPromptContent, dynamicContext) = await buildSystemPromptAndDynamicContext(
+            conversation: conversation,
+            conversationId: conversationId,
+            model: model,
+            samConfig: samConfig,
+            loggerPrefix: "callLLMStreaming"
+        )
 
-        logger.debug("DEBUG_ORCH_CONV: callLLMStreaming using conversation \(conversation.id), selectedSystemPromptId: \(conversation.settings.selectedSystemPromptId?.uuidString ?? "nil"), promptId: \(promptId?.uuidString ?? "nil")")
+        logger.debug("callLLMStreaming: System prompt length=\(systemPromptContent.count) chars, dynamic context=\(dynamicContext.count) chars")
 
-        let toolsEnabled = samConfig?.mcpToolsEnabled ?? true
-        var userSystemPrompt = await MainActor.run {
-            SystemPromptManager.shared.generateSystemPrompt(
-                for: promptId,
-                toolsEnabled: toolsEnabled,
-                model: model
-            )
-        }
-
-        /// Merge personality if selected
-        if let personalityId = conversation.settings.selectedPersonalityId {
-            let personalityManager = PersonalityManager()
-            if let personality = personalityManager.getPersonality(id: personalityId),
-               personality.id != Personality.assistant.id {  // Skip if Assistant (default)
-                let personalityInstructions = personality.generatePromptAdditions()
-                userSystemPrompt += "\n\n" + personalityInstructions
-                logger.info("Merged personality '\(personality.name)' into system prompt (\(personalityInstructions.count) chars)")
-            }
-        }
-
-        // SECURITY: Sanitize system prompt to remove invisible character injection vectors
-        // Custom instructions loaded from files could contain hidden Unicode payloads
-        userSystemPrompt = SecurityPipeline.sanitizeInputNonNil(userSystemPrompt)
-
-        /// KV CACHE OPTIMIZATION: System prompt must be STATIC across turns.
-        /// Only the user-configured system prompt + personality goes in the system message.
-        /// All dynamic per-turn content (conversation ID, tools, working directory, LTM, etc.)
-        /// goes into <userContext> in the last user message so the system prompt prefix
-        /// stays byte-identical across turns, enabling full KV cache reuse.
-
-        var dynamicContext = ""
-
-        /// Conversation ID for memory operations.
-        dynamicContext += "CONVERSATION_ID: \(conversationId.uuidString)"
-
-        /// Inject dynamic tool listing when tools are enabled
-        if toolsEnabled {
-            // Per-conversation isolation: memory_operations is only exposed to
-            // conversations in a shared topic. Default conversations should not
-            // even know about LTM. Shared topics are the critical LTM use case.
-            let isSharedTopic = conversation.settings.useSharedData
-                && conversation.settings.sharedTopicId != nil
-                && conversation.settings.sharedTopicName != nil
-            let tools = conversationManager.mcpManager.getAvailableTools()
-                .filter { $0.name != "memory_operations" || isSharedTopic }
-            if !tools.isEmpty {
-                var listing = "\n\nAvailable Tools:"
-                for tool in tools {
-                    let desc = tool.description.components(separatedBy: "\n").first ?? tool.description
-                    listing += "\n- \(tool.name): \(desc)"
-                }
-                listing += "\n\nUse tools when the task requires action. Respond naturally for conversation."
-                dynamicContext += listing
-            }
-        }
-
-        /// Working directory context - changes when conversation title changes
-        if toolsEnabled {
-            let effectiveWorkingDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-            dynamicContext += """
-
-
-            # WORKING DIRECTORY CONTEXT
-
-            Your current working directory is: `\(effectiveWorkingDir)`
-
-            All file operations will execute relative to this directory by default.
-            You do not need to run 'pwd' or ask about the starting directory - this IS your working directory.
-            """
-        }
-
-        /// SHARED TOPIC CONTEXT INJECTION
-        /// When a conversation is attached to a shared topic, inject topic awareness
-        /// so the agent knows about the shared context and can use recall_history with topic_id
-        if conversation.settings.useSharedData,
-           let topicId = conversation.settings.sharedTopicId,
-           let topicName = conversation.settings.sharedTopicName {
-            dynamicContext += """
-
-
-            # SHARED TOPIC CONTEXT
-
-            You are working within the shared topic: "\(topicName)"
-            Topic ID: \(topicId.uuidString)
-
-            **IMPORTANT: You already have access to data from this topic.** Context from other conversations
-            in the "\(topicName)" topic is automatically retrieved and injected into your context on every request.
-            Look for the "SHARED TOPIC CONVERSATION HISTORY" and "HIGH IMPORTANCE MESSAGES" sections in your
-            system context - these contain real data from the topic that you should use to answer questions.
-
-            This conversation shares memory and working files with other conversations in this topic.
-            When answering questions, ALWAYS check the injected topic context first before claiming you
-            don't have information. The data is already in your context.
-
-            If you need MORE context beyond what was auto-injected, use the `recall_history` tool with:
-            - topic_id: "\(topicId.uuidString)" to search across ALL conversations in this topic
-            - Or omit topic_id to search only this conversation's archived history
-            """
-            logger.debug("callLLMStreaming: Injected shared topic context for topic '\(topicName)' (\(topicId.uuidString.prefix(8)))")
-        }
-
-        /// LTM injection is gated to shared-topic conversations only. Per-conversation
-        /// isolation is the default in SAM: default conversations should not even know
-        /// about LTM. Shared topics are the critical LTM use case - the topic scope
-        /// is where structured knowledge persistence earns its keep.
-        let useSharedData = conversation.settings.useSharedData
-        let hasSharedTopic = useSharedData
-            && conversation.settings.sharedTopicId != nil
-            && conversation.settings.sharedTopicName != nil
-        if hasSharedTopic {
-            let sharedTopicId = conversation.settings.sharedTopicId
-            let sharedTopicName = conversation.settings.sharedTopicName
-
-            let ltmPath = LongTermMemory.resolveFilePath(
-                conversationId: conversationId,
-                sharedTopicId: sharedTopicId,
-                sharedTopicName: sharedTopicName,
-                useSharedData: useSharedData
-            )
-
-            let ltm = LongTermMemory.load(from: ltmPath)
-            if ltm.totalEntries > 0 {
-                let ltmBlock = ltm.formatForSystemPrompt()
-                if !ltmBlock.isEmpty {
-                    dynamicContext += "\n\n" + ltmBlock
-                    logger.info("callLLMStreaming: Injected shared-topic LTM (\(ltm.totalEntries) entries) into dynamic context")
-                }
-            }
-        } else {
-            logger.debug("callLLMStreaming: LTM skipped - conversation is not in a shared topic (per-conversation isolation default)")
-        }
-
-        /// Session naming - only present on first turn, disappears after title is set
-        if conversation.title.hasPrefix("New Conversation") {
-            dynamicContext += """
-
-
-            ## Session Title [MANDATORY]
-
-            This conversation has no title. You MUST include this marker as the LAST line of your FIRST response:
-
-            <!--session:{"title":"Your 3-6 Word Title"}-->
-
-            Requirements:
-            - 3-6 words, title case, specific to the topic
-            - LAST line of response, on its own line
-            - First response ONLY, never repeat
-            - Example: <!--session:{"title":"Fix Authentication Token Bug"}-->
-            """
-            logger.debug("callLLMStreaming: Injected session naming instruction for unnamed conversation")
-        }
-
-        /// System prompt is ONLY the static user-configured prompt + personality.
-        /// This ensures the system message prefix is byte-identical across turns for KV cache reuse.
-        let systemPromptContent = userSystemPrompt
-
-        logger.debug("callLLMStreaming: Generated system prompt from ID: \(promptId?.uuidString ?? "default"), length: \(systemPromptContent.count) chars, toolsEnabled: \(toolsEnabled)")
-        logger.debug("callLLMStreaming: Guard rails present: \(systemPromptContent.contains("TOOL SCHEMA CONFIDENTIALITY"))")
-        logger.debug("callLLMStreaming: Dynamic context length: \(dynamicContext.count) chars (injected into user message)")
-
-        if !userSystemPrompt.isEmpty {
+        if !systemPromptContent.isEmpty {
             messages.append(OpenAIChatMessage(role: "system", content: systemPromptContent))
             logger.debug("callLLMStreaming: Added user-configured system prompt to messages (static prefix)")
         }
 
-        /// CLAUDE USERCONTEXT INJECTION
-        /// Per Claude Messages API best practices: Extract important context from ALL pinned messages
-        /// and inject as system message on EVERY request (context doesn't persist in conversation history)
-        /// Reference: claude-messages.txt - "Do not rely on Turn 1 staying in history forever"
-        let modelLower = model.lowercased()
-        if modelLower.contains("claude") {
-            /// Extract userContext from ALL pinned messages
-            let pinnedMessages = conversation.messages.filter { $0.isPinned }
-            var extractedContexts: [String] = []
-            
-            for pinnedMessage in pinnedMessages {
-                let content = pinnedMessage.content
-                if let userContextStart = content.range(of: "\n\n<userContext>\n"),
-                   let userContextEnd = content.range(of: "\n</userContext>", range: userContextStart.upperBound..<content.endIndex) {
-                    /// Extract userContext content (without tags)
-                    let userContextContent = String(content[userContextStart.upperBound..<userContextEnd.lowerBound])
-                    extractedContexts.append(userContextContent)
-                }
-            }
-            
-            /// If we found any userContext blocks in pinned messages, inject them
-            if !extractedContexts.isEmpty {
-                let claudeContextMessage = """
-                ## User Context (Persistent)
-                
-                This context was provided in pinned messages and applies to all turns of this conversation:
-                
-                \(extractedContexts.joined(separator: "\n\n---\n\n"))
-                """
-                
-                messages.append(OpenAIChatMessage(role: "system", content: claudeContextMessage))
-                logger.info("CLAUDE_CONTEXT: Injected userContext from \(extractedContexts.count) pinned message(s) as system content (\(claudeContextMessage.count) chars)")
-            }
-        }
+        /// CLAUDE USERCONTEXT INJECTION (Claude-specific pinned-message context).
+        appendClaudePinnedUserContext(
+            to: &messages,
+            conversation: conversation,
+            model: model,
+            loggerPrefix: "callLLMStreaming"
+        )
 
-        /// AUTOMATIC CONTEXT RETRIEVAL Inject pinned messages + semantic search results BEFORE conversation messages This ensures critical context (initial request, key decisions) is always available CRITICAL FIX: Use message ID tracking to prevent Phase 3 duplication across iterations - Phase 1 (pinned) always runs - core context - Phase 2 (semantic search) always runs - relevant memories - Phase 3 (high-importance) tracks retrieved IDs - prevents duplication while preserving context.
-        if let retrievedContext = await retrieveRelevantContext(
+        /// AUTOMATIC CONTEXT RETRIEVAL (pinned + semantic search).
+        await appendContextRetrieval(
+            to: &messages,
             conversation: conversation,
             currentUserMessage: message,
             iteration: iteration,
-            caller: "callLLMStreaming_line3534",
-            retrievedMessageIds: &retrievedMessageIds
-        ) {
-            messages.append(OpenAIChatMessage(role: "system", content: retrievedContext))
-            logger.debug("callLLMStreaming: Added automatic context retrieval (\(retrievedContext.count) chars) for iteration \(iteration)")
-        }
+            retrievedMessageIds: &retrievedMessageIds,
+            caller: "callLLMStreaming",
+            loggerPrefix: "callLLMStreaming"
+        )
 
-        /// DOCUMENT IMPORT REMINDER INJECTION Tell agent what documents are already imported so they search memory instead of re-importing
-        if DocumentImportReminderInjector.shared.shouldInjectReminder(conversationId: conversation.id) {
-            if let docReminder = DocumentImportReminderInjector.shared.formatDocumentReminder(conversationId: conversation.id) {
-                messages.append(createSystemReminder(content: docReminder, model: model))
-                logger.debug("callLLMStreaming: Injected document import reminder (\(DocumentImportReminderInjector.shared.getImportedCount(for: conversation.id)) docs)")
-            }
-        }
+        /// Document import + memory reminders (shared with non-streaming path).
+        appendImportAndMemoryReminders(
+            to: &messages,
+            conversation: conversation,
+            model: model,
+            loggerPrefix: "callLLMStreaming"
+        )
 
         /// Filter out UI-only progress/status messages before sending to API These messages are only for UI display and should not be sent to LLM WHY FILTER: - Progress messages like "→ Continuing work" or "SUCCESS: User Collaboration: ..." are UI-only - They don't represent actual conversation content - Including them adds unnecessary noise to LLM context WHAT TO FILTER: - Messages starting with "→" (continuation status) - Messages starting with "SUCCESS: User Collaboration:" (collaboration prompts) - "Extended execution limit" status messages WHAT TO KEEP: - User messages (always kept) - Tool result messages (isToolMessage=true) - even if they start with "SUCCESS:" - Assistant messages with actual LLM responses.
         var conversationMessages: [Message] = Array(conversation.messages).filter { msg in
@@ -1571,10 +883,9 @@ extension AgentOrchestrator {
         /// Claude models via GitHub Copilot/OpenRouter don't need tool result batching -
         /// those proxies handle Claude conversion internally and expect OpenAI format.
 
-        /// CRITICAL: Fix message alternation BEFORE YARN compression
-        /// Claude requires strict user/assistant alternation with no empty messages
-        /// This MUST happen before YARN because YARN compresses individual messages
-        /// If we merge AFTER YARN, we concatenate compressed content and blow up token count!
+        /// Apply alternation fix before validation so the budget walk sees the
+        /// pre-merge message structure (alternation can grow the message count
+        /// by collapsing two user messages into one - safer to budget first).
         messages = ensureMessageAlternation(messages)
         logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
 
@@ -1639,113 +950,57 @@ extension AgentOrchestrator {
 
         /// Get model context limit for MessageValidator budget calculation
         let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
-        logger.debug("CONTEXT: Model has context limit of \(modelContextLimit) tokens")
-
-        /// CONTEXT MANAGEMENT: Use MessageValidator (CLIO-style) for budget-based context trimming.
-        let originalMessageCount = messages.count
-        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
+        /// CONTEXT MANAGEMENT: MessageValidator performs budget walk with atomic unit
+        /// grouping and compresses dropped context into a thread_summary. Shared helper
+        /// ensures both call paths apply the same logic.
+        messages = await validateAndArchiveContext(
             messages: messages,
-            maxPromptTokens: modelContextLimit
+            conversationId: conversationId,
+            model: model,
+            loggerPrefix: "callLLMStreaming"
         )
-        messages = truncationResult.messages
-        if truncationResult.wasTrimmed {
-            logger.info("CONTEXT: MessageValidator trimmed \(originalMessageCount) -> \(messages.count) messages (\(truncationResult.droppedMessages.count) dropped)")
 
-            // Archive dropped messages for later recall
-            if !truncationResult.droppedMessages.isEmpty {
-                Task {
-                    do {
-                        let droppedAsEnhanced = truncationResult.droppedMessages.compactMap { msg -> EnhancedMessage? in
-                            guard let content = msg.content, !content.isEmpty else { return nil }
-                            return EnhancedMessage(
-                                content: content,
-                                isFromUser: msg.role == "user"
-                            )
-                        }
-                        if !droppedAsEnhanced.isEmpty {
-                            _ = try await self.conversationManager.contextArchiveManager.archiveMessages(
-                                droppedAsEnhanced,
-                                conversationId: conversationId,
-                                reason: .conversationTrimmed
-                            )
-                            self.logger.debug("CONTEXT: Archived \(droppedAsEnhanced.count) dropped messages for recall")
-                        }
-                    } catch {
-                        self.logger.warning("CONTEXT: Failed to archive dropped messages: \(error)")
-                    }
-                }
-            }
-        }
-
-        logger.debug("callLLMStreaming: Request has \(messages.count) messages (after YARN)")
+        logger.debug("callLLMStreaming: Request has \(messages.count) messages (after MessageValidator)")
 
         /// Log statefulMarker presence for debugging.
         if let marker = statefulMarker {
             logger.debug("callLLMStreaming: Including statefulMarker from previous iteration: \(marker.prefix(20))...")
         }
 
-        /// Inject isExternalAPICall flag into samConfig for tool filtering. External API calls should never have user_collaboration tool (no UI to interact with).
-        let enhancedSamConfig: SAMConfig?
-        if let samConfig = samConfig {
-            enhancedSamConfig = SAMConfig(
-                sharedMemoryEnabled: samConfig.sharedMemoryEnabled,
-                mcpToolsEnabled: samConfig.mcpToolsEnabled,
-                memoryCollectionId: samConfig.memoryCollectionId,
-                conversationTitle: samConfig.conversationTitle,
-                maxIterations: samConfig.maxIterations,
-                enableReasoning: samConfig.enableReasoning,
-                workingDirectory: samConfig.workingDirectory,
-                systemPromptId: samConfig.systemPromptId,
-                isExternalAPICall: isExternalAPICall,
-                thinking: samConfig.thinking
-            )
-        } else if isExternalAPICall {
-            /// No samConfig provided but we're external API call - create one with just the flag.
-            enhancedSamConfig = SAMConfig(isExternalAPICall: true)
-        } else {
-            enhancedSamConfig = nil
-        }
-
-        /// Build OpenAI request with statefulMarker for GitHub Copilot session continuity Use conversation's maxTokens setting (user-configured, defaults to 8192).
-        /// CRITICAL: Ensure maxTokens is at least 4096 to prevent truncated responses
-        let effectiveMaxTokensStreaming = max(conversation.settings.maxTokens ?? 8192, 4096)
-        /// User-configured sampling parameters (per-conversation sliders in chat popover).
-        /// Wires conversation.settings -> OpenAIChatRequest -> provider.
-        let samplingTemperatureStreaming = conversation.settings.temperature
-        let samplingTopPStreaming = conversation.settings.topP
-        /// Repetition penalty is per-provider (MLX config / llama.cpp config), not per-conversation.
-        let samplingRepetitionPenaltyStreaming: Double? = nil
-        let baseRequest = OpenAIChatRequest(
-            model: model,
+        /// Build base request (without tools) + inject MCP tools + apply alternation
+        /// and tool pair validation. Shared helper ensures both call paths apply the
+        /// same logic for SAMConfig, sampling params, tool injection, and alternation.
+        let baseRequest = buildBaseRequest(
             messages: messages,
-            temperature: samplingTemperatureStreaming,
-            topP: samplingTopPStreaming,
-            repetitionPenalty: samplingRepetitionPenaltyStreaming,
-            maxTokens: effectiveMaxTokensStreaming,
-            stream: true,
-            samConfig: enhancedSamConfig,
-            sessionId: conversationId.uuidString,
+            conversation: conversation,
+            conversationId: conversationId,
+            model: model,
+            iteration: iteration,
+            samConfig: samConfig,
             statefulMarker: currentMarker,
-            iterationNumber: iteration
+            streaming: true
+        )
+        let finalRequest = await finalizeRequestWithToolsAndAlternation(
+            baseRequest: baseRequest,
+            loggerPrefix: "callLLMStreaming"
         )
 
-        /// Inject MCP tools.
-        logger.debug("callLLMStreaming: Injecting MCP tools")
-        let finalRequest = await conversationService.injectMCPToolsIntoRequest(baseRequest)
-
-        /// Validate request size before sending Most timeouts occur because agent sends too much data to API.
+        /// Context management is owned entirely by MessageValidator (run earlier in this function).
+        /// Any request that still exceeds the safe threshold here means either:
+        /// - The model's reported context size is wrong (use a more conservative model config)
+        /// - A provider-specific hard limit is smaller than the model's nominal context
+        /// - A bug in MessageValidator's budget walk
+        /// In all three cases the right fix is upstream - this code path intentionally does NOT
+        /// cascade into YaRN/force-trim because that masked the real issue and produced
+        /// requests with corrupt tool_call/tool_result pairing.
         let (estimatedTokens, isSafe, contextLimit) = await validateRequestSize(
             messages: finalRequest.messages,
             model: model,
             tools: finalRequest.tools
         )
-
         if !isSafe {
-            logger.warning("API_REQUEST_SIZE: Streaming request exceeds safe threshold (\(estimatedTokens) tokens / \(contextLimit) limit)")
-            logger.warning("API_REQUEST_SIZE: High risk of timeout. Consider additional YARN compression in future iterations.")
-            /// We proceed anyway (retry will handle timeout), but log warning for improvement.
+            logger.warning("API_REQUEST_SIZE: Request exceeds safe threshold (\(estimatedTokens) tokens / \(contextLimit) limit) - MessageValidator output will be sent as-is")
         }
-
         /// DIAGNOSTIC: Log full message array to understand what LLM actually sees
         logger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         logger.debug("DIAGNOSTIC_MESSAGES_STREAMING: Full message array being sent to LLM (\(finalRequest.messages.count) messages)")
@@ -1828,6 +1083,11 @@ extension AgentOrchestrator {
             if isCancellationRequested {
                 logger.info("STREAMING_CANCELLED: Cancellation flag set, stopping stream immediately")
                 continuation.finish()
+                cleanupPartialStreamingMessages(
+                    conversationId: conversationId,
+                    assistantMessageId: assistantMessageId,
+                    toolMessagesByExecutionId: toolMessagesByExecutionId
+                )
                 return LLMResponse(
                     content: accumulatedContent,
                     finishReason: "cancelled",
@@ -1835,7 +1095,18 @@ extension AgentOrchestrator {
                     statefulMarker: statefulMarker
                 )
             }
-            try Task.checkCancellation()
+            do {
+                try Task.checkCancellation()
+            } catch {
+                logger.info("STREAMING_CANCELLED: Task cancelled, stopping stream immediately")
+                continuation.finish()
+                cleanupPartialStreamingMessages(
+                    conversationId: conversationId,
+                    assistantMessageId: assistantMessageId,
+                    toolMessagesByExecutionId: toolMessagesByExecutionId
+                )
+                throw CancellationError()
+            }
 
             /// CRITICAL: Determine which message this chunk belongs to
             /// - Tool chunks (isToolMessage=true) → create/update TOOL message
@@ -2069,6 +1340,14 @@ extension AgentOrchestrator {
             continue authRetryLoop
         } catch {
             logger.error("AUTH_RETRY_DEBUG: Stream threw non-recoverable error: \(error), type=\(type(of: error))")
+            /// Stream errors also leak partial state - the assistant message was
+            /// created mid-stream and any tool messages too. Clean up before
+            /// propagating the error.
+            cleanupPartialStreamingMessages(
+                conversationId: conversationId,
+                assistantMessageId: assistantMessageId,
+                toolMessagesByExecutionId: toolMessagesByExecutionId
+            )
             throw error
         }
         } // end authRetryLoop
@@ -2215,27 +1494,13 @@ extension AgentOrchestrator {
         /// CRITICAL: Complete streaming message in MessageBus with final content
         /// This marks the message as no longer streaming and ensures persistence
         /// Content was already updated via updateStreamingMessage() calls during chunking
-        /// If no assistant message was created (only tool calls), skip completion
         if let msgId = assistantMessageId {
             /// CRITICAL: Add toolCalls metadata to message BEFORE completing
             /// This fixes Gemini (and other providers) tool call message format
             /// Without this, tool calls appear as plain text instead of proper metadata
             if let toolCalls = finalToolCalls, !toolCalls.isEmpty {
                 /// Convert ToolCall to SimpleToolCall for message storage
-                let simpleToolCalls = toolCalls.map { toolCall -> SimpleToolCall in
-                    /// Serialize arguments dict back to JSON string for SimpleToolCall
-                    let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments)
-                    let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-                    
-                    return SimpleToolCall(
-                        id: toolCall.id,
-                        type: "function",
-                        function: SimpleFunctionCall(
-                            name: toolCall.name,
-                            arguments: argsString
-                        )
-                    )
-                }
+                let simpleToolCalls = AgentOrchestrator.makeSimpleToolCalls(toolCalls)
                 
                 /// Update message with toolCalls metadata
                 conversation.messageBus?.updateMessage(
@@ -2250,6 +1515,18 @@ extension AgentOrchestrator {
                 id: msgId
             )
             logger.debug("MESSAGEBUS_COMPLETE: Completed streaming for message id=\(msgId.uuidString.prefix(8)) with final content length=\(finalContent.count)")
+        } else if let toolCalls = finalToolCalls, !toolCalls.isEmpty {
+            /// No assistant message was created during streaming (response had only tool_calls,
+            /// no content chunks ever arrived). Create one now with just the tool_calls so the
+            /// tool result messages have a parent assistant message in conversation.messages.
+            /// Otherwise tool results become orphans on conversation reload.
+            let simpleToolCalls = AgentOrchestrator.makeSimpleToolCalls(toolCalls)
+            conversation.messageBus?.addAssistantMessage(
+                content: "",
+                timestamp: Date(),
+                toolCalls: simpleToolCalls
+            )
+            logger.info("MESSAGEBUS_TOOLCALLS_ONLY: Created assistant message with only tool_calls (no content) for \(simpleToolCalls.count) tool calls")
         } else {
             logger.info("MESSAGEBUS_COMPLETE: No assistant message created (only tool calls executed)")
         }
@@ -2263,5 +1540,35 @@ extension AgentOrchestrator {
                 ? "<think>\(accumulatedThinkingText)</think>\n\(finalContent)"
                 : nil
         )
+    }
+
+    /// Clean up partially-streamed messages when the stream is cancelled or errors
+    /// mid-flight. Without this, the assistant message (and any tool messages
+    /// created during streaming) stay in the messageBus with `isStreaming=true`
+    /// forever, which:
+    /// 1. Shows a stuck "streaming..." indicator in the UI
+    /// 2. Persists to disk on next save as a streaming message
+    /// 3. Causes MessageValidator to flag it as orphaned (assistant has no
+    ///    corresponding response from the LLM API)
+    ///
+    /// Called from the cancellation and error paths in callLLMStreaming.
+    func cleanupPartialStreamingMessages(
+        conversationId: UUID,
+        assistantMessageId: UUID?,
+        toolMessagesByExecutionId: [String: UUID]
+    ) {
+        guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else {
+            return
+        }
+
+        if let assistantId = assistantMessageId {
+            conversation.messageBus?.completeStreamingMessage(id: assistantId)
+            logger.info("STREAMING_CLEANUP: Completed partial assistant message \(assistantId.uuidString.prefix(8))")
+        }
+
+        for (_, toolMessageId) in toolMessagesByExecutionId {
+            conversation.messageBus?.completeStreamingMessage(id: toolMessageId)
+            logger.info("STREAMING_CLEANUP: Completed partial tool message \(toolMessageId.uuidString.prefix(8))")
+        }
     }
 }

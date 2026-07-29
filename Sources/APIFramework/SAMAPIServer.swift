@@ -357,12 +357,6 @@ public class SAMAPIServer: ObservableObject, @unchecked Sendable {
 
     // MARK: - Universal Tool Integration (Clean Implementation)
 
-/// Simple tool call structure for parsing.
-private struct SimpleToolCall {
-    let name: String
-    let arguments: String
-}
-
     /// Process tool calls in API response.
     private func processToolCalls(_ response: ServerOpenAIChatResponse, sessionId: String?) async throws -> ServerOpenAIChatResponse {
         /// Debug: Log response structure to understand what we're receiving.
@@ -474,43 +468,6 @@ private struct SimpleToolCall {
             choices: [enhancedChoice],
             usage: response.usage
         )
-    }
-
-    /// Extract tool calls from message content (simple JSON parsing).
-    private func extractToolCallsFromMessage(_ message: String) -> [SimpleToolCall] {
-        var toolCalls: [SimpleToolCall] = []
-
-        /// Look for tool_calls JSON blocks in the message.
-        let pattern = #"\{[^{}]*"tool_calls"[^{}]*\[[^]]*\][^{}]*\}"#
-
-        do {
-            let regex = try NSRegularExpression(pattern: pattern, options: [])
-            let matches = regex.matches(in: message, options: [], range: NSRange(location: 0, length: message.count))
-
-            for match in matches {
-                if let range = Range(match.range, in: message) {
-                    let jsonString = String(message[range])
-
-                    if let toolCallsData = jsonString.data(using: .utf8),
-                       let json = try? JSONSerialization.jsonObject(with: toolCallsData) as? [String: Any],
-                       let toolCallsArray = json["tool_calls"] as? [[String: Any]] {
-
-                        for toolCallDict in toolCallsArray {
-                            if let function = toolCallDict["function"] as? [String: Any],
-                               let name = function["name"] as? String,
-                               let arguments = function["arguments"] as? String {
-
-                                toolCalls.append(SimpleToolCall(name: name, arguments: arguments))
-                            }
-                        }
-                    }
-                }
-            }
-        } catch {
-            logger.error("Error parsing tool calls: \(error)")
-        }
-
-        return toolCalls
     }
 
     /// Inject tool information into system prompt (clean approach).
@@ -699,58 +656,31 @@ AVAILABLE TOOLS:
 
     // MARK: - Context Management
 
-    /// Trim conversation context to keep within token limits while preserving important messages - Parameter request: Original chat request - Returns: Request with trimmed message history if needed.
+    /// Trim conversation context to keep within token limits while preserving important messages.
+    ///
+    /// Calls MessageValidator (the single context manager for SAM) so that:
+    /// - Tool call / tool result pairs are never split
+    /// - Atomic units are preserved (assistant+tool_calls+tool_results stay together)
+    /// - Dropped context is compressed into a thread_summary (not just nuked)
+    ///
+    /// The previous implementation kept only system + last user message and dropped
+    /// all tool responses, which broke tool_call/tool_result pairing and left the
+    /// model with no awareness of recent work.
     private func trimContextIfNeeded(_ request: OpenAIChatRequest) -> OpenAIChatRequest {
-        /// Estimate token count (rough: 4 chars = 1 token).
-        let estimatedTokens = request.messages.reduce(0) { total, message in
-            let contentLength = (message.content ?? "").count
-            let toolCallsLength = (message.toolCalls?.reduce(0) { $0 + $1.function.arguments.count } ?? 0)
-            return total + (contentLength / 4) + (toolCallsLength / 4)
-        }
-
-        /// GitHub Copilot limit: 64K tokens total Reserve: 10K for system prompt + tools, 10K for response Available for messages: ~40K tokens BUT: Be aggressive with tool responses which can be MASSIVE.
-        let maxMessageTokens = 20_000
-
-        guard estimatedTokens > maxMessageTokens else {
-            logger.debug("CONTEXT_TRIM: Estimated tokens (\(estimatedTokens)) within limit (\(maxMessageTokens)) - no trimming needed")
-            return request
-        }
-
-        logger.warning("CONTEXT_TRIM: Estimated tokens (\(estimatedTokens)) GREATLY exceeds limit (\(maxMessageTokens)) - AGGRESSIVE trimming needed")
-
-        /// AGGRESSIVE STRATEGY: Only keep recent user message + system prompt Drop ALL tool responses and old messages - they're in persisted conversation JSON.
-        var trimmedMessages: [OpenAIChatMessage] = []
-
-        /// Keep system message (required).
-        if let systemMsg = request.messages.first(where: { $0.role == "system" }) {
-            trimmedMessages.append(systemMsg)
-        }
-
-        /// Add aggressive context trimming notice.
-        let trimNotice = OpenAIChatMessage(
-            role: "system",
-            content: """
-            [CRITICAL: AGGRESSIVE CONTEXT TRIM - Conversation exceeded \(estimatedTokens / 4) tokens (\(maxMessageTokens / 4) limit)]
-            [TRIMMED: All tool responses and most messages removed to fit GitHub Copilot's 64K token limit]
-            [CONTEXT RECOVERY: Full conversation preserved in ~/Library/Application Support/com.syntheticautonomicmind.sam/conversations/<conversationId>.json]
-            [MEMORY ACCESS: Use memory_search(query="...", similarity_threshold=0.3) to retrieve specific information]
-            [WORK COMPLETED: If you executed many tools, review the conversation JSON file for full context]
-            """
+        let contextLimit = getContextSizeSync(modelName: request.model)
+        let validatedMessages = MessageValidator.validateToolMessagePairs(request.messages)
+        let trimmed = MessageValidator.validateAndTruncate(
+            messages: validatedMessages,
+            maxPromptTokens: contextLimit
         )
-        trimmedMessages.append(trimNotice)
 
-        /// Keep ONLY the most recent user message (the current request).
-        if let lastUserMsg = request.messages.last(where: { $0.role == "user" }) {
-            trimmedMessages.append(lastUserMsg)
+        if trimmed.count < request.messages.count {
+            logger.info("CONTEXT_TRIM: MessageValidator trimmed \(request.messages.count) -> \(trimmed.count) messages for \(request.model)")
         }
-
-        let droppedCount = request.messages.count - trimmedMessages.count
-        logger.warning("CONTEXT_TRIM: AGGRESSIVE trim - dropped \(droppedCount) messages (keeping only system + trim notice + latest user)")
-        logger.info("CONTEXT_TRIM: Trimmed from \(request.messages.count) messages (\(estimatedTokens / 4) tokens) to \(trimmedMessages.count) messages")
 
         return OpenAIChatRequest(
             model: request.model,
-            messages: trimmedMessages,
+            messages: trimmed,
             temperature: request.temperature,
             topP: request.topP,
             maxTokens: request.maxTokens,

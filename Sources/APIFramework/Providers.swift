@@ -1347,11 +1347,10 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
         urlRequest.setValue(initiator, forHTTPHeaderField: "X-Initiator")
         logger.debug("Copilot headers: initiator=\(initiator), request_id=\(requestId.prefix(8))")
 
-        /// YARN (YaRN Context Processor) handles all context management BEFORE provider
-        /// MessageValidator handles all context management BEFORE the provider. Provider
-        /// should NEVER re-truncate - trust MessageValidator output as-is.
-        /// (YaRN was removed during the CLIO sync; MessageValidator's atomic unit grouping
-        /// and thread_summary compression own context management.)
+        /// MessageValidator handles all context management BEFORE the provider.
+/// Provider should NEVER re-truncate - trust MessageValidator output as-is.
+/// (MessageValidator's atomic unit grouping and thread_summary compression
+/// own context management. Previous YaRN/force-trim cascade was removed.)
         let modelWithoutPrefix = request.model.components(separatedBy: "/").last ?? request.model
         
         /// Use messages as-is from MessageValidator processing (no provider-level truncation).

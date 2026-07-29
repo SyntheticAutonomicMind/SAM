@@ -218,7 +218,6 @@ public struct ConversationData: Codable, Sendable {
     public let settings: ConversationSettings?
     public let sessionId: String?
     public let lastGitHubCopilotResponseId: String?
-    public let contextMessages: [ConfigurationSystem.EnhancedMessage]?
     public let isPinned: Bool?
     public let workingDirectory: String?
     public let workingDirectoryBookmark: Data?
@@ -233,7 +232,7 @@ public struct ConversationData: Codable, Sendable {
     /// Performance metrics for this conversation (cost tracking)
     public let performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]?
 
-    public init(id: UUID, title: String, created: Date, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledCustomInstructionIds: [UUID]? = nil, folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]? = nil) {
+    public init(id: UUID, title: String, created: Date, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledCustomInstructionIds: [UUID]? = nil, folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics]? = nil) {
         self.id = id
         self.title = title
         self.created = created
@@ -242,7 +241,6 @@ public struct ConversationData: Codable, Sendable {
         self.settings = settings
         self.sessionId = sessionId
         self.lastGitHubCopilotResponseId = lastGitHubCopilotResponseId
-        self.contextMessages = contextMessages
         self.isPinned = isPinned
         self.workingDirectory = workingDirectory
         self.workingDirectoryBookmark = workingDirectoryBookmark
@@ -278,9 +276,6 @@ public class ConversationModel: ObservableObject, Identifiable {
 
     /// Last GitHub Copilot response ID for billing continuity Stored separately from messages to survive context pruning/summarization Used for checkpoint slicing to prevent multiple premium charges.
     @Published public var lastGitHubCopilotResponseId: String?
-
-    /// Context messages for LLM (may be pruned/summarized) This is separate from 'messages' to allow context pruning without affecting UI display When nil, use 'messages' for LLM context (no pruning has occurred).
-    @Published public var contextMessages: [ConfigurationSystem.EnhancedMessage]?
 
     /// Pinned conversations stay at top of list and are never auto-pruned.
     @Published public var isPinned: Bool = false
@@ -386,7 +381,7 @@ public class ConversationModel: ObservableObject, Identifiable {
         return ConversationModel.from(data: data)
     }
 
-    private init(id: UUID, created: Date, title: String, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, contextMessages: [ConfigurationSystem.EnhancedMessage]? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledCustomInstructionIds: Set<UUID> = [], folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []) {
+    private init(id: UUID, created: Date, title: String, updated: Date, messages: [ConfigurationSystem.EnhancedMessage], settings: ConversationSettings, sessionId: String? = nil, lastGitHubCopilotResponseId: String? = nil, isPinned: Bool = false, workingDirectory: String? = nil, workingDirectoryBookmark: Data? = nil, enabledCustomInstructionIds: Set<UUID> = [], folderId: String? = nil, isFromAPI: Bool = false, performanceMetrics: [ConfigurationSystem.APIPerformanceMetrics] = []) {
         self.id = id
         self.created = created
         self.title = title
@@ -395,7 +390,6 @@ public class ConversationModel: ObservableObject, Identifiable {
         self.settings = settings
         self.sessionId = sessionId
         self.lastGitHubCopilotResponseId = lastGitHubCopilotResponseId
-        self.contextMessages = contextMessages
         self.isPinned = isPinned
         self.workingDirectoryBookmark = workingDirectoryBookmark
         self.enabledCustomInstructionIds = enabledCustomInstructionIds
@@ -429,7 +423,6 @@ public class ConversationModel: ObservableObject, Identifiable {
             settings: settings,
             sessionId: sessionId,
             lastGitHubCopilotResponseId: lastGitHubCopilotResponseId,
-            contextMessages: contextMessages,
             isPinned: isPinned,
             workingDirectory: workingDirectory,
             workingDirectoryBookmark: workingDirectoryBookmark,
@@ -451,7 +444,6 @@ public class ConversationModel: ObservableObject, Identifiable {
             settings: data.settings ?? ConversationSettings(),
             sessionId: data.sessionId,
             lastGitHubCopilotResponseId: data.lastGitHubCopilotResponseId,
-            contextMessages: data.contextMessages,
             isPinned: data.isPinned ?? false,
             workingDirectory: data.workingDirectory,
             workingDirectoryBookmark: data.workingDirectoryBookmark,

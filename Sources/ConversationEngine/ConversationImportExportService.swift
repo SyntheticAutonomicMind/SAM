@@ -514,7 +514,6 @@ public class ConversationImportExportService {
             settings: package.conversation.settings ?? ConversationSettings(),
             sessionId: package.conversation.sessionId,
             lastGitHubCopilotResponseId: package.conversation.lastGitHubCopilotResponseId,
-            contextMessages: package.conversation.contextMessages,
             isPinned: package.conversation.isPinned ?? false,
             workingDirectory: nil, /// Will use default
             workingDirectoryBookmark: nil,
@@ -549,7 +548,8 @@ public class ConversationImportExportService {
                 } else {
                     existing.messageBus?.addAssistantMessage(
                         content: message.content,
-                        timestamp: message.timestamp
+                        timestamp: message.timestamp,
+                        toolCalls: message.toolCalls
                     )
                 }
             }

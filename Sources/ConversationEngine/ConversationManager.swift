@@ -760,7 +760,14 @@ public class ConversationManager: ObservableObject {
             if message.isFromUser {
                 _ = messageBus.addUserMessage(content: message.content, timestamp: message.timestamp)
             } else {
-                _ = messageBus.addAssistantMessage(content: message.content, timestamp: message.timestamp)
+                /// Preserve tool_calls when duplicating - otherwise the duplicated
+                /// conversation loses its tool history and the model loses context
+                /// on what tools the assistant called in prior turns.
+                _ = messageBus.addAssistantMessage(
+                    content: message.content,
+                    timestamp: message.timestamp,
+                    toolCalls: message.toolCalls
+                )
             }
         }
 
@@ -1557,7 +1564,6 @@ extension ConversationManager: ConversationManagerProtocol {
             settings: conversation.settings,
             sessionId: conversation.sessionId,
             lastGitHubCopilotResponseId: conversation.lastGitHubCopilotResponseId,
-            contextMessages: conversation.contextMessages,
             isPinned: conversation.isPinned,
             workingDirectory: conversation.workingDirectory,
             workingDirectoryBookmark: conversation.workingDirectoryBookmark
