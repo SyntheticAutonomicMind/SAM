@@ -183,8 +183,20 @@ public enum WKWebViewPrintService {
     }
 
     /// Render HTML in WKWebView, wait for mermaid, then print.
+    ///
+    /// Bug fix (2026-07-29): The original implementation created the webview at
+    /// height 10000, loaded HTML, then resized to actual content height and
+    /// printed after a fixed 0.15s delay. WebKit's render is asynchronous, so
+    /// the preview had time to render correctly while the actual PDF save
+    /// captured blank content. The fix:
+    /// - Initial webview is created at a sensible size (792pt, one page)
+    /// - After ready signal + content measurement, the frame is resized and
+    ///   a synchronous layout is forced via JS evaluation that reads computed
+    ///   dimensions (WebKit completes layout before returning the eval result)
+    /// - Print only fires after two consecutive scrollHeight reads match,
+    ///   proving the content has stabilized at the new size
     private static func renderAndPrint(html: String) {
-        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 612, height: 10000))
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 612, height: 792))
 
         let delegate = PrintNavigationDelegate {
             // Wait for mermaid rendering to complete, then print
@@ -216,28 +228,68 @@ public enum WKWebViewPrintService {
         }
     }
 
-    /// Measure content, resize webview, then print.
+    /// Measure content, resize webview, force sync layout, then print.
+    ///
+    /// After resizing the webview's frame, WebKit's render is scheduled on
+    /// the run loop but not synchronous. Printing immediately would capture
+    /// the pre-resize state (blank). We use scroll-height stability as a
+    /// proxy for "rendering complete" - when two consecutive reads match,
+    /// the content has been laid out and painted at the new size.
     private static func resizeAndPrint(webView: WKWebView) {
+        measureContent(webView: webView, previousHeight: -1)
+    }
+
+    private static func measureContent(webView: WKWebView, previousHeight: CGFloat) {
         webView.evaluateJavaScript("document.body.scrollHeight") { result, _ in
-            let contentHeight = (result as? CGFloat) ?? 10000
-            webView.frame.size.height = max(contentHeight + 72, 792)
+            let contentHeight = (result as? CGFloat) ?? 0
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
-                printInfo.horizontalPagination = .fit
-                printInfo.verticalPagination = .automatic
-                printInfo.orientation = .portrait
-                printInfo.topMargin = 36
-                printInfo.bottomMargin = 36
-                printInfo.leftMargin = 36
-                printInfo.rightMargin = 36
+            // First measurement - just resize and re-check
+            if previousHeight < 0 {
+                webView.frame.size.height = max(contentHeight + 72, 792)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    measureContent(webView: webView, previousHeight: contentHeight)
+                }
+                return
+            }
 
-                let printOp = webView.printOperation(with: printInfo)
-                printOp.showsPrintPanel = true
-                printOp.showsProgressPanel = true
-                printOp.run()
+            // Subsequent measurements - wait until height stabilizes
+            let heightDelta = abs(contentHeight - previousHeight)
+            if heightDelta > 0.5 {
+                // Content height still changing - mermaid may still be
+                // resizing diagrams, or fonts/styles are still loading.
+                // Resize and re-check.
+                webView.frame.size.height = max(contentHeight + 72, 792)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    measureContent(webView: webView, previousHeight: contentHeight)
+                }
+                return
+            }
+
+            // Height stabilized - force a final layout pass by reading offset
+            // (WebKit commits pending layout before returning the eval result)
+            // then run the print operation.
+            webView.evaluateJavaScript("[document.body.offsetHeight, document.body.scrollHeight, window.__printReady__].join(',')") { _, _ in
+                runPrintOperation(webView: webView, contentHeight: contentHeight)
             }
         }
+    }
+
+    private static func runPrintOperation(webView: WKWebView, contentHeight: CGFloat) {
+        logger.debug("Running print operation after content stabilized at \(contentHeight)pt")
+
+        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+        printInfo.horizontalPagination = .fit
+        printInfo.verticalPagination = .automatic
+        printInfo.orientation = .portrait
+        printInfo.topMargin = 36
+        printInfo.bottomMargin = 36
+        printInfo.leftMargin = 36
+        printInfo.rightMargin = 36
+
+        let printOp = webView.printOperation(with: printInfo)
+        printOp.showsPrintPanel = true
+        printOp.showsProgressPanel = true
+        printOp.run()
     }
 
     /// Show error alert

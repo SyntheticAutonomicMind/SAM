@@ -36,7 +36,20 @@ public enum SimplePDFGenerator {
             modelName: modelName
         )
 
-        // Use NSPrintOperation to render to a paginated PDF
+        // Bug fix (2026-07-29): The original `generatePaginatedPDF` used CGPDFContext
+        // + `view.displayIgnoringOpacity` which has two critical problems:
+        // 1. `NSGraphicsContext.saveGraphicsState()` was called AFTER setting
+        //    `NSGraphicsContext.current` - the save/restore pair only brackets
+        //    the current-context changes, not the translation/scale.
+        // 2. `displayIgnoringOpacity` requires the view to be properly laid
+        //    out. The NSTextView was constructed off-screen at height 100
+        //    and `sizeToFit()` may not fully lay out the textContainer's
+        //    used rect without a window host - so the captured PDF pages were
+        //    empty.
+        //
+        // Replace with NSPrintOperation which handles pagination, layout,
+        // and PDF output natively. Configure the print info to save directly
+        // to a file (no print panel) and capture the bytes from disk.
         let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
         printInfo.horizontalPagination = .fit
         printInfo.verticalPagination = .automatic
@@ -44,8 +57,7 @@ public enum SimplePDFGenerator {
         printInfo.bottomMargin = margin
         printInfo.leftMargin = margin
         printInfo.rightMargin = margin
-
-        let pdfData = generatePaginatedPDF(view: textView, printInfo: printInfo)
+        printInfo.jobDisposition = .save
 
         let tempDir = FileManager.default.temporaryDirectory
         let sanitizedTitle = conversationTitle.replacingOccurrences(of: "/", with: "_")
@@ -53,13 +65,34 @@ public enum SimplePDFGenerator {
         dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss"
         let filename = "SAM_\(sanitizedTitle)_\(dateFormatter.string(from: Date())).pdf"
         let fileURL = tempDir.appendingPathComponent(filename)
-        try pdfData.write(to: fileURL)
+
+        printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = fileURL as NSURL
+
+        let printOp = NSPrintOperation(view: textView, printInfo: printInfo)
+        printOp.showsPrintPanel = false
+        printOp.showsProgressPanel = false
+        printOp.run()
+
+        let pdfData = try Data(contentsOf: fileURL)
 
         logger.info("PDF generated: \(fileURL.path) (\(pdfData.count) bytes)")
         return fileURL
     }
 
     /// Render a view as a properly paginated PDF using CGPDFContext.
+    ///
+    /// Deprecated: This function was replaced by NSPrintOperation-based
+    /// rendering in `generatePDF`. NSPrintOperation handles pagination,
+    /// view layout, and PDF output natively - the manual CGPDFContext +
+    /// `displayIgnoringOpacity` approach had two issues:
+    /// 1. save/restore graphics state was mis-ordered (save was called
+    ///    AFTER setting the current NSGraphicsContext)
+    /// 2. `displayIgnoringOpacity` did not produce output for an off-screen
+    ///    NSTextView that hadn't been fully laid out
+    ///
+    /// Kept for reference but no longer called. Will be removed once
+    /// downstream usages are confirmed gone.
+    @available(*, deprecated, message: "Use NSPrintOperation via generatePDF's new path")
     private static func generatePaginatedPDF(view: NSView, printInfo: NSPrintInfo) -> Data {
         let paperSize = printInfo.paperSize
         let printableRect = NSRect(
