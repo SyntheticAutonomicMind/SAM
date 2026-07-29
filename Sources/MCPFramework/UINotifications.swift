@@ -60,6 +60,10 @@ public extension Notification.Name {
     /// Delete all conversations.
     static let deleteAllConversations = Notification.Name("SAM.UI.deleteAllConversations")
 
+    /// Delete all empty conversations (those with no messages).
+    /// Skips pinned and shared-data conversations.
+    static let deleteEmptyConversations = Notification.Name("SAM.UI.deleteEmptyConversations")
+
     /// Clear all conversations (alias for deleteAllConversations).
     static let clearAllConversations = Notification.Name("SAM.UI.clearAllConversations")
 

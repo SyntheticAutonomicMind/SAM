@@ -102,6 +102,11 @@ struct SAMCommands: Commands {
                 NotificationCenter.default.post(name: .deleteAllConversations, object: nil)
             }
             .keyboardShortcut(.delete, modifiers: [.command, .option])
+
+            Button("Delete Empty Conversations…") {
+                NotificationCenter.default.post(name: .deleteEmptyConversations, object: nil)
+            }
+            .keyboardShortcut(.delete, modifiers: [.command, .option, .shift])
         }
 
         /// Edit Menu.

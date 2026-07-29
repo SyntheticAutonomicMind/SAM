@@ -389,6 +389,119 @@ public class ConversationManager: ObservableObject {
         return (totalToDelete: unpinned.count, withDirectories: isolated.count, pinned: pinnedCount)
     }
 
+    /// Delete all empty (no user or assistant messages) conversations.
+    ///
+    /// "Empty" means `conversation.messages.isEmpty` - no user messages,
+    /// no assistant messages. Pinned conversations and shared-data
+    /// conversations are preserved, matching the safety rules of
+    /// `deleteAllConversations`. Empty working directories are always
+    /// safe to delete - their emptiness is the precondition for this
+    /// function being useful.
+    ///
+    /// - Parameter deleteDirectories: If true, also delete working
+    ///   directories for empty isolated conversations. Default: true
+    ///   because empty directories are always safe to remove.
+    /// - Returns: Count of conversations deleted.
+    @discardableResult
+    public func deleteEmptyConversations(deleteDirectories: Bool = true) -> Int {
+        let candidates = conversations.filter {
+            !$0.isPinned &&
+            !$0.settings.useSharedData &&
+            $0.messages.isEmpty
+        }
+
+        guard !candidates.isEmpty else {
+            logger.debug("DELETE_EMPTY: No empty conversations to delete")
+            return 0
+        }
+
+        var deletedDirectoryCount = 0
+
+        for conversation in candidates {
+            /// Clear runtime state before deletion
+            stateManager.clearState(conversationId: conversation.id)
+
+            /// Delete isolated memory database
+            do {
+                try memoryManager.deleteConversationDatabase(conversationId: conversation.id)
+                logger.debug("DELETE_EMPTY: Deleted memory database for \(conversation.id)")
+            } catch {
+                logger.error("DELETE_EMPTY: Failed to delete memory database for \(conversation.id): \(error)")
+            }
+
+            /// Optionally delete empty working directory
+            if deleteDirectories {
+                let directory = conversation.workingDirectory
+
+                /// Safety: directory must be empty before we delete it. This is
+                /// stronger than the UUID-in-path check used by deleteAllConversations
+                /// because we know the directory contents will be empty if the
+                /// conversation has no messages - any external files added to the
+                /// directory are preserved (left in place with a warning).
+                /// The emptiness verification below provides the actual safety guarantee.
+
+                let fileManager = FileManager.default
+                guard fileManager.fileExists(atPath: directory) else {
+                    logger.debug("DELETE_EMPTY: Working directory does not exist: \(directory)")
+                    continue
+                }
+
+                do {
+                    /// Verify directory is empty before deletion - even though
+                    /// the conversation has no messages, files may have been
+                    /// added to the working directory externally.
+                    let contents = try fileManager.contentsOfDirectory(atPath: directory)
+                    if contents.isEmpty {
+                        try fileManager.removeItem(atPath: directory)
+                        deletedDirectoryCount += 1
+                        logger.debug("DELETE_EMPTY: Deleted empty working directory: \(directory)")
+                    } else {
+                        logger.warning("DELETE_EMPTY: Working directory has \(contents.count) items, leaving in place: \(directory)")
+                    }
+                } catch {
+                    logger.error("DELETE_EMPTY: Failed to delete directory \(directory): \(error)")
+                }
+            }
+        }
+
+        /// Capture IDs of conversations about to be deleted so we can
+        /// reassign activeConversation afterwards.
+        let deletedIds = Set(candidates.map { $0.id })
+
+        /// Remove the conversations from the list
+        conversations.removeAll { deletedIds.contains($0.id) }
+
+        /// If active conversation was deleted, fall back to first remaining
+        /// or nil (caller can create a new one).
+        if let active = activeConversation, deletedIds.contains(active.id) {
+            activeConversation = conversations.first
+        }
+
+        /// Save conversations after deletion
+        saveConversations()
+
+        logger.info("""
+            DELETE_EMPTY: Deleted \(candidates.count) empty conversation\(candidates.count == 1 ? "" : "s")
+            - Directories deleted: \(deletedDirectoryCount)
+            """)
+
+        return candidates.count
+    }
+
+    /// Get count of empty conversations that would be deleted by
+    /// `deleteEmptyConversations`.
+    public func getEmptyConversationsInfo() -> (emptyToDelete: Int, withDirectories: Int, pinnedProtected: Int) {
+        let empty = conversations.filter {
+            !$0.isPinned &&
+            !$0.settings.useSharedData &&
+            $0.messages.isEmpty
+        }
+        let withDirs = empty.filter { !$0.settings.useSharedData }
+        let pinned = conversations.filter { $0.isPinned }.count
+
+        return (emptyToDelete: empty.count, withDirectories: withDirs.count, pinnedProtected: pinned)
+    }
+
     public func renameConversation(_ conversation: ConversationModel, to newName: String) {
         let oldTitle = conversation.title
         let oldWorkingDir = conversation.workingDirectory

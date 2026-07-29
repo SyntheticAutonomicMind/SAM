@@ -153,6 +153,7 @@ public struct MainWindowView: View {
     @State private var showingDeleteConfirmation = false
     @State private var conversationToDelete: ConversationModel?
     @State private var showingDeleteAllConfirmation = false
+    @State private var showingDeleteEmptyConfirmation = false
     @State private var showingWorkingDirectoryDeleteConfirmation = false
     @State private var workingDirectoryToDelete: String?
     @State private var showingGlobalSearch = false
@@ -507,6 +508,25 @@ public struct MainWindowView: View {
             let info = conversationManager.getDeleteAllConversationsInfo()
             return Text(deleteAllMessage(info: info))
         }
+        .confirmationDialog("Delete Empty Conversations", isPresented: $showingDeleteEmptyConfirmation) {
+            Button("Delete", role: .destructive) {
+                /// Delete empty conversations and their working directories.
+                conversationManager.deleteEmptyConversations(deleteDirectories: true)
+
+                /// After deletion, activate first remaining conversation or create new one
+                if let firstConversation = conversationManager.conversations.first {
+                    conversationManager.activeConversation = firstConversation
+                } else {
+                    conversationManager.createNewConversation()
+                }
+            }
+
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let info = conversationManager.getEmptyConversationsInfo()
+            return Text(deleteEmptyMessage(info: info))
+        }
+
         .confirmationDialog("Delete Selected Conversations", isPresented: $showingDeleteSelectedConfirmation) {
             Button("Delete", role: .destructive) {
                 deleteSelectedConversations(deleteDirectories: false)
@@ -599,6 +619,9 @@ public struct MainWindowView: View {
             printConversation: printConversation,
             copyConversationToClipboard: copyConversationToClipboard
         )
+        .onReceive(NotificationCenter.default.publisher(for: .deleteEmptyConversations)) { _ in
+            showingDeleteEmptyConfirmation = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showWhatsNew)) { _ in
             showingWhatsNew = true
         }
@@ -1327,6 +1350,31 @@ public struct MainWindowView: View {
         if sharedCount > 0 {
             message += "\n\nShared topic directories will not be deleted."
         }
+
+        return message
+    }
+
+
+    /// Generate delete empty conversations confirmation message
+    private func deleteEmptyMessage(info: (emptyToDelete: Int, withDirectories: Int, pinnedProtected: Int)) -> String {
+        if info.emptyToDelete == 0 {
+            if info.pinnedProtected > 0 {
+                return "No empty conversations to delete. \(info.pinnedProtected) pinned conversation\(info.pinnedProtected == 1 ? "" : "s") will remain."
+            }
+            return "No empty conversations to delete."
+        }
+
+        var message = "This will delete \(info.emptyToDelete) empty conversation\(info.emptyToDelete == 1 ? "" : "s")."
+
+        if info.pinnedProtected > 0 {
+            message += "\n\n\(info.pinnedProtected) pinned conversation\(info.pinnedProtected == 1 ? "" : "s") will be preserved."
+        }
+
+        if info.withDirectories > 0 {
+            message += "\n\nTheir \(info.withDirectories) working director\(info.withDirectories == 1 ? "y" : "ies") will also be deleted."
+        }
+
+        message += "\n\nShared topic conversations will be preserved."
 
         return message
     }
