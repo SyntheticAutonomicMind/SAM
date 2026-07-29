@@ -156,12 +156,39 @@ struct MessageBubble: View {
 
     /// Always render the bubble while content exists or streaming is
     /// active so the container doesn't collapse and reappear (flicker).
+    /// effectiveContent strips thinking-tag remnants so messages whose only
+    /// content is the closing `</thinking>` tag (first chunk before tool
+    /// calls) don't render an "empty" bubble with the literal tag visible.
     private var shouldShowBubble: Bool {
-        !displayContent.isEmpty || message.isStreaming || message.contentParts != nil
+        let visibleContent: String
+        if !displayContent.isEmpty {
+            visibleContent = displayContent
+        } else {
+            /// displayContent is computed from message.content via filterContent.
+            /// When displayContent is empty, fall back to the raw content
+            /// to keep behavior consistent (the filterContent helper may
+            /// have stripped markers that should still count as content).
+            visibleContent = message.content
+        }
+        let stripped = visibleContent
+            .replacingOccurrences(of: "<think>", with: "")
+            .replacingOccurrences(of: "</think>", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !stripped.isEmpty || message.isStreaming || message.contentParts != nil
     }
 
     private var shouldShowMetadata: Bool {
-        !displayContent.isEmpty || message.isStreaming || message.contentParts != nil
+        let visibleContent: String
+        if !displayContent.isEmpty {
+            visibleContent = displayContent
+        } else {
+            visibleContent = message.content
+        }
+        let stripped = visibleContent
+            .replacingOccurrences(of: "<think>", with: "")
+            .replacingOccurrences(of: "</think>", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !stripped.isEmpty || message.isStreaming || message.contentParts != nil
     }
 
     private var metadataRow: some View {

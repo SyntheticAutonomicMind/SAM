@@ -304,14 +304,21 @@ extension ChatWidget {
                             /// Even if content is empty, contentParts may contain the actual image data
                             /// CRITICAL: Tool execution messages should NEVER be filtered, even when empty
                             /// Tool cards are created with empty content and filled in when tool completes
-                            let isEmpty = message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                            ///
+                            /// effectiveContent strips <think>/</think> tag remnants so messages whose
+                            /// only content is the closing tag from a thinking block (common when the
+                            /// model emits `</thinking>` as the first content chunk before tool calls)
+                            /// are treated as empty rather than rendering an "empty" bubble with the
+                            /// literal tag visible.
+                            let effectiveContent = effectiveMessageContent(message)
+                            let isEmpty = effectiveContent.isEmpty &&
                                           message.type != .toolExecution &&  /// ALWAYS show tool cards, even when empty
                                           (message.type != .thinking || (message.reasoningContent == nil || message.reasoningContent!.isEmpty)) &&
                                           (message.contentParts == nil || message.contentParts!.isEmpty)
 
                             /// Filter placeholder thinking messages (just "SUCCESS: Thinking..." with no actual content).
                             let isPlaceholderThinking = message.type == .thinking &&
-                                message.content.trimmingCharacters(in: .whitespacesAndNewlines) == "SUCCESS: Thinking..." &&
+                                effectiveContent == "SUCCESS: Thinking..." &&
                                 (message.reasoningContent == nil || message.reasoningContent!.isEmpty)
 
                             /// Handle messages with thinking content - extract response when reasoning disabled.

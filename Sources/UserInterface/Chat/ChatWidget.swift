@@ -4550,6 +4550,24 @@ public struct ChatWidget: View {
         }
     }
 
+    /// Get the effective visible content of a message - strips `<think>`/`</think>`
+    /// tag remnants from the message content. Providers that emit thinking
+    /// blocks as content chunks (e.g. MiniMax sending `</thinking>` as the
+    /// first content chunk before tool calls) would otherwise leave those
+    /// tag fragments visible in the rendered bubble, producing "empty"
+    /// messages that look like a stray tag in the chat.
+    ///
+    /// The strip here is intentionally limited to literal `<think>` and
+    /// `</think>` markers. The actual reasoning text lives in
+    /// `reasoningContent` on thinking messages and is rendered via
+    /// `ThinkingCard`, not this helper.
+    func effectiveMessageContent(_ message: EnhancedMessage) -> String {
+        var stripped = message.content
+        stripped = stripped.replacingOccurrences(of: "<think>", with: "")
+        stripped = stripped.replacingOccurrences(of: "</think>", with: "")
+        return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Check if message is a tool call JSON message.
     func isToolCallJSONMessage(_ message: EnhancedMessage) -> Bool {
         /// Filter raw JSON from tool calls and tool results.
