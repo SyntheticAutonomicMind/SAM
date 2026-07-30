@@ -1,6 +1,52 @@
 {
   "releases": [
     {
+      "version": "20260729.1",
+      "release_date": "July 29, 2026",
+      "introduction": "PDFs saved from the print dialog no longer come out blank. SAM's system prompt gains three components that sharpen how it handles the work you assign: it now identifies as an agent that works to completion, verifies claims before making them, and stays honest about the scope you define. Empty conversations clean themselves up, and a leftover rendering quirk that created invisible message bubbles is gone.",
+      "highlights": [],
+      "improvements": [
+        {
+          "id": "agent-identity-completion",
+          "icon": "bolt.fill",
+          "title": "Agent Identity and Completion Criteria",
+          "description": "SAM's core identity now frames it as an agent that works autonomously until your request is resolved - iterating through problems and taking action - rather than an assistant that helps by describing what it would do. This addresses a pattern where SAM would list tool actions ('I'll search for...', 'Let me look up...') and then stop instead of actually running them. The agent works to completion; personalities and discussion mode don't override this."
+        },
+        {
+          "id": "tool-backed-claims",
+          "icon": "magnifyingglass.circle.fill",
+          "title": "Tool-Backed Claims",
+          "description": "SAM no longer fabricates specifics like prices, ratings, URLs, or version numbers by copying the format of a previous tool-verified response without re-running the tools. Responses that look like verified lookups must BE verified lookups. Recent-session history is not a substitute for a fresh tool call. Every specific, verifiable claim requires its own tool execution - and the tool call must precede the text that uses its result."
+        },
+        {
+          "id": "scope-honesty",
+          "icon": "list.bullet.clipboard",
+          "title": "Scope Honesty",
+          "description": "SAM no longer unilaterally narrows the scope of work you define. Backup, secondary, and lower-priority items in your request get the same rigor as your primary items. The agent does not decide for you that part of your scope is unnecessary, does not rationalize shortcuts as efficiency, and any claim that scope can be reduced requires the same tool backing as any other claim."
+        },
+        {
+          "id": "delete-empty-conversations",
+          "icon": "trash",
+          "title": "Automatic Empty Conversation Cleanup",
+          "description": "Conversations created via New Conversation but never used (no messages sent) are now automatically identified and removed, keeping your sidebar clean without manual cleanup."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "print-dialog-blank-pdf",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Blank PDF Pages from the Print Dialog",
+          "description": "Saving a PDF through File > Print > PDF > Save as PDF was producing blank pages despite the preview in the print dialog showing content correctly. The same issue affected sending to a physical printer. The underlying cause was that WKWebView's asynchronous PDF render pipeline needs a window anchor to complete - without one, the deferred capture produced empty output. The print dialog now attaches to the app's main window as a sheet, which keeps the render pipeline active through the PDF save. Export to PDF (which uses a different NSTextView-based path) was not affected."
+        },
+        {
+          "id": "think-tag-empty-bubbles",
+          "icon": "arrow.down.circle.fill",
+          "title": "Fixed Invisible Message Bubbles from Thinking-Tag Remnants",
+          "description": "Some LLM providers (notably MiniMax) emit the closing </think> tag as the first streaming chunk of a response before any actual content. The tag was being stored as message content, and while the rest of the response was filtered away by the thinking-tag stripper, the stored </think> tag remained in the message record. The chat UI saw non-empty content and rendered a bubble - which appeared empty to the user because there's nothing to render for an isolated XML closing tag. The post-streaming <think>/</think> strip now updates the stored MessageBus record, so these remnants never reach the bubble renderer."
+        }
+      ]
+    },
+    {
       "version": "20260723.1",
       "release_date": "July 23, 2026",
       "introduction": "The assistant stops ending every reply with 'let me know if you want to take a break' and starts waiting for you to actually say so. The new User Autonomy rule in the default system prompt puts you in charge of when the conversation is over. Two small chat-bubble rendering bugs fall out along the way.",
