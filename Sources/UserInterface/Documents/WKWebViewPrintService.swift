@@ -220,7 +220,6 @@ public enum WKWebViewPrintService {
         activeWebViews.append(webView)
 
         let delegate = PrintNavigationDelegate {
-            // Wait for mermaid rendering to complete, then print
             waitForPrintReady(webView: webView)
         }
 
@@ -296,8 +295,6 @@ public enum WKWebViewPrintService {
     }
 
     private static func runPrintOperation(webView: WKWebView, contentHeight: CGFloat) {
-        logger.debug("Running print operation after content stabilized at \(contentHeight)pt")
-
         let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
         printInfo.horizontalPagination = .fit
         printInfo.verticalPagination = .automatic
@@ -310,18 +307,25 @@ public enum WKWebViewPrintService {
         let printOp = webView.printOperation(with: printInfo)
         printOp.showsPrintPanel = true
         printOp.showsProgressPanel = true
-        printOp.run()
 
-        // The print dialog's PDF > Save as PDF path defers actual PDF
-        // rendering asynchronously after the save panel closes. The webView
-        // must stay alive until the async capture completes. Retain it for
-        // 5 seconds - longer than any reasonable save-sheet interaction.
-        // Use an ObjectIdentifier for cleanup to avoid keeping a retain
-        // cycle through the dispatch block itself.
-        let webViewId = ObjectIdentifier(webView)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-            activeWebViews.removeAll { ObjectIdentifier($0) == webViewId }
+        // CRITICAL: WKWebView printing MUST run modally on a real window.
+        // printOp.run() (no window) shows a floating dialog whose preview
+        // works, but PDF > Save as PDF defers async rendering to a pipeline
+        // that needs a window anchor. Without one, the PDF output is blank.
+        // runModal(for:) attaches the print dialog as a sheet, keeping the
+        // WebKit render pipeline alive through the async PDF capture.
+        let window = NSApplication.shared.keyWindow
+                     ?? NSApplication.shared.mainWindow
+                     ?? NSApplication.shared.windows.first
+        if let window {
+            printOp.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        } else {
+            logger.warning("No NSWindow found, falling back to floating print dialog")
+            printOp.run()
         }
+
+        // Cleanup: release the retained webView reference.
+        activeWebViews.removeAll { $0 === webView }
     }
 
     /// Show error alert
