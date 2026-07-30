@@ -381,7 +381,12 @@ public struct MainWindowView: View {
         .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
 
-    public var body: some View {
+    /// Core layout: sidebar + main content, without modal modifiers.
+    /// Extracted to fix "the compiler is unable to type-check this expression
+    /// in reasonable time" — the full modifier chain (.sheet ×10,
+    /// .confirmationDialog ×6, .onAppear,  .onReceive) creates a generic
+    /// type too deep for the compiler to resolve in one expression.
+    private var coreContentView: some View {
         HSplitView {
             /// Sidebar (collapsible).
             if showingSidebar {
@@ -404,6 +409,19 @@ public struct MainWindowView: View {
                 .environmentObject(conversationManager)
             }
         }
+    }
+
+    public var body: some View {
+        applyModalModifiers(coreContentView)
+    }
+
+    /// Apply all .sheet, .confirmationDialog, .onAppear, .onReceive, and
+    /// .setupNotificationHandlers modifiers. Extracted to avoid type-checker
+    /// timeout on the main body expression — the full chain creates a generic
+    /// type too deep for the Swift compiler to resolve in one pass.
+    @ViewBuilder
+    private func applyModalModifiers<C: View>(_ content: C) -> some View {
+        content
         .sheet(isPresented: $showingPreferences) {
             PreferencesView()
                 .environmentObject(endpointManager)
