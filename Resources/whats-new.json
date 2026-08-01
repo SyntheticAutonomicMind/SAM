@@ -1,6 +1,58 @@
 {
   "releases": [
     {
+      "version": "20260801.1",
+      "release_date": "August 1, 2026",
+      "introduction": "SAM's warm personality is back. The last update's agent-framing improvements made SAM more capable at working autonomously to completion but accidentally flattened its character into something cold and mechanical. This release restores the helpful, approachable tone while keeping the agent protocol that drives real work. Four new self-check rules stop SAM from repeating itself, ignoring 'stop' commands, claiming progress without doing work, and narrating tool actions instead of running them. Numbered lists now use actual sequential numbers, and fresh source builds work again.",
+      "highlights": [],
+      "improvements": [
+        {
+          "id": "personality-restored",
+          "icon": "person.fill",
+          "title": "SAM's Personality Is Back",
+          "description": "The Assistant personality - SAM's default - once again has warmth and character. The last update's agent-protocol rewrite inadvertently flattened SAM's tone; the core identity now opens with 'You are helpful, accurate, approachable, and genuinely interested in the user's goals' before the operational protocol. Personality instructions are injected right after this framing instead of buried at the end of the prompt, so SAM's character actually reaches the model. The default personality traits are Friendly tone and Balanced verbosity, and SAM now describes itself as a helpful, accurate, and direct AI assistant whose purpose is to provide clear, useful answers and complete the work you entrust to it."
+        },
+        {
+          "id": "generation-loop-detection",
+          "icon": "arrow.triangle.capsulepath",
+          "title": "Smarter About Repeating Itself",
+          "description": "SAM now self-checks before every response: have I already said substantially the same thing? If so, that's a generation loop - a stall, not an answer - and SAM will run actual tools to deliver fresh output instead of re-emitting the same content with minor formatting changes. Reordered items, slightly different phrasing, or added emoji do not count as 'different.' If you could scroll up and find the same information, SAM flags it and does the real work."
+        },
+        {
+          "id": "stop-means-stop",
+          "icon": "stop.circle.fill",
+          "title": "'Stop' Actually Stops",
+          "description": "When you tell SAM to stop, halt, or wait, it stops immediately. No 'one more version.' No attempt to do it better. No assumption about whether the content was right or wrong. SAM asks what you'd like instead and treats the stopped activity as closed unless you explicitly ask to continue. The cancellation plumbing now handles both the stop button and text-based stop commands from within a workflow, including a check right after long LLM calls finish so a mid-response stop takes effect immediately."
+        },
+        {
+          "id": "todo-integrity",
+          "icon": "checklist",
+          "title": "Task Tracking Reflects Reality",
+          "description": "A todo marked 'in progress' now means the task is actually happening in the same reply. If a todo sits 'in progress' across multiple turns without the underlying work being completed, SAM recognizes this as a stall signal and either finishes the task or surfaces the blockage. No more empty progress reporting - the todo list reflects what's really happening, not what SAM plans to do."
+        },
+        {
+          "id": "narration-without-action",
+          "icon": "bubble.left.and.text.bubble.right",
+          "title": "Describes or Does, Not Both in Disguise",
+          "description": "A reply that says 'Let me search for that' or 'I'll look that up' and then delivers an answer that looks like search results - but without actually calling the search tool - is fabrication, not helpful narration. SAM now self-checks before sending: if the response describes a tool action, does the same reply contain the actual tool call? If not, the narration is stripped and either the tool call is added or the promise is removed. Describing work is not doing work."
+        },
+        {
+          "id": "numbered-list-formatting",
+          "icon": "list.number",
+          "title": "Numbered Lists Use Actual Numbers",
+          "description": "When SAM outputs a numbered list, items are now labeled 1., 2., 3., 4. - actual sequential numbers - instead of every item being numbered '1.' and relying on the chat renderer to auto-increment. This means list items paste correctly into text editors and code, and numbered steps keep their order everywhere."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "mlx-submodule-build",
+          "icon": "hammer.fill",
+          "title": "Fixed Build Failures on Fresh Source Checkouts",
+          "description": "Building SAM from a fresh clone would fail because the MLX Swift package's git submodules weren't being initialized. Both the debug and release build targets in the Makefile now resolve SPM dependencies and run git submodule update --init --recursive inside the MLX checkout before invoking xcodebuild, so a clean clone builds correctly on the first try."
+        }
+      ]
+    },
+    {
       "version": "20260729.1",
       "release_date": "July 29, 2026",
       "introduction": "PDFs saved from the print dialog no longer come out blank. SAM's system prompt gains three components that sharpen how it handles the work you assign: it now identifies as an agent that works to completion, verifies claims before making them, and stays honest about the scope you define. Empty conversations clean themselves up, and a leftover rendering quirk that created invisible message bubbles is gone.",
