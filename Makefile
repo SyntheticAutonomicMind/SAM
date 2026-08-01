@@ -47,6 +47,14 @@ build-debug: llamacpp
 	@./scripts/set-build-version.sh Debug
 	@echo "Building SAM [Debug]..."
 	@echo "Using xcodebuild for MLX Metal library compatibility..."
+	@echo "Resolving SPM package dependencies..."
+	@xcodebuild -scheme SAM-Package -configuration Debug -derivedDataPath .build -destination 'platform=OS X' -resolvePackageDependencies 2>/dev/null
+	@echo "Initializing MLX git submodules..."
+	@if [ -d .build/SourcePackages/checkouts/mlx-swift ]; then \
+		cd .build/SourcePackages/checkouts/mlx-swift && \
+		git submodule update --init --recursive 2>&1; \
+		cd - > /dev/null; \
+	fi
 	xcodebuild -scheme SAM-Package -configuration Debug -derivedDataPath .build -destination 'platform=OS X'
 	@echo "SUCCESS: Debug build complete"
 	@echo "Copying frameworks to PackageFrameworks..."
@@ -94,6 +102,14 @@ build-release: llamacpp
 	@./scripts/set-build-version.sh Release
 	@echo "Building SAM [Release]..."
 	@echo "Using xcodebuild for MLX Metal library compatibility..."
+	@echo "Resolving SPM package dependencies..."
+	@xcodebuild -scheme SAM-Package -configuration Release -derivedDataPath .build -destination 'platform=OS X' -resolvePackageDependencies 2>/dev/null
+	@echo "Initializing MLX git submodules..."
+	@if [ -d .build/SourcePackages/checkouts/mlx-swift ]; then \
+		cd .build/SourcePackages/checkouts/mlx-swift && \
+		git submodule update --init --recursive 2>&1; \
+		cd - > /dev/null; \
+	fi
 	xcodebuild -scheme SAM-Package -configuration Release -derivedDataPath .build -destination 'platform=OS X'
 	@echo "Copying llama.framework to PackageFrameworks..."
 	@mkdir -p .build/Build/Products/Release/PackageFrameworks

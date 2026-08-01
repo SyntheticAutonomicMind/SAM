@@ -59,14 +59,28 @@ extension AgentOrchestrator {
             )
         }
 
-        // Personality merge - skip if Assistant (the default).
+        // Personality merge - inject right after Core Identity, not at the end.
+        // The personality establishes SAM's helpful, approachable character.
+        // Putting it at the end buries it under thousands of words of agent protocol.
         if let personalityId = conversation.settings.selectedPersonalityId {
             let personalityManager = PersonalityManager()
-            if let personality = personalityManager.getPersonality(id: personalityId),
-               personality.id != Personality.assistant.id {
+            if let personality = personalityManager.getPersonality(id: personalityId) {
                 let personalityInstructions = personality.generatePromptAdditions()
-                userSystemPrompt += "\n\n" + personalityInstructions
-                logger.info("\(loggerPrefix): Merged personality '\(personality.name)' (\(personalityInstructions.count) chars)")
+                if !personalityInstructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    // Find the end of the Core Identity section and insert personality after it.
+                    // Core Identity ends at the "## Tool Usage" heading or equivalent.
+                    if let range = userSystemPrompt.range(of: "\n## ") {
+                        let insertionPoint = range.lowerBound
+                        userSystemPrompt.insert(
+                            contentsOf: "\n\n" + personalityInstructions + "\n",
+                            at: insertionPoint
+                        )
+                    } else {
+                        // Fallback: append if no section marker found
+                        userSystemPrompt += "\n\n" + personalityInstructions
+                    }
+                    logger.info("\(loggerPrefix): Injected personality '\(personality.name)' after Core Identity (\(personalityInstructions.count) chars)")
+                }
             }
         }
 
