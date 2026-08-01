@@ -1181,12 +1181,22 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             onProgress?("Iteration \(context.iteration + 1)/\(context.maxIterations)")
 
             /// Check for cancellation and exit gracefully.
-            if Task.isCancelled {
-                logger.warning("WORKFLOW_CANCELLED", metadata: [
-                    "iteration": .stringConvertible(context.iteration),
-                    "lastOperation": .string("iteration start"),
-                    "totalRounds": .stringConvertible(context.workflowRounds.count)
-                ])
+            /// Both Swift Task cancellation (stop button) and explicit cancellation
+            /// flag (cancelWorkflow() called by text-based stop) are honored.
+            if Task.isCancelled || isCancellationRequested {
+                if isCancellationRequested {
+                    logger.info("WORKFLOW_CANCELLED_BY_FLAG", metadata: [
+                        "iteration": .stringConvertible(context.iteration),
+                        "lastOperation": .string("iteration start"),
+                        "totalRounds": .stringConvertible(context.workflowRounds.count)
+                    ])
+                } else {
+                    logger.warning("WORKFLOW_CANCELLED", metadata: [
+                        "iteration": .stringConvertible(context.iteration),
+                        "lastOperation": .string("iteration start"),
+                        "totalRounds": .stringConvertible(context.workflowRounds.count)
+                    ])
+                }
                 break
             }
 
@@ -1406,6 +1416,16 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
                 /// Track how many internal messages we sent in this request (for next iteration).
                 context.sentInternalMessagesCount = context.internalMessages.count
+
+                /// Check cancellation before processing - the LLM call may have
+                /// taken several seconds and the user may have clicked stop.
+                if Task.isCancelled || isCancellationRequested {
+                    logger.info("WORKFLOW_CANCELLED_AFTER_LLM", metadata: [
+                        "iteration": .stringConvertible(context.iteration),
+                        "totalRounds": .stringConvertible(context.workflowRounds.count)
+                    ])
+                    break
+                }
 
                 /// Capture raw response so we can detect internal markers BEFORE filtering.
                 let rawResponse = response.content

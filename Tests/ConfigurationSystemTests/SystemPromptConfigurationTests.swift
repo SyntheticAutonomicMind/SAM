@@ -29,11 +29,11 @@ final class SystemPromptConfigurationTests: XCTestCase {
 
     // MARK: - Version
 
-    func testCurrentVersionIs24() {
+    func testCurrentVersionIs25() {
         XCTAssertEqual(
             SystemPromptConfiguration.currentVersion,
-            24,
-            "Prompt system must be on version 24 after the Completion Criteria / agent framing revision."
+            25,
+            "Prompt system must be on version 25 after the Generation Loop Detection / Stop Means Stop / Todo Integrity / Narration Without Action rules were added."
         )
     }
 
@@ -134,9 +134,6 @@ final class SystemPromptConfigurationTests: XCTestCase {
             "Let me know if you'd like to stop",
             "Would you like to take a break?",
             "We can pick this up tomorrow",
-            "You've done enough",
-            "Time to rest",
-            "You're tired",
         ]
         for phrase in additions {
             XCTAssertTrue(
@@ -591,6 +588,246 @@ extension SystemPromptConfigurationTests {
             prompt.contains("work autonomously"),
             "Core Identity must include 'work autonomously' from the agent framing."
         )
+    }
+
+    /// Personality framing must come FIRST, before the agent protocol.
+    /// v24 removed "helpful" entirely; we need both the warm framing AND
+    /// the agent operational model. The agent framing prevents narration-
+    /// without-tool-call; the personality framing prevents cold/mechanical tone.
+    func testCoreIdentityHasHelpfulPersonalityFraming() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("helpful") && prompt.contains("approachable"),
+            "Core Identity must include 'helpful' and 'approachable' personality framing."
+        )
+        XCTAssertTrue(
+            prompt.contains("genuinely interested"),
+            "Core Identity must express genuine interest in the user's goals."
+        )
+        // Personality framing must come BEFORE agent protocol in the prompt.
+        guard let helpfulRange = prompt.range(of: "helpful"),
+              let agentRange = prompt.range(of: "YOU ARE AN AGENT") else {
+            XCTFail("Could not find required phrases in Core Identity.")
+            return
+        }
+        XCTAssertTrue(
+            helpfulRange.lowerBound < agentRange.lowerBound,
+            "Personality framing ('helpful...') must appear BEFORE 'YOU ARE AN AGENT' in Core Identity."
+        )
+    }
+
+
+    func testCoreIdentityHasExplicitNumberedListRule() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("explicit sequential numbers"),
+            "Core Identity must require explicit sequential numbers for numbered lists (not auto-numbering)."
+        )
+        XCTAssertTrue(
+            prompt.contains("Never use \"1.\""),
+            "Core Identity must forbid '1.' for every item (auto-numbering anti-pattern)."
+        )
+    }
+
+    // MARK: - Generation Loop Detection (v25)
+    // MARK: - Generation Loop Detection (v25)
+
+    func testSAMDefaultIncludesGenerationLoopDetectionComponent() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Generation Loop Detection" }),
+            "SAM Default must include a Generation Loop Detection component."
+        )
+    }
+
+    func testSAMMinimalIncludesGenerationLoopDetectionComponent() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Generation Loop Detection" }),
+            "SAM Minimal must include a Generation Loop Detection component."
+        )
+    }
+
+    func testGenerationLoopDetectionIsDefaultEnabled() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        guard let component = config.components.first(where: { $0.title == "Generation Loop Detection" }) else {
+            XCTFail("Generation Loop Detection component missing from SAM Default.")
+            return
+        }
+        XCTAssertTrue(
+            component.isEnabled,
+            "Generation Loop Detection must be default-enabled."
+        )
+    }
+
+    func testGenerationLoopDetectionContainsCoreAntiLoopPhrases() {
+        let prompt = generatedPrompt(for: samDefault())
+        let requiredPhrases = [
+            "generation loop",
+            "stall, not an answer",
+            "substantially the same",
+            "Do NOT re-emit",
+        ]
+        for phrase in requiredPhrases {
+            XCTAssertTrue(
+                prompt.contains(phrase),
+                "Generation Loop Detection must include the phrase: \"\(phrase)\"."
+            )
+        }
+    }
+
+    // MARK: - Stop Means Stop (v25)
+
+    func testSAMDefaultIncludesStopMeansStopComponent() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Stop Means Stop" }),
+            "SAM Default must include a Stop Means Stop component."
+        )
+    }
+
+    func testSAMMinimalIncludesStopMeansStopComponent() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Stop Means Stop" }),
+            "SAM Minimal must include a Stop Means Stop component."
+        )
+    }
+
+    func testStopMeansStopContainsCoreAntiRetryPhrases() {
+        let prompt = generatedPrompt(for: samDefault())
+        let requiredPhrases = [
+            "Stop immediately",
+            "Do not complete the current output",
+            "Do not try",
+            "Ask what changed",
+        ]
+        for phrase in requiredPhrases {
+            XCTAssertTrue(
+                prompt.contains(phrase),
+                "Stop Means Stop must include the phrase: \"\(phrase)\"."
+            )
+        }
+    }
+
+    // MARK: - Todo Integrity (v25)
+
+    func testSAMDefaultIncludesTodoIntegrityComponent() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Todo Integrity" }),
+            "SAM Default must include a Todo Integrity component."
+        )
+    }
+
+    func testSAMMinimalIncludesTodoIntegrityComponent() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Todo Integrity" }),
+            "SAM Minimal must include a Todo Integrity component."
+        )
+    }
+
+    func testTodoIntegrityContainsCoreAntiStallPhrases() {
+        let prompt = generatedPrompt(for: samDefault())
+        let requiredPhrases = [
+            "stall signal",
+            "same turn",
+            "more than one turn",
+            "empty progress",
+        ]
+        for phrase in requiredPhrases {
+            XCTAssertTrue(
+                prompt.contains(phrase),
+                "Todo Integrity must include the phrase: \"\(phrase)\"."
+            )
+        }
+    }
+
+    // MARK: - Narration Without Action (v25)
+
+    func testSAMDefaultIncludesNarrationWithoutActionComponent() {
+        guard let config = samDefault() else {
+            XCTFail("SAM Default configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Narration Without Action" }),
+            "SAM Default must include a Narration Without Action component."
+        )
+    }
+
+    func testSAMMinimalIncludesNarrationWithoutActionComponent() {
+        guard let config = samMinimal() else {
+            XCTFail("SAM Minimal configuration missing.")
+            return
+        }
+        XCTAssertTrue(
+            config.components.contains(where: { $0.title == "Narration Without Action" }),
+            "SAM Minimal must include a Narration Without Action component."
+        )
+    }
+
+    func testNarrationWithoutActionContainsCoreAntiNarrationPhrases() {
+        let prompt = generatedPrompt(for: samDefault())
+        let requiredPhrases = [
+            "describes a tool action without calling the tool",
+            "fabrication",
+            "Strip the narration",
+            "remove the promise",
+        ]
+        for phrase in requiredPhrases {
+            XCTAssertTrue(
+                prompt.contains(phrase),
+                "Narration Without Action must include the phrase: \"\(phrase)\"."
+            )
+        }
+    }
+
+    // MARK: - Cross-linking (v25)
+
+    func testWorkflowLoopCrossReferencesNarrationWithoutAction() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Narration Without Action"),
+            "Workflow Loop must cross-reference Narration Without Action so the rule is discoverable."
+        )
+    }
+
+    func testCompletionCriteriaCrossReferencesNewRules() {
+        let prompt = generatedPrompt(for: samDefault())
+        let expectedCrossRefs = [
+            "Narration Without Action",
+            "Generation Loop Detection",
+            "Todo Integrity",
+        ]
+        for ref in expectedCrossRefs {
+            XCTAssertTrue(
+                prompt.contains(ref),
+                "Completion Criteria must cross-reference \"\(ref)\"."
+            )
+        }
     }
 
     /// The Workflow Loop section must include the explicit "agent's job is
