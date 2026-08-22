@@ -293,15 +293,13 @@ struct EndpointManagementView: View {
     }
 
     /// Save provider-specific defaults for auto-population.
-    /// CRITICAL FIX: Use provider-type-specific defaults instead of hard-coded 2048/0.7/30
+    /// CRITICAL FIX: Advanced settings (maxTokens, temperature, etc.) were removed —
+    /// model data and ChatWidget configuration panels handle those now.
     private func saveProviderDefaults(for type: ProviderType, from config: ProviderConfiguration) {
         let key = "provider_defaults_\(type.rawValue)"
         let defaults: [String: Any] = [
             "baseURL": config.baseURL ?? "",
-            "models": config.models,
-            "maxTokens": config.maxTokens ?? type.defaultMaxOutputTokens,
-            "temperature": config.temperature ?? type.defaultTemperature,
-            "timeoutSeconds": config.timeoutSeconds ?? type.defaultTimeoutSeconds
+            "models": config.models
         ]
         UserDefaults.standard.set(defaults, forKey: key)
     }
@@ -455,10 +453,8 @@ struct ProviderConfigurationSheet: View {
     @State private var apiKey: String = ""
     @State private var baseURL: String = ""
     @State private var models: String = ""
-    @State private var maxTokens: String = "2048"
-    @State private var temperature: String = "0.7"
-    @State private var timeoutSeconds: String = "30"
-    @State private var retryCount: String = "2"
+
+    /// Connection testing state (no advanced settings — model data and ChatWidget handle those).
     @State private var testingConnection = false
     @State private var connectionTestResult: String?
     @State private var isLoadingModels = false
@@ -648,44 +644,6 @@ struct ProviderConfigurationSheet: View {
                         .padding()
                     }
 
-                    /// Advanced Settings.
-                    GroupBox("Advanced Settings") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Max Tokens")
-                                        .font(.headline)
-                                    TextField("e.g., 4096", text: $maxTokens)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Temperature")
-                                        .font(.headline)
-                                    TextField("e.g., 0.7", text: $temperature)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-                            }
-
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Timeout (seconds)")
-                                        .font(.headline)
-                                    TextField("e.g., 30", text: $timeoutSeconds)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Retry Count")
-                                        .font(.headline)
-                                    TextField("e.g., 2", text: $retryCount)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-                            }
-                        }
-                        .padding()
-                    }
-
                     /// Connection Testing.
                     GroupBox("Connection Test") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -760,22 +718,12 @@ struct ProviderConfigurationSheet: View {
             apiKey = provider.apiKey ?? ""
             baseURL = provider.baseURL ?? ""
             models = provider.models.joined(separator: ", ")
-            maxTokens = provider.maxTokens.map(String.init) ?? ""
-            temperature = provider.temperature.map { String($0) } ?? "0.7"
-            timeoutSeconds = provider.timeoutSeconds.map(String.init) ?? "30"
-            retryCount = provider.retryCount.map(String.init) ?? "2"
         } else {
             /// Initialize with defaults for new provider.
-            /// CRITICAL FIX: Use provider-type-specific defaults instead of
-            /// hard-coded "2048"/"0.7"/"30" which were wrong for most providers.
             let timestamp = Int(Date().timeIntervalSince1970)
             providerId = "\(providerType.defaultIdentifier)-\(timestamp)"
             baseURL = providerType.defaultBaseURL ?? ""
             models = providerType.defaultModels.joined(separator: ", ")
-            maxTokens = String(providerType.defaultMaxOutputTokens)
-            temperature = String(providerType.defaultTemperature)
-            timeoutSeconds = String(providerType.defaultTimeoutSeconds)
-            retryCount = String(providerType.defaultRetryCount)
         }
     }
 
@@ -831,26 +779,6 @@ struct ProviderConfigurationSheet: View {
             models = newType.defaultModels.joined(separator: ", ")
         }
 
-        /// Update advanced settings — CRITICAL FIX: use provider-type-specific defaults
-        /// instead of hard-coded "2048"/"0.7"/"30"/"2" which were wrong for most providers.
-        if let savedMaxTokens = savedDefaults?["maxTokens"] as? Int {
-            maxTokens = String(savedMaxTokens)
-        } else {
-            maxTokens = String(newType.defaultMaxOutputTokens)
-        }
-
-        if let savedTemperature = savedDefaults?["temperature"] as? Double {
-            temperature = String(savedTemperature)
-        } else {
-            temperature = String(newType.defaultTemperature)
-        }
-
-        if let savedTimeout = savedDefaults?["timeoutSeconds"] as? Int {
-            timeoutSeconds = String(savedTimeout)
-        } else {
-            timeoutSeconds = String(newType.defaultTimeoutSeconds)
-        }
-
         /// Clear API key if not required.
         if !newType.requiresApiKey {
             apiKey = ""
@@ -865,13 +793,12 @@ struct ProviderConfigurationSheet: View {
     }
 
     /// Save provider-specific defaults for next time.
+    /// Advanced settings (maxTokens, temperature, etc.) were removed —
+    /// model data and ChatWidget configuration panels handle those now.
     private func saveProviderDefaults(for providerType: ProviderType) {
         let defaults: [String: Any] = [
             "baseURL": baseURL,
-            "models": models.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
-            "maxTokens": Int(maxTokens) ?? 2048,
-            "temperature": Double(temperature) ?? 0.7,
-            "timeoutSeconds": Int(timeoutSeconds) ?? 30
+            "models": models.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         ]
 
         UserDefaults.standard.set(defaults, forKey: "SAMProviderDefaults_\(providerType.rawValue)")
@@ -1066,12 +993,7 @@ struct ProviderConfigurationSheet: View {
             providerType: providerType,
             isEnabled: isEnabled,
             baseURL: baseURL.isEmpty ? nil : baseURL,
-            models: modelList,
-            // CRITICAL FIX: Use provider-type-specific defaults instead of hard-coded 2048/0.7/30/2
-            maxTokens: Int(maxTokens) ?? providerType.defaultMaxOutputTokens,
-            temperature: Double(temperature) ?? providerType.defaultTemperature,
-            timeoutSeconds: Int(timeoutSeconds) ?? providerType.defaultTimeoutSeconds,
-            retryCount: Int(retryCount) ?? providerType.defaultRetryCount
+            models: modelList
         )
 
         /// Store API key in Keychain (via computed property setter).
