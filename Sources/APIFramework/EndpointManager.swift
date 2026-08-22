@@ -156,11 +156,21 @@ public class EndpointManager: ObservableObject {
                 vendor = info.vendor
             }
         }
-
         // 2. Check Gemini models
         if modelId.hasPrefix("gemini/") {
             if let capabilities = try? await getGeminiModelCapabilities() {
                 contextWindow = capabilities[normalizedId] ?? capabilities[modelId]
+            }
+        }
+
+        // 2b. Check OpenRouter models — OpenRouter's /v1/models returns context_length
+        // (not context_window). Without this branch, OpenRouter model IDs fall through
+        // to getDefaultContextWindow, which doesn't recognize them, resulting in nil
+        // context (displayed as 2048). Ported from CLIO commit 9b525cf.
+        if contextWindow == nil, modelId.hasPrefix("openrouter/") {
+            if let provider = getFirstProvider(ofType: OpenRouterProvider.self) {
+                let capabilities = try? await provider.fetchModelCapabilities()
+                contextWindow = capabilities?[normalizedId] ?? capabilities?[modelId]
             }
         }
 

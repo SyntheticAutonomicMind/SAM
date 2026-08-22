@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "20260822.1",
+      "release_date": "August 22, 2026",
+      "introduction": "Two fixes that keep your context sharp when working with OpenRouter and tool-heavy sessions. OpenRouter models now report their real context window sizes instead of falling back to a generic default, and SAM's internal token estimates now account for tool definitions so conversations stay trimmed based on accurate numbers rather than inflated ratios.",
+      "highlights": [],
+      "improvements": [],
+      "bugfixes": [
+        {
+          "id": "openrouter-context-size",
+          "icon": "circle.grid.3x3",
+          "title": "OpenRouter Models Report Their Real Context Window",
+          "description": "When you use OpenRouter, SAM now fetches each model's actual context size from the /v1/models endpoint instead of falling back to a generic default. Models like poolside/laguna that support 500K+ context windows now show their real limits, so SAM doesn't trim your conversation prematurely. The model chooser and settings panels also display the correct context size."
+        },
+        {
+          "id": "drift-ratio-tool-definitions",
+          "icon": "slider.horizontal.3",
+          "title": "Tool Definitions No Longer Inflate Token Estimates",
+          "description": "SAM's internal heuristic for estimating token counts now includes tool definition schemas in its character count. Previously, tool descriptions and parameter schemas (which can be 20K-40K tokens for SAM's full tool set) were excluded from the estimate but included in the server's reported usage. This mismatch inflated the drift ratio to its ceiling, tightening the trim threshold and prematurely cutting off context. Tool-heavy sessions now maintain their full context window as intended."
+        }
+      ]
+    },
+    {
       "version": "20260801.1",
       "release_date": "August 1, 2026",
       "introduction": "SAM's warm personality is back. The last update's agent-framing improvements made SAM more capable at working autonomously to completion but accidentally flattened its character into something cold and mechanical. This release restores the helpful, approachable tone while keeping the agent protocol that drives real work. Four new self-check rules stop SAM from repeating itself, ignoring 'stop' commands, claiming progress without doing work, and narrating tool actions instead of running them. Numbered lists now use actual sequential numbers, and fresh source builds work again.",

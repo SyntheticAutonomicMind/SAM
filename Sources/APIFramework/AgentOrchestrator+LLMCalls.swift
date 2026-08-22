@@ -583,7 +583,26 @@ extension AgentOrchestrator {
         /// char/token ratio heuristic. Uses server-reported usage.prompt_tokens
         /// to compute the actual ratio, weighted 80/20, clamped [1.5, 4.0].
         if response.usage.promptTokens > 0 {
-            let totalChars = messages.reduce(0) { $0 + ($1.content?.count ?? 0) }
+            var totalChars = messages.reduce(0) { $0 + ($1.content?.count ?? 0) }
+
+            // Include tool DEFINITION tokens in the estimate.
+            // The API's usage.prompt_tokens counts the entire prompt, including
+            // the tools[] array (schema descriptions, parameter definitions). The
+            // char-based estimate above only counts message content + tool_call
+            // JSON. Without this correction, the drift ratio is inflated by the
+            // tool definition size (SAM has 16+ tools, each with detailed schemas
+            // totaling ~20-40K tokens). At the 4.0 drift clamp ceiling, this
+            // tightens the trim threshold from ~115K to ~29K, trimming the dialog
+            // to ~22K and collapsing the cache prefix. Ported from CLIO 9b525cf.
+            if let tools = finalRequest.tools, !tools.isEmpty {
+                let encoder = JSONEncoder()
+                for tool in tools {
+                    if let data = try? encoder.encode(tool), let toolJson = String(data: data, encoding: .utf8) {
+                        totalChars += toolJson.count
+                    }
+                }
+            }
+
             let estimatedPromptTokens = Int(Double(totalChars) / tokenCounter.learnedRatio)
             tokenCounter.learnFromAPIResponse(
                 totalChars: totalChars,
