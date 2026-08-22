@@ -804,10 +804,18 @@ struct ProviderConfigurationSheet: View {
         let savedDefaults = loadProviderDefaults(for: newType)
 
         /// Update base URL - use saved default if available, then system default.
+        /// CRITICAL FIX: When switching to a provider type with no default base URL
+        /// (e.g., remoteLlama, custom), the previous URL (often "https://api.openai.com/v1"
+        /// from the initial .openai default) must be cleared. Previously this was a bug
+        /// — the old baseURL persisted because neither `if savedBaseURL` nor `else if defaultURL`
+        /// matched for types with `defaultBaseURL == nil`.
         if let savedBaseURL = savedDefaults?["baseURL"] as? String, !savedBaseURL.isEmpty {
             baseURL = savedBaseURL
         } else if let defaultURL = newType.defaultBaseURL {
             baseURL = defaultURL
+        } else {
+            /// No saved or default URL for this provider type — clear the field.
+            baseURL = ""
         }
 
         /// Update models list - use saved default if available, then system default.

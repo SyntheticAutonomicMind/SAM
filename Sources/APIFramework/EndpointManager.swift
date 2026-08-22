@@ -42,6 +42,13 @@ public class EndpointManager: ObservableObject {
     /// Model loading state tracking (for local models).
     @Published public var modelLoadingStatus: [String: ModelLoadingState] = [:]
 
+    /// Cache for remote llama.cpp model context sizes (fetched from /v1/models endpoint).
+    /// CRITICAL FIX: Previously context sizes for remote models were never cached on
+    /// EndpointManager — they were always nil, causing the 2048 fallback.
+    private var remoteLlamaCapabilityCache: [String: Int] = [:]
+    private var remoteLlamaCapabilitiesCacheTime: Date?
+    private let remoteLlamaCacheValidityDuration: TimeInterval = 3600  // 1 hour
+
     /// Simple boolean properties for UI reactivity (SwiftUI observes these better than dictionaries).
     @Published public var isAnyModelLoading: Bool = false
     @Published public var currentLoadingModelName: String?
@@ -162,6 +169,17 @@ public class EndpointManager: ObservableObject {
             contextWindow = await getLocalModelContextSize(modelName: modelId)
         }
 
+        // CRITICAL FIX: Handle remote_llama/ models — fetch context sizes from the server.
+        // Previously these models fell through to getDefaultContextWindow which
+        // didn't recognize the prefix, resulting in nil context (displayed as 2048).
+        // Now we call fetchModelCapabilities on the RemoteLlamaProvider to get the
+        // server's actual configured context_length (e.g., 65k).
+        if contextWindow == nil, modelId.hasPrefix("remote_llama/") {
+            contextWindow = await getRemoteLlamaContextSize(for: modelId)
+        }
+
+        // 4. Apply known defaults for popular models
+
         // 4. Apply known defaults for popular models
         if contextWindow == nil {
             contextWindow = getDefaultContextWindow(for: modelId)
@@ -229,7 +247,15 @@ public class EndpointManager: ObservableObject {
         if normalized.contains("openai/gpt") {
             return 128_000  // Default to newer models
         }
-        
+
+        // CRITICAL FIX: Remote llama.cpp models — use conservative default.
+        // The actual context size should be fetched from the server via
+        // getRemoteLlamaContextSize(), but as a last-resort fallback,
+        // assume a reasonable llama.cpp context window.
+        if normalized.hasPrefix("remote_llama/") {
+            return 32_768  // Conservative 32k default for llama.cpp models
+        }
+
         return nil  // Unknown model
     }
 
@@ -392,6 +418,53 @@ public class EndpointManager: ObservableObject {
             return 32768
         }
         return nil
+    }
+
+    // MARK: - Remote Llama Context Size
+
+    /// Fetch and cache context sizes from the remote llama.cpp server.
+    /// CRITICAL FIX: Previously, remoteLlama models had no way to get their context
+    /// size — getAvailableModels dropped it, and getModelCapabilityData didn't handle
+    /// the "remote_llama/" prefix. This method fetches from the server's /v1/models
+    /// endpoint and caches the result for 1 hour.
+    public func getRemoteLlamaContextSize(for modelId: String) async -> Int? {
+        let baseModelName = modelId.split(separator: "/").last.map(String.init) ?? modelId
+
+        // Check cache first
+        if let cacheTime = remoteLlamaCapabilitiesCacheTime,
+           Date().timeIntervalSince(cacheTime) < remoteLlamaCacheValidityDuration,
+           let cachedSize = remoteLlamaCapabilityCache[baseModelName] {
+            logger.debug("REMOTE_LLAMA_CONTEXT: Using cached context size for '\(baseModelName)': \(cachedSize) tokens")
+            return cachedSize
+        }
+
+        // Fetch from provider
+        guard let provider = getFirstRemoteLlamaProvider() else {
+            logger.debug("REMOTE_LLAMA_CONTEXT: No RemoteLlamaProvider found for '\(modelId)'")
+            return nil
+        }
+
+        do {
+            let capabilities = try await provider.fetchModelCapabilities()
+
+            // Cache the results
+            remoteLlamaCapabilityCache = capabilities
+            remoteLlamaCapabilitiesCacheTime = Date()
+
+            logger.info("REMOTE_LLAMA_CONTEXT: Cached \(capabilities.count) model context sizes from remote llama.cpp server")
+
+            // Look up our model — try both the full ID and the base name
+            let ctx = capabilities[baseModelName] ?? capabilities[modelId]
+            if let ctx = ctx {
+                logger.debug("REMOTE_LLAMA_CONTEXT: Resolved '\(baseModelName)' to \(ctx) tokens")
+            } else {
+                logger.warning("REMOTE_LLAMA_CONTEXT: Model '\(baseModelName)' not found in server capabilities")
+            }
+            return ctx
+        } catch {
+            logger.warning("REMOTE_LLAMA_CONTEXT: Failed to fetch capabilities: \(error)")
+            return nil
+        }
     }
 
     /// Helper to read max_position_embeddings from MLX config.json
@@ -580,11 +653,18 @@ public class EndpointManager: ObservableObject {
                     let prefixedModels = providerModels.data.map { model -> ServerOpenAIModel in
                         /// Only prefix if not already prefixed.
                         let newId = model.id.contains("/") ? model.id : "\(normalizedProviderName)/\(model.id)"
+                        // CRITICAL FIX: Pass through contextWindow and other capability fields
+                        // that were previously dropped when creating the prefixed model.
                         return ServerOpenAIModel(
                             id: newId,
                             object: model.object,
                             created: model.created,
-                            ownedBy: model.ownedBy
+                            ownedBy: model.ownedBy,
+                            contextWindow: model.contextWindow,
+                            maxCompletionTokens: model.maxCompletionTokens,
+                            maxRequestTokens: model.maxRequestTokens,
+                            category: model.category,
+                            vendor: model.vendor
                         )
                     }
                     allModels.append(contentsOf: prefixedModels)
@@ -1304,9 +1384,15 @@ public class EndpointManager: ObservableObject {
         return providers[id]
     }
 
-    /// Get the first provider of a specific type (e.g., OpenRouterProvider).
+    /// Get the first provider of a specific type (e.g., OpenAIProvider, OpenRouterProvider).
     public func getFirstProvider<T: AIProvider>(ofType type: T.Type) -> T? {
         return providers.values.first(where: { $0 is T }) as? T
+    }
+
+    /// Get the first RemoteLlamaProvider instance.
+    /// Used by AgentOrchestrator for lazy capability fetching.
+    public func getFirstRemoteLlamaProvider() -> RemoteLlamaProvider? {
+        return providers.values.first(where: { $0 is RemoteLlamaProvider }) as? RemoteLlamaProvider
     }
 
     private func getProviderType(for providerId: String) -> ProviderType? {
@@ -1321,7 +1407,9 @@ public class EndpointManager: ObservableObject {
 
         /// Clear metadata cache when providers are reloaded
         metadataCache.removeAll()
-        logger.debug("Cleared GitHub Copilot metadata cache (provider reload)")
+        remoteLlamaCapabilityCache.removeAll()
+        remoteLlamaCapabilitiesCacheTime = nil
+        logger.debug("Cleared GitHub Copilot metadata cache + remoteLlama capability cache (provider reload)")
 
         /// Clear ALL providers including local models - we'll recreate them from current registry
         /// This enables hot reload when new local models are downloaded
@@ -1475,6 +1563,11 @@ public class EndpointManager: ObservableObject {
         }
 
         logger.debug("Provider reload complete. Active providers: \(self.providers.keys.sorted().joined(separator: ", "))")
+
+        /// CRITICAL FIX: Post notification so ModelListManager refreshes its model list.
+        /// Previously this notification was only posted by LocalModelManager (for local models),
+        /// causing remote providers' models to never appear in the model chooser after being added.
+        NotificationCenter.default.post(name: .endpointManagerDidUpdateModels, object: self)
 
         /// Prefetch GitHub Copilot billing data for the newly loaded providers
         prefetchGitHubCopilotMetadata()

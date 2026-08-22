@@ -62,6 +62,22 @@ public protocol AIProvider {
 
     /// Unload the model from memory No-op for remote providers.
     func unload() async
+
+    /// Fetch model capabilities (context window sizes) from the provider's API.
+    /// Returns a dictionary of model name -> context window size in tokens.
+    /// Has a default implementation returning empty so providers that don't
+    /// override it still compile. This enables the AgentOrchestrator to learn
+    /// context sizes from any provider at lazy-fetch time.
+    /// CRITICAL FIX: RemoteLlamaProvider previously had no fetchModelCapabilities,
+    /// so its models' context sizes were never learned from the server.
+    func fetchModelCapabilities() async throws -> [String: Int]
+}
+
+/// Default implementation for providers that don't explicitly support it.
+public extension AIProvider {
+    func fetchModelCapabilities() async throws -> [String: Int] {
+        return [:]
+    }
 }
 
 // MARK: - Load Balancing

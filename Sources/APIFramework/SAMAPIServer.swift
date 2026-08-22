@@ -2435,17 +2435,28 @@ AVAILABLE TOOLS:
             let enrichedModels = await withTaskGroup(of: ServerOpenAIModel.self) { group in
                 for model in modelsResponse.data {
                     group.addTask {
-                        let (contextWindow, maxCompletion, maxRequest, category, vendor) = await self.endpointManager.getModelCapabilityData(for: model.id)
+                        // CRITICAL FIX: If the model already has contextWindow from the
+                        // provider's getAvailableModels() response (e.g., llama.cpp returns
+                        // context_length), use that value instead of re-deriving it via
+                        // getModelCapabilityData which may not know the server's config.
+                        let caps: (contextWindow: Int?, maxCompletionTokens: Int?, maxRequestTokens: Int?, category: String?, vendor: String?)
+                        if let existingCtx = model.contextWindow {
+                            let maxComp = model.maxCompletionTokens ?? (existingCtx / 4)
+                            let maxReq = existingCtx - maxComp
+                            caps = (existingCtx, maxComp, maxReq, model.category, model.vendor)
+                        } else {
+                            caps = await self.endpointManager.getModelCapabilityData(for: model.id)
+                        }
                         return ServerOpenAIModel(
                             id: model.id,
                             object: model.object,
                             created: model.created,
                             ownedBy: model.ownedBy,
-                            contextWindow: contextWindow,
-                            maxCompletionTokens: maxCompletion,
-                            maxRequestTokens: maxRequest,
-                            category: category,
-                            vendor: vendor
+                            contextWindow: caps.contextWindow,
+                            maxCompletionTokens: caps.maxCompletionTokens,
+                            maxRequestTokens: caps.maxRequestTokens,
+                            category: caps.category,
+                            vendor: caps.vendor
                         )
                     }
                 }

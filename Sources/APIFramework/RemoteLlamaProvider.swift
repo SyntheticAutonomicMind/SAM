@@ -42,7 +42,7 @@ public class RemoteLlamaProvider: AIProvider {
             throw ProviderError.authenticationFailed("API key required for remote llama.cpp server")
         }
 
-        let endpoint = "\(baseURL)/v1/chat/completions"
+        let endpoint = buildEndpointURL(baseURL: baseURL, path: "chat/completions")
         guard let url = URL(string: endpoint) else {
             throw ProviderError.invalidConfiguration("Invalid base URL: \(baseURL)")
         }
@@ -104,7 +104,7 @@ public class RemoteLlamaProvider: AIProvider {
             throw ProviderError.authenticationFailed("API key required for remote llama.cpp server")
         }
 
-        let endpoint = "\(baseURL)/v1/chat/completions"
+        let endpoint = buildEndpointURL(baseURL: baseURL, path: "chat/completions")
         guard let url = URL(string: endpoint) else {
             throw ProviderError.invalidConfiguration("Invalid base URL: \(baseURL)")
         }
@@ -169,13 +169,29 @@ public class RemoteLlamaProvider: AIProvider {
         }
     }
 
+    // MARK: - URL Helpers
+
+    /// Build a fully-qualified URL for the llama.cpp OpenAI-compatible API.
+    /// CRITICAL FIX: Handles baseURL that may or may not include a /v1 suffix.
+    /// Previously: "\(baseURL)/v1/models" would produce "http://host/v1/v1/models"
+    /// when baseURL already included "/v1". Now properly normalizes.
+    private func buildEndpointURL(baseURL: String, path: String) -> String {
+        let cleanBase = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
+        if cleanBase.hasSuffix("/v1") {
+            return "\(cleanBase)/\(path)"
+        }
+        return "\(cleanBase)/v1/\(path)"
+    }
+
     public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
         guard let baseURL = config.baseURL else {
-            throw ProviderError.invalidConfiguration("Remote llama.cpp server requires a base URL")
+            throw ProviderError.invalidConfiguration("Remote llama.cpp server requires a base URL (e.g., http://192.168.1.100:8080)")
         }
 
-        let endpoint = "\(baseURL)/v1/models"
-        guard let url = URL(string: endpoint) else {
+        // CRITICAL FIX: Use buildEndpointURL to handle baseURL with/without /v1 suffix
+        let modelsURL = buildEndpointURL(baseURL: baseURL, path: "models")
+
+        guard let url = URL(string: modelsURL) else {
             throw ProviderError.invalidConfiguration("Invalid base URL: \(baseURL)")
         }
 
@@ -189,41 +205,146 @@ public class RemoteLlamaProvider: AIProvider {
 
         urlRequest.timeoutInterval = 30
 
-        do {
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
 
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw ProviderError.networkError("Invalid response type")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ProviderError.networkError("Invalid response type")
+        }
+
+        guard 200...299 ~= httpResponse.statusCode else {
+            if let errorData = String(data: data, encoding: .utf8) {
+                logger.error("Remote llama.cpp models fetch error [req:\(requestId)]: \(errorData)")
             }
+            throw ProviderError.networkError("Remote llama.cpp server returned status \(httpResponse.statusCode) when fetching models")
+        }
 
-            guard 200...299 ~= httpResponse.statusCode else {
-                throw ProviderError.networkError("Remote llama.cpp server returned status \(httpResponse.statusCode)")
+        // CRITICAL FIX: llama.cpp's /v1/models returns "context_length" per model,
+        // but ServerOpenAIModel's CodingKeys expect "context_window". We parse the
+        // JSON manually to extract context_length (and context_window for OpenAI compat)
+        // before decoding, then inject the values into the decoded models.
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ProviderError.responseNormalizationFailed("Failed to parse remote llama.cpp /models response")
+        }
+
+        // Extract context sizes from raw JSON before decoding.
+        var contextLengths: [String: Int] = [:]
+        if let modelsArray = json["data"] as? [[String: Any]] {
+            for model in modelsArray {
+                if let id = model["id"] as? String {
+                    let ctxLen = model["context_length"] as? Int ??
+                                 model["context_window"] as? Int
+                    if let ctxLen = ctxLen {
+                        contextLengths[id] = ctxLen
+                    }
+                }
             }
+        }
 
-            // Try to parse as OpenAI models response
-            if let modelsResponse = try? JSONDecoder().decode(ServerOpenAIModelsResponse.self, from: data) {
-                return modelsResponse
-            }
+        // Decode using ServerOpenAIModelsResponse
+        let modelsResponse = try JSONDecoder().decode(ServerOpenAIModelsResponse.self, from: data)
 
-            // Fallback: return configured models
-            let models = config.models.map { modelId in
-                ServerOpenAIModel(
-                    id: modelId,
-                    object: "model",
-                    created: Int(Date().timeIntervalSince1970),
-                    ownedBy: "remote-llama"
+        // Re-inject context_length into the decoded models (CodingKey mismatch fix).
+        let enrichedModels = modelsResponse.data.map { model -> ServerOpenAIModel in
+            if let ctxLen = contextLengths[model.id] {
+                return ServerOpenAIModel(
+                    id: model.id,
+                    object: model.object,
+                    created: model.created,
+                    ownedBy: model.ownedBy,
+                    contextWindow: ctxLen,
+                    maxCompletionTokens: model.maxCompletionTokens,
+                    maxRequestTokens: model.maxRequestTokens,
+                    category: model.category,
+                    vendor: model.vendor
                 )
             }
-
-            return ServerOpenAIModelsResponse(
-                object: "list",
-                data: models
-            )
-        } catch let error as ProviderError {
-            throw error
-        } catch {
-            throw ProviderError.networkError("Failed to fetch models: \(error.localizedDescription)")
+            return model
         }
+
+        return ServerOpenAIModelsResponse(
+            object: modelsResponse.object,
+            data: enrichedModels
+        )
+    }
+
+    // MARK: - Model Capabilities Fetching
+
+    /// Fetch model capabilities (context sizes) from the remote llama.cpp server.
+    /// llama.cpp's /v1/models endpoint includes `context_length` per model.
+    /// This method extracts those values for use by TokenCounter and getModelCapabilityData.
+    /// CRITICAL FIX: Previously RemoteLlamaProvider had NO fetchModelCapabilities method,
+    /// so context sizes were never learned from the server — they defaulted to 8192 or
+    /// the hardcoded 2048 fallback, ignoring the server's actual configured context.
+    public func fetchModelCapabilities() async throws -> [String: Int] {
+        guard let baseURL = config.baseURL else {
+            throw ProviderError.invalidConfiguration("Remote llama.cpp server requires a base URL")
+        }
+
+        let modelsURL = buildEndpointURL(baseURL: baseURL, path: "models")
+
+        guard let url = URL(string: modelsURL) else {
+            throw ProviderError.invalidConfiguration("Invalid base URL: \(baseURL)")
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "GET"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        if let apiKey = config.apiKey, !apiKey.isEmpty {
+            urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+
+        urlRequest.timeoutInterval = 30
+
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ProviderError.networkError("Invalid response type")
+        }
+
+        guard 200...299 ~= httpResponse.statusCode else {
+            throw ProviderError.networkError("Remote llama.cpp server returned status \(httpResponse.statusCode)")
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ProviderError.responseNormalizationFailed("Failed to parse remote llama.cpp /models response")
+        }
+
+        var capabilities: [String: Int] = [:]
+
+        // Try OpenAI-compatible format (data array) — llama.cpp returns this from /v1/models
+        if let modelsArray = json["data"] as? [[String: Any]] {
+            for model in modelsArray {
+                guard let id = model["id"] as? String else { continue }
+                // llama.cpp returns "context_length", OpenAI uses "context_window"
+                let contextSize = model["context_length"] as? Int ??
+                                  model["context_window"] as? Int ??
+                                  8192  // Conservative fallback if not provided
+                capabilities[id] = contextSize
+                logger.debug("Remote llama.cpp model '\(id)': \(contextSize) tokens")
+            }
+        }
+        // Try llama.cpp native format (models array)
+        else if let modelsArray = json["models"] as? [[String: Any]] {
+            for model in modelsArray {
+                let id = model["model"] as? String ?? model["name"] as? String ?? ""
+                guard !id.isEmpty else { continue }
+
+                let cleanId = URL(fileURLWithPath: id).lastPathComponent
+
+                // llama.cpp native format may include context_length
+                let contextSize = model["context_length"] as? Int ??
+                                  model["context_window"] as? Int ??
+                                  8192  // Conservative fallback
+                capabilities[cleanId] = contextSize
+                logger.debug("Remote llama.cpp model '\(cleanId)': \(contextSize) tokens")
+            }
+        } else {
+            throw ProviderError.responseNormalizationFailed("Unknown /models response format from \(baseURL)")
+        }
+
+        logger.debug("Successfully fetched \(capabilities.count) model capabilities from remote llama.cpp server")
+        return capabilities
     }
 
     public func supportsModel(_ model: String) -> Bool {

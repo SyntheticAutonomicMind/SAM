@@ -872,10 +872,56 @@ public struct ServerOpenAIModel: Content {
         case id, object, created
         case ownedBy = "owned_by"
         case contextWindow = "context_window"
+        case contextLength = "context_length"
+        case maxContextLength = "max_context_length"
         case maxCompletionTokens = "max_completion_tokens"
         case maxRequestTokens = "max_request_tokens"
         case category = "model_picker_category"
         case vendor
+    }
+
+    /// CRITICAL FIX: Custom decoder that supports both "context_window" (OpenAI format)
+    /// and "context_length" (llama.cpp format). Previously only "context_window" was
+    /// decoded, causing llama.cpp's context_length to be silently dropped (nil).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.object = try container.decodeIfPresent(String.self, forKey: .object) ?? "model"
+        self.created = try container.decodeIfPresent(Int.self, forKey: .created) ?? Int(Date().timeIntervalSince1970)
+        self.ownedBy = try container.decodeIfPresent(String.self, forKey: .ownedBy) ?? "unknown"
+        self.category = try container.decodeIfPresent(String.self, forKey: .category)
+        self.vendor = try container.decodeIfPresent(String.self, forKey: .vendor)
+
+        self.maxCompletionTokens = try container.decodeIfPresent(Int.self, forKey: .maxCompletionTokens)
+        self.maxRequestTokens = try container.decodeIfPresent(Int.self, forKey: .maxRequestTokens)
+
+        // CRITICAL FIX: Try "context_window" (OpenAI) first, then "context_length" (llama.cpp),
+        // then "max_context_length" (some providers). This ensures remote llama.cpp servers
+        // that report context_length have their values properly decoded.
+        if let ctx = try container.decodeIfPresent(Int.self, forKey: .contextWindow) {
+            self.contextWindow = ctx
+        } else if let ctx = try container.decodeIfPresent(Int.self, forKey: .contextLength) {
+            self.contextWindow = ctx
+        } else if let ctx = try container.decodeIfPresent(Int.self, forKey: .maxContextLength) {
+            self.contextWindow = ctx
+        } else {
+            self.contextWindow = nil
+        }
+    }
+
+    /// CRITICAL FIX: Custom encoder ensures only "context_window" is emitted (not
+    /// "context_length" or "max_context_length"), maintaining OpenAI format compatibility.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(object, forKey: .object)
+        try container.encode(created, forKey: .created)
+        try container.encode(ownedBy, forKey: .ownedBy)
+        try container.encodeIfPresent(contextWindow, forKey: .contextWindow)
+        try container.encodeIfPresent(maxCompletionTokens, forKey: .maxCompletionTokens)
+        try container.encodeIfPresent(maxRequestTokens, forKey: .maxRequestTokens)
+        try container.encodeIfPresent(category, forKey: .category)
+        try container.encodeIfPresent(vendor, forKey: .vendor)
     }
 
     public init(id: String, object: String, created: Int, ownedBy: String, contextWindow: Int? = nil, maxCompletionTokens: Int? = nil, maxRequestTokens: Int? = nil, category: String? = nil, vendor: String? = nil) {

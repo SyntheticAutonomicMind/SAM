@@ -440,6 +440,10 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             providerType = "github_copilot"
         } else if modelLower.starts(with: "openai/") {
             providerType = "openai"
+        } else if modelLower.hasPrefix("remote_llama/") {
+            /// CRITICAL FIX: Remote llama.cpp models were not handled here,
+            /// so their context sizes were never fetched from the server.
+            providerType = "remoteLlama"
         } else if modelLower.contains("gemini") {
             providerType = "gemini"
         } else if modelLower.contains("claude") {
@@ -482,6 +486,23 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 if let provider = endpointManager.getFirstProvider(ofType: OpenRouterProvider.self) {
                     capabilities = try await provider.fetchModelCapabilities()
                     logger.debug("LAZY_FETCH: Fetched \(capabilities?.count ?? 0) model context sizes from OpenRouter")
+                }
+
+            case "remoteLlama":
+                /// CRITICAL FIX: Fetch context sizes from the remote llama.cpp server.
+                /// Previously this case didn't exist, so remoteLlama models always
+                /// used hardcoded fallbacks (8192 or 2048), ignoring the server's
+                /// actual configured context length (e.g., 65k).
+                if let provider = endpointManager.getProvider(id: "remote-llama") as? RemoteLlamaProvider {
+                    capabilities = try await provider.fetchModelCapabilities()
+                    logger.debug("LAZY_FETCH: Fetched \(capabilities?.count ?? 0) model context sizes from remote llama.cpp")
+                } else {
+                    /// Try any RemoteLlamaProvider if the default ID doesn't match
+                    /// (handles custom provider IDs like "remote-llama-1234567890")
+                    if let provider = endpointManager.getFirstRemoteLlamaProvider() {
+                        capabilities = try await provider.fetchModelCapabilities()
+                        logger.debug("LAZY_FETCH: Fetched \(capabilities?.count ?? 0) model context sizes from remote llama.cpp (custom ID)")
+                    }
                 }
 
             default:
