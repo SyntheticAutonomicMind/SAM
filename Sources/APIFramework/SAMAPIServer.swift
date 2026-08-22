@@ -666,16 +666,40 @@ AVAILABLE TOOLS:
     /// The previous implementation kept only system + last user message and dropped
     /// all tool responses, which broke tool_call/tool_result pairing and left the
     /// model with no awareness of recent work.
-    private func trimContextIfNeeded(_ request: OpenAIChatRequest) -> OpenAIChatRequest {
-        let contextLimit = getContextSizeSync(modelName: request.model)
-        let validatedMessages = MessageValidator.validateToolMessagePairs(request.messages)
-        let trimmed = MessageValidator.validateAndTruncate(
-            messages: validatedMessages,
-            maxPromptTokens: contextLimit
+    private func trimContextIfNeeded(_ request: OpenAIChatRequest) async -> OpenAIChatRequest {
+        // Ported from CLIO: resolve model capabilities + learned ratio + drift threshold
+        // for accurate budget walk ceiling. Uses compute_prompt_budget (ctx - output_reserve - buffer)
+        // with tool-calling output reserve optimization (caps at 8K when tools active).
+        let contextWindow = getContextSizeSync(modelName: request.model)
+        let maxOutputTokens = getMaxOutputTokens(request.model) ?? ContextBudget.defaultMaxOutputTokens
+        let caps = ContextCapabilities(
+            contextWindow: contextWindow,
+            maxOutputTokens: maxOutputTokens,
+            supportsTools: true
+        )
+        let tokenRatio = DriftTracker.shared.learnedRatio
+        let driftThreshold = DriftTracker.shared.computeDriftAwareThreshold(contextWindow: contextWindow)
+
+        let config = TrimConfig(
+            caps: caps,
+            tools: request.tools,
+            toolTokens: estimateToolTokens(request.tools ?? []),
+            tokenRatio: tokenRatio,
+            trimThreshold: driftThreshold
         )
 
+        logger.debug("trimContextIfNeeded: Budget = \(config.effectiveBudget) tokens (ctx=\(caps.contextWindow), maxOut=\(caps.maxOutputTokens), ratio=\(tokenRatio))")
+
+        let validatedMessages = MessageValidator.validateToolMessagePairs(request.messages)
+        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
+            messages: validatedMessages,
+            config: config
+        )
+
+        let trimmed = truncationResult.messages
+
         if trimmed.count < request.messages.count {
-            logger.info("CONTEXT_TRIM: MessageValidator trimmed \(request.messages.count) -> \(trimmed.count) messages for \(request.model)")
+            logger.info("CONTEXT_TRIM: MessageValidator trimmed \(request.messages.count) -> \(trimmed.count) messages (\(truncationResult.droppedMessages.count) dropped) for \(request.model)")
         }
 
         return OpenAIChatRequest(
@@ -691,7 +715,20 @@ AVAILABLE TOOLS:
         )
     }
 
-    // MARK: - Memory Enhancement
+    /// Estimate the token cost of tool definitions (character-based heuristic).
+    /// Ported from CLIO's token estimation for tool schemas.
+    private func estimateToolTokens(_ tools: [OpenAITool]) -> Int {
+        guard !tools.isEmpty else { return 0 }
+        var totalChars = 0
+        for tool in tools {
+            totalChars += tool.function.name.count
+            totalChars += tool.function.description.count
+            totalChars += tool.function.parametersJson.count
+        }
+        return max(Int(Double(totalChars) / ContextBudget.defaultCharsPerToken), 256)
+    }
+
+    /// - MARK: Memory Enhancement
 
     private func enhanceRequestWithMemory(_ request: OpenAIChatRequest, sessionId: String) async throws -> OpenAIChatRequest {
         logger.debug("DEBUG: enhanceRequestWithMemory ENTRY - sessionId: \(sessionId)")
@@ -1074,18 +1111,22 @@ AVAILABLE TOOLS:
         logger.debug("DEBUG: About to enhance request with memory")
         logger.error("DEBUG_APISERVER: Processing request for model: \(chatRequest.model), streaming: \(chatRequest.stream ?? false)")
 
-        /// Trim context if needed to stay within token limits.
-        var trimmedRequest = trimContextIfNeeded(chatRequest)
-
-        /// Enhance request with memory context if available.
-        var enhancedRequest = trimmedRequest
+        /// Enhance request with memory context FIRST, then trim.
+        /// CRITICAL FIX: Previously trimmed BEFORE memory enhancement, which meant
+        /// memory-injected context could push the total over budget after trimming.
+        /// Following CLIO's pattern: enhance -> then trim the combined result.
+        var enhancedRequest = chatRequest
         if let sessionId = sessionId, memoryInit {
             logger.debug("DEBUG: Calling enhanceRequestWithMemory for sessionId: \(sessionId)")
-            enhancedRequest = try await enhanceRequestWithMemory(trimmedRequest, sessionId: sessionId)
+            enhancedRequest = try await enhanceRequestWithMemory(chatRequest, sessionId: sessionId)
             logger.debug("DEBUG: Enhanced request with memory - messages now: \(enhancedRequest.messages.count)")
         } else {
             logger.debug("DEBUG: Skipping memory enhancement - sessionId: \(sessionId?.prefix(8) ?? "nil"), memoryInit: \(memoryInit)")
         }
+
+        /// Trim context AFTER memory enhancement to account for all injected context.
+        let trimmedRequest = await trimContextIfNeeded(enhancedRequest)
+        enhancedRequest = trimmedRequest
 
         /// CONDITIONAL TOOL INJECTION: Only inject tools into system prompt for LOCAL models
         /// Remote models (OpenAI, GitHub Copilot) use native tools array from SharedConversationService

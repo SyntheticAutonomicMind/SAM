@@ -50,6 +50,12 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// Token counter for smart context management Monitors token usage and triggers pruning at 70% threshold.
     internal let tokenCounter: TokenCounter = TokenCounter()
 
+    /// Forced trim threshold override for reactive trim on 400 token limit errors.
+    /// When non-nil, `validateAndArchiveContext` uses this value as the `trimThreshold`
+    /// in `TrimConfig` instead of the drift-aware threshold. Reset to nil after retry.
+    /// Three-tier reactive trim: Tier 1 = 90% ctx (first 400), Tier 2 = 75% ctx (second 400).
+    internal var forcedTrimThreshold: Int? = nil
+
     /// Tool result storage for handling large tool outputs
     /// Persists results to disk for retrieval via read_tool_result
     /// Replaces the memory-only ToolResultCache for proper persistence
@@ -1299,6 +1305,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// RATE LIMIT HANDLING: Retry indefinitely on rate limit errors (they always clear)
                 var response: LLMResponse
                 var rateLimitRetryCount = 0
+                var tokenLimitRetryCount = 0
                 /// Rate limit retries are unlimited - rate limits always clear eventually.
                 /// Uses 15s floor with exponential backoff: 15s, 30s, 60s, 120s, 300s (cap).
                 let rateLimitBaseDelay: Double = 15.0
@@ -1326,6 +1333,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                 sentInternalMessagesCount: context.sentInternalMessagesCount,
                                 retrievedMessageIds: &context.retrievedMessageIds
                             )
+                            forcedTrimThreshold = nil
                             break  /// Success - exit retry loop
                         } catch let error as ProviderError {
                             if case .rateLimitExceeded(let message) = error {
@@ -1357,6 +1365,39 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                 }
 
                                 continue  /// Retry
+                            } else if case .invalidRequest(let errorMessage) = error,
+                                      let tokenError = tokenCounter.parseTokenLimitError(errorMessage: errorMessage) {
+                                /// TOKEN LIMIT 400 — reactive three-tier trim.
+                                /// CLIO pattern: Tier 1 (90% ctx), Tier 2 (75% ctx), then fail.
+                                tokenLimitRetryCount += 1
+
+                                /// Record drift from server's actual token count.
+                                tokenCounter.recordDrift(
+                                    serverActualTokens: tokenError.serverActual,
+                                    estimatedTokens: max(tokenError.estimated, 1)
+                                )
+
+                                if tokenLimitRetryCount > 2 {
+                                    /// Exhausted reactive trims — reset and re-throw.
+                                    forcedTrimThreshold = nil
+                                    logger.error("TOKEN_LIMIT_400: Exhausted \(tokenLimitRetryCount) reactive trim retries, re-throwing")
+                                    throw error
+                                }
+
+                                /// Set forced trim threshold for the next retry.
+                                /// Tier 1 (first 400): 90% of context window
+                                /// Tier 2 (second 400): 75% of context window
+                                let caps = await tokenCounter.resolveCapabilities(model: model)
+                                let contextWindow = caps.contextWindow
+                                if tokenLimitRetryCount == 1 {
+                                    forcedTrimThreshold = Int(Double(contextWindow) * ContextBudget.reactiveTier1Pct)
+                                    logger.warning("TOKEN_LIMIT_400: Reactive trim Tier 1 (90% ctx = \(forcedTrimThreshold!)) on retry \(tokenLimitRetryCount)")
+                                } else {
+                                    forcedTrimThreshold = Int(Double(contextWindow) * ContextBudget.reactiveTier2Pct)
+                                    logger.warning("TOKEN_LIMIT_400: Reactive trim Tier 2 (75% ctx = \(forcedTrimThreshold!)) on retry \(tokenLimitRetryCount)")
+                                }
+
+                                continue  /// Retry with tighter trim
                             } else {
                                 throw error  /// Re-throw non-rate-limit errors
                             }
@@ -1377,6 +1418,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                 sentInternalMessagesCount: context.sentInternalMessagesCount,
                                 retrievedMessageIds: &context.retrievedMessageIds
                             )
+                            forcedTrimThreshold = nil
                             break  /// Success - exit retry loop
                         } catch let error as ProviderError {
                             if case .rateLimitExceeded(let message) = error {
@@ -1407,6 +1449,39 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                 }
 
                                 continue  /// Retry
+                            } else if case .invalidRequest(let errorMessage) = error,
+                                      let tokenError = tokenCounter.parseTokenLimitError(errorMessage: errorMessage) {
+                                /// TOKEN LIMIT 400 — reactive three-tier trim.
+                                /// CLIO pattern: Tier 1 (90% ctx), Tier 2 (75% ctx), then fail.
+                                tokenLimitRetryCount += 1
+
+                                /// Record drift from server's actual token count.
+                                tokenCounter.recordDrift(
+                                    serverActualTokens: tokenError.serverActual,
+                                    estimatedTokens: max(tokenError.estimated, 1)
+                                )
+
+                                if tokenLimitRetryCount > 2 {
+                                    /// Exhausted reactive trims — reset and re-throw.
+                                    forcedTrimThreshold = nil
+                                    logger.error("TOKEN_LIMIT_400: Exhausted \(tokenLimitRetryCount) reactive trim retries, re-throwing")
+                                    throw error
+                                }
+
+                                /// Set forced trim threshold for the next retry.
+                                /// Tier 1 (first 400): 90% of context window
+                                /// Tier 2 (second 400): 75% of context window
+                                let caps = await tokenCounter.resolveCapabilities(model: model)
+                                let contextWindow = caps.contextWindow
+                                if tokenLimitRetryCount == 1 {
+                                    forcedTrimThreshold = Int(Double(contextWindow) * ContextBudget.reactiveTier1Pct)
+                                    logger.warning("TOKEN_LIMIT_400: Reactive trim Tier 1 (90% ctx = \(forcedTrimThreshold!)) on retry \(tokenLimitRetryCount)")
+                                } else {
+                                    forcedTrimThreshold = Int(Double(contextWindow) * ContextBudget.reactiveTier2Pct)
+                                    logger.warning("TOKEN_LIMIT_400: Reactive trim Tier 2 (75% ctx = \(forcedTrimThreshold!)) on retry \(tokenLimitRetryCount)")
+                                }
+
+                                continue  /// Retry with tighter trim
                             } else {
                                 throw error  /// Re-throw non-rate-limit errors
                             }

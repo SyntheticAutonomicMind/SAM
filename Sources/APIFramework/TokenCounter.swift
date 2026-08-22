@@ -392,4 +392,163 @@ public actor TokenCounter {
         let utilizationPercent = Int((Double(currentTokens) / Double(budget)) * 100)
         return min(utilizationPercent, 100)
     }
+
+    // MARK: - Model Capabilities Resolution (ported from CLIO TokenEstimator)
+
+    /// Get max output tokens for a model by family.
+    /// Ported from SAMAPIServer.getMaxOutputTokens + CLIO Defaults.pm.
+    /// Marked nonisolated: pure function, no actor-isolated state accessed.
+    nonisolated public func getMaxOutputTokens(_ model: String) -> Int {
+        let modelLower = model.lowercased()
+
+        // Claude 4.5 / Opus 4.1
+        if modelLower.contains("claude-4.5") || modelLower.contains("claude-4-5") ||
+           modelLower.contains("claude-sonnet-4.5") || modelLower.contains("sonnet-4.5") ||
+           modelLower.contains("claude-opus-41") || modelLower.contains("opus-4.1") {
+            return 8192
+        }
+        // Claude 3.5 / Claude 4
+        if modelLower.contains("claude-3.5") || modelLower.contains("claude-3-5") ||
+           modelLower.contains("claude-sonnet-4") || modelLower.contains("claude-4") {
+            return 8192
+        }
+        // Other Claude
+        if modelLower.contains("claude") { return 4096 }
+        // GPT-4 Turbo / GPT-4.1
+        if modelLower.contains("gpt-4-turbo") || modelLower.contains("gpt-4.1") { return 4096 }
+        // GPT-4o
+        if modelLower.contains("gpt-4o") { return 16384 }
+        // GPT-4
+        if modelLower.contains("gpt-4") { return 8192 }
+        // GPT-3.5
+        if modelLower.contains("gpt-3.5") { return 4096 }
+        // MiniMax
+        if modelLower.contains("minimax-m3") { return 131072 }
+        if modelLower.contains("minimax-m2") || modelLower.contains("minimax-m2.1") ||
+           modelLower.contains("minimax-m2.5") || modelLower.contains("minimax-m2.7") {
+            return 8192
+        }
+        // Gemini
+        if modelLower.contains("gemini-2.5-pro") { return 8192 }
+        if modelLower.contains("gemini-2.5-flash") { return 16384 }
+        if modelLower.contains("gemini-1.5-pro") { return 8192 }
+        if modelLower.contains("gemini") { return 8192 }
+        // DeepSeek
+        if modelLower.contains("deepseek") { return 32768 }
+        // Grok
+        if modelLower.contains("grok") { return 131072 }
+        // Local llama.cpp
+        if modelLower.contains("local-llama") || modelLower.contains("gguf") { return 4096 }
+        // Default
+        return ContextBudget.defaultMaxOutputTokens
+    }
+
+    /// Resolve model capabilities from config + API responses + defaults.
+    /// Ported from CLIO's TokenEstimator.resolve_and_return_model_info.
+    ///
+    /// Resolution order:
+    /// 1. API-provided context size (cached via setContextSize)
+    /// 2. ModelConfigurationManager config-driven context window
+    /// 3. TokenCounter.getContextSize hardcoded fallback
+    public func resolveCapabilities(
+        model: String,
+        apiMaxInputTokens: Int? = nil
+    ) async -> ContextCapabilities {
+        let contextWindow: Int
+
+        if let apiMax = apiMaxInputTokens {
+            contextWindow = apiMax
+            logger.debug("Using API-provided context size for resolveCapabilities: \(apiMax) tokens for model=\(model)")
+        } else if let apiSize = apiContextSizes[model] {
+            contextWindow = apiSize
+        } else if let configWindow = ModelConfigurationManager.shared.getContextWindow(for: model) {
+            contextWindow = configWindow
+        } else {
+            contextWindow = getContextSize(modelName: model)
+        }
+
+        let maxOutputTokens = getMaxOutputTokens(model)
+
+        return ContextCapabilities(
+            contextWindow: contextWindow,
+            maxOutputTokens: maxOutputTokens,
+            supportsTools: true
+        )
+    }
+
+    /// Get the learned char/token ratio from DriftTracker.
+    /// Used by call sites to pass the correct ratio to MessageValidator.
+    /// Marked nonisolated because DriftTracker is thread-safe (DispatchQueue).
+    nonisolated public var learnedRatio: Double {
+        DriftTracker.shared.learnedRatio
+    }
+
+    /// Learn the char/token ratio from a real API response with `usage.prompt_tokens`.
+    /// Weighted 80% old / 20% new, clamped to [1.5, 4.0].
+    /// Also computes and stores the drift ratio.
+    /// Marked nonisolated: accesses only the thread-safe DriftTracker singleton.
+    nonisolated public func learnFromAPIResponse(
+        totalChars: Int,
+        actualPromptTokens: Int,
+        estimatedPromptTokens: Int
+    ) {
+        DriftTracker.shared.learnFromAPIResponse(
+            totalChars: totalChars,
+            actualPromptTokens: actualPromptTokens,
+            estimatedPromptTokens: estimatedPromptTokens
+        )
+        logger.debug("LEARNED_RATIO: Updated char/token ratio from API response: \(DriftTracker.shared.learnedRatio) (actual: \(actualPromptTokens), estimated: \(estimatedPromptTokens))")
+    }
+
+    /// Get the drift-aware trim threshold for this model, or nil if no usable drift data.
+    /// When non-nil, the caller should pass this as `trimThreshold` in TrimConfig.
+    public func getDriftAwareThreshold(model: String) async -> Int? {
+        let contextWindow = apiContextSizes[model] ??
+            (ModelConfigurationManager.shared.getContextWindow(for: model) ??
+             getContextSize(modelName: model))
+        return DriftTracker.shared.computeDriftAwareThreshold(contextWindow: contextWindow)
+    }
+
+    /// Record drift from a 400 token_limit_exceeded response.
+    /// Marked nonisolated: accesses only the thread-safe DriftTracker singleton.
+    nonisolated public func recordDrift(serverActualTokens: Int, estimatedTokens: Int) {
+        DriftTracker.shared.recordDrift(serverActualTokens: serverActualTokens, estimatedTokens: estimatedTokens)
+    }
+
+    /// Parse a 400 token limit error message and extract server-reported token count.
+    /// Marked nonisolated: pure function, no actor-isolated state accessed.
+    nonisolated public func parseTokenLimitError(errorMessage: String) -> (serverActual: Int, estimated: Int)? {
+        let lowerError = errorMessage.lowercased()
+
+        let patterns = [
+            "token_limit_exceeded",
+            "context_length_exceeded",
+            "max_tokens_exceeded",
+            "prompt is too long",
+            "exceeds the model's maximum",
+            "maximum context length",
+            "context length is"
+        ]
+
+        let isTokenLimit = patterns.contains { lowerError.contains($0) }
+        guard isTokenLimit else { return nil }
+
+        // Try to extract server-reported token count from error message.
+        // Format: "prompt contains X tokens, max Y" or similar.
+        let numberPattern = #"(\d+)[\s,]*tokens?"#
+        if let regex = try? NSRegularExpression(pattern: numberPattern, options: .caseInsensitive) {
+            let nsError = errorMessage as NSString
+            let matches = regex.matches(in: errorMessage, range: NSRange(location: 0, length: nsError.length))
+            for match in matches.reversed() where match.numberOfRanges >= 2 {
+                let tokenStr = nsError.substring(with: match.range(at: 1))
+                if let tokenCount = Int(tokenStr) {
+                    // Use the last number found (usually the actual token count, not max)
+                    return (serverActual: tokenCount, estimated: 0)
+                }
+            }
+        }
+        // Pattern matched but no token count found in the error message.
+        // Still return non-nil so the caller knows it's a token limit error.
+        return (serverActual: 0, estimated: 0)
+    }
 }

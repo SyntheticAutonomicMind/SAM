@@ -75,6 +75,15 @@ extension AgentOrchestrator {
 
         logger.debug("callLLM: System prompt length=\(systemPromptContent.count) chars, dynamic context=\(dynamicContext.count) chars")
 
+        /// Add the user-configured system prompt to messages.
+        /// CRITICAL FIX: Previously, the non-streaming path computed systemPromptContent
+        /// but never appended it - the LLM received no system prompt/guardrails.
+        /// The streaming path (callLLMStreaming) already does this correctly.
+        if !systemPromptContent.isEmpty {
+            messages.append(OpenAIChatMessage(role: "system", content: systemPromptContent))
+            logger.debug("callLLM: Added user-configured system prompt to messages (static prefix)")
+        }
+
 
         /// CLAUDE USERCONTEXT INJECTION (Claude-specific pinned-message context).
         appendClaudePinnedUserContext(
@@ -570,6 +579,19 @@ extension AgentOrchestrator {
             logger.debug("callLLM: Extracted statefulMarker from response: \(marker.prefix(20))...")
         }
 
+        /// DRIFT LEARNING: Learn from successful API response to calibrate the
+        /// char/token ratio heuristic. Uses server-reported usage.prompt_tokens
+        /// to compute the actual ratio, weighted 80/20, clamped [1.5, 4.0].
+        if response.usage.promptTokens > 0 {
+            let totalChars = messages.reduce(0) { $0 + ($1.content?.count ?? 0) }
+            let estimatedPromptTokens = Int(Double(totalChars) / tokenCounter.learnedRatio)
+            tokenCounter.learnFromAPIResponse(
+                totalChars: totalChars,
+                actualPromptTokens: response.usage.promptTokens,
+                estimatedPromptTokens: max(estimatedPromptTokens, 1)
+            )
+        }
+
         return LLMResponse(
             content: finalContent,
             finishReason: finishReason,
@@ -948,11 +970,9 @@ extension AgentOrchestrator {
             }
         }
 
-        /// Get model context limit for MessageValidator budget calculation
-        let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
-        /// CONTEXT MANAGEMENT: MessageValidator performs budget walk with atomic unit
-        /// grouping and compresses dropped context into a thread_summary. Shared helper
-        /// ensures both call paths apply the same logic.
+        // MessageValidator performs budget walk with atomic unit grouping and
+        // compresses dropped context into a thread_summary. Shared helper ensures
+        // both call paths apply the same logic.
         messages = await validateAndArchiveContext(
             messages: messages,
             conversationId: conversationId,

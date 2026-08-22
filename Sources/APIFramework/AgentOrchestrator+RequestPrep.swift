@@ -359,10 +359,32 @@ extension AgentOrchestrator {
         model: String,
         loggerPrefix: String
     ) async -> [OpenAIChatMessage] {
-        let modelContextLimit = await tokenCounter.getContextSize(modelName: model)
+        // Resolve model capabilities + learn ratio/drift for accurate budgeting.
+        // Ported from CLIO: uses compute_prompt_budget (ctx - output_reserve - buffer)
+        // with tool-calling output reserve optimization (caps at 8K when tools active).
+        let caps = await tokenCounter.resolveCapabilities(model: model)
+        let tokenRatio = tokenCounter.learnedRatio
+        // Use forcedTrimThreshold if set (reactive trim on 400), otherwise drift-aware.
+        let driftThreshold: Int?
+        if let forced = forcedTrimThreshold {
+            driftThreshold = forced
+        } else {
+            driftThreshold = await tokenCounter.getDriftAwareThreshold(model: model)
+        }
+
+        let config = TrimConfig(
+            caps: caps,
+            tools: nil,
+            toolTokens: 0,
+            tokenRatio: tokenRatio,
+            trimThreshold: driftThreshold
+        )
+
+        logger.debug("\(loggerPrefix): Budget = \(config.effectiveBudget) tokens (ctx=\(caps.contextWindow), maxOut=\(caps.maxOutputTokens), ratio=\(tokenRatio))")
+
         let truncationResult = MessageValidator.validateAndTruncateWithDropped(
             messages: messages,
-            maxPromptTokens: modelContextLimit
+            config: config
         )
 
         if truncationResult.wasTrimmed {
