@@ -293,14 +293,15 @@ struct EndpointManagementView: View {
     }
 
     /// Save provider-specific defaults for auto-population.
+    /// CRITICAL FIX: Use provider-type-specific defaults instead of hard-coded 2048/0.7/30
     private func saveProviderDefaults(for type: ProviderType, from config: ProviderConfiguration) {
         let key = "provider_defaults_\(type.rawValue)"
         let defaults: [String: Any] = [
             "baseURL": config.baseURL ?? "",
             "models": config.models,
-            "maxTokens": config.maxTokens ?? 2048,
-            "temperature": config.temperature ?? 0.7,
-            "timeoutSeconds": config.timeoutSeconds ?? 30
+            "maxTokens": config.maxTokens ?? type.defaultMaxOutputTokens,
+            "temperature": config.temperature ?? type.defaultTemperature,
+            "timeoutSeconds": config.timeoutSeconds ?? type.defaultTimeoutSeconds
         ]
         UserDefaults.standard.set(defaults, forKey: key)
     }
@@ -765,11 +766,16 @@ struct ProviderConfigurationSheet: View {
             retryCount = provider.retryCount.map(String.init) ?? "2"
         } else {
             /// Initialize with defaults for new provider.
-            /// Generate unique ID for new providers by adding timestamp suffix
+            /// CRITICAL FIX: Use provider-type-specific defaults instead of
+            /// hard-coded "2048"/"0.7"/"30" which were wrong for most providers.
             let timestamp = Int(Date().timeIntervalSince1970)
             providerId = "\(providerType.defaultIdentifier)-\(timestamp)"
             baseURL = providerType.defaultBaseURL ?? ""
             models = providerType.defaultModels.joined(separator: ", ")
+            maxTokens = String(providerType.defaultMaxOutputTokens)
+            temperature = String(providerType.defaultTemperature)
+            timeoutSeconds = String(providerType.defaultTimeoutSeconds)
+            retryCount = String(providerType.defaultRetryCount)
         }
     }
 
@@ -825,23 +831,24 @@ struct ProviderConfigurationSheet: View {
             models = newType.defaultModels.joined(separator: ", ")
         }
 
-        /// Update advanced settings with saved defaults.
+        /// Update advanced settings — CRITICAL FIX: use provider-type-specific defaults
+        /// instead of hard-coded "2048"/"0.7"/"30"/"2" which were wrong for most providers.
         if let savedMaxTokens = savedDefaults?["maxTokens"] as? Int {
             maxTokens = String(savedMaxTokens)
         } else {
-            maxTokens = "2048"
+            maxTokens = String(newType.defaultMaxOutputTokens)
         }
 
         if let savedTemperature = savedDefaults?["temperature"] as? Double {
             temperature = String(savedTemperature)
         } else {
-            temperature = "0.7"
+            temperature = String(newType.defaultTemperature)
         }
 
         if let savedTimeout = savedDefaults?["timeoutSeconds"] as? Int {
             timeoutSeconds = String(savedTimeout)
         } else {
-            timeoutSeconds = "30"
+            timeoutSeconds = String(newType.defaultTimeoutSeconds)
         }
 
         /// Clear API key if not required.
@@ -1060,10 +1067,11 @@ struct ProviderConfigurationSheet: View {
             isEnabled: isEnabled,
             baseURL: baseURL.isEmpty ? nil : baseURL,
             models: modelList,
-            maxTokens: Int(maxTokens) ?? 2048,
-            temperature: Double(temperature) ?? 0.7,
-            timeoutSeconds: Int(timeoutSeconds) ?? 30,
-            retryCount: Int(retryCount) ?? 2
+            // CRITICAL FIX: Use provider-type-specific defaults instead of hard-coded 2048/0.7/30/2
+            maxTokens: Int(maxTokens) ?? providerType.defaultMaxOutputTokens,
+            temperature: Double(temperature) ?? providerType.defaultTemperature,
+            timeoutSeconds: Int(timeoutSeconds) ?? providerType.defaultTimeoutSeconds,
+            retryCount: Int(retryCount) ?? providerType.defaultRetryCount
         )
 
         /// Store API key in Keychain (via computed property setter).

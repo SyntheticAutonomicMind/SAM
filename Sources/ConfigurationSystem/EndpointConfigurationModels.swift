@@ -293,6 +293,71 @@ public enum ProviderType: String, CaseIterable, Codable {
         }
     }
 
+    /// Default max output tokens (max generation length) for this provider type.
+    /// CRITICAL FIX: Previously the ProviderConfigurationSheet hard-coded "2048"
+    /// for all provider types, which was wrong for most providers. These values
+    /// are based on each model family's typical output token limits.
+    public var defaultMaxOutputTokens: Int {
+        switch self {
+        case .openai: return 8192      // GPT-4 family
+        case .githubCopilot: return 8192  // Supports GPT-4, Claude, etc.
+        case .deepseek: return 8192    // DeepSeek-Chat
+        case .gemini: return 8192      // Gemini 1.5
+        case .minimax: return 131072   // MiniMax M3 supports long output
+        case .openrouter: return 8192  // Varies by model, reasonable default
+        case .localLlama: return 32768 // Local models can produce long output
+        case .localMLX: return 32768   // Local models can produce long output
+        case .remoteLlama: return 32768 // Remote llama.cpp can produce long output
+        case .ollamaCloud: return 8192
+        case .zai: return 8192
+        case .zaiCoding: return 8192
+        case .custom: return 4096      // Conservative default for unknown providers
+        }
+    }
+
+    /// Default temperature for this provider type.
+    public var defaultTemperature: Double {
+        switch self {
+        case .openai: return 0.7
+        case .githubCopilot: return 0.2   // More deterministic for coding tasks
+        case .deepseek: return 0.7
+        case .gemini: return 0.7
+        case .minimax: return 0.7
+        case .openrouter: return 0.7
+        case .localLlama: return 0.7
+        case .localMLX: return 0.8       // MLX uses 0.8 per its balanced config
+        case .remoteLlama: return 0.7
+        case .ollamaCloud: return 0.7
+        case .zai: return 1.0            // Z.AI recommended temp
+        case .zaiCoding: return 1.0
+        case .custom: return 0.7
+        }
+    }
+
+    /// Default timeout in seconds for this provider type.
+    public var defaultTimeoutSeconds: Int {
+        switch self {
+        case .localLlama, .localMLX: return 300  // Local models can be slow
+        case .remoteLlama: return 300            // Remote servers may be slow
+        case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter: return 30
+        case .ollamaCloud: return 60
+        case .zai, .zaiCoding: return 30
+        case .custom: return 30
+        }
+    }
+
+    /// Default retry count for this provider type.
+    public var defaultRetryCount: Int {
+        switch self {
+        case .localLlama, .localMLX: return 3  // Local models may need retries
+        case .remoteLlama: return 3            // Remote servers may be flaky
+        case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter: return 2
+        case .ollamaCloud: return 3
+        case .zai, .zaiCoding: return 2
+        case .custom: return 2
+        }
+    }
+
     public var icon: String {
         switch self {
         case .openai:

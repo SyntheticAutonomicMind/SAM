@@ -287,6 +287,56 @@ final class ProviderConfigurationTests: XCTestCase {
         XCTAssertNil(ProviderType.custom.defaultBaseURL)
     }
 
+    // MARK: - Bug A: Provider-type-specific defaults (not hard-coded 2048)
+
+    func testRemoteLlamaDefaultMaxOutputTokens() {
+        // CRITICAL FIX: remoteLlama should default to 32768 max output tokens,
+        // NOT the hard-coded 2048 that was used for all provider types.
+        XCTAssertEqual(ProviderType.remoteLlama.defaultMaxOutputTokens, 32768,
+                      "remoteLlama should use 32768 default max tokens, not 2048")
+    }
+
+    func testOpenAIDefaultMaxOutputTokens() {
+        XCTAssertEqual(ProviderType.openai.defaultMaxOutputTokens, 8192)
+    }
+
+    func testGitHubCopilotDefaultMaxOutputTokens() {
+        // GitHub Copilot supports GPT-4, Claude, etc.
+        XCTAssertEqual(ProviderType.githubCopilot.defaultMaxOutputTokens, 8192)
+    }
+
+    func testGitHubCopilotDefaultTemperature() {
+        // CRITICAL FIX: GitHub Copilot should default to 0.2 temperature (deterministic for coding),
+        // NOT the hard-coded 0.7 that was used for all provider types.
+        XCTAssertEqual(ProviderType.githubCopilot.defaultTemperature, 0.2,
+                      "GitHub Copilot should use 0.2 default temperature for coding tasks")
+    }
+
+    func testLocalLlamaDefaultMaxOutputTokens() {
+        // Local models can produce long output
+        XCTAssertEqual(ProviderType.localLlama.defaultMaxOutputTokens, 32768)
+    }
+
+    func testCustomDefaultMaxOutputTokens() {
+        // Custom providers should have a conservative default
+        XCTAssertEqual(ProviderType.custom.defaultMaxOutputTokens, 4096)
+    }
+
+    func testAllProviderTypesHaveNonZeroDefaults() {
+        // CRITICAL FIX: Every provider type should have sensible defaults,
+        // not hard-coded 2048/0.7/30/2 which were wrong for most providers.
+        for type in ProviderType.allCases {
+            XCTAssertGreaterThan(type.defaultMaxOutputTokens, 0,
+                               "Provider type \(type) should have positive defaultMaxOutputTokens")
+            XCTAssertGreaterThan(type.defaultTemperature, 0,
+                               "Provider type \(type) should have positive defaultTemperature")
+            XCTAssertGreaterThan(type.defaultTimeoutSeconds, 0,
+                               "Provider type \(type) should have positive defaultTimeoutSeconds")
+            XCTAssertGreaterThan(type.defaultRetryCount, 0,
+                               "Provider type \(type) should have positive defaultRetryCount")
+        }
+    }
+
     // MARK: - Encoding/Decoding of ProviderConfiguration with nil baseURL
 
     func testProviderConfigurationEncodingNilBaseURL() throws {

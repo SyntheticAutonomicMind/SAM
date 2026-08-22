@@ -483,13 +483,16 @@ public class EndpointManager: ObservableObject {
     }
 
     /// Check if a model is a local model (MLX or GGUF) Returns true for local models, false for API-based models.
+    /// CRITICAL FIX: Previously used `.contains("LlamaProvider")` which incorrectly matched
+    /// `RemoteLlamaProvider` (a remote provider). Changed to exact type matching to
+    /// distinguish local LlamaProvider from RemoteLlamaProvider.
     public func isLocalModel(_ modelId: String) -> Bool {
         guard let providerType = getProviderTypeForModel(modelId) else {
             return false
         }
 
-        /// Check if it's an MLX or Llama provider.
-        return providerType.contains("MLXProvider") || providerType.contains("LlamaProvider")
+        /// Check if it's an MLX or Llama provider (exact match to avoid RemoteLlamaProvider false positive).
+        return providerType == "MLXProvider" || providerType == "LlamaProvider"
     }
 
     /// Load a local model into memory and return its capabilities.
@@ -1038,7 +1041,10 @@ public class EndpointManager: ObservableObject {
                 providerType: .remoteLlama,
                 isEnabled: false,
                 baseURL: nil,
-                models: []
+                models: [],
+                // CRITICAL FIX: Set provider-type-specific maxTokens default (was nil -> 2048 in UI)
+                maxTokens: ProviderType.remoteLlama.defaultMaxOutputTokens,
+                temperature: ProviderType.remoteLlama.defaultTemperature
             )
 
         case .ollamaCloud:
