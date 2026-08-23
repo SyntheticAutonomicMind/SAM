@@ -41,7 +41,23 @@ jobs:
       - name: Download Metal Toolchain
         run: |
           echo "Downloading Metal Toolchain for Xcode ${{ env.XCODE_VERSION }}..."
-          sudo xcodebuild -downloadComponent MetalToolchain || echo "Metal Toolchain already installed or download failed"
+          # Check if Metal Toolchain is already installed
+          if xcrun -sdk macosx --show-sdk-path 2>/dev/null | grep -q "MetalToolchain"; then
+            echo "Metal Toolchain already installed"
+          else
+            # Download with proper error handling - fail if download doesn't succeed
+            sudo xcodebuild -downloadComponent MetalToolchain
+            echo "Metal Toolchain downloaded successfully"
+          fi
+
+      - name: Verify Metal Toolchain
+        run: |
+          echo "Verifying Metal Toolchain availability..."
+          if ! xcrun --find metal; then
+            echo "ERROR: 'metal' compiler not found in toolchain"
+            exit 1
+          fi
+          echo "Metal Toolchain verified: $(xcrun --find metal)"
       
       - name: Extract version from tag
         id: version
