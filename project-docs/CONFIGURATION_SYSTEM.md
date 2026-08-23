@@ -4,9 +4,11 @@
 
 # Configuration System
 
-**Version:** 2.3  
-**Last Updated:** December 28, 2025  
+**Version:** 3.0  
+**Last Updated:** August 23, 2026  
 **Location:** `Sources/ConfigurationSystem/`
+
+---
 
 ## Overview
 
@@ -15,15 +17,16 @@ The Configuration System provides centralized management of all SAM settings, pr
 **Key Responsibilities:**
 - File-based configuration management (JSON)
 - Working directory configuration
-- System prompt management
+- System prompt management (component-based)
 - Application preferences
-- Endpoint configuration
+- Endpoint/API provider configuration
 - Performance monitoring
 - Build-time configuration
+- Model configuration and pricing
 
 **Design Philosophy:**
 - JSON-first (no UserDefaults except for simple flags)
-- Atomic writes with temp file → rename pattern
+- Atomic writes with temp file -> rename pattern
 - Organized directory structure in Application Support
 - Codable-based type safety
 - Centralized configuration access
@@ -59,7 +62,7 @@ The Configuration System provides centralized management of all SAM settings, pr
 
 **Key Features:**
 - Generic save/load for any Codable type
-- Atomic write operations (temp → rename)
+- Atomic write operations (temp -> rename)
 - Directory structure management
 - File existence checking
 - Configuration deletion
@@ -158,30 +161,47 @@ let workDir = config.buildPath(subdirectory: "My Conversation")
 
 ---
 
-### EndpointConfigurationManager
+### EndpointConfigurationManager / Provider Management
 
 **File:** `EndpointConfigurationManager.swift`  
 **Type:** Singleton (`@MainActor`)  
-**Purpose:** Manage API endpoint configurations
+**Purpose:** Manage API provider configurations (replaces legacy EndpointConfigurationManager)
 
 **Key Responsibilities:**
-- Load/save endpoint configurations
-- Validate endpoint settings
-- Provide default configurations
-- Handle multiple providers (OpenAI, Anthropic, GitHub, etc.)
+- Load/save provider configurations
+- Validate provider settings
+- Handle multiple provider types
+- Manage model lists per provider
+
+**Supported Providers (as of 2026-08):**
+- OpenAI
+- GitHub Copilot
+- DeepSeek
+- Google Gemini
+- MiniMax
+- OpenRouter
+- Ollama Cloud
+- Z.AI (Chat)
+- Z.AI (Coding)
+- Local MLX
+- Local CachyLLama
+- Local llama.cpp
+- Remote llama.cpp
+- Custom OpenAI-compatible
 
 **Configuration Structure:**
 
 ```swift
-public struct EndpointConfiguration: Codable, Identifiable {
+public struct ProviderConfiguration: Codable, Identifiable {
     public let id: UUID
     public var name: String
-    public var provider: String           // "openai", "anthropic", "github_copilot"
+    public var providerType: String           // "openai", "github_copilot", "gemini", etc.
     public var baseURL: String?
-    public var apiKey: String?
+    public var apiKey: String?                // Stored in Keychain, not here
     public var defaultModel: String?
     public var isActive: Bool
     public var customHeaders: [String: String]?
+    public var providerSpecificSettings: [String: Any]?  // Model-specific config
 }
 ```
 
@@ -189,68 +209,87 @@ public struct EndpointConfiguration: Codable, Identifiable {
 
 ```swift
 @MainActor
-public class EndpointConfigurationManager: ObservableObject {
-    public static let shared = EndpointConfigurationManager()
+public class ProviderConfigurationManager: ObservableObject {
+    public static let shared = ProviderConfigurationManager()
     
-    @Published public var endpoints: [EndpointConfiguration] = []
-    @Published public var activeEndpoint: EndpointConfiguration?
+    @Published public var providers: [ProviderConfiguration] = []
+    @Published public var activeProvider: ProviderConfiguration?
     
-    func loadEndpoints() async throws
-    func saveEndpoints() async throws
-    func addEndpoint(_ endpoint: EndpointConfiguration) async throws
-    func updateEndpoint(_ endpoint: EndpointConfiguration) async throws
-    func deleteEndpoint(id: UUID) async throws
-    func setActiveEndpoint(_ endpoint: EndpointConfiguration) async throws
+    func loadProviders() async throws
+    func saveProviders() async throws
+    func addProvider(_ provider: ProviderConfiguration) async throws
+    func updateProvider(_ provider: ProviderConfiguration) async throws
+    func deleteProvider(id: UUID) async throws
+    func setActiveProvider(_ provider: ProviderConfiguration) async throws
 }
 ```
 
 ---
 
-### SystemPromptConfiguration
+### SystemPromptConfiguration (Component-Based)
 
 **File:** `SystemPromptConfiguration.swift`  
-**Purpose:** Define system prompt structure and build SAM's comprehensive system prompt
+**Purpose:** Define system prompt structure using modular components
 
-**Prompt Structure:**
+**Prompt Architecture (v25+):**
+
+SAM's system prompt is built from **ordered components**. Each component is a self-contained module that can be enabled/disabled independently.
+
+**Built-in Profiles:**
+1. **SAM Default** (UUID: `00000000-0000-0000-0000-000000000001`) - Full featured
+2. **SAM Minimal** (UUID: `00000000-0000-0000-0000-000000000004`) - Concise version
+
+**Component Filters:**
+- **Always Included (Core):** "SAM Core Identity", "Core Identity & Operating Modes", "Response Guidelines"
+- **Conditional:** "Workflow Mode" (only when workflow mode enabled)
+- **Filtered Out:** "Dynamic Iterations" (always excluded)
+- **Tools Disabled Filter:** "Tool Usage", "Direct Response Guidance", "Tool Disclosure Policy", "Tools" (when toolsEnabled=false)
+
+**Component Order (SAM Default v25):**
+
+| Order | Component | Description |
+|-------|-----------|-------------|
+| 1 | SAM Core Identity | WHO SAM is (helpful, accurate, approachable agent) |
+| 2 | Current Date Context | Hallucination prevention |
+| 3 | User Autonomy | User controls session, time, attention, scope |
+| 4 | Scope Honesty | All scope items get equal rigor |
+| 5 | Tool-Backed Claims | Every specific claim must be verified |
+| 6 | Agent Identity & Completion Criteria | "YOU ARE AN AGENT" framing |
+| 7 | Response Guidelines | Quality standards, formatting, style |
+| 8 | Tool Usage | Principles for tool execution, math verification |
+| 9 | Operational Modes | Conversational vs Task Execution |
+| 10 | Execution Standards | Error recovery, completion criteria |
+| 11 | Communication Protocol | Style guide |
+| 12 | Context & Memory | Memory operations, document import |
+| 13 | Data Visualization | Mermaid diagram rendering rules |
+| 14 | Workflow Mode | Mode-specific guidance (conditional) |
+| 15 | Dynamic Iterations | Iteration monitoring (filtered out) |
+| 16 | Two-Phase Workflow | Pattern recommendation |
+| 17 | Sequential Lists | Pattern guidance |
+
+**Structure:**
 
 ```swift
-public struct SystemPromptConfiguration: Codable, Identifiable {
+public struct SystemPromptComponent: Codable, Identifiable {
     public let id: UUID
     public var name: String
     public var content: String
-    public var priority: Int              // Determines load order
-    public var isActive: Bool
-    public var category: String?          // e.g., "personality", "tools", "safety"
-    public var variables: [String: String]?  // Template variables
+    public var order: Int
+    public var isCore: Bool              // Always included
+    public var filters: [ComponentFilter] // Conditional inclusion
+}
+
+public struct SystemPromptProfile: Codable, Identifiable {
+    public let id: UUID
+    public var name: String
+    public var componentIds: [UUID]      // Ordered component references
+    public var version: Int
 }
 ```
 
-**Manager Implementations:**
+**Manager:** `SystemPromptManager` (singleton) handles profile selection, component resolution, and prompt assembly.
 
-Two implementations exist:
-1. **SimpleSystemPromptManager** - Basic string-based prompts
-2. **EnhancedSystemPromptManager** - Component-based system with priority
-
-**Key System Prompt Sections (December 2025 Updates):**
-
-**Multi-Step Task Guidance:**
-The system prompt includes todo workflow instructions:
-- "MUST use the todo_operations tool to plan and track progress"
-- "ALWAYS mark exactly ONE todo 'in-progress' before starting work"
-- "ALWAYS mark a todo 'completed' immediately after finishing"
-- "Update todos frequently - the user sees your progress through the todo list"
-
-**Workflow Continuation Protocol:**
-The `buildWorkflowContinuationProtocol()` function provides mandatory status signal guidance:
-- Status signals are MANDATORY for any multi-step task (with OR without todo list)
-- Format: `{"status": "continue"}` for ongoing, `{"status": "complete"}` for done
-- Prevents agents from ending without explicit continuation or completion
-
-**XML Tag Structure (for Claude/Anthropic models):**
-When `usesXMLTags` is true, the system prompt uses proper layering:
-- `<instructions>` - Main system prompt
-- `<context>` - Todo state and user query
-- Model-specific adjustments for optimal behavior
+**Version:** Current `currentVersion = 25` (as of 2026-07-29)
 
 ---
 
@@ -268,18 +307,33 @@ public struct ApplicationPreferences: Codable {
     public var theme: Theme
     public var fontSize: Double
     public var showLineNumbers: Bool
+    public var autoSaveConversations: Bool
     
     // Voice Preferences
     public var voiceEnabled: Bool
     public var voiceLanguage: String
+    public var wakeWord: String
+    public var ttsVoice: String
+    public var ttsSpeed: Double
+    public var relayModeEnabled: Bool
+    public var relayModeTimeout: TimeInterval
     
     // Model Preferences
     public var defaultModel: String?
     public var temperatureDefault: Double
     
-    // Performance
+    // Update Channel
+    public var updateChannel: UpdateChannel  // stable, development
+    
+    // API Server
+    public var apiServerEnabled: Bool
+    public var apiServerPort: Int
+    public var apiServerCORS: Bool
+    
+    // Advanced
     public var enablePerformanceMonitoring: Bool
     public var maxMemoryUsage: Int64
+    public var logLevel: LogLevel
 }
 ```
 
@@ -292,11 +346,12 @@ public struct ApplicationPreferences: Codable {
 
 **Monitored Metrics:**
 - CPU usage (user + system time)
-- Memory usage (resident size)
+- Memory usage (resident size - RSS)
 - GPU utilization (via Metal)
 - Model load times
 - Inference latency
 - Token generation rate
+- Cost tracking per conversation
 
 **Public Interface:**
 
@@ -306,11 +361,13 @@ public class PerformanceMonitor: ObservableObject {
     @Published public var cpuUsage: Double = 0.0
     @Published public var memoryUsage: Int64 = 0
     @Published public var gpuUtilization: Double = 0.0
+    @Published public var costTracking: [UUID: Double] = [:]  // Per-conversation cost
     
     func startMonitoring()
     func stopMonitoring()
     func recordModelLoad(modelId: String, duration: TimeInterval)
     func recordInference(duration: TimeInterval, tokens: Int)
+    func recordAPICost(conversationId: UUID, cost: Double)
 }
 ```
 
@@ -320,7 +377,7 @@ public class PerformanceMonitor: ObservableObject {
 
 **File:** `ModelConfiguration.swift`  
 **Type:** Singleton  
-**Purpose:** Centralized model metadata and configuration system
+**Purpose:** Centralized model metadata, pricing, and configuration system
 
 **Key Features:**
 - **Model Metadata**: Context windows, prompt formats, provider defaults
@@ -332,7 +389,7 @@ public class PerformanceMonitor: ObservableObject {
 
 ```swift
 public struct ModelConfig: Codable {
-    public let provider: String                    // "anthropic", "openai", etc.
+    public let provider: String                    // "gemini", "openai", etc.
     public let promptFormat: PromptFormat          // System prompt, XML tags
     public let providerDefaults: ModelProviderDefaults  // Delta mode, streaming
     public let supportsStatefulMarker: Bool        // For conversational state
@@ -386,6 +443,22 @@ Sources/ConfigurationSystem/Resources/model_config.json
       "requires_alternating_messages": false,
       "cost_per_million_input_tokens": 1.25,
       "cost_per_million_output_tokens": 10.0
+    },
+    "minimax-m3": {
+      "provider": "minimax",
+      "prompt_format": {
+        "system_prompt_key": "system",
+        "use_xml_tags": false
+      },
+      "provider_defaults": {
+        "delta_mode": "cumulative",
+        "supports_streaming": true
+      },
+      "supports_stateful_marker": false,
+      "context_window": 131072,
+      "requires_alternating_messages": false,
+      "cost_per_million_input_tokens": 0.50,
+      "cost_per_million_output_tokens": 2.0
     }
   }
 }
@@ -410,47 +483,20 @@ public class ModelConfigurationManager {
 
 **Pricing Display Format:**
 
-The cost display uses a smart formatting system:
 - **Free models**: `"0x"` (zero multiplier)
 - **Paid models**: `"$0.10/$0.40"` (input/output per million tokens)
-- **Unknown**: `nil` or `"-"`
+- **Unknown**: `"-"`
 
 Cost formatting rules:
 - Whole numbers: `$2/$12` (no decimals)
 - Decimals < 1: `$0.10/$0.40` (two decimals)
 - Decimals ≥ 1: `$1.25/$10.0` (one decimal)
 
-**Supported Models:**
-
-The system includes configurations for:
-- **Gemini Models**: gemini-2.5-pro, gemini-2.5-flash, gemini-2.0-flash, etc.
-- **Claude Models**: claude-3-opus, claude-3-sonnet, claude-3-haiku
-- **OpenAI Models**: gpt-4, gpt-3.5-turbo, etc.
-- **Other Providers**: DeepSeek, GitHub Copilot models
-
-**Usage Example:**
-
-```swift
-// Get cost for display in UI
-let manager = ModelConfigurationManager.shared
-if let cost = manager.getCostDisplayString(for: "gemini-2.5-pro") {
-    print("Cost: \(cost)/1M")  // "Cost: $1.25/$10.0/1M"
-}
-
-// Get context window
-if let contextSize = manager.getContextWindow(for: "gemini-2.5-flash") {
-    print("Context: \(contextSize) tokens")  // "Context: 1048576 tokens"
-}
-```
-
 **Fallback Strategy:**
 
-When querying model configurations:
 1. Try exact model name match (e.g., `"gemini/gemini-2.5-pro"`)
 2. Try base model name (strip provider prefix: `"gemini-2.5-pro"`)
 3. Return `nil` if not found
-
-This allows flexible lookups regardless of provider prefix.
 
 ---
 
@@ -458,8 +504,6 @@ This allows flexible lookups regardless of provider prefix.
 
 **File:** `BuildConfiguration.swift`  
 **Purpose:** Compile-time configuration flags
-
-**Configuration Flags:**
 
 ```swift
 public enum BuildConfiguration {
@@ -474,32 +518,25 @@ public enum BuildConfiguration {
     public static var isRelease: Bool {
         !isDebug
     }
-    
-
 }
 ```
 
 ---
 
-### Other Components
+### Additional Components
 
-#### AIInstructionsScanner
-**Purpose:** Scan for `.github/copilot-instructions.md` and similar AI context files
+| Component | Purpose |
+|-----------|---------|
+| **AIInstructionsScanner** | Scan for `.github/copilot-instructions.md` and similar |
+| **LocationManager** | Geographic location for weather/location-aware features |
+| **PersonalityManager / PersonalityTrait** | AI personality configurations |
+| **PromptComponentLibrary** | Reusable prompt components for system prompt composition |
+| **ToolResultStorage** | Store and retrieve tool execution results |
+| **TodoReminderInjector** | Inject todo list context into conversation messages |
 
-#### LocationManager
-**Purpose:** Manage geographic location data (if needed for location-aware features)
+---
 
-#### PersonalityManager & PersonalityTrait
-**Purpose:** Manage AI personality configurations and behavioral traits
-
-#### PromptComponentLibrary
-**Purpose:** Reusable prompt components for system prompt composition
-
-#### ToolResultStorage
-**Purpose:** Store and retrieve tool execution results
-
-#### TodoReminderInjector
-**Purpose:** Inject todo list context into conversation messages
+### TodoReminderInjector
 
 **File:** `TodoReminderInjector.swift`
 
@@ -513,7 +550,6 @@ Provides todo list state injection for multi-step workflows, ensuring agents mai
 
 **Injection Trigger:**
 ```swift
-// Returns true when todos exist for this conversation
 func shouldInjectReminder(
     conversationId: UUID?,
     effectiveScopeId: UUID?,
@@ -540,9 +576,6 @@ func shouldInjectReminder(
 </todo_context>
 ```
 
-**Usage in System Prompt:**
-The reminder is injected as context immediately before the user's message for maximum salience.
-
 ---
 
 ## Configuration Patterns
@@ -567,183 +600,11 @@ try ConfigurationManager.shared.save(
 )
 ```
 
-### Checking Existence
-
-```swift
-if ConfigurationManager.shared.exists(
-    "my-config.json",
-    in: ConfigurationManager.shared.preferencesDirectory
-) {
-    // Load existing config
-} else {
-    // Create default config
-}
-```
-
----
-
-## Error Handling
-
-```swift
-public enum ConfigurationError: LocalizedError {
-    case saveFailure(String)
-    case loadFailure(String)
-    case fileNotFound(String)
-    case deleteFailure(String)
-    case invalidConfiguration(String)
-    
-    public var errorDescription: String? {
-        switch self {
-        case .saveFailure(let message):
-            return "Failed to save configuration: \(message)"
-        case .loadFailure(let message):
-            return "Failed to load configuration: \(message)"
-        case .fileNotFound(let path):
-            return "Configuration file not found: \(path)"
-        case .deleteFailure(let message):
-            return "Failed to delete configuration: \(message)"
-        case .invalidConfiguration(let message):
-            return "Invalid configuration: \(message)"
-        }
-    }
-}
-```
-
----
-
-## Data Flow
-
-```mermaid
-flowchart TB
-    App[Application] -->|Load Config| CM[ConfigurationManager]
-    CM -->|Read JSON| FS[File System]
-    FS -->|Return Data| CM
-    CM -->|Decode| Config[Configuration Object]
-    Config -->|Update| App
-    
-    App -->|Save Config| CM
-    CM -->|Encode| JSON[JSON Data]
-    CM -->|Write Temp| Temp[temp.json.tmp]
-    CM -->|Atomic Rename| Final[config.json]
-    
-    WDC[WorkingDirectoryConfiguration] -->|Build Path| Path[Conversation Path]
-    Path -->|Create Directory| FS
-    
-    style CM fill:#4A90E2
-    style Config fill:#7ED321
-    style Temp fill:#F5A623
-    style Final fill:#50E3C2
-```
-
----
-
-## Integration with Other Subsystems
-
-### ConversationEngine
-- Loads/saves conversation JSON files via ConfigurationManager
-- Uses WorkingDirectoryConfiguration for conversation directories
-- Stores conversation backups in `backups/` directory
-
-### APIFramework
-- Uses EndpointConfigurationManager for provider settings
-- Stores API keys and endpoint configurations
-- Validates configurations before API calls
-
-### MCPFramework
-- Stores tool configurations
-- Manages MCP server connection settings
-- Persists tool execution results via ToolResultStorage
-
----
-
-## Best Practices
-
-### 1. Always Use ConfigurationManager
-```swift
-// ❌ WRONG: Direct UserDefaults
-UserDefaults.standard.set(value, forKey: "my-setting")
-
-// ✅ RIGHT: ConfigurationManager with Codable type
-try ConfigurationManager.shared.save(
-    settings,
-    to: "settings.json",
-    in: ConfigurationManager.shared.preferencesDirectory
-)
-```
-
-### 2. Define Codable Structs
-```swift
-// Define type-safe configuration
-struct MySettings: Codable {
-    var option1: String
-    var option2: Int
-}
-```
-
-### 3. Handle Errors Gracefully
-```swift
-do {
-    let config = try ConfigurationManager.shared.load(...)
-} catch ConfigurationError.fileNotFound {
-    // Use defaults
-    let config = MySettings.default
-} catch {
-    logger.error("Failed to load config: \(error)")
-}
-```
-
-### 4. Validate After Loading
-```swift
-let config = try ConfigurationManager.shared.load(...)
-guard config.isValid() else {
-    throw ConfigurationError.invalidConfiguration("Missing required fields")
-}
-```
-
----
-
-## File Locations
-
-### Application Support
-```
-~/Library/Application Support/SAM/
-├── conversations/          # Managed by ConversationManager
-├── system-prompts/        # System prompt templates
-├── endpoints/             # API endpoint configs
-├── preferences/           # App preferences
-└── backups/              # Automatic backups
-```
-
-### User Defaults (Minimal Use)
-Only for simple boolean flags:
-- `voiceListeningMode`
-- `voiceSpeakingMode`
-- `workingDirectory.basePath`
-
-**Everything else uses JSON files via ConfigurationManager**
-
----
-
-## Future Enhancements
-
-### Planned
-- Configuration versioning and migration
-- Configuration validation schemas
-- Import/export of configurations
-- Configuration profiles (dev, prod, test)
-- Encrypted configuration storage for sensitive data
-
-### Under Consideration
-- Remote configuration sync
-- Configuration templates
-- Configuration change notifications
-- Configuration history/versioning
-
 ---
 
 ## See Also
 
-- [API Framework](API_FRAMEWORK.md) - Uses endpoint configurations
-- [Conversation Engine](CONVERSATION_ENGINE.md) - Uses conversation storage
-- [Shared Topics](SHARED_DATA.md) - Shared topic models
-- [Working Directory Flow](../flows/working_directory_setup.md)
+- [System Prompt Evolution](SYSTEM_PROMPT_EVOLUTION.md) - Component history
+- [API Framework](API_FRAMEWORK.md) - Provider integration
+- [Agent Orchestrator](AGENT_ORCHESTRATOR.md) - Workflow configuration
+- [Conversation Engine](CONVERSATION_ENGINE.md) - Conversation settings

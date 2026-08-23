@@ -4,20 +4,9 @@
 
 # ConversationEngine Subsystem
 
-**Version:** 2.3  
-**Last Updated:** December 5, 2025
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Key Components](#key-components)
-- [Message Flow](#message-flow)
-- [State Management](#state-management)
-- [Memory System](#memory-system)
-- [Public Interfaces](#public-interfaces)
-- [Error Handling](#error-handling)
-- [Integration Points](#integration-points)
+**Version:** 3.0  
+**Last Updated:** August 23, 2026  
+**Location:** `Sources/ConversationEngine/`
 
 ---
 
@@ -31,9 +20,10 @@ The **ConversationEngine** subsystem is SAM's conversation management and persis
 2. **Message Routing**: Single source of truth via MessageBus pattern
 3. **State Management**: Runtime state tracking (processing, tool execution)
 4. **Persistence**: Debounced writes to prevent excessive disk I/O
-5. **Memory Integration**: Per-conversation memory databases
+5. **Memory Integration**: Per-conversation memory databases + LTM + KV store
 6. **Session Management**: Safe async operations with session validation
 7. **Working Directory**: Per-conversation file system sandboxing
+8. **Context Management**: Unified context window building with userContext for KV cache stability
 
 ### Key Design Principles
 
@@ -42,6 +32,8 @@ The **ConversationEngine** subsystem is SAM's conversation management and persis
 - **Delta Sync**: Update individual messages without copying arrays
 - **Memory Isolation**: Per-conversation databases prevent data leakage
 - **Session Safety**: Prevent data corruption during conversation switches
+- **KV Cache Stability**: Dynamic content (date, conversation ID) moved to userContext
+- **Unified Context Manager**: Single context builder replacing YaRN
 
 ---
 
@@ -55,6 +47,9 @@ classDiagram
         +memoryManager: MemoryManager
         +vectorRAGService: VectorRAGService
         +mcpManager: MCPManager
+        +contextManager: UnifiedContextManager
+        +ltmManager: LTMManager
+        +kvStore: SessionKVStore
         +createNewConversation()
         +selectConversation(conversation)
         +deleteConversation(conversation) Bool
@@ -123,9 +118,31 @@ classDiagram
         -getDatabaseConnection(conversationId) Connection
     }
 
+    class UnifiedContextManager {
+        +buildContext(conversation, model, settings) async -> ContextWindow
+        +buildUserContext(conversation, model) -> UserContext
+    }
+
+    class LTMManager {
+        +addDiscovery(fact, confidence) async
+        +addSolution(error, solution) async
+        +addPattern(pattern) async
+        +search(query) async -> [LTMEntry]
+    }
+
+    class SessionKVStore {
+        +store(key, content) async
+        +retrieve(key) async -> String?
+        +search(query) async -> [KVEntry]
+        +listKeys() async -> [String]
+    }
+
     ConversationManager --> ConversationModel : manages
     ConversationManager --> MemoryManager : uses
     ConversationManager --> ConversationStateManager : uses
+    ConversationManager --> UnifiedContextManager : uses
+    ConversationManager --> LTMManager : uses
+    ConversationManager --> SessionKVStore : uses
     ConversationModel --> ConversationMessageBus : owns
     ConversationStateManager --> ConversationSession : manages
 ```
@@ -138,15 +155,16 @@ classDiagram
 
 **Location:** `Sources/ConversationEngine/ConversationManager.swift`
 
-**Purpose:** Central coordinator for conversation lifecycle and integration with memory/MCP systems.
+**Purpose:** Central coordinator for conversation lifecycle and integration with memory/MCP/context systems.
 
 **Key Responsibilities:**
 - Create, load, save, delete conversations
 - Manage active conversation selection
-- Coordinate memory system initialization
+- Coordinate memory system initialization (MemoryManager, LTMManager, KVStore)
 - Integrate MCP tools for agent capabilities
 - Handle working directory management
 - Debounced persistence to reduce disk I/O
+- Unified context management for AI requests
 
 **Public Methods:**
 
@@ -174,15 +192,20 @@ func createSession(for conversationId: UUID) -> ConversationSession?
 
 /// Execute MCP tool
 func executeMCPTool(name: String, parameters: [String: Any], isExternalAPICall: Bool, isUserInitiated: Bool) async -> MCPToolResult?
+
+/// Build context for AI request (unified context manager)
+func buildContext(for conversation: ConversationModel, model: String, settings: ConversationSettings) async -> ContextWindow
 ```
 
 **Integration Subsystems:**
 
-- **MemoryManager**: Per-conversation SQLite databases
+- **MemoryManager**: Per-conversation SQLite databases (conversation memory)
 - **VectorRAGService**: Document import and semantic search
-- **YaRNContextProcessor**: Context window management
+- **UnifiedContextManager**: Single context window builder (replaces YaRN)
+- **LTMManager**: Long-term memory (discoveries, solutions, patterns)
+- **SessionKVStore**: Persistent key-value store across sessions
 - **MCPManager**: Tool registry and execution
-- **ContextArchiveManager**: Long-term memory storage
+- **ContextArchiveManager**: Context archival for long conversations
 
 ---
 
@@ -207,7 +230,7 @@ let id: UUID
 /// MessageBus instance (single source of truth)
 var messageBus: ConversationMessageBus?
 
-/// Conversation settings
+/// Conversation settings (includes UI panel states)
 @Published var settings: ConversationSettings
 
 /// Working directory for file operations
@@ -220,23 +243,11 @@ var workingDirectory: String
 @Published var isProcessing: Bool
 ```
 
-**MessageBus Integration:**
-
-```swift
-/// Initialize MessageBus (call after creation)
-func initializeMessageBus(conversationManager: ConversationManager)
-
-/// Sync messages from MessageBus (called by MessageBus on changes)
-func syncMessagesFromMessageBus()
-
-/// Delta sync - update single message (performance optimization)
-func updateMessage(at index: Int, with message: EnhancedMessage)
-```
-
-**Conversation Settings:**
+**Per-Conversation UI Settings (added 2026-06):**
 
 ```swift
 struct ConversationSettings {
+    // Model settings
     var selectedModel: String
     var temperature: Double
     var topP: Double
@@ -253,13 +264,32 @@ struct ConversationSettings {
     var sharedTopicId: UUID?
     var sharedTopicName: String?
     
+    // UI Panel States (persist per conversation)
+    var showingToolCards: Bool = true
+    var showingPerformance: Bool = false
+    var showingCustomInstructions: Bool = false
+    var showingMemoryPanel: Bool = false
+    var showingVectorRAGPanel: Bool = false
+    
     // Image generation parameters
     var sdNegativePrompt: String
     var sdSteps: Int
     var sdGuidanceScale: Int
     var sdScheduler: String
-    // ... etc
 }
+```
+
+**MessageBus Integration:**
+
+```swift
+/// Initialize MessageBus (call after creation)
+func initializeMessageBus(conversationManager: ConversationManager)
+
+/// Sync messages from MessageBus (called by MessageBus on changes)
+func syncMessagesFromMessageBus()
+
+/// Delta sync - update single message (performance optimization)
+func updateMessage(at index: Int, with message: EnhancedMessage)
 ```
 
 ---
@@ -271,11 +301,12 @@ struct ConversationSettings {
 **Purpose:** Single source of truth for conversation messages with debounced persistence.
 
 **Key Features:**
-- Fast lookup cache (UUID → index)
+- Fast lookup cache (UUID -> index)
 - Debounced saves (500ms delay during streaming)
 - Delta sync (update individual messages)
 - Automatic importance scoring
 - Auto-pin first 3 user messages
+- Think tag handling (strip` from streaming)
 
 **Public API:**
 
@@ -324,39 +355,15 @@ func getToolMessages() -> [EnhancedMessage]
 func getMessage(id: UUID) -> EnhancedMessage?
 ```
 
-**Importance Scoring Algorithm:**
+**Think Tag Handling (added 2026-07):**
 
 ```swift
-private func calculateMessageImportance(text: String, isUser: Bool) -> Double {
-    // Base: user=0.7, assistant=0.5
-    var importance = isUser ? 0.7 : 0.5
-    
-    // Questions from assistant: 0.85
-    if !isUser && (contains "?" || contains "what"/"which"/"how") {
-        importance = max(importance, 0.85)
-    }
-    
-    // Constraints/requirements: 0.9
-    if contains "must"/"require"/"budget"/"limit" {
-        importance = max(importance, 0.9)
-    }
-    
-    // Decisions/confirmations: 0.85
-    if contains "yes"/"proceed"/"approved" && text.count < 200 {
-        importance = max(importance, 0.85)
-    }
-    
-    // Small talk: 0.3
-    if text.count < 50 && is trivial phrase {
-        importance = 0.3
-    }
-    
-    // Long user messages: +0.1 boost
-    if isUser && text.count > 300 {
-        importance = min(importance + 0.1, 1.0)
-    }
-    
-    return importance
+/// Strips `` markers from content for empty bubble detection
+func effectiveMessageContent(_ content: String) -> String {
+    content
+        .replacingOccurrences(of: "```", with: "")
+        .replacingOccurrences(of: "```", with: "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 ```
 
@@ -451,7 +458,7 @@ func invalidateSession(for conversationId: UUID)
 
 ---
 
-### MemoryManager
+### MemoryManager (Conversation Memory)
 
 **Location:** `Sources/ConversationEngine/MemoryManager.swift`
 
@@ -512,16 +519,215 @@ func deleteConversationDatabase(conversationId: UUID) throws
 func getMemoryStatistics(for conversationId: UUID) async throws -> MemoryStatistics
 ```
 
-**Similarity Algorithm:**
+---
 
+### UnifiedContextManager (New: 2026-04)
+
+**Location:** `Sources/ConversationEngine/UnifiedContextManager.swift`
+
+**Purpose:** Single context window builder replacing YaRNContextProcessor. Moves dynamic content to userContext for KV cache stability.
+
+**Key Responsibilities:**
+- Build context window from multiple sources
+- Separate static (system prompt, tools) from dynamic (date, conversation ID) content
+- Manage context window sizing based on model limits
+- Handle context archival retrieval
+
+**Context Window Structure:**
+
+```swift
+struct ContextWindow {
+    let systemPrompt: String           // Static: identity, tools, guidelines
+    let userContext: UserContext       // Dynamic: date, location, conversation ID
+    let conversationHistory: [ChatMessage]  // Filtered & trimmed messages
+    let ragResults: [RAGChunk]         // Vector RAG document chunks
+    let memoryResults: [MemoryEntry]   // Conversation memory + LTM
+    let toolResults: [ToolResult]      // Recent tool execution outputs
+    let totalTokens: Int               // Estimated token count
+}
 ```
-1. Generate embeddings (Apple NLEmbedding or hash-based fallback)
-2. Calculate cosine similarity: dot(v1, v2) / (||v1|| * ||v2||)
-3. Calculate keyword boost: Jaccard similarity * 0.5
-4. Final score = cosine similarity + keyword boost
-5. Filter by threshold (default: 0.3)
-6. Sort by score descending
-7. Return top N results
+
+**UserContext (for KV Cache Stability):**
+
+```swift
+struct UserContext {
+    let currentDate: String            // ISO8601 date
+    let currentTime: String            // HH:mm timezone
+    let conversationId: UUID           // For multi-conversation tracking
+    let workingDirectory: String       // For file operations
+    let userLocation: Location?        // For weather, local search
+    let pinnedMessages: [ChatMessage]  // Always included
+}
+```
+
+**Why userContext Separation?**
+- KV cache in local models (MLX, CachyLLama) benefits from static prefix
+- Dynamic content (date, conversation ID) changes every request
+- Separating them allows KV cache reuse for static portions
+- Reduces recomputation and improves inference speed
+
+**Public Methods:**
+
+```swift
+/// Build complete context window for AI request
+func buildContext(
+    for conversation: ConversationModel,
+    model: String,
+    settings: ConversationSettings
+) async -> ContextWindow
+
+/// Build userContext (dynamic portion)
+func buildUserContext(
+    for conversation: ConversationModel,
+    model: String
+) -> UserContext
+
+/// Get context window size for model
+func getContextWindowSize(for model: String) -> Int
+```
+
+---
+
+### LTMManager (New: 2026-03)
+
+**Location:** `Sources/ConversationEngine/LTMManager.swift`
+
+**Purpose:** Long-term memory management across conversations and sessions.
+
+**Entry Types:**
+
+```swift
+enum LTMEntryType: String, Codable {
+    case discovery    // Key insights and facts
+    case solution     // Problem-solving approaches
+    case pattern      // Recurring patterns and best practices
+}
+
+struct LTMEntry: Codable {
+    let id: UUID
+    let type: LTMEntryType
+    let content: String
+    let confidence: Double           // 0.0-1.0
+    let corroborationCount: Int      // Independent confirmations
+    let trustTier: TrustTier         // UNVERIFIED, TRUSTED
+    let createdAt: Date
+    let lastAccessed: Date
+    let accessCount: Int
+    let tags: [String]
+    let sourceConversationId: UUID?
+}
+
+enum TrustTier: String, Codable {
+    case unverified
+    case trusted
+}
+```
+
+**Public Methods:**
+
+```swift
+/// Add a discovery to LTM
+func addDiscovery(fact: String, confidence: Double = 0.8, tags: [String] = [], sourceConversationId: UUID? = nil) async throws -> UUID
+
+/// Add a solution to LTM
+func addSolution(error: String, solution: String, examples: [String] = [], confidence: Double = 0.8) async throws -> UUID
+
+/// Add a pattern to LTM
+func addPattern(pattern: String, confidence: Double = 0.8, examples: [String] = []) async throws -> UUID
+
+/// Add corroboration to existing entry (promotes to TRUSTED at 2+)
+func addCorroboration(searchText: String) async throws
+
+/// Search LTM entries
+func search(query: String, limit: Int = 10, minConfidence: Double = 0.3) async throws -> [LTMEntry]
+
+/// Get LTM statistics
+func getStatistics() async throws -> LTMStatistics
+
+/// Prune old entries (configurable retention)
+func prune(maxAgeDays: Int = 90, maxDiscoveries: Int = 50, maxSolutions: Int = 50, maxPatterns: Int = 30) async throws -> PruneResult
+```
+
+**Auto-Pruning:**
+- Default: 90 days, max 50 discoveries/solutions/patterns
+- Runs on app launch and periodically
+- Preserves TRUSTED entries
+
+---
+
+### SessionKVStore (New: 2026-03)
+
+**Location:** `Sources/ConversationEngine/SessionKVStore.swift`
+
+**Purpose:** Persistent key-value store replacing in-memory KV storage. Survives app restarts.
+
+**Schema:**
+
+```sql
+CREATE TABLE kv_store (
+    key TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    access_count INTEGER DEFAULT 0,
+    last_accessed INTEGER NOT NULL,
+    expires_at INTEGER  -- Optional TTL
+);
+```
+
+**Public Methods:**
+
+```swift
+/// Store key-value pair
+func store(key: String, content: String, ttl: TimeInterval? = nil) async throws
+
+/// Retrieve value by key
+func retrieve(key: String) async throws -> String?
+
+/// Search keys by pattern
+func search(query: String, limit: Int = 20) async throws -> [KVEntry]
+
+/// List all keys
+func listKeys() async throws -> [String]
+
+/// Delete key
+func delete(key: String) async throws
+
+/// Get statistics
+func getStatistics() async throws -> KVStatistics
+```
+
+**Integration:**
+- Used by `memory_operations` tool (store, retrieve, search_kv, list_keys, delete_key)
+- Accessible across all conversations (global scope)
+- Thread-safe with actor isolation
+
+---
+
+### MessageValidator (New: 2026-03)
+
+**Location:** `Sources/ConversationEngine/MessageValidator.swift`
+
+**Purpose:** Validates and sanitizes messages before persistence and API transmission.
+
+**Validation Rules:**
+- **Size limits**: Max message size (configurable, default 1MB)
+- **Encoding**: Ensure valid UTF-8
+- **Structure**: Required fields present for message type
+- **Tool calls**: Valid tool call structure (name, arguments, ID)
+- **Alternation**: Enforce user/assistant alternation for API compatibility
+
+**Public Methods:**
+
+```swift
+/// Validate message before storage
+func validate(_ message: EnhancedMessage) throws -> ValidationResult
+
+/// Sanitize message for API transmission
+func sanitizeForAPI(_ message: EnhancedMessage) -> ChatMessage
+
+/// Check conversation message alternation
+func checkAlternation(_ messages: [EnhancedMessage]) -> [AlternationError]
 ```
 
 ---
@@ -535,317 +741,155 @@ sequenceDiagram
     participant UI
     participant CM as ConversationModel
     participant MB as MessageBus
-    participant FS as FileSystem
-
-    UI->>CM: User types message
-    CM->>MB: addUserMessage(content)
+    participant UC as UnifiedContextManager
+    participant LTM as LTMManager
+    participant KV as SessionKVStore
     
-    activate MB
-    MB->>MB: Create EnhancedMessage
-    MB->>MB: Calculate importance score
-    MB->>MB: Auto-pin if first 3 user messages
-    MB->>MB: Append to messages array
-    MB->>MB: Update messageCache[id] = index
-    MB->>MB: scheduleSave() - start 500ms timer
-    MB->>CM: syncMessagesFromMessageBus()
-    deactivate MB
-    
-    activate CM
-    CM->>CM: messages = messageBus.messages
-    CM->>CM: objectWillChange.send()
-    CM->>UI: SwiftUI re-renders
-    deactivate CM
-    
-    Note over MB: 500ms later (debounce)
-    
-    activate MB
-    MB->>MB: saveMessages()
-    MB->>CM: Update conversation.messages
-    MB->>CM: conversationManager.saveConversations()
-    deactivate MB
-    
-    activate FS
-    CM->>FS: Write to conversation.json
-    FS-->>CM: Success
-    deactivate FS
+    UI->>CM: User sends message
+    CM->>MB: addUserMessage()
+    MB->>MB: Calculate importance, cache, schedule save
+    MB->>CM: notifyConversationOfChanges()
+    CM->>CM: syncMessagesFromMessageBus()
+    CM->>UC: Build context for AI request
+    UC->>MB: Get messages for agent
+    UC->>LTM: Search relevant LTM entries
+    UC->>KV: Retrieve relevant KV entries
+    UC->>UC: Combine into ContextWindow
+    UC->>API: Send to provider
+    API->>UC: Response (streaming or complete)
+    UC->>MB: addAssistantMessage() / updateStreamingMessage()
+    MB->>CM: notifyConversationOfChanges()
+    CM->>MB: scheduleSave()
 ```
 
-### Streaming Message Update Flow
-
-```mermaid
-sequenceDiagram
-    participant AO as AgentOrchestrator
-    participant MB as MessageBus
-    participant CM as ConversationModel
-    participant UI as ChatWidget
-
-    AO->>MB: addAssistantMessage(id, "", isStreaming=true)
-    MB->>CM: syncMessagesFromMessageBus()
-    CM->>UI: Display empty message
-
-    loop For each chunk
-        AO->>MB: updateStreamingMessage(id, newContent)
-        
-        activate MB
-        MB->>MB: Find message in cache
-        MB->>MB: Create updated message (preserve metadata)
-        MB->>MB: messages[index] = updated
-        MB->>MB: scheduleSave()
-        MB->>CM: notifyConversationOfMessageUpdate(id, index, message)
-        deactivate MB
-        
-        activate CM
-        CM->>CM: updateMessage(at: index, with: message)
-        CM->>CM: objectWillChange.send()
-        CM->>UI: SwiftUI re-renders (delta update)
-        deactivate CM
-    end
-
-    AO->>MB: completeStreamingMessage(id, metrics)
-    MB->>MB: Set isStreaming=false
-    MB->>MB: Recalculate importance
-    MB->>MB: Trim whitespace
-    MB->>CM: notifyConversationOfMessageUpdate()
-    CM->>UI: Final update
-```
-
----
-
-## State Management
-
-### Runtime State vs Persisted State
-
-**Persisted State** (saved to disk):
-- Conversation metadata (id, title, created, updated)
-- Messages array
-- Conversation settings
-- Working directory path
-- Pin status
-- Shared topic configuration
-
-**Runtime State** (NOT persisted):
-- isProcessing flag
-- activeTools set
-- modelLoaded status
-- terminalSessionId
-- activeSessionId
-- Streaming state
-
-### Conversation Switching Flow
+### Context Building Flow
 
 ```mermaid
 flowchart TD
-    A[User Clicks Conversation] --> B[ConversationManager.selectConversation]
-    B --> C[Set activeConversation]
-    C --> D[Save active conversation ID]
-    
-    D --> E{Has Active Operations?}
-    E -->|Yes| F[ConversationStateManager.invalidateSession]
-    E -->|No| G[Update UI]
-    
-    F --> H[Mark current session invalid]
-    H --> I[Async operations check session.canProceed]
-    I --> J{canProceed?}
-    J -->|false| K[Stop operation gracefully]
-    J -->|true| L[Continue operation]
-    
-    K --> G
-    L --> G
-    
-    G --> M[ChatWidget re-renders]
-    M --> N[Load messages from MessageBus]
-    N --> O[Display conversation]
-    
-    style F fill:#FFB6C1
-    style K fill:#FF6B6B
+    A[AI Request] --> B[UnifiedContextManager.buildContext]
+    B --> C[Build UserContext - dynamic]
+    B --> D[Get System Prompt - static]
+    B --> E[Get Conversation History]
+    B --> F[Query Vector RAG]
+    B --> G[Query Conversation Memory]
+    B --> H[Query LTM]
+    B --> I[Query KV Store]
+    B --> J[Get Recent Tool Results]
+    C --> K[Combine into ContextWindow]
+    D --> K
+    E --> K
+    F --> K
+    G --> K
+    H --> K
+    I --> K
+    J --> K
+    K --> L[Apply Token Budget]
+    L --> M[Trim if needed]
+    M --> N[Return ContextWindow]
 ```
 
 ---
 
-## Memory System
-
-### Memory Isolation Architecture
-
-Each conversation has its own SQLite database to prevent data leakage:
+## Memory System Architecture
 
 ```
-~/Library/Application Support/SAM/conversations/
-├── {conversation-1-uuid}/
-│   └── memory.db
-├── {conversation-2-uuid}/
-│   └── memory.db
-└── {conversation-3-uuid}/
-    └── memory.db
-```
-
-**Benefits:**
-- Data isolation: Conversation A cannot access conversation B's memories
-- Clean deletion: Delete conversation → delete its database
-- Scalability: No global database lock contention
-- Privacy: Sensitive data stays compartmentalized
-
-### Memory Retrieval Flow
-
-```mermaid
-sequenceDiagram
-    participant AO as AgentOrchestrator
-    participant MM as MemoryManager
-    participant DB as SQLite Database
-
-    AO->>MM: retrieveRelevantMemories(query, conversationId)
-    
-    activate MM
-    MM->>MM: generateEmbedding(query)
-    MM->>MM: getDatabaseConnection(conversationId)
-    MM->>DB: SELECT * FROM conversation_memories WHERE conversation_id = ?
-    
-    loop For Each Memory
-        DB-->>MM: Memory row
-        MM->>MM: calculateCosineSimilarity(queryEmbedding, memoryEmbedding)
-        MM->>MM: calculateKeywordBoost(query, content)
-        MM->>MM: finalScore = similarity + boost
-        
-        alt finalScore >= threshold (0.3)
-            MM->>MM: Add to results
-            MM->>DB: UPDATE access_count, last_accessed
-        end
-    end
-    
-    MM->>MM: Sort results by finalScore DESC
-    MM->>MM: Limit to top 10
-    MM-->>AO: [ConversationMemory]
-    deactivate MM
+┌─────────────────────────────────────────────────────────────┐
+│                    ConversationEngine                        │
+├─────────────────────────────────────────────────────────────┤
+│  Per-Conversation Memory (MemoryManager)                    │
+│  ├── conversation_memories table                             │
+│  ├── Vector embeddings (256-dim)                            │
+│  ├── Importance scoring                                     │
+│  └── Access tracking                                        │
+├─────────────────────────────────────────────────────────────┤
+│  Vector RAG (VectorRAGService)                              │
+│  ├── Document chunks + embeddings                           │
+│  ├── Per-conversation vector.db                             │
+│  └── Similarity search (Apple NaturalLanguage)             │
+├─────────────────────────────────────────────────────────────┤
+│  Long-Term Memory (LTMManager)                              │
+│  ├── Global ltm.db                                          │
+│  ├── Discovery / Solution / Pattern entries                 │
+│  ├── Trust tiers (UNVERIFIED -> TRUSTED)                    │
+│  ├── Corroboration system                                   │
+│  └── Auto-pruning (90 days, 50 per type)                   │
+├─────────────────────────────────────────────────────────────┤
+│  Session KV Store (SessionKVStore)                          │
+│  ├── Global kv_store.db                                     │
+│  ├── Persistent key-value pairs                             │
+│  ├── Optional TTL support                                   │
+│  └── Thread-safe actor isolation                            │
+├─────────────────────────────────────────────────────────────┤
+│  Context Archive (ContextArchiveManager)                    │
+│  ├── Archived chunks with summaries                         │
+│  ├── Key topics + timestamps + importance                   │
+│  └── Semantic retrieval                                     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Public Interfaces
+## Data Storage
 
-### ConversationManager Public API
+### Where Is Conversation Data Stored?
 
-```swift
-@MainActor
-public class ConversationManager: ObservableObject {
-    // Published state
-    @Published public var conversations: [ConversationModel]
-    @Published public var activeConversation: ConversationModel?
-    @Published public var isReady: Bool
-    @Published public var memoryInitialized: Bool
-    @Published public var mcpInitialized: Bool
-    
-    // Subsystems
-    public let memoryManager: MemoryManager
-    public let vectorRAGService: VectorRAGService
-    public let yarnContextProcessor: YaRNContextProcessor
-    public let mcpManager: MCPManager
-    public let stateManager: ConversationStateManager
-    
-    // Lifecycle
-    public func createNewConversation()
-    public func selectConversation(_ conversation: ConversationModel)
-    public func deleteConversation(_ conversation: ConversationModel, deleteWorkingDirectory: Bool = true)
-    public func renameConversation(_ conversation: ConversationModel, to newName: String)
-    public func duplicateConversation(_ conversation: ConversationModel) -> ConversationModel
-    
-    // Persistence
-    public func saveConversations()
-    public func saveConversationsImmediately()
-    public func cleanup()  // Called on app termination
-    
-    // Session management
-    public func createSession(for conversationId: UUID) -> ConversationSession?
-    public func getSession(for conversationId: UUID) -> ConversationSession?
-    public func invalidateSession(for conversationId: UUID)
-}
+```
+~/Library/Application Support/SAM/
+├── ltm.db                        # Long-term memory database
+├── kv_store.db                   # Session key-value store
+├── conversations/
+    └── {UUID}/
+        ├── conversation.json     # Messages and metadata
+        ├── tasks.json            # Agent todo lists
+        ├── memory.db             # Per-conversation memory + embeddings
+        ├── vector.db             # Vector RAG embeddings
+        ├── archive.db            # Context archive chunks
+        └── .vectorrag/           # Vector RAG index files
 ```
 
-### ConversationMessageBus Public API
+### Storage Size Estimates
 
-```swift
-@MainActor
-public class ConversationMessageBus: ObservableObject {
-    @Published public private(set) var messages: [EnhancedMessage]
-    
-    // Message creation
-    public func addUserMessage(content: String, timestamp: Date = Date(), isPinned: Bool? = nil) -> UUID
-    public func addAssistantMessage(content: String, contentParts: [MessageContentPart]? = nil, timestamp: Date = Date(), isStreaming: Bool = false, isPinned: Bool = false) -> UUID
-    public func addToolMessage(name: String, status: ToolStatus, details: String? = nil, ...) -> UUID
-    
-    // Message updates
-    public func updateStreamingMessage(id: UUID, content: String)
-    public func completeStreamingMessage(id: UUID, performanceMetrics: MessagePerformanceMetrics? = nil, processingTime: TimeInterval? = nil)
-    public func updateMessage(id: UUID, content: String? = nil, contentParts: [MessageContentPart]? = nil, status: ToolStatus? = nil, duration: TimeInterval? = nil)
-    
-    // Message management
-    public func removeMessage(id: UUID)
-    public func togglePin(id: UUID)
-    public func updateImportance(id: UUID, importance: Double)
-    
-    // Message retrieval
-    public func getMessagesForAPI(limit: Int? = nil) -> [ChatMessage]
-    public func getMessagesForAgent() -> [EnhancedMessage]
-    public func getMessage(id: UUID) -> EnhancedMessage?
-}
-```
+| Component | Typical Size |
+|-----------|--------------|
+| Conversation JSON | 10KB - 1MB |
+| Vector database (with docs) | 1MB - 50MB |
+| LTM database | < 10MB |
+| KV Store | < 1MB |
+| Context Archive | 1MB - 10MB |
+| **Total per active user** | 50MB - 500MB |
 
 ---
 
 ## Error Handling
 
-### Conversation Errors
+### SessionError
 
 ```swift
-public enum ConversationError: LocalizedError {
-    case conversationNotFound(UUID)
-    case invalidWorkingDirectory(String)
-    case persistenceFailed(String)
-    case sessionInvalid
-    
-    public var errorDescription: String? {
-        switch self {
-        case .conversationNotFound(let id):
-            return "Conversation \(id) not found"
-        case .invalidWorkingDirectory(let path):
-            return "Invalid working directory: \(path)"
-        case .persistenceFailed(let reason):
-            return "Failed to save conversation: \(reason)"
-        case .sessionInvalid:
-            return "Session invalidated (conversation switched or deleted)"
-        }
-    }
-}
-```
-
-### Session Errors
-
-```swift
-public enum SessionError: Error, LocalizedError {
-    case invalidated
-    case conversationDeleted
+enum SessionError: Error {
     case conversationNotFound
-    
-    public var errorDescription: String? {
-        switch self {
-        case .invalidated:
-            return "Session has been invalidated (conversation switched or deleted)"
-        case .conversationDeleted:
-            return "Conversation was deleted during operation"
-        case .conversationNotFound:
-            return "Conversation not found"
-        }
-    }
+    case invalidated
+    case expired
 }
 ```
 
-### Memory Errors
+### MemoryError
 
 ```swift
-public enum MemoryError: Error, LocalizedError {
-    case databaseNotInitialized
-    case initializationFailed(String)
-    case storageFailed(String)
-    case retrievalFailed(String)
-    case operationFailed(String)
+enum MemoryError: Error {
+    case databaseError(String)
+    case embeddingFailed
+    case invalidQuery
+    case notFound
+}
+```
+
+### ContextError
+
+```swift
+enum ContextError: Error {
+    case tokenBudgetExceeded
+    case modelNotFound
+    case buildFailed(String)
 }
 ```
 
@@ -853,93 +897,32 @@ public enum MemoryError: Error, LocalizedError {
 
 ## Integration Points
 
-### APIFramework Integration
-
-ConversationEngine provides conversation context to APIFramework:
-
-```swift
-// API server creates/finds conversation
-let conversation = conversationManager.activeConversation
-
-// API server adds messages via MessageBus
-conversation.messageBus?.addUserMessage(content: userInput)
-
-// API server updates streaming responses
-conversation.messageBus?.updateStreamingMessage(id: messageId, content: chunk)
-```
-
-### MCPFramework Integration
-
-ConversationEngine owns MCPManager and provides execution context:
-
-```swift
-// Execute MCP tool
-let result = await conversationManager.executeMCPTool(
-    name: "file_read",
-    parameters: ["path": "/path/to/file"],
-    isExternalAPICall: true,
-    isUserInitiated: false
-)
-
-// Access conversation's working directory
-let workingDir = conversationManager.getEffectiveWorkingDirectory(for: conversation)
-```
-
-### UI Integration
-
-SwiftUI views observe conversation state:
-
-```swift
-struct ChatWidget: View {
-    @ObservedObject var conversation: ConversationModel
-    @EnvironmentObject var conversationManager: ConversationManager
-    
-    var body: some View {
-        ScrollView {
-            ForEach(conversation.messageBus?.messages ?? []) { message in
-                MessageView(message: message)
-            }
-        }
-        .onAppear {
-            conversation.initializeMessageBus(conversationManager: conversationManager)
-        }
-    }
-}
-```
+| Subsystem | Integration |
+|-----------|-------------|
+| **APIFramework** | ConversationManager.buildContext() called by AgentOrchestrator |
+| **MCPFramework** | ConversationManager.executeMCPTool() for tool execution |
+| **MLXIntegration** | Model context window sizes from ModelConfigurationManager |
+| **ConfigurationSystem** | Settings, system prompts, model configs |
+| **SharedData** | Shared Topics via conversation settings |
+| **VoiceFramework** | Voice messages routed through MessageBus |
 
 ---
 
-## File Locations
+## Version History
 
-### Source Files
-```
-Sources/ConversationEngine/
-├── ConversationManager.swift          # Central coordinator
-├── ConversationModel.swift            # Runtime model
-├── ConversationMessageBus.swift       # Message management
-├── ConversationSession.swift          # Session safety
-├── ConversationStateManager.swift     # Runtime state
-├── MemoryManager.swift                # Memory system
-└── ...
-```
-
-### Storage Locations
-```
-~/Library/Application Support/SAM/conversations/
-├── active-conversation.json           # Currently active conversation ID
-├── {conversation-uuid}/
-│   ├── conversation.json              # Conversation data
-│   ├── tasks.json                     # Agent todo list
-│   └── memory.db                      # SQLite memory database
-```
+| Version | Date | Changes |
+|---------|------|---------|
+| 3.0 | 2026-08-23 | Added UnifiedContextManager, LTMManager, SessionKVStore, MessageValidator; replaced YaRN; userContext separation |
+| 2.3 | 2025-12-05 | Initial documentation |
+| 2.0 | 2025-11-15 | MessageBus pattern, debounced persistence |
+| 1.0 | 2025-10-01 | Initial implementation |
 
 ---
 
-##
----
+## See Also
 
-## Additional Resources
-
-- [Message Flow Documentation](../MESSAGE_FLOW_AND_TOOLS_REDESIGN.md)
-- [Memory System Specification](../MEMORY_AND_INTELLIGENCE_SPECIFICATION.md)
-- [Session Management Guide](../DEVELOPER_GUIDE.md#session-management)
+- [Memory and Intelligence Specification](MEMORY_AND_INTELLIGENCE_SPECIFICATION.md) - Detailed memory architecture
+- [Messaging Architecture](MESSAGING_ARCHITECTURE.md) - Message flow details
+- [Shared Data](SHARED_DATA.md) - Shared Topics implementation
+- [System Prompt Evolution](SYSTEM_PROMPT_EVOLUTION.md) - Prompt component history
+- [Agent Orchestrator](AGENT_ORCHESTRATOR.md) - Context usage in workflows

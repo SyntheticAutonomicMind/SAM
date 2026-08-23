@@ -4,13 +4,15 @@
 
 # MLX Integration
 
-**Version:** 2.2  
-**Last Updated:** December 1, 2025  
+**Version:** 3.0  
+**Last Updated:** August 23, 2026  
 **Location:** `Sources/MLXIntegration/`
+
+---
 
 ## Overview
 
-The MLX Integration provides a Swift wrapper around Apple's MLX framework for efficient on-device machine learning inference. It manages MLX model lifecycle, caching, performance monitoring, and Metal GPU acceleration for local language models.
+The MLX Integration provides a Swift wrapper around Apple's MLX framework for efficient on-device machine learning inference. It manages MLX model lifecycle, caching, performance monitoring, and Metal GPU acceleration for local language models. Additionally, SAM now supports **CachyLLama** - a high-performance fork of llama.cpp optimized for Apple Silicon.
 
 **Key Responsibilities:**
 - MLX framework Swift bindings
@@ -20,6 +22,7 @@ The MLX Integration provides a Swift wrapper around Apple's MLX framework for ef
 - Memory management for large models
 - Model loading and unloading
 - Inference request handling
+- **CachyLLama integration** - optimized GGUF inference on Apple Silicon
 
 **Design Philosophy:**
 - Minimal overhead Swift wrapper over MLX
@@ -74,10 +77,20 @@ classDiagram
         +contextLength: Int
     }
     
+    class CachyLLamaManager {
+        -logger: Logger
+        -serverProcess: Process?
+        -modelCache: CachyLLamaModelCache
+        +initialize() async throws
+        +loadModel(path: URL) async throws
+        +generateText(prompt: String, options: GenerationOptions) async throws
+        +getServerStatus() -> ServerStatus
+    }
+    
     AppleMLXAdapter --> MLXModelCache
     AppleMLXAdapter --> MLXPerformanceMonitor
     AppleMLXAdapter --> MLXConfig
-    MLXModelCache --> LoadedModel
+    CachyLLamaManager --> CachyLLamaModelCache
 ```
 
 ---
@@ -149,30 +162,6 @@ public struct GenerationOptions {
     public var repetitionPenalty: Double = 1.0
     public var seed: Int? = nil
 }
-```
-
-**Usage Example:**
-
-```swift
-let adapter = AppleMLXAdapter.shared
-try await adapter.initialize()
-
-// Load model
-let model = try await adapter.loadModel(
-    path: URL(fileURLWithPath: "~/Library/Caches/sam/models/mlx-model"),
-    modelId: "llama-3-8b"
-)
-
-// Generate text
-let options = GenerationOptions(temperature: 0.7, maxTokens: 256)
-let response = try await adapter.generateText(
-    modelId: "llama-3-8b",
-    prompt: "Hello, how are you?",
-    options: options
-)
-
-// Clean up when done
-await adapter.unloadModel(modelId: "llama-3-8b")
 ```
 
 ---
@@ -347,6 +336,172 @@ public enum MLXDeviceType {
 
 ---
 
+### CachyLLamaManager (New: 2026-06)
+
+**File:** `CachyLLamaManager.swift`  
+**Type:** Main facade for CachyLLama operations  
+**Purpose:** Primary interface for CachyLLama server management and inference
+
+**Key Features:**
+- Runs CachyLLama as a child process (llama-server)
+- High-performance GGUF inference with Metal optimizations
+- Advanced sampler chain (top-K, min-P, temperature, top-P, typical-P)
+- Improved KV cache handling
+- Automatic server lifecycle management
+
+**Public Interface:**
+
+```swift
+@MainActor
+public class CachyLLamaManager {
+    public static let shared = CachyLLamaManager()
+    
+    private let logger = Logger(label: "com.sam.cachyllama")
+    private let serverManager = CachyLLamaServerManager()
+    private let modelCache = CachyLLamaModelCache()
+    private var config: CachyLLamaConfig
+    
+    // Initialization
+    public func initialize() async throws
+    
+    // Model Management
+    public func loadModel(path: URL, modelId: String) async throws -> CachyLLamaModel
+    public func unloadModel(modelId: String) async
+    public func isModelLoaded(modelId: String) -> Bool
+    public func getModelInfo(modelId: String) -> CachyLLamaModelInfo?
+    
+    // Inference
+    public func generateText(
+        modelId: String,
+        prompt: String,
+        options: CachyLLamaGenerationOptions
+    ) async throws -> String
+    
+    public func generateTextStreaming(
+        modelId: String,
+        prompt: String,
+        options: CachyLLamaGenerationOptions,
+        onToken: @escaping (String) -> Void
+    ) async throws
+    
+    // Server Management
+    public func getServerStatus() -> CachyLLamaServerStatus
+    public func restartServer() async throws
+    
+    // Configuration
+    public func updateConfig(_ config: CachyLLamaConfig)
+    public func getConfig() -> CachyLLamaConfig
+}
+```
+
+**CachyLLama Generation Options:**
+
+```swift
+public struct CachyLLamaGenerationOptions {
+    // Standard parameters
+    public var temperature: Double = 0.7
+    public var topP: Double = 0.9
+    public var maxTokens: Int = 512
+    public var stopSequences: [String] = []
+    public var repetitionPenalty: Double = 1.1
+    
+    // CachyLLama-specific sampler chain
+    public var topK: Int = 40
+    public var minP: Double = 0.05
+    public var typicalP: Double = 1.0
+    public var tfsZ: Double = 1.0
+    
+    // Performance
+    public var seed: Int? = nil
+    public var nPredict: Int = -1
+    public var nKeep: Int = 0
+}
+```
+
+**Server Status:**
+
+```swift
+public struct CachyLLamaServerStatus {
+    public let isRunning: Bool
+    public let modelId: String?
+    public let port: Int
+    public let pid: Int32?
+    public let memoryUsage: Int64
+    public let uptime: TimeInterval
+}
+```
+
+**Usage Example:**
+
+```swift
+let manager = CachyLLamaManager.shared
+try await manager.initialize()
+
+// Load model (GGUF format from Hugging Face)
+let model = try await manager.loadModel(
+    path: URL(fileURLWithPath: "~/Library/Caches/sam/models/cachy-model.gguf"),
+    modelId: "llama-3.1-8b-instruct"
+)
+
+// Generate text with CachyLLama sampler chain
+let options = CachyLLamaGenerationOptions(
+    temperature: 0.7,
+    topK: 40,
+    minP: 0.05
+)
+let response = try await manager.generateText(
+    modelId: "llama-3.1-8b-instruct",
+    prompt: "Hello, how are you?",
+    options: options
+)
+
+// Clean up
+await manager.unloadModel(modelId: "llama-3.1-8b-instruct")
+```
+
+---
+
+### CachyLLamaServerManager
+
+**File:** `CachyLLamaServerManager.swift`  
+**Purpose:** Manages the llama-server child process lifecycle
+
+**Key Features:**
+- Automatic server startup on first request
+- Health monitoring and restart on failure
+- Port management (default: 8081)
+- Graceful shutdown on app termination
+
+**Server Configuration:**
+
+```swift
+public struct CachyLLamaServerConfig {
+    public var host: String = "127.0.0.1"
+    public var port: Int = 8081
+    public var modelPath: String?
+    public var nCtx: Int = 8192
+    public var nGpuLayers: Int = -1  // All layers on GPU
+    public var flashAttn: Bool = true
+    public var threads: Int = 0  // Auto
+    public var batchSize: Int = 512
+    public var ubatchSize: Int = 512
+}
+```
+
+---
+
+### CachyLLamaModelCache
+
+**File:** `CachyLLamaModelCache.swift`  
+**Purpose:** Manage downloaded CachyLLama models (GGUF files)
+
+**Cache Location:**
+```
+~/Library/Caches/sam-rewritten/models/cachy/
+```
+
+---
+
 ## Metal GPU Integration
 
 ### Device Selection
@@ -417,7 +572,7 @@ flowchart TB
 
 ---
 
-## Inference Flow
+## Inference Flow (MLX)
 
 ```mermaid
 sequenceDiagram
@@ -457,6 +612,41 @@ sequenceDiagram
 
 ---
 
+## Inference Flow (CachyLLama)
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Manager as CachyLLamaManager
+    participant Server as llama-server
+    participant Metal as Metal GPU
+    
+    Client->>Manager: generateText(modelId, prompt, options)
+    Manager->>Server: Check if running
+    
+    alt Server Running
+        Server-->>Manager: Ready
+    else Server Stopped
+        Manager->>Server: Start llama-server
+        Server-->>Manager: Server ready
+    end
+    
+    Manager->>Server: POST /completion (prompt + options)
+    Server->>Metal: Run inference (Metal kernels)
+    Metal-->>Server: Tokens
+    
+    loop Streaming
+        Server-->>Manager: Token (SSE)
+        Manager-->>Client: Stream token
+    end
+    
+    Server-->>Manager: Completion
+    Manager->>Manager: Record metrics
+    Manager-->>Client: Final response
+```
+
+---
+
 ## Memory Management
 
 ### Lazy Loading
@@ -487,7 +677,7 @@ func checkMemoryPressure() async {
 
 ## Error Handling
 
-### Common Errors
+### Common Errors (MLX)
 
 ```swift
 public enum MLXError: LocalizedError {
@@ -520,6 +710,22 @@ public enum MLXError: LocalizedError {
 }
 ```
 
+### Common Errors (CachyLLama)
+
+```swift
+public enum CachyLLamaError: LocalizedError {
+    case serverNotRunning
+    case serverStartFailed(String)
+    case modelNotLoaded(String)
+    case inferenceFailed(String)
+    case invalidSamplerConfig(String)
+    case outOfMemory
+    case metalNotAvailable
+    
+    public var errorDescription: String? { ... }
+}
+```
+
 ### Recovery Strategies
 
 ```swift
@@ -548,19 +754,41 @@ func loadModelWithRetry(path: URL, modelId: String, retries: Int = 3) async thro
 ## Integration with Other Subsystems
 
 ### APIFramework
-- LocalModelManager calls MLXAdapter to load local models
-- Model registry includes MLX model metadata
-- Inference requests routed through MLXAdapter
+- `MLXProvider` calls `AppleMLXAdapter` for MLX models
+- `CachyLLamaProvider` calls `CachyLLamaManager` for CachyLLama models
+- Model registry includes both MLX and CachyLLama model metadata
+- Inference requests routed through appropriate manager
 
 ### ConversationEngine
-- AgentOrchestrator requests inference via MLXAdapter
+- AgentOrchestrator requests inference via providers
 - Streaming responses sent via MessageBus
 - Performance metrics tracked per conversation
 
 ### ConfigurationSystem
-- MLXConfig stored in ApplicationPreferences
+- MLXConfig / CachyLLamaConfig stored in ApplicationPreferences
 - Model paths configured in WorkingDirectoryConfiguration
 - Cache settings managed by ConfigurationManager
+
+---
+
+## Performance Comparison
+
+### Typical Metrics (Apple Silicon M1/M2/M3/M4)
+
+| Model Size | Engine | Load Time | Tokens/sec (7B) | Memory (7B) | Best For |
+|------------|--------|-----------|-----------------|-------------|----------|
+| 7B Q4_K_M | MLX | ~3-5s | 25-35 | 5-6 GB | Quality, compatibility |
+| 7B Q4_K_M | CachyLLama | ~2-4s | 35-50 | 4-5 GB | Speed, efficiency |
+| 13B Q4_K_M | MLX | ~5-8s | 15-25 | 9-11 GB | Quality |
+| 13B Q4_K_M | CachyLLama | ~4-6s | 20-35 | 8-10 GB | Speed |
+| 70B Q4_K_M | MLX | ~15-25s | 3-8 | 40-48 GB | Maximum capability |
+| 70B Q4_K_M | CachyLLama | ~12-20s | 5-12 | 35-42 GB | Large model speed |
+
+**Notes:**
+- CachyLLama typically 20-40% faster than MLX on Apple Silicon
+- MLX has slightly better quality on some benchmarks
+- Both use Metal GPU acceleration
+- Memory usage includes KV cache and model weights
 
 ---
 
@@ -568,13 +796,16 @@ func loadModelWithRetry(path: URL, modelId: String, retries: Int = 3) async thro
 
 ### 1. Initialize Once
 ```swift
-// ❌ WRONG: Multiple initializations
+// [FAIL] WRONG: Multiple initializations
 let adapter1 = AppleMLXAdapter()
 let adapter2 = AppleMLXAdapter()
 
-// ✅ RIGHT: Use singleton
+// [OK] RIGHT: Use singleton
 let adapter = AppleMLXAdapter.shared
 try await adapter.initialize()
+
+let cachy = CachyLLamaManager.shared
+try await cachy.initialize()
 ```
 
 ### 2. Unload Models When Done
@@ -584,6 +815,7 @@ let response = try await adapter.generateText(...)
 
 // Clean up
 await adapter.unloadModel(modelId: "llama-3-8b")
+await cachy.unloadModel(modelId: "llama-3.1-8b")
 ```
 
 ### 3. Monitor Performance
@@ -605,66 +837,42 @@ do {
     let model = try await adapter.loadModel(...)
 } catch MLXError.metalNotAvailable {
     logger.warning("Metal not available, using CPU")
-    // Update config to use CPU
     config.preferredDeviceType = .cpu
 } catch MLXError.outOfMemory {
     logger.error("Out of memory, try smaller model")
-    // Suggest model alternatives
 } catch {
     logger.error("Unexpected error: \(error)")
 }
 ```
 
----
+### 5. Choose Right Engine for Task
+```swift
+// For best quality/compatibility
+let provider = MLXProvider()
 
-## Performance Characteristics
+// For best speed on Apple Silicon
+let provider = CachyLLamaProvider()
 
-### Typical Metrics (Apple Silicon M1/M2/M3)
-
-| Model Size | Load Time | Tokens/Second | Memory Usage |
-|------------|-----------|---------------|--------------|
-| 7B params  | 2-4s      | 25-40         | 4-6 GB       |
-| 13B params | 4-8s      | 15-25         | 8-12 GB      |
-| 34B params | 10-20s    | 8-15          | 18-24 GB     |
-
-**Optimization Tips:**
-- Use Metal GPU (10x faster than CPU)
-- Enable KV cache for faster multi-turn conversations
-- Keep context length reasonable (4096 is sweet spot)
-- Use memory mapping for 13B+ models
-
----
-
-## File Locations
-
-### Models Directory
-```
-~/Library/Caches/sam/models/
-├── lmstudio-community/
-│   ├── Llama-3.2-3B-Instruct-4bit-MLX/
-│   ├── Meta-Llama-3.1-8B-Instruct-4bit-MLX/
-│   └── other-mlx-models/
-└── .managed/
-    └── model_registry.json
-```
-
-### Model Structure
-```
-Llama-3.2-3B-Instruct-4bit-MLX/
-├── config.json          # Model configuration
-├── tokenizer.json       # Tokenizer config
-├── weights.safetensors  # Model weights
-└── tokenizer_config.json
+// For Intel Macs or specific GGUF models
+let provider = LlamaProvider()
 ```
 
 ---
 
-##
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 3.0 | 2026-08-23 | Added CachyLLamaManager, CachyLLamaServerManager, CachyLLamaModelCache; performance comparison table; dual-engine support |
+| 2.2 | 2025-12-01 | MLX 0.22+ compatibility, Swift 6 concurrency |
+| 2.0 | 2025-10-15 | Major refactor for Swift 6, actor isolation |
+| 1.0 | 2025-08-01 | Initial MLX integration |
+
 ---
 
 ## See Also
 
-- [API Framework](API_FRAMEWORK.md) - Model registry integration
-- [Conversation Engine](CONVERSATION_ENGINE.md) - Inference requests
-- [Configuration System](CONFIGURATION_SYSTEM.md) - MLX configuration
-- [Model Loading Flow](../flows/model_loading_flow.md)
+- [API Framework](API_FRAMEWORK.md) - Provider integration
+- [Conversation Engine](CONVERSATION_ENGINE.md) - Context management
+- [Configuration System](CONFIGURATION_SYSTEM.md) - Model configuration
+- [Performance](PERFORMANCE.md) - Optimization guidance
