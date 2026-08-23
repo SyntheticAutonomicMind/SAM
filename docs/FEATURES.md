@@ -46,6 +46,9 @@ Each conversation stores its own UI state:
 - Panel visibility (tool cards, performance, etc.)
 - Scroll position
 - Active model
+- Custom instructions visibility
+- Tool card panel state
+- Performance panel state
 
 ---
 
@@ -73,7 +76,7 @@ Each conversation stores its own UI state:
 - Strong multimodal capabilities
 
 **MiniMax**
-- Models: MiniMax-M3, MiniMax-M2.7, MiniMax-M2.5, and high-speed variants
+- Models: MiniMax-M3, MiniMax-M3-highspeed, MiniMax-M2.7, MiniMax-M2.5
 - 128K token context window
 - Competitive pricing with good tool use
 
@@ -110,6 +113,12 @@ Each conversation stores its own UI state:
 - Compiled as a native framework (included as git submodule)
 - CPU and GPU inference modes
 
+**CachyLLama (Apple Silicon)**
+- High-performance llama.cpp fork with Metal optimizations
+- Runs GGUF models with improved Apple Silicon performance
+- Includes CachyLLama-specific sampler chain (top-K, min-P, temperature, etc.)
+- Requires Apple Silicon Mac
+
 **Remote llama.cpp**
 - Connect to a remote llama.cpp server (e.g., running on a GPU server)
 - Offload inference to dedicated hardware
@@ -133,7 +142,7 @@ Connect to any OpenAI-compatible API:
 
 ## Autonomous Tool System
 
-SAM has 13 consolidated tools that the AI uses autonomously to accomplish tasks. Each consolidated tool contains multiple operations.
+SAM has 12 consolidated tools that the AI uses autonomously to accomplish tasks. Each consolidated tool contains multiple operations (80+ total operations).
 
 ### File Operations
 
@@ -341,6 +350,16 @@ SAM uses context archival to manage long conversations:
 - Pinned messages are preserved and always included in context
 - Dynamic context sizing based on model limits
 
+### Long-Term Memory (LTM)
+
+SAM includes a persistent long-term memory system that survives across conversations and sessions:
+
+- **Discoveries** - Key insights and facts learned during conversations
+- **Solutions** - Problem-solving approaches that worked
+- **Patterns** - Recurring patterns and best practices identified
+- **Key-Value Store** - Persistent session storage for arbitrary data
+- **Auto-pruning** - Configurable retention policies to manage storage
+
 ---
 
 ## Voice Control
@@ -364,6 +383,11 @@ SAM speaks responses aloud using macOS native voices:
 ### Audio Device Management
 
 Select specific input (microphone) and output (speaker) devices. SAM detects all connected audio devices and updates the list when devices change.
+
+### Conversation/Relay Mode
+
+- **Relay mode** - Configurable timeout for continuous voice interaction
+- **Hands-free workflows** - Extended voice sessions without re-triggering wake word
 
 ---
 
@@ -403,10 +427,12 @@ Access SAM from any device on your local network through a web browser.
 Cross-conversation workspaces backed by SQLite:
 
 - **Named topics** - Create topics for projects, research areas, or any ongoing work
-- **Shared workspace** - All conversations in a topic share a file directory
+- **Shared workspace** - All conversations in a topic share a file directory (`~/SAM/{topic-name}/`)
 - **Shared entries** - Store and retrieve data accessible to any conversation in the topic
 - **Optimistic locking** - Safe concurrent access from multiple conversations
 - **Audit trail** - All operations are logged
+- **Topic search** - Search entries across all conversations in a topic
+- **Improved context sharing** - Enhanced cross-conversation context awareness
 
 ---
 
@@ -427,9 +453,29 @@ Edit the system prompt that defines SAM's behavior:
 - Switch between configurations
 - Component library for building modular prompts
 
-### Mini-Prompts
+### Mini-Prompts (Custom Instructions)
 
-Quick-action templates for common tasks. Mini-prompts provide pre-configured instructions that you can invoke with a click instead of typing out full instructions each time.
+Quick-action templates for common tasks. Mini-prompts provide pre-configured instructions that you can invoke with a click instead of typing out full instructions each time. Now called "Custom Instructions" in the UI.
+
+### System Prompt Components (Advanced)
+
+SAM's system prompt is built from modular components (SAM Default v25+):
+- **Core Identity** - WHO SAM is (helpful, accurate, approachable agent)
+- **User Autonomy** - User controls session boundaries, time, attention, response length
+- **Scope Honesty** - All items in user's scope get equal rigor; no unilateral scope-shrinking
+- **Tool-Backed Claims** - Every specific claim must be verified by a tool call
+- **Agent Identity & Completion Criteria** - "YOU ARE AN AGENT" framing with completion standards
+- **Response Guidelines** - Quality standards, formatting, communication style
+- **Tool Usage** - Principles for tool execution, math verification
+- **Operational Modes** - Conversational vs Task Execution modes
+- **Execution Standards** - Error recovery, completion criteria
+- **Communication Protocol** - Style guide
+- **Context & Memory** - Memory operations, document import
+- **Data Visualization** - Mermaid diagram rendering rules
+- **Workflow Mode** - Mode-specific guidance (when enabled)
+- **Dynamic Iterations** - Iteration monitoring (when enabled)
+- **Two-Phase Workflow** - Pattern recommendation
+- **Sequential Lists** - Pattern guidance
 
 ---
 
@@ -455,6 +501,7 @@ Real-time metrics visible in the app:
 - **Inference speed** - Tokens per second for local models
 - **Context usage** - Current token count vs. model limit
 - **API latency** - Response time for cloud providers
+- **Cost tracking** - Per-conversation API cost accumulation
 
 ---
 
@@ -472,13 +519,41 @@ SAM uses the Sparkle framework for automatic updates:
 
 ## Mermaid Diagrams
 
-SAM renders Mermaid diagrams inline in conversations. When the AI generates a Mermaid code block, SAM renders it as a visual diagram. Supports 15 diagram types including flowcharts, sequence diagrams, class diagrams, state diagrams, and more.
+SAM renders Mermaid diagrams inline in conversations. When the AI generates a Mermaid code block, SAM renders it as a visual diagram. Supports 15+ diagram types including flowcharts, sequence diagrams, class diagrams, state diagrams, and more.
+
+### Interactive Diagrams
+
+- **Click to enlarge** - Click any diagram to open in a zoomable overlay
+- **Export** - Save diagrams as PNG or SVG
+- **Lazy loading** - Mermaid library loads only when diagrams are present
+- **Conditional rendering** - Only renders when mermaid blocks are detected
 
 ---
 
 ## Think Tags
 
-When supported models use extended thinking (e.g., Claude's thinking blocks), SAM displays the reasoning process in collapsible sections. You can see the AI's step-by-step reasoning without it cluttering the response.
+When supported models use extended thinking (e.g., MiniMax thinking parameter), SAM displays the reasoning process in collapsible sections. You can see the AI's step-by-step reasoning without it cluttering the response.
+
+---
+
+## Onboarding Wizard
+
+First-time setup experience for new users:
+- **Guided provider setup** - Step-by-step AI provider configuration
+- **Model selection** - Help choosing local vs cloud models
+- **Feature tour** - Overview of key capabilities
+- **Privacy settings** - Configure data handling preferences
+
+---
+
+## LoRA Training
+
+Fine-tune local models on your own data:
+- **MLX LoRA training** - Apple Silicon optimized training
+- **GGUF LoRA training** - llama.cpp compatible adapter training
+- **Document-based training** - Train on your conversations and documents
+- **Custom datasets** - Import JSONL training data
+- **Automatic quantization** - Export to GGUF for deployment
 
 ---
 
@@ -502,7 +577,7 @@ SAM uses structured logging via swift-log:
 | ⇧R | Rename conversation |
 | ⇧D | Duplicate conversation |
 | ⇧E | Export conversation |
-|  | Delete conversation |
+| ⌫ | Delete conversation |
 | F | Search conversations |
 | ⇧/ | Show help |
 | , | Open Settings |
@@ -516,7 +591,7 @@ SAM uses structured logging via swift-log:
 
 SAM uses date-based versioning:
 
-- **Stable:** `YYYYMMDD.RELEASE` (e.g., `20260110.1`)
-- **Development:** `YYYYMMDD.RELEASE-dev.BUILD` (e.g., `20260110.1-dev.3`)
+- **Stable:** `YYYYMMDD.RELEASE` (e.g., `20260822.1`)
+- **Development:** `YYYYMMDD.RELEASE-dev.BUILD` (e.g., `20260822.1-dev.3`)
 
 See [VERSIONING.md](../VERSIONING.md) for details.

@@ -16,7 +16,7 @@ I built SAM for my wife. She wanted an AI assistant that could work with her doc
 
 SAM is a native macOS app for people who aren't developers. Say "Hey SAM" to go hands-free. Upload a PDF and ask questions about it. Research a purchase across Amazon, Walmart, and eBay in one conversation. Generate images by connecting to ALICE. All without touching a command line.
 
-**Your data stays on your Mac.** Run local models with MLX or llama.cpp and nothing leaves your machine. Switch to cloud providers when you want more capability - you choose.
+**Your data stays on your Mac.** Run local models with MLX or CachyLLama and nothing leaves your machine. Switch to cloud providers when you want more capability - you choose.
 
 ### Documents & Research
 
@@ -78,7 +78,7 @@ Choose how SAM talks to you - friendly, professional, creative, or create your o
     <td width="50%">
       <h3>Flexible AI Provider Selection</h3>
       <img src=".images/sam-image-2.png"/>
-      <em>Choose from local models (MLX, llama.cpp), or cloud providers (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter)</em>
+      <em>Choose from local models (MLX, CachyLLama, llama.cpp), or cloud providers (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Ollama Cloud, Z.AI)</em>
     </td>
   </tr>
 </table>
@@ -110,10 +110,15 @@ Choose how SAM talks to you - friendly, professional, creative, or create your o
 | **GitHub Copilot** | GPT-4o, Claude 3.5, o1 (requires subscription) |
 | **DeepSeek** | Cost-effective AI models |
 | **Google Gemini** | Gemini 2.5 Pro/Flash, large context windows |
-| **MiniMax** | MiniMax-M2.7, M2.5 (128K context) |
+| **MiniMax** | MiniMax-M3, M3-highspeed, M2.7 (128K context) |
 | **OpenRouter** | Access 100+ models from multiple providers |
+| **Ollama Cloud** | Cloud-hosted Ollama models |
+| **Z.AI (Chat)** | GLM models for conversation and reasoning |
+| **Z.AI (Coding)** | GLM models optimized for coding |
 | **Local MLX** | Run models on Apple Silicon Macs |
+| **Local CachyLLama** | High-performance GGUF inference on Apple Silicon |
 | **Local llama.cpp** | Run models on any Mac (Intel or Apple Silicon) |
+| **Remote llama.cpp** | Connect to remote llama.cpp server |
 | **Custom** | Use any OpenAI-compatible API |
 
 Switch providers mid-conversation. Use local models for privacy, cloud models for capability. Your choice.
@@ -160,7 +165,7 @@ Press `N` for a new conversation. Type your message. Say "Hey SAM" for hands-fre
 **For local AI models:**
 - 16GB+ RAM recommended
 - 20GB+ free disk space (models can be large)
-- Apple Silicon (M1/M2/M3/M4) recommended for MLX
+- Apple Silicon (M1/M2/M3/M4) recommended for MLX/CachyLLama
 - Intel Macs can use llama.cpp models
 
 ---
@@ -169,7 +174,7 @@ Press `N` for a new conversation. Type your message. Say "Hey SAM" for hands-fre
 
 - Conversations stored locally in `~/Library/Application Support/SAM/`
 - Per-conversation memory isolation
-- API keys stored in UserDefaults
+- API keys stored in macOS Keychain
 - Zero telemetry, zero tracking
 - When you use cloud providers, only the messages you send go to those providers
 
@@ -206,8 +211,8 @@ SAM is part of [Synthetic Autonomic Mind](https://github.com/SyntheticAutonomicM
 
 ## License
 
-**GPL-3.0** - See [LICENSE](LICENSE) for details.
+**GPL-3.0-only** - See [LICENSE](LICENSE) for details.
 
 Created by Andrew Wyatt (Fewtarius) · [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org) · [github.com/SyntheticAutonomicMind/SAM](https://github.com/SyntheticAutonomicMind/SAM)
 
-Built with open source: [Vapor](https://vapor.codes) · [MLX](https://github.com/ml-explore/mlx-swift) · [llama.cpp](https://github.com/ggerganov/llama.cpp) · [Sparkle](https://sparkle-project.org)
+Built with open source: [Vapor](https://vapor.codes) · [MLX](https://github.com/ml-explore/mlx-swift) · [llama.cpp](https://github.com/ggerganov/llama.cpp) · [CachyLLama](https://github.com/cachy-llama/llama.cpp) · [Sparkle](https://sparkle-project.org)

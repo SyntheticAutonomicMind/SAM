@@ -22,7 +22,8 @@ Everything SAM stores lives on your Mac:
 | Configuration | `~/Library/Application Support/SAM/` | At rest (macOS FileVault) |
 | API keys | macOS Keychain | Yes (Keychain encryption) |
 | Working files | `~/SAM/` | At rest (macOS FileVault) |
-| Local models | `~/Library/Application Support/SAM/` | At rest (macOS FileVault) |
+| Local models | `~/Library/Caches/sam-rewritten/models/` | At rest (macOS FileVault) |
+| LTM database | `~/Library/Application Support/SAM/ltm.db` | At rest (macOS FileVault) |
 
 SAM does not maintain any cloud storage, remote databases, or sync services.
 
@@ -33,6 +34,7 @@ SAM collects no usage data. There are no analytics, no crash reporters, no phone
 1. **AI provider requests** - When you use a cloud AI provider, your messages are sent to that provider's API
 2. **Update checks** - SAM checks for updates via Sparkle (can be disabled)
 3. **Web operations** - When you explicitly ask SAM to search or fetch web pages
+4. **ALICE image generation** - When you generate images, requests go to your ALICE server
 
 ### What Cloud Providers See
 
@@ -45,7 +47,7 @@ Each provider has their own data retention and privacy policies. SAM minimizes w
 
 ### Local Models See Nothing External
 
-When you use local models (MLX or llama.cpp), all processing happens on your Mac. Zero data leaves your machine.
+When you use local models (MLX, CachyLLama, or llama.cpp), all processing happens on your Mac. Zero data leaves your machine.
 
 ---
 
@@ -79,7 +81,7 @@ These entitlements are necessary for local model inference on Apple Silicon. The
 
 ### API Key Storage
 
-API keys are stored in the macOS Keychain using the app's keychain access group (`com.fewtarius.syntheticautonomicmind`). The Keychain provides:
+API keys are stored in the macOS Keychain using the app's keychain access group. The Keychain provides:
 
 - Hardware-backed encryption on Apple Silicon
 - Access control (only SAM can read SAM's keys)
@@ -112,6 +114,15 @@ This means the AI can freely read, write, and manage files within its workspace,
 
 Each conversation gets an isolated workspace. Shared Topics get named directories.
 
+### Tool Privacy Controls
+
+SAM includes privacy controls for tools that access sensitive data:
+
+- **Calendar/Contacts/Notes** - Require macOS permission prompts (EventKit, Contacts framework)
+- **Spotlight** - Uses system Spotlight index, respects macOS privacy settings
+- **File operations** - Strict working directory enforcement
+- **Web operations** - Only executed when explicitly requested
+
 ### What Tools Can and Cannot Do
 
 **Can do (auto-approved):**
@@ -124,6 +135,7 @@ Each conversation gets an isolated workspace. Shared Topics get named directorie
 **Requires permission:**
 - Access files outside `~/SAM/`
 - Any operation the AI determines needs user confirmation
+- Calendar, Contacts, Notes access (macOS permission prompt)
 
 **Cannot do:**
 - Access other applications' data
@@ -169,6 +181,10 @@ Conversations are stored indefinitely until you delete them. There is no automat
 
 Imported document content (text chunks and vector embeddings) is stored in the conversation's vector database. Deleting the conversation deletes the imported document data.
 
+### Long-Term Memory
+
+LTM entries are stored indefinitely until pruned. Use `prune_ltm` tool or configure auto-pruning (default 90 days, max 50 entries per type).
+
 ### Configuration Backups
 
 SAM creates automatic backups of configuration files using atomic write operations (temp file -> rename). Old backups are not automatically cleaned up.
@@ -194,6 +210,16 @@ SAM uses the Sparkle framework for automatic updates:
 - **Appcast verification** - Update metadata is verified before installation
 - **Separate channels** - Stable and development update feeds are separate
 - **Optional** - Auto-updates can be disabled in Settings
+
+---
+
+## Security Framework
+
+SAM includes a dedicated SecurityFramework module (`Sources/SecurityFramework/`) that provides:
+
+- **Path authorization** - Working directory enforcement
+- **Security operations** - Centralized security checks
+- **Audit logging** - Tool access logging
 
 ---
 

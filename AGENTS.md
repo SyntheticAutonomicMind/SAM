@@ -213,7 +213,7 @@ Sources/
 │   └── PropertiesStorage/
 ├── APIFramework/               - Multi-provider support, orchestration
 │   ├── AIProvider.swift (protocol)
-│   ├── Providers/ (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Z.AI, Ollama Cloud, Local MLX, Local llama.cpp, Remote llama.cpp, Custom)
+│   ├── Providers/ (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Z.AI, Ollama Cloud, Local MLX, Local CachyLLama, Local llama.cpp, Remote llama.cpp, Custom)
 │   ├── AgentOrchestrator.swift (multi-step workflows)
 │   └── ToolCallExtractor.swift
 ├── MCPFramework/               - Model Context Protocol tools
@@ -454,8 +454,8 @@ make distribute
 
 - **NO telemetry, NO tracking by default**
 - All conversations stored locally in SQLite
-- API credentials stored in UserDefaults (consider KeychainManager for sensitive keys)
-- Local models run entirely offline (MLX, llama.cpp)
+- API credentials stored in macOS Keychain
+- Local models run entirely offline (MLX, CachyLLama, llama.cpp)
 - Cloud providers (OpenAI, Anthropic, etc.) are opt-in only
 
 ### Entitlements

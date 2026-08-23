@@ -23,6 +23,7 @@ SAM checks memory for relevant context
     ├── Current conversation history
     ├── Imported document content (Vector RAG)
     ├── Stored memories from research
+    ├── Long-term memory (LTM)
     └── Shared Topic entries (if applicable)
     │
     ▼
@@ -52,6 +53,15 @@ Every AI model has a limit on how much text it can process at once (the "context
 4. **System prompts and tool definitions** take a fixed portion of the window
 
 SAM manages context by archiving older messages to a per-conversation SQLite database when the context window fills. Archived chunks include summaries, key topics, and timestamps, and are automatically retrieved via semantic search when relevant. Pinned messages are always preserved in context. Context window sizes vary by model.
+
+### Unified Context Manager
+
+SAM uses a unified context manager that builds the context window from multiple sources:
+- **User context** - Dynamic content (date, location, conversation ID) injected separately for KV cache stability
+- **Conversation history** - Filtered and trimmed messages
+- **Vector RAG results** - Relevant document chunks
+- **Memory results** - Stored memories and LTM entries
+- **Tool results** - Recent tool execution outputs
 
 ---
 
@@ -162,6 +172,45 @@ The AI has these memory tools:
 
 ---
 
+## Long-Term Memory (LTM)
+
+### What is Long-Term Memory?
+
+LTM is a persistent memory layer that survives across conversations and sessions. Unlike per-conversation memory, LTM entries are stored globally and can be accessed from any conversation.
+
+### LTM Entry Types
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| **Discovery** | Key insights and facts learned | "User prefers concise responses with bullet points" |
+| **Solution** | Problem-solving approaches that worked | "Fixed Swift 6 concurrency by capturing before async boundaries" |
+| **Pattern** | Recurring patterns and best practices | "Always use math_operations for financial calculations" |
+| **Key-Value** | Persistent session storage | `store` / `retrieve` operations |
+
+### LTM Operations
+
+| Operation | What It Does |
+|-----------|-------------|
+| `add_discovery` | Add a discovery to long-term memory |
+| `add_solution` | Add a solution to long-term memory |
+| `add_pattern` | Add a pattern to long-term memory |
+| `ltm_stats` | Show long-term memory statistics |
+| `prune_ltm` | Prune old long-term memory entries |
+| `search_kv` | Search key-value store |
+| `list_keys` | List all stored keys |
+| `store` | Store key-value pair |
+| `retrieve` | Get stored value by key |
+| `delete_key` | Delete a key from the store |
+
+### LTM Features
+
+- **Trust tiers** - Entries start as [UNVERIFIED], promote to [TRUSTED] with corroboration
+- **Auto-pruning** - Configurable retention (default 90 days, max 50 discoveries/solutions/patterns)
+- **Cross-session** - LTM persists across app restarts and conversation switches
+- **Tool-accessible** - AI can read and write LTM via `memory_operations`
+
+---
+
 ## Shared Topics
 
 ### What Are Shared Topics?
@@ -173,6 +222,7 @@ Shared Topics are named workspaces that connect multiple conversations around a 
 - **Working directory** - `~/SAM/{topic-name}/` instead of per-conversation directories
 - **Topic entries** - Structured data that any conversation can read/write
 - **File access** - All conversations see the same files
+- **Topic search** - Search entries across all conversations in a topic
 
 ### What Stays Separate
 
@@ -218,6 +268,13 @@ The ContextArchiveManager monitors conversation length and can:
 - Restore archived context when relevant to current discussion
 - Maintain important messages (tool results, key decisions) longer than casual messages
 
+### Context Archive Manager
+
+- **Archive trigger** - Automatic when context window approaches model limit
+- **Chunk format** - Summary + key topics + timestamp + importance score
+- **Retrieval** - Semantic search across archived chunks
+- **Pin protection** - Pinned messages never archived
+
 ---
 
 ## Data Storage
@@ -226,23 +283,27 @@ The ContextArchiveManager monitors conversation length and can:
 
 ```
 ~/Library/Application Support/SAM/
-├── memory.db                     # Shared/global memory database
-└── conversations/
+├── ltm.db                        # Long-term memory database
+├── conversations/
     └── {UUID}/
         ├── conversation.json     # Messages and metadata
         ├── tasks.json            # Agent todo lists
-        └── memory.db             # Per-conversation memory and vector embeddings
+        ├── memory.db             # Per-conversation memory and vector embeddings
+        ├── archive.db            # Context archive chunks
+        └── vector.db             # Vector embeddings for RAG
 ```
 
 ### Storage Size
 
 - **Conversation JSON** - Grows with conversation length (typically 10KB-1MB)
 - **Vector database** - Grows with imported documents (typically 1-50MB per conversation)
+- **LTM database** - Small (typically <10MB)
 - **Total** - Depends on usage, typically 50MB-500MB for active users
 
 ### Cleanup
 
-- Delete a conversation to remove all its data (messages, vectors, tasks)
+- Delete a conversation to remove all its data (messages, vectors, tasks, archive)
+- LTM entries can be pruned with `prune_ltm` tool
 - Conversations are not automatically deleted
 - No remote sync or cloud backup
 
@@ -255,6 +316,7 @@ The ContextArchiveManager monitors conversation length and can:
 3. **Let SAM research** instead of pasting URLs - the research tool stores results in searchable memory
 4. **Ask follow-up questions** - SAM uses conversation history, so building on previous messages works naturally
 5. **Start new conversations** for new topics - keeps memory focused and relevant
+6. **Use LTM for institutional knowledge** - discoveries, solutions, and patterns persist forever
 
 ---
 

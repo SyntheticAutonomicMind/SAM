@@ -299,6 +299,7 @@ Tool use is constrained by:
 - User collaboration checkpoints for sensitive work
 - Preferences-controlled capabilities
 - Service availability for optional integrations
+- macOS permission prompts for Calendar, Contacts, Notes
 
 That means SAM can be useful without silently overreaching.
 

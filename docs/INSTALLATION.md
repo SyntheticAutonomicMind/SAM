@@ -15,8 +15,8 @@ Everything you need to get SAM running on your Mac.
 
 ### Apple Silicon vs Intel
 
-- **Apple Silicon** - best experience overall, including MLX local models
-- **Intel** - cloud providers and `llama.cpp` local models work, but MLX is not available
+- **Apple Silicon** - best experience overall, including MLX and CachyLLama local models
+- **Intel** - cloud providers and `llama.cpp` local models work, but MLX and CachyLLama are not available
 
 ---
 
@@ -71,7 +71,7 @@ After the first launch, SAM should open normally.
 
 SAM needs at least one provider before it can respond.
 
-1. Open **Settings**
+1. Open **Settings** (`,`)
 2. Go to **AI Providers**
 3. Click **Add Provider**
 4. Choose one of the supported providers:
@@ -85,17 +85,26 @@ SAM needs at least one provider before it can respond.
    - **Z.AI (Chat)**
    - **Z.AI (Coding)**
    - **Local MLX**
+   - **Local CachyLLama**
    - **Local llama.cpp**
    - **Remote llama.cpp**
    - **Custom OpenAI-compatible endpoint**
 
 For setup details, see [Providers Guide](PROVIDERS.md).
 
-### 2. Start a conversation
+### 2. Complete onboarding (first time only)
 
-Create a new conversation and start typing naturally. SAM saves conversations automatically.
+If this is your first time using SAM, you'll be guided through the onboarding wizard:
+- Choose your preferred AI provider type
+- Configure your first model
+- Set privacy preferences
+- Learn key features
 
-### 3. Optional: enable voice features
+### 3. Start a conversation
+
+Create a new conversation (press `N`) and start typing naturally. SAM saves conversations automatically.
+
+### 4. Optional: enable voice features
 
 If you want hands-free interaction:
 
@@ -104,7 +113,7 @@ If you want hands-free interaction:
 3. Grant microphone access when macOS asks
 4. Enable text-to-speech if you want spoken responses
 
-### 4. Optional: enable the API server
+### 5. Optional: enable the API server
 
 If you want browser-based or remote access through SAM-Web:
 
