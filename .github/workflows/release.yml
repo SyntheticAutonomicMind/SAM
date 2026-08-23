@@ -132,10 +132,7 @@ jobs:
 
             # Back up the proxy and replace with a wrapper
             sudo cp "$DEFAULT_METAL" "${DEFAULT_METAL}.proxy.backup"
-            sudo tee "$DEFAULT_METAL" > /dev/null << WRAPPER
-            #!/bin/bash
-            exec "$REAL_METAL" "\$@"
-            WRAPPER
+            printf '#!/bin/bash\nexec "%s" "$@"\n' "$REAL_METAL" | sudo tee "$DEFAULT_METAL" > /dev/null
             sudo chmod +x "$DEFAULT_METAL"
 
             # Re-test

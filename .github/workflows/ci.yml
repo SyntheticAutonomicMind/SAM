@@ -114,10 +114,7 @@ jobs:
           echo "Found real Metal Toolchain metal binary: $REAL_METAL"
 
           sudo cp "$DEFAULT_METAL" "${DEFAULT_METAL}.proxy.backup"
-          sudo tee "$DEFAULT_METAL" > /dev/null << WRAPPER
-          #!/bin/bash
-          exec "$REAL_METAL" "\$@"
-          WRAPPER
+          printf '#!/bin/bash\nexec "%s" "$@"\n' "$REAL_METAL" | sudo tee "$DEFAULT_METAL" > /dev/null
           sudo chmod +x "$DEFAULT_METAL"
 
           if "$DEFAULT_METAL" -c /tmp/test.metal -o /dev/null 2>&1; then
