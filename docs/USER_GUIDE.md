@@ -73,12 +73,12 @@ brew upgrade --cask sam
 
 When you open SAM for the first time:
 
-1. **Set up an AI provider** - Open Settings (⌘,) and go to the AI Providers tab
+1. **Set up an AI provider** - Open Settings (`,`) and go to the AI Providers tab
 2. **Choose your provider:**
-   - **Cloud AI** - OpenAI, GitHub Copilot, DeepSeek, Google Gemini, MiniMax, or OpenRouter (Claude models available via OpenRouter)
-   - **Local AI** - Download and run a model directly on your Mac (Apple Silicon recommended)
+   - **Cloud AI** - OpenAI, GitHub Copilot, DeepSeek, Google Gemini, MiniMax, OpenRouter, Ollama Cloud, Z.AI (Chat), Z.AI (Coding)
+   - **Local AI** - Download and run a model directly on your Mac (Apple Silicon recommended for MLX/CachyLLama)
 3. **Enter your API key** (for cloud providers)
-4. **Start chatting** - Press ⌘N for a new conversation, type your message, and press Enter
+4. **Start chatting** - Press N for a new conversation, type your message, and press Enter
 
 ### System Requirements
 
@@ -93,7 +93,7 @@ When you open SAM for the first time:
 
 ### Creating and Managing Conversations
 
-- **New conversation** - Press ⌘N or click the + button in the sidebar
+- **New conversation** - Press N or click the + button in the sidebar
 - **Switch conversations** - Click any conversation in the sidebar
 - **Rename** - Double-click a conversation title in the sidebar, or right-click and choose Rename
 - **Delete** - Right-click a conversation and choose Delete
@@ -132,8 +132,11 @@ SAM supports multiple AI providers. You can configure one or many and switch bet
 | **GitHub Copilot** | GPT-4o, Claude 3.5, o1 | Requires GitHub Copilot subscription |
 | **DeepSeek** | DeepSeek Chat, DeepSeek Coder | Cost-effective, good for coding |
 | **Google Gemini** | Gemini 2.5 Pro/Flash, 2.0 Flash | Large context (up to 1M tokens) |
-| **MiniMax** | MiniMax-M2.7, M2.5 | 128K context, competitive pricing |
+| **MiniMax** | MiniMax-M3, M3-highspeed, M2.7 | 128K context, competitive pricing |
 | **OpenRouter** | 100+ models | Access many providers through one API |
+| **Ollama Cloud** | Various Ollama models | Cloud-hosted, no local server needed |
+| **Z.AI (Chat)** | GLM-5.1, GLM-4.9 | Bilingual Chinese/English |
+| **Z.AI (Coding)** | GLM-5.1, GLM-4.9 | Specialized for coding |
 
 ### Local Models
 
@@ -141,14 +144,15 @@ Run AI completely on your Mac with no internet connection required:
 
 | Engine | Best For | Requirements |
 |--------|----------|-------------|
-| **MLX** | Apple Silicon Macs | M1+ chip, 8GB+ RAM |
+| **MLX** | Apple Silicon Macs, quality | M1+ chip, 8GB+ RAM |
+| **CachyLLama** | Apple Silicon Macs, speed | M1+ chip, 8GB+ RAM |
 | **llama.cpp** | Any Mac (Intel or Apple Silicon) | 8GB+ RAM |
 
 Local models are downloaded once and run entirely offline. SAM includes a model browser in Settings where you can discover, download, and manage local models.
 
 ### Setting Up a Provider
 
-1. Open Settings (⌘,)
+1. Open Settings (`,`)
 2. Go to **AI Providers**
 3. Click **Add Provider**
 4. Select your provider type
@@ -197,6 +201,12 @@ Enable text-to-speech in Settings > Voice to have SAM read its responses aloud. 
 ### Streaming TTS
 
 SAM starts speaking as soon as the first sentence is ready - it doesn't wait for the entire response to be generated. This makes conversations feel natural and responsive.
+
+### Conversation/Relay Mode
+
+Enable relay mode in Settings > Voice for extended hands-free sessions:
+- **Configurable timeout** - How long to wait for continued speech
+- **Natural flow** - No need to re-say "Hey SAM" for follow-up
 
 ---
 
@@ -262,7 +272,7 @@ SAM automatically indexes your conversations for semantic search. This means you
 
 ### Searching Across Conversations
 
-Use the search feature (⌘F) to search across all your conversations. SAM uses vector embeddings powered by Apple's Natural Language framework to find semantically relevant results.
+Use the search feature (F) to search across all your conversations. SAM uses vector embeddings powered by Apple's Natural Language framework to find semantically relevant results.
 
 ### Document Memory
 
@@ -271,6 +281,17 @@ When you import documents into a conversation, SAM chunks them into searchable s
 - "What does section 3 of the report say about revenue?"
 - "Summarize the key findings from the PDF I uploaded"
 - "Find all mentions of the budget in my documents"
+
+### Long-Term Memory (LTM)
+
+SAM includes a persistent long-term memory system that survives across conversations and sessions:
+
+- **Discoveries** - Key insights and facts learned during conversations
+- **Solutions** - Problem-solving approaches that worked
+- **Patterns** - Recurring patterns and best practices identified
+- **Key-Value Store** - Persistent session storage for arbitrary data
+
+The AI can access LTM through the `memory_operations` tool, and you can view LTM stats in the Performance panel.
 
 ### How Memory Works
 
@@ -322,6 +343,9 @@ SAM can also create documents for you:
 - **PDF** - Generate formatted PDF reports
 - **Word** - Create .docx documents
 - **PowerPoint** - Build presentations with slides
+- **Excel** - Create spreadsheets
+- **Markdown** - Generate .md files
+- **RTF** - Rich text format
 
 Just describe what you want: "Create a Word document summarizing our discussion about the marketing plan" and SAM generates it in your working directory.
 
@@ -427,13 +451,12 @@ SAM automatically recognizes math requests and routes them through the computati
 
 ### What You Can Do Remotely
 
-- Chat with SAM
-- Use mini-prompts
-- Select AI models
-- View conversation history
-- Access core features
-
-**Note:** Some advanced features (voice control, local model management, document import) require the native macOS app.
+- Full chat interface with all features
+- Model selection
+- Conversation management
+- File operations (within working directory)
+- Web research
+- Document import/creation
 
 ---
 
@@ -441,31 +464,33 @@ SAM automatically recognizes math requests and routes them through the computati
 
 ### What Are Shared Topics?
 
-Shared Topics let multiple conversations share the same context and workspace. Think of them as project folders - everything related to a project lives in one place, and any conversation can access it.
+Shared Topics are named workspaces that connect multiple conversations around a common project or subject. All conversations assigned to a Shared Topic can access the same data.
 
-### Creating a Shared Topic
+### What Gets Shared
+
+- **Working directory** - `~/SAM/{topic-name}/` instead of per-conversation directories
+- **Topic entries** - Structured data that any conversation can read/write
+- **File access** - All conversations see the same files
+
+### What Stays Separate
+
+- **Conversation history** - Each conversation keeps its own messages
+- **Document imports** - Documents imported in one conversation stay in that conversation's Vector RAG
+
+### Creating and Using Shared Topics
 
 1. Start a new conversation
-2. Assign it to a Shared Topic (or create a new one)
-3. All conversations assigned to that topic share:
-   - A common working directory (`~/SAM/{topic-name}/`)
-   - Shared file access
-   - Cross-conversation context
+2. Assign it to a Shared Topic (create one if needed)
+3. Work normally - SAM uses the shared workspace
+4. Start another conversation and assign it to the same topic
+5. Both conversations can access the shared files and entries
 
 ### Use Cases
 
-- **Project management** - Keep all discussions about a project connected
-- **Research** - Multiple research conversations that build on each other
+- **Project management** - Keep all project discussions connected
+- **Research** - Multiple research angles sharing a common knowledge base
 - **Writing** - Draft, review, and revise documents across conversations
-- **Learning** - Study sessions that share notes and materials
-
-### How It Works
-
-Shared Topics use a SQLite database to store topic metadata, entries, and file references. Each topic has:
-- A name and description
-- A dedicated file directory
-- Entries that any conversation in the topic can access
-- Optimistic locking for safe concurrent access
+- **Team collaboration** - Multiple conversations contributing to the same output
 
 ---
 
@@ -473,67 +498,81 @@ Shared Topics use a SQLite database to store topic metadata, entries, and file r
 
 ### Built-In Personalities
 
-SAM comes with several personality options that change how it communicates:
+SAM includes personality configurations that affect communication style:
+- Tone, vocabulary, and response style
+- Configurable personality traits
+- Per-conversation or global settings
 
-- **Friendly** - Warm, conversational, uses casual language
-- **Professional** - Formal, precise, business-appropriate
-- **Creative** - Imaginative, expressive, uses metaphors and analogies
-- **Custom** - Define your own personality
+### Custom System Prompts
 
-### Customizing SAM's Personality
+Edit the system prompt that defines SAM's behavior:
+- View and modify the active system prompt
+- Save custom system prompt templates
+- Switch between configurations
+- Component library for building modular prompts
 
-In Settings, you can adjust personality traits to fine-tune how SAM communicates. This affects the tone, vocabulary, and style of SAM's responses without changing what it can do.
+### Mini-Prompts (Custom Instructions)
 
-### System Prompts
+Quick-action templates for common tasks. Mini-prompts provide pre-configured instructions that you can invoke with a click instead of typing out full instructions each time. In the UI, these are now called "Custom Instructions."
 
-Advanced users can customize SAM's system prompt - the instructions that define SAM's behavior. SAM includes a system prompt editor in Settings where you can:
-- View and edit the active system prompt
-- Save custom system prompts
-- Switch between prompt configurations
+### System Prompt Components (SAM Default v25+)
+
+SAM's default system prompt is built from modular components:
+- **Core Identity** - WHO SAM is (helpful, accurate, approachable agent)
+- **User Autonomy** - You control session boundaries, time, attention, response length
+- **Scope Honesty** - All items in your scope get equal rigor; no unilateral scope-shrinking
+- **Tool-Backed Claims** - Every specific claim must be verified by a tool call
+- **Agent Identity & Completion Criteria** - "YOU ARE AN AGENT" framing with completion standards
+- **Response Guidelines** - Quality standards, formatting, communication style
+- **Tool Usage** - Principles for tool execution, math verification
+- **Operational Modes** - Conversational vs Task Execution modes
+- **Execution Standards** - Error recovery, completion criteria
+- **Communication Protocol** - Style guide
+- **Context & Memory** - Memory operations, document import
+- **Data Visualization** - Mermaid diagram rendering rules
+- **Workflow Mode** - Mode-specific guidance (when enabled)
+- **Dynamic Iterations** - Iteration monitoring (when enabled)
 
 ---
 
 ## Preferences and Settings
 
-Open Settings with ⌘, (Command + Comma).
-
 ### General
 
-- **Appearance** - Light mode, dark mode, or follow system
-- **Development updates** - Opt in to receive pre-release builds
-- **Auto-updates** - SAM checks for updates automatically via Sparkle
+- **Update channel** - Stable or Development
+- **Startup behavior** - New conversation or last used
+- **Language** - Interface language
 
 ### AI Providers
 
-- Add, configure, and remove AI providers
-- Set default model
-- Manage API keys
-- Configure custom endpoints
+- Add, remove, and configure providers
+- Set default model per provider
+- Manage API keys (stored in Keychain)
 
 ### Voice
 
-- **Wake word** - Enable/disable "Hey SAM" activation
-- **Text-to-speech** - Enable/disable SAM speaking responses
-- **Voice selection** - Choose from macOS system voices
-- **Speech rate** - Adjust speaking speed
-- **Audio devices** - Select input and output devices
-
-### ALICE
-
-- Configure ALICE server connection
-- View server health and available models
-- Set generation defaults
+- Wake word toggle and customization
+- Text-to-speech voice, speed, devices
+- Relay/conversation mode timeout
 
 ### API Server
 
-- Enable/disable the local API server (for SAM-Web)
-- View and copy API authentication token
-- Configure server port
+- Enable/disable local HTTP server
+- Port configuration
+- API token display and regeneration
+- CORS settings
 
-### Working Directory
+### Appearance
 
-- View and change the base working directory for conversations
-- Default: `~/SAM/`
+- Theme (system, light, dark)
+- Font size
+- Tool card visibility
+
+### Advanced
+
+- Context window settings
+- Memory retention policies
+- Logging level
 
 ---
 
@@ -541,16 +580,16 @@ Open Settings with ⌘, (Command + Comma).
 
 | Shortcut | Action |
 |----------|--------|
-| ⌘N | New conversation |
-| ⌘K | Clear current conversation |
-| ⌘⇧R | Rename conversation |
-| ⌘⇧D | Duplicate conversation |
-| ⌘⇧E | Export conversation |
-| ⌘⌫ | Delete conversation |
-| ⌘F | Search conversations |
-| ⌘⇧/ | Show help |
-| ⌘, | Open Settings |
-| ⌘W | Close window |
+| N | New conversation |
+| K | Clear current conversation |
+| ⇧R | Rename conversation |
+| ⇧D | Duplicate conversation |
+| ⇧E | Export conversation |
+|  | Delete conversation |
+| F | Search conversations |
+| ⇧/ | Show help |
+| , | Open Settings |
+| W | Close window |
 | Enter | Send message |
 | Shift+Enter | New line in message |
 
@@ -560,128 +599,97 @@ Open Settings with ⌘, (Command + Comma).
 
 ### Getting Better Results
 
-1. **Be specific** - "Write a professional email declining a meeting" works better than "write an email"
-2. **Provide context** - "I'm planning a trip to Japan in April" gives SAM more to work with than "tell me about Japan"
-3. **Use follow-ups** - Build on the conversation. SAM remembers everything in the current chat.
-4. **Import documents** - Instead of pasting text, import the full document so SAM can search it properly
-5. **Use Shared Topics** - For ongoing projects, keep everything connected in a Shared Topic
+1. **Be specific** - "Research iPhone 16 Pro reviews" works better than "Tell me about phones"
+2. **Use tools explicitly** - "Search the web for..." triggers web research
+3. **Import documents** - For Q&A on PDFs, import them first
+4. **Use Shared Topics** - For multi-conversation projects
+5. **Switch models** - Start fast, switch to capable for complex tasks
 
-### Saving Money on Cloud Providers
+### For Local Models
 
-1. **Start with smaller models** - Use GPT-3.5 or DeepSeek for simple tasks, upgrade to GPT-4o or Claude for complex ones
-2. **Use local models** - For private or simple tasks, local models are free after download
-3. **Keep conversations focused** - Long conversations with lots of context cost more tokens
+1. **Close other apps** - Free up RAM for model inference
+2. **Use quantized models** - Q4_K_M balances speed and quality
+3. **Try CachyLLama** - Best speed on Apple Silicon
+4. **Monitor memory** - Watch the Performance panel
 
-### Privacy Tips
+### For Cloud Providers
 
-1. **Use local models** for sensitive content - nothing leaves your Mac
-2. **Each conversation is isolated** - the AI in one conversation doesn't see another
-3. **Shared Topics share context** - be intentional about what you put in shared topics
-4. **API keys are stored locally** in your Mac's Keychain
-5. **SAM has zero telemetry** - no usage data is collected or sent anywhere
+1. **Start new conversations** for new topics - avoids context pollution
+2. **Use OpenRouter** - Try many models with one API key
+3. **Monitor costs** - Check the Performance panel for per-conversation costs
+
+### For Voice
+
+1. **Quiet environment** - Improves speech recognition accuracy
+2. **Good microphone** - External mic works better than built-in
+3. **Relay mode** - For extended hands-free sessions
 
 ---
 
 ## Troubleshooting
 
-### SAM Won't Launch
+### "Authentication failed"
+- Verify your API key is correct
+- For GitHub Copilot: try signing out and back in
+- Check that your account has billing configured (cloud providers)
 
-- Ensure you're running macOS 14.0 or later
-- Try right-clicking SAM.app and selecting Open (bypasses Gatekeeper)
-- Check Console.app for crash logs
+### "Model not found"
+- The model may have been renamed or deprecated
+- Refresh the model list in Settings
+- Check the provider's documentation for current model names
 
-### AI Provider Not Responding
+### "Rate limited"
+- You've exceeded the provider's rate limits
+- Wait a moment and try again
+- Consider upgrading your plan or using a different provider
 
-- Verify your API key is correct in Settings
-- Check your internet connection (cloud providers)
-- Try a different model or provider
-- Check the provider's status page for outages
+### "Request too large"
+- Your conversation has exceeded the model's context window
+- Start a new conversation
+- Use a model with a larger context window
+- SAM's context management should handle this automatically, but very long conversations with many tool calls can hit limits
 
-### Local Models Are Slow
+### Local model loading fails
+- Ensure you have enough free RAM
+- Try a smaller model
+- Check that the model file isn't corrupted (re-download if needed)
+- For MLX/CachyLLama: verify you're on Apple Silicon
+- For llama.cpp: verify the file is in GGUF format
 
-- Apple Silicon Macs perform significantly better with MLX models
-- Close other memory-intensive applications
-- Try a smaller model (7B parameters instead of 13B+)
-- Ensure you have enough free RAM (model size + 4GB overhead)
+### Blank window on launch
+- Confirm you are on macOS 14.0 or newer
+- Try resetting preferences under `~/Library/Application Support/SAM/`
+- Relaunch the app
 
-### Voice Control Not Working
-
+### Voice not working
 - Check microphone permissions in System Settings > Privacy & Security > Microphone
-- Ensure the wake word is enabled in SAM Settings > Voice
-- Verify your microphone is selected as the input device
-- Try a quiet environment - background noise can interfere with wake word detection
-
-### Documents Not Importing
-
-- Check that the file format is supported (PDF, DOCX, XLSX, TXT)
-- Ensure the file isn't corrupted or password-protected
-- Try a smaller file - very large documents may take time to process
-- Check available disk space
-
-### SAM-Web Can't Connect
-
-- Verify SAM is running on your Mac with the API server enabled
-- Check that both devices are on the same network
-- Confirm the correct IP address and port
-- Verify the API token matches
+- Verify wake word is enabled in SAM Settings > Voice
+- Try a different audio input device
 
 ---
 
 ## FAQ
 
-### Is SAM free?
+**Q: Does SAM work offline?**
+A: Yes, with local models (MLX, CachyLLama, llama.cpp) and no cloud providers configured.
 
-Yes. SAM is free and open source under the GPL-3.0 license. You'll need your own API keys for cloud AI providers, or you can run local models at no cost.
+**Q: Can I use SAM on iPhone/iPad?**
+A: Not directly, but [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) provides browser access from any device on your network.
 
-### Does SAM send my data to the cloud?
+**Q: How much does SAM cost?**
+A: SAM itself is free (GPL-3.0). Cloud providers charge per-token. Local models are free after download.
 
-Only when you use a cloud AI provider, and only the minimum context needed for the AI to respond. All conversation history, documents, and memory stay on your Mac. SAM has zero telemetry.
+**Q: Is my data private?**
+A: Yes. All data stays on your Mac. Cloud providers only receive the messages you send them.
 
-### Can I use SAM offline?
+**Q: Can I train my own models?**
+A: Yes, SAM includes LoRA training for MLX and GGUF models. See the LoRA Training section in Settings.
 
-Yes, with local models (MLX or llama.cpp). Download a model once, then use SAM with no internet connection.
+**Q: What's the difference between MLX and CachyLLama?**
+A: MLX uses Apple's MLX framework (best quality). CachyLLama is an optimized llama.cpp fork (best speed on Apple Silicon).
 
-### What's the difference between MLX and llama.cpp?
+**Q: How do I update SAM?**
+A: Homebrew: `brew upgrade --cask sam`. Manual: Download new DMG from GitHub Releases.
 
-MLX is optimized for Apple Silicon Macs and offers the best performance on M1+ chips. llama.cpp works on both Intel and Apple Silicon Macs but may be slower. If you have an Apple Silicon Mac, use MLX.
-
-### Can I use SAM with my own OpenAI-compatible server?
-
-Yes. SAM supports any OpenAI-compatible API endpoint. Configure it as a custom provider in Settings.
-
-### How much RAM do I need for local models?
-
-It depends on the model size. Rough guidelines:
-- 7B parameter models: 8GB+ RAM
-- 13B parameter models: 16GB+ RAM
-- 70B parameter models: 64GB+ RAM (Apple Silicon unified memory)
-
-The model needs to fit in memory along with macOS and SAM itself.
-
-### Does SAM work on Intel Macs?
-
-Yes, but with limitations. Cloud AI providers work on any Mac. For local models, Intel Macs can use llama.cpp but not MLX (which requires Apple Silicon). Performance will be slower than Apple Silicon.
-
-### How do I update SAM?
-
-If installed via Homebrew: `brew upgrade --cask sam`
-
-Otherwise, SAM checks for updates automatically using Sparkle. You'll see a notification when a new version is available. You can also check manually in the app.
-
-### Can I contribute to SAM?
-
-Absolutely. SAM is open source and welcomes contributions. See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines, or visit the [GitHub repository](https://github.com/SyntheticAutonomicMind/SAM).
-
----
-
-## See Also
-
-- [Features Guide](FEATURES.md) - Complete feature reference
-- [Architecture](ARCHITECTURE.md) - How SAM is built
-- [Providers Guide](PROVIDERS.md) - Detailed AI provider setup
-- [Memory System](MEMORY.md) - How memory and search work
-- [Tools Reference](TOOLS.md) - What SAM's tools can do
-- [Security](SECURITY.md) - Privacy and security model
-- [Installation](INSTALLATION.md) - Detailed installation guide
-- [Building from Source](../BUILDING.md) - For developers
-- [Contributing](../CONTRIBUTING.md) - How to contribute
+**Q: Can I contribute to SAM?**
+A: Yes! See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.

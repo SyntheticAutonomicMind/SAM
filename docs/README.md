@@ -47,9 +47,11 @@ For deeper implementation notes and internal specifications, see [`project-docs/
 SAM is a native macOS AI assistant with:
 
 - Native SwiftUI interface
-- Support for local and cloud AI providers
+- Support for local and cloud AI providers (OpenAI, GitHub Copilot, DeepSeek, Google Gemini, MiniMax, OpenRouter, Ollama Cloud, Z.AI, MLX, CachyLLama, llama.cpp, Remote llama.cpp, Custom)
 - Built-in tools for files, web research, documents, math, and macOS integration
 - Per-conversation memory plus long-term memory features
-- Voice input and speech output
+- Voice input and speech output with relay mode
 - Remote access through SAM-Web and the local API server
 - Privacy-first defaults with user-controlled integrations
+- LoRA fine-tuning for local models
+- Onboarding wizard for first-time setup

@@ -31,7 +31,7 @@ make build-debug
 
 - **macOS**: 15.0+ required for development (users can run on macOS 14.0+)
 - **Xcode**: Full Xcode 16.0+ installation required (not just Command Line Tools)
-- **Architecture**: Apple Silicon (arm64) strongly recommended for MLX and best performance
+- **Architecture**: Apple Silicon (arm64) strongly recommended for MLX, CachyLLama, and best performance
 - **Swift**: 6.0 language features are used throughout the codebase
 
 ## Prerequisites (tools)
@@ -161,6 +161,17 @@ and the app bundle at:
 .build/Build/Products/Debug/SAM.app
 ```
 
+## Building CachyLLama
+
+CachyLLama is built as part of the llama.cpp submodule. The build script automatically detects and builds the CachyLLama fork with Metal optimizations for Apple Silicon.
+
+```bash
+# CachyLLama is built alongside llama.cpp
+make build-debug
+```
+
+The CachyLLama framework will be available for local model inference on Apple Silicon.
+
 ## Troubleshooting — common errors and fixes
 
 1) CMake says "No CMAKE_C_COMPILER could be found" or "No CMAKE_CXX_COMPILER could be found"
@@ -228,8 +239,8 @@ SAM supports a development channel for testing pre-release features. Development
 make build-dev
 
 # Example version progression:
-# 20260109.1 → 20260109.1-dev.1 (first dev build)
-# 20260109.1-dev.1 → 20260109.1-dev.2 (next dev build)
+# 20260109.1 -> 20260109.1-dev.1 (first dev build)
+# 20260109.1-dev.1 -> 20260109.1-dev.2 (next dev build)
 ```
 
 The `build-dev` target:
@@ -267,7 +278,7 @@ git push
 - Version format: `YYYYMMDD.RELEASE-dev.BUILD`
 - Published as GitHub pre-releases
 - Listed in `appcast-dev.xml` (includes stable releases too)
-- Users must opt-in via Preferences → General → "Receive development updates"
+- Users must opt-in via Preferences -> General -> "Receive development updates"
 - May contain bugs, incomplete features, breaking changes
 
 **Stable releases:**
@@ -316,6 +327,7 @@ make build-debug
 
 - The llama.cpp build in `scripts/build-llama-macos.sh` intentionally builds arm64-only frameworks for Apple Silicon. If you need x86_64 support, you'll need to adapt the script and pass `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` and build both architectures.
 - MLX integration requires the `mlx-swift` SPM package; make sure your network allows fetching GitHub packages.
+- CachyLLama is built from the CachyLLama fork of llama.cpp with Metal optimizations for Apple Silicon.
 - If you require reproducible CI builds, pin package versions in `Package.resolved` and install Homebrew packages as part of the CI image.
 
 ---

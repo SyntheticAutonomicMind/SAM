@@ -26,6 +26,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 | **Z.AI (Coding)** | Pay-per-token | Fast | Cloud | GLM coding models |
 | **MLX (Local)** | Free | Varies | Full privacy | Offline use, sensitive data, Apple Silicon |
 | **llama.cpp (Local)** | Free | Varies | Full privacy | Offline use, Intel or Apple Silicon |
+| **CachyLLama (Local)** | Free | Fast | Full privacy | High-performance local, Apple Silicon |
 | **Remote llama.cpp** | Free | Varies | Self-hosted | Self-hosted inference servers |
 | **Custom Endpoint** | Varies | Varies | Self-hosted | Self-hosted servers, Ollama, LM Studio |
 
@@ -120,7 +121,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ### MiniMax
 
-**What you get:** MiniMax-M3, MiniMax-M2.7, MiniMax-M2.5, and high-speed variants
+**What you get:** MiniMax-M3, MiniMax-M3-highspeed, MiniMax-M2.7, MiniMax-M2.5
 
 **Setup:**
 1. Create an account at [minimax.io](https://www.minimax.io)
@@ -137,6 +138,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 - 128K token context window
 - Competitive pricing
 - Good tool use capabilities
+- Supports thinking parameter for extended reasoning
 
 ---
 
@@ -286,6 +288,38 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ---
 
+### CachyLLama (Apple Silicon)
+
+**What you get:** High-performance GGUF inference using the CachyLLama fork of llama.cpp with Metal optimizations.
+
+**Requirements:**
+- Apple Silicon Mac (M1, M2, M3, M4)
+- 8GB+ RAM
+- macOS 14.0+
+
+**Setup:**
+1. In SAM Settings > AI Providers, click Add Provider
+2. Choose "Local CachyLLama Model"
+3. Browse available models (Hugging Face GGUF)
+4. Click Download on your chosen model
+5. Wait for the download to complete
+6. Configure sampler parameters (top-K, min-P, temperature, etc.) if desired
+7. The model is ready to use
+
+**Performance Advantages:**
+- Optimized Metal GPU kernels for Apple Silicon
+- Improved sampler chain (top-K, min-P, temperature, top-P, typical-P)
+- Better memory management and KV cache handling
+- Typically 20-40% faster than standard llama.cpp on Apple Silicon
+
+**Advantages:**
+- Complete privacy - nothing leaves your Mac
+- No internet connection needed after download
+- No per-token costs
+- Best local inference performance on Apple Silicon
+
+---
+
 ### Remote llama.cpp
 
 **What you get:** Connect to a remote llama.cpp server (e.g., running on a GPU server) for local-model inference without local hardware requirements.
@@ -340,13 +374,14 @@ You can have multiple providers configured simultaneously and switch between the
 
 | Use Case | Recommended Approach |
 |----------|---------------------|
-| **Daily use** | Cloud provider (GPT-4o or Claude) for quality and speed |
-| **Sensitive content** | Local model (MLX) for complete privacy |
+| **Daily use** | Cloud provider (GPT-4o or Claude via Copilot) for quality and speed |
+| **Sensitive content** | Local model (MLX or CachyLLama) for complete privacy |
 | **Budget-conscious** | DeepSeek, MiniMax, or local models for routine tasks, GPT-4o for complex ones |
-| **Coding** | Claude or GPT-4o for best tool use, DeepSeek Coder for budget |
-| **Long documents** | Claude (200K context), Gemini (1M context), or local models with large context |
-| **Offline use** | Local models (MLX or llama.cpp) |
+| **Coding** | GPT-4o or Claude for best tool use, DeepSeek Coder for budget |
+| **Long documents** | Gemini (1M context), MiniMax (128K), or local models with large context |
+| **Offline use** | Local models (MLX, CachyLLama, or llama.cpp) |
 | **Experimentation** | OpenRouter for access to many models |
+| **Best local speed (Apple Silicon)** | CachyLLama for highest performance |
 
 ---
 
@@ -378,6 +413,7 @@ You can have multiple providers configured simultaneously and switch between the
 - Try a smaller model
 - Check that the model file isn't corrupted (re-download if needed)
 - For MLX: verify you're on Apple Silicon
+- For CachyLLama: verify you're on Apple Silicon
 - For llama.cpp: verify the file is in GGUF format
 
 ---

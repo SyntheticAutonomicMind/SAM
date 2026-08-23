@@ -27,11 +27,12 @@ Typical RAM usage varies a lot by configuration.
 |--------------|------------------|
 | Cloud providers only | 150MB-300MB |
 | Cloud + documents and memory-heavy workflows | 200MB-500MB |
-| Local 7B-class model | 5GB-8GB |
-| Local 13B-class model | 10GB-16GB |
+| Local 7B-class model (MLX) | 5GB-8GB |
+| Local 13B-class model (MLX) | 10GB-16GB |
+| Local 7B-class model (CachyLLama) | 4GB-7GB |
 | Very large local models | much higher, depending on model size |
 
-Local inference dominates memory usage because model weights must be loaded into memory.
+Local inference dominates memory usage because model weights must be loaded into memory. CachyLLama typically uses 15-20% less memory than standard llama.cpp for the same model.
 
 ### Disk usage
 
@@ -61,10 +62,10 @@ Local models are stored under:
 
 ### Apple Silicon
 
-Apple Silicon provides the best local experience, especially with MLX.
+Apple Silicon provides the best local experience, especially with MLX and CachyLLama.
 
 Best use cases:
-- local models
+- local models (MLX, CachyLLama)
 - mixed local/cloud usage
 - voice plus local inference
 - document-heavy workflows with strong responsiveness
@@ -87,14 +88,23 @@ Local performance depends on:
 - quantization
 - available RAM / unified memory
 - current system load
-- chosen engine (MLX vs llama.cpp)
+- chosen engine (MLX vs CachyLLama vs llama.cpp)
 
 ### General guidance
 
 - smaller models are faster and lighter
 - larger models may improve quality but increase latency and memory usage
-- MLX is usually the best option on Apple Silicon
+- MLX is usually the best option on Apple Silicon for quality
+- CachyLLama is the best option on Apple Silicon for speed
 - llama.cpp is the fallback for Intel or GGUF-specific local workflows
+
+### Model engine comparison (Apple Silicon)
+
+| Engine | Speed | Quality | Memory Efficiency | Best For |
+|--------|-------|---------|-------------------|----------|
+| **MLX** | Fast | Best | Good | General local use, quality priority |
+| **CachyLLama** | Fastest | Very Good | Best | Speed priority, large models |
+| **llama.cpp** | Moderate | Good | Good | Intel Macs, specific GGUF models |
 
 ---
 
@@ -105,6 +115,7 @@ SAM includes built-in visibility into performance-related state, including thing
 - context usage
 - latency
 - local inference-related metrics where available
+- cost tracking per conversation
 
 This helps you understand whether a slowdown is coming from the model, the prompt size, the document workload, or the surrounding system.
 
@@ -122,14 +133,21 @@ This helps you understand whether a slowdown is coming from the model, the promp
 
 - use smaller models when speed matters more than raw capability
 - close other heavy apps if you are short on RAM
-- prefer MLX on Apple Silicon
+- prefer MLX or CachyLLama on Apple Silicon
 - avoid oversized models for machines that do not have the headroom
+- use quantized models (Q4_K_M, Q5_K_M) for better memory/speed tradeoff
 
 ### For document workflows
 
 - import only what you need for the current task when possible
 - very large documents increase indexing and retrieval work
 - structured text is generally easier to process than poor-quality scanned content
+
+### For voice workflows
+
+- use a fast local model for responsive interaction
+- enable streaming TTS for natural conversation flow
+- select appropriate audio devices to avoid resampling overhead
 
 ---
 
@@ -141,6 +159,7 @@ SAM manages this by:
 - trimming older context
 - recalling archived context when useful
 - avoiding unbounded prompt growth
+- using userContext for dynamic content (KV cache stability)
 
 That balance is important for keeping long-lived conversations usable.
 
@@ -154,6 +173,7 @@ If you want the best overall experience:
 - use local models for privacy-sensitive tasks
 - use cloud models when you want broader hosted capability
 - let SAM's memory and retrieval features do the heavy lifting instead of pasting huge context blocks manually
+- prefer CachyLLama for speed, MLX for quality on Apple Silicon
 
 ---
 

@@ -158,7 +158,7 @@ Capture variables before crossing actor boundaries:
 func doWork() async {
     await withTaskGroup(of: Void.self) { group in
         group.addTask {
-            await self.property.doSomething()  // ❌ Error
+            await self.property.doSomething()  // [FAIL] Error
         }
     }
 }
@@ -168,7 +168,7 @@ func doWork() async {
     let property = self.property  // Capture synchronously
     await withTaskGroup(of: Void.self) { group in
         group.addTask {
-            await property.doSomething()  // ✅ OK
+            await property.doSomething()  // [OK] OK
         }
     }
 }
@@ -179,9 +179,9 @@ Use helpers from `SQLiteHelpers.swift` to avoid Expression<T> ambiguity:
 ```swift
 import ConversationEngine
 
-// Instead of: Expression<String>("column")  // ❌ Ambiguous
-let nameColumn = column("name", String.self)     // ✅ Correct
-let ageColumn = columnOptional("age", Int.self)  // ✅ Correct
+// Instead of: Expression<String>("column")  // [FAIL] Ambiguous
+let nameColumn = column("name", String.self)     // [OK] Correct
+let ageColumn = columnOptional("age", Int.self)  // [OK] Correct
 ```
 
 ### Testing Concurrency
@@ -229,13 +229,13 @@ class ToolManager {
 ```swift
 // BAD
 for item in items {
-    await process(options: self.options)  // ❌ Capture in loop
+    await process(options: self.options)  // [FAIL] Capture in loop
 }
 
 // GOOD
 let options = self.options  // Capture once
 for item in items {
-    await process(options: options)  // ✅ OK
+    await process(options: options)  // [OK] OK
 }
 ```
 
@@ -371,7 +371,7 @@ We follow the [Swift API Design Guidelines](https://swift.org/documentation/api-
 - Use descriptive names: `conversationManager` not `cm`
 - Use camelCase for variables and functions
 - Use PascalCase for types
-- Avoid single-character names except in loops: `for item in items` ✅, `let i = 0` ❌
+- Avoid single-character names except in loops: `for item in items` [OK], `let i = 0` [FAIL]
 
 **Functions:**
 - Keep functions under 50 lines when possible
