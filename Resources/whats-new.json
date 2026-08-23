@@ -3,21 +3,101 @@
     {
       "version": "20260822.1",
       "release_date": "August 22, 2026",
-      "introduction": "Two fixes that keep your context sharp when working with OpenRouter and tool-heavy sessions. OpenRouter models now report their real context window sizes instead of falling back to a generic default, and SAM's internal token estimates now account for tool definitions so conversations stay trimmed based on accurate numbers rather than inflated ratios.",
-      "highlights": [],
-      "improvements": [],
-      "bugfixes": [
+      "introduction": "SAM's context management is rebuilt from the ground up, bringing CLIO's trimming and compression primitives to your conversations. Long sessions stay trimmed based on accurate, learned token counts instead of rough estimates, thread summaries preserve decisions across trim cycles, and context trimming happens after memory enhancement so injected context doesn't push you over budget. OpenRouter and remote llama.cpp models now report their real context sizes, remote llama.cpp provider configuration is fixed, and the provider preferences sheet drops the redundant Advanced Settings section in favor of model-driven defaults.",
+      "highlights": [
         {
-          "id": "openrouter-context-size",
+          "id": "clio-context-management",
+          "icon": "arrow.triangle.merge",
+          "title": "CLIO-Grade Context Management",
+          "description": "Long autonomous sessions use the same context management primitives as CLIO. Thread summary compression is regex-based (no LLM call during trim), previous summaries are parsed and merged so commits and decisions accumulate across cycles, and SAM learns your actual token ratio from API feedback to trim accurately."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "regex-summary-compression",
+          "icon": "doc.text.wrench",
+          "title": "Thread Summary Compression No Longer Calls the API",
+          "description": "When SAM trims your conversation to stay within the model's context window, it compresses the dropped messages into a thread summary. This compression is regex-based, so it costs nothing - no extra API call, no extra billable tokens. Previous versions could trigger an LLM call to summarize, which was both slow and charged as a real request."
+        },
+        {
+          "id": "accumulating-summaries",
+          "icon": "books.vertical",
+          "title": "Decisions Accumulate Across Trim Cycles",
+          "description": "When SAM trims context, it doesn't throw away your work. The compressed summary is parsed and merged into the next trim's summary, so key decisions, tool outcomes, and context from earlier in the conversation persist. You no longer lose track of what was decided three trims ago in a long session."
+        },
+        {
+          "id": "trim-after-memory",
+          "icon": "slider.horizontal.3",
+          "title": "Trimming Happens After Memory Enhancement",
+          "description": "SAM now enhances your request with relevant memories first, then trims the combined result to fit the context window. Previously, trimming happened before memory injection, which meant the injected context could push the total over budget. This ensures all context -- both conversation history and memory-augmented context -- is accounted for in the trim decision."
+        },
+        {
+          "id": "drift-aware-trim",
+          "icon": "speedometer",
+          "title": "Trim Threshold Learns From Your Actual Usage",
+          "description": "SAM's internal token estimator learns your real char-to-token ratio from API feedback and adjusts its trim threshold accordingly. When the heuristic undercounts tokens (common with tool-heavy sessions), the trim threshold tightens to keep you safely within the window. This prevents the situation where SAM thinks it has room for more but the API rejects the request."
+        },
+        {
+          "id": "tool-definitions-counted",
+          "icon": "slider.horizontal.3",
+          "title": "Tool Definitions Counted in Token Estimates",
+          "description": "SAM's internal token estimator now includes tool definition schemas in its character count. Previously, tool descriptions and parameter schemas (which can be 20K-40K tokens for SAM's full tool set) were excluded from the estimate but included in the server's reported usage. This mismatch inflated the drift ratio to its ceiling, tightening the trim threshold and prematurely cutting off context. Tool-heavy sessions now maintain their full context window as intended."
+        },
+        {
+          "id": "system-prompt-non-streaming-fix",
+          "icon": "doc.text",
+          "title": "System Prompt Now Present in Non-Streaming Calls",
+          "description": "The non-streaming response path was computing the system prompt but never sending it to the API. This meant SAM's guardrails and instructions were silently absent when non-streaming mode was selected. The system prompt is now included in both streaming and non-streaming call paths."
+        },
+        {
+          "id": "kv-cache-stable-summary",
+          "icon": "externaldrive",
+          "title": "Summary Placed at End for KV Cache Stability",
+          "description": "Thread summaries are now placed at the end of the message array rather than after the system prompt, and all leading system messages are preserved at the start. This keeps the system prompt prefix byte-identical across turns, enabling KV cache reuse on the server side. Long sessions benefit from faster response times as the model doesn't need to reprocess the stable prefix."
+        },
+        {
+          "id": "openrouter-context-sizes",
           "icon": "circle.grid.3x3",
           "title": "OpenRouter Models Report Their Real Context Window",
           "description": "When you use OpenRouter, SAM now fetches each model's actual context size from the /v1/models endpoint instead of falling back to a generic default. Models like poolside/laguna that support 500K+ context windows now show their real limits, so SAM doesn't trim your conversation prematurely. The model chooser and settings panels also display the correct context size."
         },
         {
-          "id": "drift-ratio-tool-definitions",
+          "id": "remotellama-context-sizes",
+          "icon": "server.rack",
+          "title": "Remote llama.cpp Models Report Their Real Context Size",
+          "description": "Remote llama.cpp server models now report their actual context_length from the server's /v1/models endpoint. Previously these models fell through to a generic 2048-token fallback, which was almost always wrong. If you configured your server with a 65K context, SAM now knows about it and trims accordingly."
+        },
+        {
+          "id": "remotellama-not-local",
+          "icon": "checkmark.circle",
+          "title": "Remote llama.cpp Correctly Identified as Remote",
+          "description": "The system was incorrectly identifying remote llama.cpp models as local models (because the provider type string contained 'LlamaProvider'). This caused SAM to look for local model files on disk instead of making API calls to your server. Remote llama.cpp is now correctly treated as a remote provider."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "remotellama-baseurl",
+          "icon": "network.badge.shield.radiowaves.forward",
+          "title": "Fixed Remote llama.cpp Defaulting to OpenAI Base URL",
+          "description": "When adding a remote llama.cpp provider, the configuration sheet was not clearing the base URL field when switching from the OpenAI provider type (which has a default URL). This caused the llama.cpp provider to inherit OpenAI's API endpoint, sending requests to the wrong server. The base URL field now clears properly when switching provider types."
+        },
+        {
+          "id": "models-not-appearing",
+          "icon": "list.bullet.rectangle",
+          "title": "Fixed Models Not Appearing in the Model Chooser",
+          "description": "After adding a remote provider (OpenRouter, GitHub Copilot, etc.), the new provider's models were not appearing in the model chooser until SAM was restarted. The provider configuration reload was missing a notification that tells the model list to refresh. This notification is now posted after every provider reload."
+        },
+        {
+          "id": "remotellama-context-fallback",
+          "icon": "server.rack",
+          "title": "Fixed Remote llama.cpp Context Showing 2048 Instead of Actual Value",
+          "description": "Even after fetching context sizes from the remote llama.cpp server, the context size was being dropped when models were listed in the model chooser. The capability fields were not being passed through when models were prefixed with the provider name. All capability fields (context window, max completion tokens, etc.) are now preserved through the prefixing step."
+        },
+        {
+          "id": "advanced-settings-removed",
           "icon": "slider.horizontal.3",
-          "title": "Tool Definitions No Longer Inflate Token Estimates",
-          "description": "SAM's internal heuristic for estimating token counts now includes tool definition schemas in its character count. Previously, tool descriptions and parameter schemas (which can be 20K-40K tokens for SAM's full tool set) were excluded from the estimate but included in the server's reported usage. This mismatch inflated the drift ratio to its ceiling, tightening the trim threshold and prematurely cutting off context. Tool-heavy sessions now maintain their full context window as intended."
+          "title": "Removed Advanced Settings from Provider Configuration",
+          "description": "The Advanced Settings section (max tokens, temperature, timeout, retry count) has been removed from the provider configuration sheet. These settings are now derived from model data and the ChatWidget configuration panels, which provide better per-conversation control. Provider-specific defaults (e.g., 32K max tokens for llama.cpp, 0.2 temperature for GitHub Copilot) are applied automatically."
         }
       ]
     },
