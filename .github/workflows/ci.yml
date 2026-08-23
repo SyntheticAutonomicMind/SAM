@@ -45,8 +45,90 @@ jobs:
     - name: Download Metal Toolchain
       run: |
         echo "Downloading Metal Toolchain for Xcode 26.2..."
-        sudo xcodebuild -downloadComponent MetalToolchain || echo "Metal Toolchain already installed or download failed"
-    
+        TOOLCHAIN_DIR="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
+
+        echo "Checking for Metal Toolchain standard library..."
+        if [ -d "$TOOLCHAIN_DIR/usr/lib/metal" ]; then
+          echo "Metal standard library already present"
+        else
+          echo "Metal standard library missing. Downloading Metal Toolchain..."
+          # Record DMG paths before download
+          BEFORE=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" 2>/dev/null | sort)
+
+          sudo xcodebuild -downloadComponent MetalToolchain
+
+          # Find the DMG that was just downloaded (new since our before snapshot)
+          AFTER=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" 2>/dev/null | sort)
+          METAL_DMG=$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -1)
+          if [ -z "$METAL_DMG" ]; then
+            METAL_DMG=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" -newermt "5 minutes ago" 2>/dev/null | head -1)
+          fi
+
+          if [ -n "$METAL_DMG" ] && [ -f "$METAL_DMG" ]; then
+            echo "Installing Metal Toolchain from: $METAL_DMG"
+            MOUNT_INFO=$(hdiutil attach "$METAL_DMG" -nobrowse -quiet 2>&1)
+            MOUNT_PATH=$(echo "$MOUNT_INFO" | tail -1 | awk '{print $1}')
+            if [ -z "$MOUNT_PATH" ]; then
+              MOUNT_PATH="/Volumes/*Metal*"
+            fi
+            MNT=$(echo $MOUNT_PATH | sed 's/\*//')
+            if [ -d "$MNT/usr/lib/metal" ]; then
+              echo "Found metal standard library in DMG, copying..."
+              sudo cp -R "$MNT/usr/" "$TOOLCHAIN_DIR/usr/"
+              hdiutil detach "$MNT" -quiet 2>/dev/null || true
+              echo "Metal Toolchain installed."
+            else
+              echo "Metal standard library not found in DMG."
+              hdiutil detach "$MNT" -quiet 2>/dev/null || true
+            fi
+          else
+            echo "No Metal Toolchain DMG found to install"
+          fi
+        fi
+
+        # Verify installation and test compilation
+        echo "Verifying Metal Toolchain availability..."
+        if ! xcrun --find metal; then
+          echo "ERROR: 'metal' compiler not found in toolchain"
+          exit 1
+        fi
+        echo "Metal compiler found: $(xcrun --find metal)"
+        echo "Testing Metal compilation via default toolchain..."
+        cat > /tmp/test.metal << 'EOF'
+        #include <metal_stdlib>
+        using namespace metal;
+        kernel void test() {}
+        EOF
+        DEFAULT_METAL="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal"
+        if "$DEFAULT_METAL" -c /tmp/test.metal -o /dev/null 2>&1; then
+          echo "Metal compilation test passed!"
+        else
+          echo "Default toolchain metal proxy cannot find Metal Toolchain."
+          echo "Installing wrapper script to delegate to cryptex-mounted Metal Toolchain..."
+
+          REAL_METAL=$(xcrun -sdk macosx --find metal 2>/dev/null || xcrun -toolchain Metal --find metal 2>/dev/null)
+          if [ -z "$REAL_METAL" ] || [ ! -x "$REAL_METAL" ]; then
+            echo "ERROR: Could not find a working Metal Toolchain metal binary"
+            exit 1
+          fi
+          echo "Found real Metal Toolchain metal binary: $REAL_METAL"
+
+          sudo cp "$DEFAULT_METAL" "${DEFAULT_METAL}.proxy.backup"
+          sudo tee "$DEFAULT_METAL" > /dev/null << WRAPPER
+          #!/bin/bash
+          exec "$REAL_METAL" "\$@"
+          WRAPPER
+          sudo chmod +x "$DEFAULT_METAL"
+
+          if "$DEFAULT_METAL" -c /tmp/test.metal -o /dev/null 2>&1; then
+            echo "Metal compilation test passed with wrapper!"
+          else
+            echo "ERROR: Metal compilation still failing after wrapper install"
+            exit 1
+          fi
+        fi
+        rm -f /tmp/test.metal
+
     - name: Build SAM (Debug)
       run: make build-debug
 
