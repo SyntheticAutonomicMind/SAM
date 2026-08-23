@@ -6,107 +6,189 @@
 
 ## Version History
 
+### Version 25 (July 29, 2026)
+
+**Change:** Restore Assistant personality, add v25 anti-failure rules, fix cancellation and MLX build
+
+**Rationale:**
+After v24's "Agent Identity" reframing, SAM lost its helpful personality and became overly mechanical. Users reported cold, robotic responses. Also identified new failure patterns in agent behavior that needed explicit rules.
+
+**Changes:**
+
+**ADDED:**
+1. **Assistant Personality Restoration** - Core Identity now includes "helpful, accurate, approachable, and genuinely interested in the user's goals" BEFORE the "YOU ARE AN AGENT" protocol
+2. **Anti-Failure Rules (v25)** - New explicit rules addressing:
+   - "Recent-session history is irrelevant" - Cannot use conversation history as excuse to skip tool calls
+   - "Format inertia is not a tool call" - Reusing previous response format without new tool calls is fabrication
+   - "Tool call must precede the matching text" - Specific claims require fresh tool verification
+   - "Self-check before specific claims" - Mandatory verification step
+
+**FIXED:**
+- Cancellation handling in streaming responses
+- MLX build issues with Swift 6 concurrency
+
+**BEHAVIORAL IMPACT:**
+- SAM now presents as a helpful agent, not a protocol executor
+- Eliminates "fabrication by template reuse" failure mode
+- Maintains agent completion discipline while restoring warmth
+
+---
+
+### Version 24 (July 29, 2026)
+
+**Change:** Agent Identity + Completion Criteria
+
+**Rationale:**
+Fundamental identity-framing difference driving recurring bugs. The model self-identified as an assistant that helps by announcing, not an agent that works to completion. The "helpful assistant" framing caused narration-without-tool-call bugs (model would announce what it planned to do instead of doing it).
+
+**Changes:**
+
+**ADDED:**
+1. **"YOU ARE AN AGENT" Core Identity** - Replaces "helpful assistant" framing with explicit agent protocol:
+   - "Work autonomously until the user's request is resolved"
+   - "PUSH TO ACTUAL LIMIT"
+   - "YOU MUST NOT" list (narrate without acting, stop at 80%, leave errors unresolved, etc.)
+2. **Completion Criteria Component** - Explicit completion standards:
+   - "Narrating a tool action and ending without the tool call is abandonment, not completion"
+   - "Personalities do not override completion"
+   - Clear definition of what "done" means
+
+**REMOVED:**
+- "Helpful, accurate, and honest assistant" framing from Core Identity
+
+**BEHAVIORAL IMPACT:**
+- Eliminated narration-without-tool-call bugs
+- Model now pushes to actual completion
+- But: produced cold, mechanical tone (fixed in v25)
+
+---
+
+### Version 23 (July 29, 2026)
+
+**Change:** Tool-Backed Claims Component
+
+**Rationale:**
+Addresses the failure mode of fabricating specifics (prices, ratings, URLs) by extending a prior tool-verified response template without re-running the tools. The model would produce fabricated results with the same framing as a previous verified response.
+
+**Changes:**
+
+**ADDED - "Tool-Backed Claims" Component (atomic):**
+1. **Core Principle:** "A response that looks like a verified lookup must BE a verified lookup"
+2. **Anti-Pattern Phrases (4):**
+   - "Recent-session history is irrelevant"
+   - "Format inertia is not a tool call"
+   - "Tool call must precede the matching text"
+   - "Self-check before specific claims"
+3. **Cross-links:** From Workflow Loop "I'll search" rule, Tool Usage RESEARCH, Pre-Response Checklist #1, User Data Boundaries Section A
+
+**BEHAVIORAL IMPACT:**
+- Eliminates "duplicate-shape recall" / "format inertia" fabrication
+- Each verifiable question gets its own tool call
+- Domain-neutral - applies to all subjects
+
+---
+
+### Version 22 (July 29, 2026)
+
+**Change:** Scope Honesty Component
+
+**Rationale:**
+Addresses the pattern of agents unilaterally narrowing user-stated scope - treating backup lists as filler, rationalizing shortcuts as efficiency, having opinions about scope without tool backing.
+
+**Changes:**
+
+**ADDED - "Scope Honesty" Component (atomic):**
+1. **Core Principle:** "User sets the scope"
+2. **Anti-Pattern Phrases (5):**
+   - "Do not decide for the user that part of their scope is unnecessary"
+   - "Backup, secondary, or lower-priority items get the same rigor"
+   - "Scope-shrinking claims require tool backing"
+   - "Do not rationalize shortcuts as efficiency or helpfulness"
+   - "Self-check before scope-shrinking"
+3. **Cross-links:** From User Autonomy, User Data Boundaries Section C
+
+**BEHAVIORAL IMPACT:**
+- All items in user's stated scope get equal rigor
+- No unilateral scope-shrinking
+- Backup/secondary items treated with same rigor as primary
+
+---
+
+### Version 21 (July 23, 2026)
+
+**Change:** User Autonomy Component + Completion/Communication Rewrite
+
+**Rationale:**
+Addresses agent acting as user's time/energy/attention manager - unsolicited recaps, recap invitations, "are you tired", "take a break", "we can pick this up tomorrow", "is there anything else".
+
+**Changes:**
+
+**ADDED - "User Autonomy" Component (atomic):**
+1. **Core Principle:** User authority over session boundaries, time, attention, response length
+2. **Forbidden Behaviors:**
+   - No unsolicited recaps
+   - No session-boundary nudges ("we can pick this up tomorrow")
+   - No attention management ("take a break", "you seem tired")
+   - No manufactured decision points
+3. **Domain-neutral:** "When the user is discussing any subject with an agent"
+
+**REWRITTEN - Completion & Communication:**
+- Removed "Conversational Partner Protocol" block
+- Removed "What 'Done' Means" conversational bullet
+- Removed Communication "When complete"/"Best practices"/"Never say" entries that mandated recaps
+- Extended Pre-Response Checklist Mode Check with no-implicit-urgency rule
+
+**BEHAVIORAL IMPACT:**
+- Zero unsolicited session management
+- User controls when conversation ends
+- No manufactured urgency or decision points
+
+---
+
+### Version 20 (July 19, 2026)
+
+**Change:** User Data Boundaries Component
+
+**Rationale:**
+Addresses silent assumption layering and user-list filtering - agents making assumptions about user data and filtering lists without tool backing.
+
+**Changes:**
+
+**ADDED - "User Data Boundaries" Component (atomic):**
+- Section A: Numerical/Calculation Discipline (math_operations mandatory)
+- Section B: Assumption Layering Prevention
+- Section C: List Manipulation Discipline (no filtering user lists)
+- Cross-linked from Tool Usage (math), Pre-Response Checklist
+
+---
+
 ### Version 16 (January 4, 2026)
 
 **Change:** Simplified verbose sections, removed dead code
 
 **Rationale:**
-Initial plan was to remove todo workflow instructions as redundant with AgentOrchestrator.
-**However, testing revealed agents need explicit todo workflow guidance in system prompt.**
-While orchestrator provides runtime reminders, the static instructions serve as educational
-foundation that agents rely on. Reverted todo workflow section after user testing.
+Initial plan was to remove todo workflow instructions as redundant with AgentOrchestrator. However, testing revealed agents need explicit todo workflow guidance in system prompt. While orchestrator provides runtime reminders, the static instructions serve as educational foundation that agents rely on.
 
 **Final Changes:**
 
 **KEPT (After Reversion):**
 1. **MULTI-STEP REQUESTS - TODO LIST WORKFLOW section** (buildSAMSpecificPatterns)
-   - **Initially removed** as redundant with AgentOrchestrator
-   - **REVERTED** after user testing showed agents need explicit guidance  
-   - **Lesson:** Runtime reminders supplement but don't replace educational foundation
-   - Static instructions serve as reference agents rely on for workflow understanding
+   - Initially removed as redundant with AgentOrchestrator
+   - REVERTED after user testing showed agents need explicit guidance
+   - Lesson: Runtime reminders supplement but don't replace educational foundation
 
 **REMOVED (Dead Code):**
-1. **buildWorkflowContinuationProtocol() function**
-   - Entire function removed (~500 tokens)
-   - **Why:** Never called, redundant with orchestrator's 4 continuation variants
-
-2. **buildThinkToolGuidance() function**
-   - Entire function removed (~80 tokens)
-   - **Why:** Never called, guidance already in buildSAMSpecificPatterns
+1. **buildWorkflowContinuationProtocol() function** (~500 tokens)
+   - Entire function removed - never called, redundant with orchestrator's 4 continuation variants
+2. **buildThinkToolGuidance() function** (~80 tokens)
+   - Entire function removed - never called, guidance already in buildSAMSpecificPatterns
 
 **Simplifications:**
-
-1. **Tool Responsibility** (buildToolUsage)
-   - **Before:** 6 lines with enforcement ("Continue working until...not give up...do not stop...")
-   - **After:** 3 lines with principles ("Use tools repeatedly...try alternatives")
-   - **Why:** AgentOrchestrator's graduated intervention system enforces continuation
-   - **Token Savings:** ~40 tokens
-
-2. **Think Tool** (buildSAMSpecificPatterns)
-   - **Before:** 6 lines with "CRITICAL" warnings and enforcement
-   - **After:** 1 line with principle ("Shows 'Thinking...' for complex planning...avoid consecutive calls")
-   - **Why:** Principle is useful, but detailed enforcement is verbose
-   - **Token Savings:** ~60 tokens
-
-3. **Multi-Step Request Handling** (buildOperationalModes)
-   - **Before:** 8 lines with "REQUIRED FIRST STEP" enforcement
-   - **After:** 4 lines with principles (understand steps, process sequentially, complete all)
-   - **Why:** Educational value remains, but enforcement language removed
-   - **Token Savings:** ~40 tokens
+1. **Tool Responsibility** (buildToolUsage) - 6 lines → 3 lines (~40 tokens saved)
+2. **Think Tool** (buildSAMSpecificPatterns) - 6 lines → 1 line (~60 tokens saved)
+3. **Multi-Step Request Handling** (buildOperationalModes) - 8 lines → 4 lines (~40 tokens saved)
 
 **Total Token Savings:** ~720 tokens (~15% reduction from affected sections)
-**Note:** Original estimate was ~1150 tokens, but todo workflow section was reverted (~430 tokens restored)
-
-**What Remains (Preserved Components):**
-- ✅ Core Identity (WHO SAM is)
-- ✅ Current Date Context (hallucination prevention)
-- ✅ Response Guidelines (quality standards)
-- ✅ Tool Usage (general principles, tool schema guidance)
-- ✅ Operational Modes (conversational vs task modes)
-- ✅ Execution Standards (error recovery tactics, completion criteria)
-- ✅ Communication Protocol (style guide)
-- ✅ Context & Memory (memory operations, document import)
-- ✅ Data Visualization Protocol (Mermaid diagram rendering rules)
-- ✅ Workflow Mode (mode-specific guidance, only when enabled)
-- ✅ Dynamic Iterations (iteration monitoring, only when enabled)
-- ✅ Two-Phase Workflow (pattern recommendation)
-- ✅ Sequential Lists (pattern guidance)
-- ✅ **Todo Workflow Instructions (KEPT after reversion)**
-
-**Behavioral Impact:**
-- **Todo workflow preserved** - Agents need explicit static guidance despite runtime reminders
-- **Dead code removed** - Cleaner codebase
-- **Verbose sections simplified** - Clearer, more concise
-- **No breaking changes** - All functionality intact
-
-**Testing Results:**
-- ✅ Build: PASS (`make build-debug`)
-- ✅ No compile errors
-- ✅ System prompt generates correctly
-- ✅ User testing: Agents work correctly with todo workflow restored
-
-**Files Modified:**
-- `Sources/ConfigurationSystem/SystemPromptConfiguration.swift`
-  - Removed 3 redundant sections
-  - Simplified 3 verbose sections
-  - Updated `currentVersion` from 15 → 16
-  - Added version comment explaining changes
-
-**Related Components (Orchestrator System):**
-- `Sources/APIFramework/AgentOrchestrator.swift`
-  - 4 context-aware continuation guidance variants (lines ~1576-1633)
-  - Fresh todo state reads before workflow decisions
-  - Graduated intervention system for enforcing continuation
-
-- `Sources/MCPFramework/TodoReminderInjector.swift`
-  - Todo-specific workflow reminders (lines ~40-120)
-  - "DO THE ACTUAL WORK, THEN mark completed" enforcement
-  - Runtime injection with every request when todos exist
-
-**Migration Notes:**
-- **Existing conversations:** Unchanged (keep old system prompt)
-- **New conversations:** Automatically use Version 16
-- **User action:** None required (automatic on next conversation)
 
 ---
 
@@ -150,25 +232,50 @@ foundation that agents rely on. Reverted todo workflow section after user testin
 3. **Maintainable:** Single source of truth for behavioral rules
 4. **Efficient:** Shorter system prompt = more room for user context
 
-### What Belongs in System Prompt vs Orchestrator
+### Version 21+ Philosophy (User Autonomy + Scope Honesty + Tool-Backed Claims + Agent Identity)
 
-**System Prompt (Static, Identity/Capability):**
-- ✅ "You are SAM, an AI assistant"
-- ✅ "Available tools: file_operations, web_research, etc."
-- ✅ "For research, provide direct sources"
-- ✅ "Mermaid for diagrams and charts"
-- ✅ "Conversational mode vs Task execution mode"
+**System Prompt Role (Expanded):**
+- Define WHO SAM is (helpful, accurate, approachable agent)
+- Define WHAT SAM can do (capabilities, features, tools available)
+- Provide quality standards (formatting, citations, response guidelines)
+- Teach patterns and modes (conversational vs task, two-phase workflow)
+- **Assert user authority** over session, scope, and data boundaries
+- **Define completion criteria** for agent work
+- **Prevent fabrication** via tool-backed claims requirement
+
+**Orchestrator Role (Enhanced):**
+- Enforce HOW to behave during workflow
+- Adapt to workflow state
+- Provide context-aware continuations
+- Handle workflow discipline
+- **Guard against narration-without-tool-call** (orchestration-side)
+
+---
+
+## What Belongs in System Prompt vs Orchestrator
+
+**System Prompt (Static, Identity/Capability/Boundaries):**
+- [OK] "You are SAM, a helpful, accurate, approachable agent"
+- [OK] "Available tools: file_operations, web_research, etc."
+- [OK] "For research, provide direct sources"
+- [OK] "Mermaid for diagrams and charts"
+- [OK] "Conversational mode vs Task execution mode"
+- [OK] "User controls session boundaries, time, attention"
+- [OK] "All items in user's scope get equal rigor"
+- [OK] "Every specific claim must be verified by a tool call"
+- [OK] "Narrating a tool action and ending without the tool call is abandonment"
 
 **Orchestrator (Dynamic, Behavioral Enforcement):**
-- ✅ "Mark todo in-progress before doing work" (runtime reminder)
-- ✅ "Do NOT provide multiple text responses without tools" (continuation guidance)
-- ✅ "You have incomplete todos - follow workflow" (state-aware)
-- ✅ Fresh todo state reads for accurate workflow decisions
+- [OK] "Mark todo in-progress before doing work" (runtime reminder)
+- [OK] "Do NOT provide multiple text responses without tools" (continuation guidance)
+- [OK] "You have incomplete todos - follow workflow" (state-aware)
+- [OK] Fresh todo state reads for accurate workflow decisions
+- [OK] **Orchestration-side guard** for narration-without-tool-call detection
 
 **Grey Area (Case-by-Case Decision):**
-- ⚠️ "Use tools repeatedly until complete" → Principle in prompt, enforcement by orchestrator
-- ⚠️ "Understand all steps before starting" → Educational in prompt, workflow discipline by orchestrator
-- ⚠️ "3-attempt error recovery rule" → Tactical guidance in prompt (not enforced)
+- [WARN] "Use tools repeatedly until complete" -> Principle in prompt, enforcement by orchestrator
+- [WARN] "Understand all steps before starting" -> Educational in prompt, workflow discipline by orchestrator
+- [WARN] "3-attempt error recovery rule" -> Tactical guidance in prompt (not enforced)
 
 ---
 
@@ -202,20 +309,24 @@ foundation that agents rely on. Reverted todo workflow section after user testin
 - No consecutive assistant messages (alternation maintained)
 - Task completion rate (all steps finished)
 - User satisfaction (no complaints about behavior changes)
+- No fabricated specifics (prices, ratings, URLs without tool calls)
+- No unilateral scope-shrinking
 
 **Red Flags (Revert if Observed):**
 - Agents skipping todo workflow steps
 - Increased consecutive text responses
 - Tasks marked complete prematurely
 - User confusion or complaints
+- Cold, mechanical tone (personality lost)
+- Fabricated specifics appearing in responses
 
-**Next Review:** After 30 days of production usage (February 3, 2026)
+**Next Review:** After 30 days of production usage
 
 ---
 
 ## Lessons Learned
 
-### From Version 15 → 16 Transition
+### From Version 15 -> 16 Transition
 
 1. **Dead Code Identification:**
    - `buildWorkflowContinuationProtocol()` was never called but remained in codebase
@@ -242,6 +353,23 @@ foundation that agents rely on. Reverted todo workflow section after user testin
    - Static prompts should focus on identity/capability
    - **Lesson:** Prefer runtime enforcement over static documentation for workflows
 
+### From Version 21-25 Transition
+
+1. **Identity Framing is Load-Bearing:**
+   - Removing "helpful" from Core Identity caused narration-without-tool-call bugs
+   - Burying personality at end of prompt produced cold mechanical tone
+   - **Fix:** Personality FIRST, agent protocol SECOND (both required)
+
+2. **Atomic Components Win:**
+   - Dedicated components (User Autonomy, Scope Honesty, Tool-Backed Claims) are discoverable and toggleable
+   - Cross-linking makes relationships visible in editor
+   - Surgical edits to existing components are error-prone
+
+3. **Orchestration-Side Guards Needed:**
+   - Prompt rules alone can't catch all failure modes
+   - ResponseStatus differentiation makes abandonment observable in metrics
+   - **Implementation:** Distinct status for "narration without tool call" vs "genuine completion"
+
 ---
 
 ## Reference
@@ -256,11 +384,16 @@ foundation that agents rely on. Reverted todo workflow section after user testin
 
 ### Commit History
 
+- **Version 25:** `7a73a78` - fix(prompt): restore Assistant personality, add v25 anti-failure rules, fix cancellation and MLX build (July 29, 2026)
+- **Version 24:** `cb4b501` - feat(prompt): agent identity + completion criteria (v24) (July 29, 2026)
+- **Version 23:** `cadb858` - feat(prompt): add Tool-Backed Claims component (v23) (July 29, 2026)
+- **Version 22:** `0f12aab` - feat(prompt): add Scope Honesty component (v22) (July 29, 2026)
+- **Version 21:** `e2b8b79` - feat(prompt): add User Autonomy component to remove unsolicited recaps and session-boundary management (July 23, 2026)
+- **Version 20:** `cbb6ccc` - feat(prompt): add User Data Boundaries component for numerical, assumption, and list discipline (July 19, 2026)
 - **Version 16:** `[COMMIT_HASH]` - refactor(system-prompt): remove redundancy with orchestrator guidance (January 4, 2026)
-- **Version 15:** (Previous default, no specific commit tracking)
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** January 4, 2026  
+**Document Version:** 2.0  
+**Last Updated:** August 23, 2026  
 **Maintainer:** SAM Development Team
