@@ -109,17 +109,42 @@ jobs:
             exit 1
           fi
           echo "Metal compiler found: $(xcrun --find metal)"
-          echo "Testing Metal compilation..."
+          echo "Testing Metal compilation via default toolchain..."
           cat > /tmp/test.metal << 'EOF'
           #include <metal_stdlib>
           using namespace metal;
           kernel void test() {}
           EOF
-          if /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c /tmp/test.metal -o /dev/null; then
+          DEFAULT_METAL="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal"
+          if "$DEFAULT_METAL" -c /tmp/test.metal -o /dev/null 2>&1; then
             echo "Metal compilation test passed!"
           else
-            echo "ERROR: Metal compilation test failed!"
-            exit 1
+            echo "Default toolchain metal proxy cannot find Metal Toolchain."
+            echo "Installing wrapper script to delegate to cryptex-mounted Metal Toolchain..."
+
+            # Find the real Metal Toolchain metal binary via xcrun
+            REAL_METAL=$(xcrun -sdk macosx --find metal 2>/dev/null || xcrun -toolchain Metal --find metal 2>/dev/null)
+            if [ -z "$REAL_METAL" ] || [ ! -x "$REAL_METAL" ]; then
+              echo "ERROR: Could not find a working Metal Toolchain metal binary"
+              exit 1
+            fi
+            echo "Found real Metal Toolchain metal binary: $REAL_METAL"
+
+            # Back up the proxy and replace with a wrapper
+            sudo cp "$DEFAULT_METAL" "${DEFAULT_METAL}.proxy.backup"
+            sudo tee "$DEFAULT_METAL" > /dev/null << WRAPPER
+            #!/bin/bash
+            exec "$REAL_METAL" "\$@"
+            WRAPPER
+            sudo chmod +x "$DEFAULT_METAL"
+
+            # Re-test
+            if "$DEFAULT_METAL" -c /tmp/test.metal -o /dev/null 2>&1; then
+              echo "Metal compilation test passed with wrapper!"
+            else
+              echo "ERROR: Metal compilation still failing after wrapper install"
+              exit 1
+            fi
           fi
           rm -f /tmp/test.metal
       
