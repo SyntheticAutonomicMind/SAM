@@ -40,14 +40,43 @@ jobs:
       
       - name: Download Metal Toolchain
         run: |
-          echo "Downloading Metal Toolchain for Xcode ${{ env.XCODE_VERSION }}..."
-          # Check if Metal Toolchain is already installed
-          if xcrun -sdk macosx --show-sdk-path 2>/dev/null | grep -q "MetalToolchain"; then
-            echo "Metal Toolchain already installed"
+          echo "Setting up Xcode command line tools..."
+          sudo xcode-select --reset
+          sudo xcode-select -s /Applications/Xcode.app
+          sudo xcodebuild -runFirstLaunch
+
+          echo "Checking for Metal Toolchain standard library..."
+          TOOLCHAIN_DIR="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
+          if [ -d "$TOOLCHAIN_DIR/usr/lib/metal" ]; then
+            echo "Metal standard library already present at $TOOLCHAIN_DIR/usr/lib/metal"
           else
-            # Download with proper error handling - fail if download doesn't succeed
+            echo "Metal standard library missing. Downloading Metal Toolchain..."
             sudo xcodebuild -downloadComponent MetalToolchain
-            echo "Metal Toolchain downloaded successfully"
+
+            # On macOS 15+ / Xcode 26+, xcodebuild -downloadComponent downloads
+            # a DMG to the AssetsV2 cache but does NOT install it into the
+            # Xcode toolchain. We must find and install it manually.
+            METAL_DMG=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "*.dmg" 2>/dev/null | head -1)
+            if [ -n "$METAL_DMG" ] && [ -f "$METAL_DMG" ]; then
+              echo "Found downloaded Metal Toolchain DMG: $METAL_DMG"
+              MOUNT_POINT=$(hdiutil attach "$METAL_DMG" -nobrowse -quiet 2>/dev/null && echo "/Volumes/MetalToolchain")
+              if [ -d "$MOUNT_POINT" ]; then
+                echo "Mounting DMG and installing Metal standard library..."
+                sudo cp -R "$MOUNT_POINT/usr/" "$TOOLCHAIN_DIR/usr/" 2>/dev/null || true
+                hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
+                echo "Metal Toolchain installed."
+              fi
+            fi
+
+            if [ -d "$TOOLCHAIN_DIR/usr/lib/metal" ]; then
+              echo "Metal standard library now present after manual install."
+            else
+              echo "WARNING: Metal standard library still not installed. Build may fail."
+              echo "Attempting xcode-select reset and re-download..."
+              sudo xcode-select --reset
+              sudo xcode-select -s /Applications/Xcode.app
+              sudo xcodebuild -downloadComponent MetalToolchain
+            fi
           fi
 
       - name: Verify Metal Toolchain
@@ -57,7 +86,20 @@ jobs:
             echo "ERROR: 'metal' compiler not found in toolchain"
             exit 1
           fi
-          echo "Metal Toolchain verified: $(xcrun --find metal)"
+          echo "Metal compiler found: $(xcrun --find metal)"
+          echo "Testing Metal compilation..."
+          cat > /tmp/test.metal << 'EOF'
+          #include <metal_stdlib>
+          using namespace metal;
+          kernel void test() {}
+          EOF
+          if /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c /tmp/test.metal -o /dev/null; then
+            echo "Metal compilation test passed!"
+          else
+            echo "ERROR: Metal compilation test failed!"
+            exit 1
+          fi
+          rm -f /tmp/test.metal
       
       - name: Extract version from tag
         id: version
