@@ -152,11 +152,38 @@ jobs:
             '3. Launch SAM from Applications' \
             > "$NOTES_FILE"
 
-          # Create release and upload assets using gh CLI (more reliable for large files)
+          # Create the release first (without assets) so the release always
+          # exists even if an asset upload fails. Then upload assets separately
+          # so each gets a fresh upload URL and can be retried independently.
+          # (gh release create with inline assets can fail with HTTP 400 when
+          # a 60+ MB upload exceeds the pre-signed URL's validity window.)
           gh release create "${VERSION}" \
             --title "SAM ${VERSION}" \
             --notes-file "$NOTES_FILE" \
+            --repo "SyntheticAutonomicMind/SAM"
+          rm -f "$NOTES_FILE"
+
+          # Upload each asset separately with retry logic.
+          for asset in \
             "dist/SAM-${VERSION}.dmg" \
             "dist/SAM-${VERSION}.zip" \
-            "dist/SAM-${VERSION}.zip.sig"
-          rm -f "$NOTES_FILE"
+            "dist/SAM-${VERSION}.zip.sig"; do
+            retries=3
+            while [ "$retries" -gt 0 ]; do
+              echo "Uploading ${asset} (retries left: $retries)..."
+              if gh release upload "${VERSION}" "${asset}" \
+                --repo "SyntheticAutonomicMind/SAM" \
+                --clobber; then
+                echo "Successfully uploaded ${asset}"
+                break
+              else
+                retries=$((retries - 1))
+                if [ "$retries" -eq 0 ]; then
+                  echo "ERROR: Failed to upload ${asset} after all retries"
+                  exit 1
+                fi
+                echo "Upload failed, retrying in 10 seconds..."
+                sleep 10
+              fi
+            done
+          done
