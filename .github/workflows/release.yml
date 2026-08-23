@@ -45,37 +45,59 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app
           sudo xcodebuild -runFirstLaunch
 
-          echo "Checking for Metal Toolchain standard library..."
           TOOLCHAIN_DIR="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
+
+          echo "Checking for Metal Toolchain standard library..."
           if [ -d "$TOOLCHAIN_DIR/usr/lib/metal" ]; then
-            echo "Metal standard library already present at $TOOLCHAIN_DIR/usr/lib/metal"
+            echo "Metal standard library already present"
           else
             echo "Metal standard library missing. Downloading Metal Toolchain..."
+            # Record DMG paths before download
+            BEFORE=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" 2>/dev/null | sort)
+
             sudo xcodebuild -downloadComponent MetalToolchain
 
-            # On macOS 15+ / Xcode 26+, xcodebuild -downloadComponent downloads
-            # a DMG to the AssetsV2 cache but does NOT install it into the
-            # Xcode toolchain. We must find and install it manually.
-            METAL_DMG=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "*.dmg" 2>/dev/null | head -1)
-            if [ -n "$METAL_DMG" ] && [ -f "$METAL_DMG" ]; then
-              echo "Found downloaded Metal Toolchain DMG: $METAL_DMG"
-              MOUNT_POINT=$(hdiutil attach "$METAL_DMG" -nobrowse -quiet 2>/dev/null && echo "/Volumes/MetalToolchain")
-              if [ -d "$MOUNT_POINT" ]; then
-                echo "Mounting DMG and installing Metal standard library..."
-                sudo cp -R "$MOUNT_POINT/usr/" "$TOOLCHAIN_DIR/usr/" 2>/dev/null || true
-                hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
-                echo "Metal Toolchain installed."
-              fi
+            # Find the DMG that was just downloaded (new since our before snapshot)
+            AFTER=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" 2>/dev/null | sort)
+            METAL_DMG=$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -1)
+            if [ -z "$METAL_DMG" ]; then
+              # No new DMG found, use the most recent one
+              METAL_DMG=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" -newermt "5 minutes ago" 2>/dev/null | head -1)
             fi
 
-            if [ -d "$TOOLCHAIN_DIR/usr/lib/metal" ]; then
-              echo "Metal standard library now present after manual install."
+            if [ -n "$METAL_DMG" ] && [ -f "$METAL_DMG" ]; then
+              echo "Installing Metal Toolchain from: $METAL_DMG"
+              # Mount the DMG and find the metal standard library
+              MOUNT_INFO=$(hdiutil attach "$METAL_DMG" -nobrowse -quiet 2>&1)
+              MOUNT_PATH=$(echo "$MOUNT_INFO" | tail -1 | awk '{print $1}')
+              if [ -z "$MOUNT_PATH" ]; then
+                MOUNT_PATH="/Volumes/*Metal*"
+              fi
+              echo "Mounted at: $MOUNT_PATH"
+
+              # Look for usr/lib/metal in the mounted volume
+              MNT=$(echo $MOUNT_PATH | sed 's/\*//')
+              if [ -d "$MNT/usr/lib/metal" ]; then
+                echo "Found metal standard library in DMG, copying..."
+                sudo cp -R "$MNT/usr/" "$TOOLCHAIN_DIR/usr/"
+                hdiutil detach "$MNT" -quiet 2>/dev/null || true
+                echo "Metal Toolchain installed."
+              else
+                echo "Metal standard library not found in DMG. Contents:"
+                ls -la "$MNT" 2>/dev/null || echo "Mount path not accessible"
+                hdiutil detach "$MNT" -quiet 2>/dev/null || true
+              fi
             else
-              echo "WARNING: Metal standard library still not installed. Build may fail."
-              echo "Attempting xcode-select reset and re-download..."
-              sudo xcode-select --reset
-              sudo xcode-select -s /Applications/Xcode.app
-              sudo xcodebuild -downloadComponent MetalToolchain
+              echo "No Metal Toolchain DMG found to install"
+            fi
+
+            # Verify installation
+            if [ -d "$TOOLCHAIN_DIR/usr/lib/metal" ]; then
+              echo "Metal standard library now present."
+            else
+              echo "WARNING: Metal standard library still not installed."
+              echo "Contents of $TOOLCHAIN_DIR/usr/lib:"
+              ls -la "$TOOLCHAIN_DIR/usr/lib" 2>/dev/null || echo "Directory not found"
             fi
           fi
 
