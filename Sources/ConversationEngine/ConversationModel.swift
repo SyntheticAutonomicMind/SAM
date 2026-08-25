@@ -71,6 +71,10 @@ public struct ConversationSettings: Codable, Sendable {
     /// Defaults to "high" for best quality. Maps to provider-specific parameters.
     public var thinkingEffort: String
     public var scrollLockEnabled: Bool
+    /// Whether the Workflow Mode system prompt component is enabled for
+    /// this conversation. Mirrors the toggle in the chat toolbar.
+    /// Defaults to false - most conversations do not need Workflow Mode.
+    public var enableWorkflowMode: Bool
     /// Shared data settings
     public var useSharedData: Bool
     public var sharedTopicId: UUID?
@@ -99,6 +103,7 @@ public struct ConversationSettings: Codable, Sendable {
         enableTools: Bool = true,
         thinkingEffort: String = "high",
         scrollLockEnabled: Bool = true,
+        enableWorkflowMode: Bool = false,
         draftMessage: String = "",
         showingMemoryPanel: Bool = false,
         showingWorkingDirectoryPanel: Bool = false,
@@ -132,6 +137,7 @@ public struct ConversationSettings: Codable, Sendable {
         self.enableTools = enableTools
         self.thinkingEffort = thinkingEffort
         self.scrollLockEnabled = scrollLockEnabled
+        self.enableWorkflowMode = enableWorkflowMode
         self.useSharedData = false
         self.sharedTopicId = nil
         self.sharedTopicName = nil
@@ -159,6 +165,7 @@ public struct ConversationSettings: Codable, Sendable {
         case enableReasoning, enableTools
         case thinkingEffort
         case scrollLockEnabled
+        case enableWorkflowMode
         case useSharedData, sharedTopicId, sharedTopicName
         case draftMessage
         case showingMemoryPanel, showingWorkingDirectoryPanel, showAdvancedParameters, showingPerformanceMetrics
@@ -189,6 +196,8 @@ public struct ConversationSettings: Codable, Sendable {
 
         /// NEW FIELD: Default to true if not present (for old conversations).
         scrollLockEnabled = try container.decodeIfPresent(Bool.self, forKey: .scrollLockEnabled) ?? true
+        /// NEW FIELD: Default to false if not present (for old conversations).
+        enableWorkflowMode = try container.decodeIfPresent(Bool.self, forKey: .enableWorkflowMode) ?? false
         useSharedData = try container.decodeIfPresent(Bool.self, forKey: .useSharedData) ?? false
         sharedTopicId = try container.decodeIfPresent(UUID.self, forKey: .sharedTopicId)
         sharedTopicName = try container.decodeIfPresent(String.self, forKey: .sharedTopicName)

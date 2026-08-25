@@ -154,6 +154,7 @@ public struct ChatWidget: View {
     @ObservedObject var modelListManager = ModelListManager.shared
     
     @State var enableReasoning: Bool = false
+    @State var enableWorkflowMode: Bool = false
     @State var thinkingEffort: String = "high"
 
     /// Local model loading state.
@@ -868,6 +869,17 @@ public struct ChatWidget: View {
                 syncSettingsToConversation()
             }
 
+            Toggle(isOn: $enableWorkflowMode) {
+                Text("Workflow Mode")
+                    .font(.caption)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .onChange(of: enableWorkflowMode) { _, newValue in
+                guard !isLoadingConversationSettings else { return }
+                syncSettingsToConversation()
+            }
+
             Divider().padding(.vertical, 4)
 
             /// Section: Shared Topic
@@ -1386,6 +1398,7 @@ public struct ChatWidget: View {
         enableReasoning = conversation.settings.enableReasoning
         thinkingEffort = conversation.settings.thinkingEffort
         enableTools = conversation.settings.enableTools
+        enableWorkflowMode = conversation.settings.enableWorkflowMode
         /// scrollLockEnabled is now global (@AppStorage), not per-conversation
 
         /// Z-Image models now work on MPS with bfloat16 (2x faster than CPU)
@@ -1810,6 +1823,7 @@ public struct ChatWidget: View {
         conversation.settings.enableReasoning = enableReasoning
         conversation.settings.thinkingEffort = thinkingEffort
         conversation.settings.enableTools = enableTools
+        conversation.settings.enableWorkflowMode = enableWorkflowMode
         /// scrollLockEnabled is now global (@AppStorage), not per-conversation
         conversation.settings.useSharedData = useSharedData
         conversation.settings.sharedTopicId = assignedSharedTopicId.flatMap { UUID(uuidString: $0) }

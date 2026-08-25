@@ -29,11 +29,11 @@ final class SystemPromptConfigurationTests: XCTestCase {
 
     // MARK: - Version
 
-    func testCurrentVersionIs25() {
+    func testCurrentVersionIs27() {
         XCTAssertEqual(
             SystemPromptConfiguration.currentVersion,
-            25,
-            "Prompt system must be on version 25 after the Generation Loop Detection / Stop Means Stop / Todo Integrity / Narration Without Action rules were added."
+            27,
+            "Prompt system must be on version 27 after the prompt architecture refactor: component content moved to SAMPromptComponents.swift and SAMMinimalComponents.swift, buildSAMCoreIdentity removed (dead), Dynamic Iterations component removed (referenced nonexistent increase_max_iterations tool), UniversalToolRegistry routes through ToolPromptSummaryRegistry."
         )
     }
 
@@ -278,11 +278,31 @@ extension SystemPromptConfigurationTests {
             "Scope Honesty must not gate on a user-class conditional."
         )
         XCTAssertFalse(
-            prompt.contains("real estate") || prompt.contains("medical") || prompt.contains("legal advice"),
+            /// v26 introduced medical/technical/legal/news as topic labels in Tool
+            /// Usage (engine routing rule). The Scope Honesty rule itself is still
+            /// domain-neutral - it just shares the prompt with the new Tool Usage
+            /// rule, so the substring "medical" appears in the generated prompt as
+            /// a whole. Pin Scope Honesty specifically by inspecting the component.
+            containsMedicalInScopeHonesty(),
             "Scope Honesty must not gate on a subject conditional."
         )
     }
 
+    /// Helper for testScopeHonestyIsNotGatedOnSubject: inspect only the Scope
+    /// Honesty component, not the full generated prompt. This lets the Tool
+    /// Usage section legitimately reference "medical" while keeping Scope
+    /// Honesty itself domain-neutral.
+    private func containsMedicalInScopeHonesty() -> Bool {
+        guard let config = samDefault(),
+              let component = config.components.first(where: { $0.title == "Scope Honesty" })
+        else { return false }
+        let text = component.content
+        return text.contains("real estate") ||
+               text.contains("medical") ||
+               text.contains("legal advice") ||
+               text.contains("medical only") ||
+               text.contains("legal only")
+    }
     /// SAM Minimal is for local small models - the rule there is a tight
     /// one-liner. Pin the essential message so future rewrites keep the
     /// scope-discipline signal.
@@ -850,6 +870,64 @@ extension SystemPromptConfigurationTests {
         XCTAssertTrue(
             prompt.contains("Personalities") && prompt.contains("do not override"),
             "Completion Criteria must state that personalities do not override the completion rule."
+        )
+    }
+
+    // MARK: - Tool Routing Refactor (v26)
+
+    /// The Tool Usage section must include a Tool Selection block that names each
+    /// web_operations operation with its purpose. Without this the model has to
+    /// infer routing from the JSON schema alone, which is unreliable for MiniMax.
+    func testToolUsageHasToolSelectionSection() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Tool selection") || prompt.contains("smallest tool that fits"),
+            "Tool Usage must include a Tool Selection section describing each operation."
+        )
+    }
+
+    /// The example sentence "The same applies to 'find best X in Y' for any other topic"
+    /// was the wrong-tool-selection bug - it implied Yelp works for any topic. Pin its
+    /// absence and pin the corrected version that lists medical/technical/legal as
+    /// NOT-Yelp domains.
+    func testResearchExampleDoesNotGeneralizeYelp() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertFalse(
+            prompt.contains("The same applies to 'find best X in Y' for any other topic"),
+            "Tool Usage RESEARCH example must NOT generalize Yelp to any topic."
+        )
+        XCTAssertTrue(
+            prompt.contains("Yelp is for restaurants") || prompt.contains("engine must match the topic"),
+            "Tool Usage must include the engine-must-match-topic rule."
+        )
+    }
+
+    /// The new examples must cover the failure case Andrew reported: medical
+    /// queries should NOT route to Yelp, and shopping queries should NOT route
+    /// to Yelp. Pin the two examples.
+    func testResearchExamplesCoverMedicalAndShopping() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("best treatment for migraine"),
+            "Tool Usage must include the medical example (best treatment for migraine)."
+        )
+        XCTAssertTrue(
+            prompt.contains("best laptop 2026") || prompt.contains("SERAPI") && prompt.contains("amazon"),
+            "Tool Usage must include the shopping/laptop example routed to amazon, not Yelp."
+        )
+    }
+
+    /// Routing rule 1: match engine to topic. Pin it explicitly so future
+    /// edits cannot silently weaken it.
+    func testRoutingRuleMatchEngineToTopic() {
+        let prompt = generatedPrompt(for: samDefault())
+        XCTAssertTrue(
+            prompt.contains("Match engine to topic"),
+            "Tool Usage must include the 'match engine to topic' routing rule."
+        )
+        XCTAssertTrue(
+            prompt.contains("medical, technical, legal, news"),
+            "Tool Usage must list medical/technical/legal/news as non-domain-specific SerpAPI domains."
         )
     }
 }

@@ -1,6 +1,71 @@
 {
   "releases": [
     {
+      "version": "20260825.1",
+      "release_date": "August 25, 2026",
+      "introduction": "SAM picks the right search tool for the job. Previously, a query like 'best treatment for migraine symptoms' could route to Yelp because the routing logic matched the words 'best X in Y' and assumed restaurants. Routing decisions now live in the system prompt, not in code, with explicit per-engine rules: Yelp is for restaurants, Amazon for products, TripAdvisor for travel, Google and Bing for everything else. Behind the scenes, SAM's prompt architecture is rebuilt for extensibility, and the Workflow Mode toggle in the chat toolbar is now actually wired through.",
+      "highlights": [
+        {
+          "id": "right-search-tool",
+          "icon": "scope",
+          "title": "Right Tool for the Right Search",
+          "description": "SAM no longer mixes up which search tool to use. A medical query, a shopping query, and a restaurant query each get the appropriate tool - not whatever happens to match a few keywords. Yelp results show up only for restaurants. Amazon results show up only for products. Travel questions get TripAdvisor. Everything else goes through Google's web search or SAM's research tool. The model picks the right engine from the topic, not from code-side guessing."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "engine-routing-rules",
+          "icon": "list.bullet.indent",
+          "title": "Explicit Search Engine Routing",
+          "description": "When SAM has access to SerpAPI's targeted engines (Yelp, Amazon, TripAdvisor, Google, Bing), it now follows explicit rules in the system prompt to match the engine to your topic. Yelp is for restaurants and food only. Amazon, eBay, and Walmart are for products only. TripAdvisor is for hotels and travel only. Google and Bing handle everything else, including medical, technical, legal, news, sports, and science questions. Previously, the routing was decided by keyword matching that couldn't tell the difference between 'best treatment for migraines' and 'best restaurants in Chicago.'"
+        },
+        {
+          "id": "consolidated-search",
+          "icon": "rectangle.stack",
+          "title": "One Search Tool, Six Operations",
+          "description": "Web research, web search, SerpAPI, fetch, scrape, and retrieve are now all behind a single web_operations tool with a clean operation parameter. The model sees one tool name in its tool listing instead of three or four aliases. The legacy aliases still work for older prompts, but the canonical entry point is web_operations."
+        },
+        {
+          "id": "workflow-mode-toggle",
+          "icon": "switch.2",
+          "title": "Workflow Mode Toggle Now Works",
+          "description": "The Workflow Mode toggle in the chat toolbar is now actually wired through to the system prompt. When you turn it on, SAM gets the Workflow Mode component that explains phase boundaries, minimal meta-commentary, and explicit collaboration points. Previously the toggle did nothing - the prompt-side component was orphaned and never reached the model."
+        },
+        {
+          "id": "tool-listing-stability",
+          "icon": "list.bullet.rectangle",
+          "title": "Stable Tool Listing Across Turns",
+          "description": "The available tools listing shown to the model is now byte-stable across turns for the same tool set. The listing is sorted alphabetically and produced from a hand-curated registry, so the prompt cache hits reliably even as you start and stop conversations. The listing is regenerated fresh when you actually add or remove a tool."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "yelp-medical-symptoms",
+          "icon": "stethoscope",
+          "title": "Fixed Medical Queries Routing to Yelp",
+          "description": "A search like 'best treatment for migraine symptoms in Chicago' or 'best cardiologist in Boston' was routing to Yelp's restaurant search because the routing logic matched the words 'best X in Y'. Yelp results came back as if restaurants were the answer to a medical question. The routing logic now explicitly maps each SerpAPI engine to its topic domain, and the system prompt tells the model to make this distinction itself."
+        },
+        {
+          "id": "tool-listing-truncation",
+          "icon": "scissors",
+          "title": "Fixed Tool Listing Showing Only First Line of Each Tool",
+          "description": "The dynamic tools listing shown to the model used to truncate each tool's description to its first line, hiding all the routing guidance and examples that explained how to use the tool. The listing now uses a hand-curated one-line summary per tool - no operation names, no engine names, just a routing hint. The full schema is still sent in the tools[] array where the model can read parameter details."
+        },
+        {
+          "id": "increase-iterations-prompt",
+          "icon": "exclamationmark.triangle",
+          "title": "Removed Instruction to Call Non-Existent Tool",
+          "description": "The Dynamic Iterations component in the system prompt instructed SAM to call an 'increase_max_iterations' tool, but no such MCP tool existed. The model had no way to follow the instruction - it was promising a tool call the model could never make. The entire component has been removed, and the matching help text in the advanced parameters panel is gone."
+        },
+        {
+          "id": "dead-core-identity",
+          "icon": "trash",
+          "title": "Removed Dead Core Identity Code",
+          "description": "The buildSAMCoreIdentity function (~30 lines) was never called from anywhere in the codebase. It existed in the source as a relic of an older version and would have replaced the active v24 Core Identity if it had ever been invoked. The dead function has been removed."
+        }
+      ]
+    },
+    {
       "version": "20260822.1",
       "release_date": "August 22, 2026",
       "introduction": "SAM's context management is rebuilt from the ground up, bringing CLIO's trimming and compression primitives to your conversations. Long sessions stay trimmed based on accurate, learned token counts instead of rough estimates, thread summaries preserve decisions across trim cycles, and context trimming happens after memory enhancement so injected context doesn't push you over budget. OpenRouter and remote llama.cpp models now report their real context sizes, remote llama.cpp provider configuration is fixed, and the provider preferences sheet drops the redundant Advanced Settings section in favor of model-driven defaults.",

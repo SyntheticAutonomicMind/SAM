@@ -310,7 +310,6 @@ struct QuickStartContent: View {
                 BulletPoint(text: "**Shared Topics**: Enable topic workspace sharing for multi-conversation projects")
                 BulletPoint(text: "**Topic Selector**: Choose which shared topic to use (changes working directory)")
                 BulletPoint(text: "**Workflow Mode**: Enable for multi-step autonomous tasks (agents use tools iteratively)")
-                BulletPoint(text: "**Dynamic Iterations**: Adaptive max iterations based on task complexity")
 
                 Text("**Shared Topics Example**: Enable Shared Topics → select \"My Project\" → working directory becomes ~/SAM/My Project/ instead of conversation-specific folder")
                     .font(.callout)
