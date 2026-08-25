@@ -359,9 +359,14 @@ public class MCPToolRegistry {
         "add_pattern": ("memory_operations", "add_pattern"),
 
         /// web_operations operations
+        /// Legacy aliases - web_search/fetch_url are routed as web_operations operations.
+        /// This keeps older prompts working but the canonical entry point is
+        /// `web_operations` with `operation=...`. See ToolPromptSummary for the
+        /// model-facing one-liner that points the model at web_operations.
         "search_web": ("web_operations", "search_web"),
         "fetch_url": ("web_operations", "fetch_url"),
         "web_search": ("web_operations", "search_web"),
+        "web_research": ("web_operations", "research"),
 
         /// todo_operations operations
         "todo_read": ("todo_operations", "read"),

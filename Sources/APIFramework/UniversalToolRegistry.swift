@@ -5,6 +5,7 @@ import Foundation
 import ConversationEngine
 import Logging
 import ConfigurationSystem
+import MCPFramework
 
 // MARK: - Protocol Conformance
 
@@ -246,22 +247,19 @@ public class UniversalToolRegistry: ObservableObject, ToolRegistryProtocol {
     /// Generate dynamic tool description from registered tools.
     /// Tool schemas are already sent via the OpenAI tools parameter.
     /// This provides a concise summary for the system prompt text.
+    ///
+    /// v26: Routed through ToolPromptSummaryRegistry so the HTTP API server
+    /// sees the same curated one-liners as the chat UI. Previously this
+    /// used first-line truncation of `tool.description`, which hid routing
+    /// guidance from the model. The HTTP API server's tools listing was
+    /// stuck on the old behavior while the chat UI moved to the registry -
+    /// bringing them back in sync.
     @MainActor
     public func getToolsDescriptionMainActor() -> String {
         let toolNames = registeredTools.keys.sorted()
         if toolNames.isEmpty { return "" }
 
-        var lines = ["Available Tools:"]
-
-        for name in toolNames {
-            if let tool = registeredTools[name] {
-                let desc = tool.description.components(separatedBy: "\n").first ?? tool.description
-                lines.append("- \(name): \(desc)")
-            }
-        }
-
-        lines.append("\nUse tools when the task requires action. Respond naturally for conversation.")
-        return lines.joined(separator: "\n")
+        return ToolPromptSummaryRegistry.shared.renderListing(for: toolNames)
     }
 
     // MARK: - Tool Execution (Clean Invocation)

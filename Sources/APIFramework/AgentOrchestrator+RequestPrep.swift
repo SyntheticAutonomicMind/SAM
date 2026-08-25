@@ -51,10 +51,18 @@ extension AgentOrchestrator {
         logger.debug("\(loggerPrefix): promptId=\(promptId?.uuidString ?? "nil"), toolsEnabled=\(samConfig?.mcpToolsEnabled ?? true)")
 
         let toolsEnabled = samConfig?.mcpToolsEnabled ?? true
+        /// Workflow Mode is per-conversation. If the user toggled it on in
+        /// the chat toolbar, propagate it to the prompt generator so the
+        /// Workflow Mode component is included. Without this the toggle
+        /// does nothing - the orchestration loop has its own state machine
+        /// for iterations, but the prompt-side Workflow Mode component
+        /// was previously orphaned.
+        let workflowModeEnabled = conversation.settings.enableWorkflowMode
         var userSystemPrompt = await MainActor.run {
             SystemPromptManager.shared.generateSystemPrompt(
                 for: promptId,
                 toolsEnabled: toolsEnabled,
+                workflowModeEnabled: workflowModeEnabled,
                 model: model
             )
         }
@@ -97,13 +105,14 @@ extension AgentOrchestrator {
             let tools = conversationManager.mcpManager.getAvailableTools()
                 .filter { $0.name != "memory_operations" || isSharedTopic }
             if !tools.isEmpty {
-                var listing = "\n\nAvailable Tools:"
-                for tool in tools {
-                    let desc = tool.description.components(separatedBy: "\n").first ?? tool.description
-                    listing += "\n- \(tool.name): \(desc)"
-                }
-                listing += "\n\nUse tools when the task requires action. Respond naturally for conversation."
-                dynamicContext += listing
+                /// Use the hand-curated ToolPromptSummary registry instead of truncating
+                /// the first line of `tool.description`. Truncation hid routing guidance
+                /// from the model (e.g. why web_operations has serpapi vs web_search vs
+                /// scrape) and made it impossible to surface consistent summaries across
+                /// the prompt. The registry is the single source of truth for what the
+                /// model sees as a one-line tool description.
+                let toolNames = tools.map { $0.name }
+                dynamicContext += "\n\n" + ToolPromptSummaryRegistry.shared.renderListing(for: toolNames)
             }
         }
 
