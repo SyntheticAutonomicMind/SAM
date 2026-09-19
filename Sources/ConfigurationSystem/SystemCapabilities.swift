@@ -286,6 +286,8 @@ public struct LlamaConfiguration: Codable, Equatable {
             topP: 0.95,
             temperature: 0.8,
             repetitionPenalty: 1.1,
+            topK: 40,
+            minP: 0.05,
             maxTokens: 1024
         )
     }
@@ -294,11 +296,13 @@ public struct LlamaConfiguration: Codable, Equatable {
     public static var balanced: LlamaConfiguration {
         LlamaConfiguration(
             nGpuLayers: -1,
-            nCtx: 8192,
+            nCtx: 16384,
             nBatch: 1024,
             topP: 0.95,
             temperature: 0.8,
             repetitionPenalty: 1.1,
+            topK: 40,
+            minP: 0.05,
             maxTokens: 2048
         )
     }
@@ -308,10 +312,12 @@ public struct LlamaConfiguration: Codable, Equatable {
         LlamaConfiguration(
             nGpuLayers: -1,
             nCtx: 32768,
-            nBatch: 1024,
+            nBatch: 2048,
             topP: 0.95,
             temperature: 0.8,
             repetitionPenalty: 1.1,
+            topK: 40,
+            minP: 0.05,
             maxTokens: 4096
         )
     }
@@ -321,10 +327,12 @@ public struct LlamaConfiguration: Codable, Equatable {
         LlamaConfiguration(
             nGpuLayers: -1,
             nCtx: 32768,
-            nBatch: 1024,
+            nBatch: 2048,
             topP: 0.95,
             temperature: 0.8,
             repetitionPenalty: 1.1,
+            topK: 40,
+            minP: 0.05,
             maxTokens: 8192
         )
     }
@@ -332,25 +340,29 @@ public struct LlamaConfiguration: Codable, Equatable {
 
 /// RAM profile extension for llama.cpp configuration.
 extension RAMProfile {
-    /// Get llama.cpp configuration for this profile.
+    /// Get llama.cpp configuration for this profile. Presets include
+    /// topK/minP (previously omitted, defaulting to 0 = disabled) and
+    /// align batch sizing with the ModelProfiler optimizer tiers.
     public var llamaConfiguration: LlamaConfiguration {
         switch self {
         case .conservative:
             return .memoryOptimized
 
         case .moderate:
-            return .balanced
-
-        case .balanced:
             return LlamaConfiguration(
                 nGpuLayers: -1,
-                nCtx: 32768,
+                nCtx: 8192,
                 nBatch: 1024,
                 topP: 0.95,
                 temperature: 0.8,
                 repetitionPenalty: 1.1,
-                maxTokens: 4096
+                topK: 40,
+                minP: 0.05,
+                maxTokens: 2048
             )
+
+        case .balanced:
+            return .balanced
 
         case .aggressive:
             return .highPerformance
@@ -361,18 +373,19 @@ extension RAMProfile {
     }
 }
 
-/// Global accessor for llama.cpp configuration from user preferences.
-public func getGlobalLlamaConfiguration() -> LlamaConfiguration {
+/// Global accessor for llama.cpp configuration, sourced from `ModelProfiler`
+/// so a single profile drives the in-process engine AND the spawned server.
+/// The model path lets the profile inspect the GGUF header for architecture-
+/// aware sampler defaults (e.g. Qwen3 temp=1.0, rep penalty disabled).
+///
+/// Custom overrides win over the optimizer; all hardware sizing (context,
+/// GPU layers, batch, KV type) always comes from the profile. Legacy
+/// `localModels.llamaPreset` ("custom" reads flat keys, others defer).
+public func getGlobalLlamaConfiguration(modelPath: String) -> LlamaConfiguration {
     let preset = UserDefaults.standard.string(forKey: "localModels.llamaPreset") ?? "auto"
+    let profile = ModelProfiler.profileModel(at: modelPath)
 
     switch preset {
-    case "auto": return SystemCapabilities.current.ramProfile.llamaConfiguration
-    case "conservative": return RAMProfile.conservative.llamaConfiguration
-    case "moderate": return RAMProfile.moderate.llamaConfiguration
-    case "balanced": return RAMProfile.balanced.llamaConfiguration
-    case "aggressive": return RAMProfile.aggressive.llamaConfiguration
-    case "maximum": return RAMProfile.maximum.llamaConfiguration
-
     case "custom":
         let nGpuLayers = UserDefaults.standard.integer(forKey: "localModels.llama.customNGpuLayers")
         let nCtx = UserDefaults.standard.integer(forKey: "localModels.llama.customNCtx")
@@ -386,31 +399,60 @@ public func getGlobalLlamaConfiguration() -> LlamaConfiguration {
 
         return LlamaConfiguration(
             nGpuLayers: nGpuLayers != 0 ? nGpuLayers : -1,
-            nCtx: nCtx > 0 ? nCtx : 8192,
-            nBatch: nBatch > 0 ? nBatch : 512,
-            topP: topP > 0 ? topP : 0.95,
-            temperature: temperature > 0 ? temperature : 0.8,
-            repetitionPenalty: repPenalty > 0 ? repPenalty : 1.1,
-            topK: topK > 0 ? topK : 40,
-            minP: minP > 0 ? minP : 0.05,
-            maxTokens: maxTokens > 0 ? maxTokens : 2048
+            nCtx: nCtx > 0 ? nCtx : profile?.contextSize ?? 8192,
+            nBatch: nBatch > 0 ? nBatch : profile?.batchSize ?? 512,
+            topP: topP > 0 ? topP : profile?.topP ?? 0.95,
+            temperature: temperature > 0 ? temperature : profile?.temperature ?? 0.8,
+            repetitionPenalty: repPenalty > 0 ? repPenalty : profile?.repetitionPenalty ?? 1.1,
+            topK: topK > 0 ? topK : profile?.topK ?? 40,
+            minP: minP > 0 ? minP : profile?.minP ?? 0.05,
+            maxTokens: maxTokens > 0 ? maxTokens : profile?.maxTokens ?? 2048
         )
-    default: return SystemCapabilities.current.ramProfile.llamaConfiguration
+
+    default:
+        // "auto", legacy RAM-tier presets, and unknown values defer to the
+        // model+RAM-aware profile. Legacy RAM presets keyed off raw RAM
+        // instead of model architecture and silently enabled repetition
+        // penalty on Qwen3 (the tool-call loop bug); the profile fixes that.
+        guard let p = profile else {
+            return SystemCapabilities.current.ramProfile.llamaConfiguration
+        }
+        return LlamaConfiguration(
+            nGpuLayers: p.gpuLayers,
+            nCtx: p.contextSize,
+            nBatch: p.batchSize,
+            topP: p.topP,
+            temperature: p.temperature,
+            repetitionPenalty: p.repetitionPenalty ?? 1.0,
+            topK: p.topK,
+            minP: p.minP,
+            maxTokens: p.maxTokens
+        )
     }
 }
 
-/// Global accessor for MLX configuration from user preferences Falls back to auto-detected profile if not set or set to "auto".
-public func getGlobalMLXConfiguration() -> MLXConfiguration {
+/// Zero-arg fallback for call sites without a model path (tests, early init).
+/// Production code should prefer the `modelPath:` overload.
+public func getGlobalLlamaConfiguration() -> LlamaConfiguration {
+    SystemCapabilities.current.ramProfile.llamaConfiguration
+}
+
+/// Global accessor for MLX configuration, sourced from `ModelProfiler` so a
+/// single profile drives MLX inference (parallel to the llama.cpp accessor).
+/// The model path lets the profile resolve architecture + KV quantization.
+///
+/// "custom" reads flat keys; all other presets defer to the profile.
+public func getGlobalMLXConfiguration(modelPath: String) -> MLXConfiguration {
     let preset = UserDefaults.standard.string(forKey: "localModels.mlxPreset") ?? "auto"
+    // MLX models are directories; profileMLX reads config.json + dir size.
+    var isDir: ObjCBool = false
+    let exists = FileManager.default.fileExists(atPath: modelPath, isDirectory: &isDir)
+    // MLX models are directories. For llama.cpp GGUF files (not dirs), the
+    // accessor isn't called — MLXProvider only calls this for its model dir.
+    guard exists && isDir.boolValue else { return SystemCapabilities.current.ramProfile.mlxConfiguration }
+    let profile = ModelProfiler.profileMLX(at: modelPath)
 
     switch preset {
-    case "auto": return SystemCapabilities.current.ramProfile.mlxConfiguration
-    case "conservative": return RAMProfile.conservative.mlxConfiguration
-    case "moderate": return RAMProfile.moderate.mlxConfiguration
-    case "balanced": return RAMProfile.balanced.mlxConfiguration
-    case "aggressive": return RAMProfile.aggressive.mlxConfiguration
-    case "maximum": return RAMProfile.maximum.mlxConfiguration
-
     case "custom":
         let kvBits = UserDefaults.standard.integer(forKey: "localModels.mlx.customKVBits")
         let kvGroupSize = UserDefaults.standard.integer(forKey: "localModels.mlx.customKVGroupSize")
@@ -423,17 +465,42 @@ public func getGlobalMLXConfiguration() -> MLXConfiguration {
         let maxTokens = UserDefaults.standard.integer(forKey: "localModels.mlx.customMaxTokens")
 
         return MLXConfiguration(
-            kvBits: kvBits > 0 ? kvBits : nil,
-            kvGroupSize: kvGroupSize > 0 ? kvGroupSize : 64,
-            quantizedKVStart: 0,
-            maxKVSize: maxKVSize > 0 ? maxKVSize : nil,
-            topP: topP > 0 ? topP : 0.95,
-            temperature: temperature > 0 ? temperature : 0.8,
-            repetitionPenalty: repPenalty > 0 ? repPenalty : 1.1,
-            repetitionContextSize: repContext > 0 ? repContext : 20,
-            contextLength: contextLength > 0 ? contextLength : 8192,
-            maxTokens: maxTokens > 0 ? maxTokens : 2048
+            kvBits: kvBits > 0 ? kvBits : profile?.kvBits,
+            kvGroupSize: kvGroupSize > 0 ? kvGroupSize : profile?.kvGroupSize ?? 64,
+            quantizedKVStart: profile?.quantizedKVStart ?? 0,
+            maxKVSize: maxKVSize > 0 ? maxKVSize : profile?.maxKVSize,
+            topP: topP > 0 ? topP : profile?.topP ?? 0.95,
+            temperature: temperature > 0 ? temperature : profile?.temperature ?? 0.8,
+            repetitionPenalty: repPenalty > 0 ? repPenalty : profile?.repetitionPenalty ?? 1.1,
+            repetitionContextSize: repContext > 0 ? repContext : profile?.repetitionContextSize ?? 20,
+            contextLength: contextLength > 0 ? contextLength : profile?.contextLength ?? 8192,
+            maxTokens: maxTokens > 0 ? maxTokens : profile?.maxTokens ?? 2048,
+            prefillStepSize: profile?.prefillStepSize ?? 512
         )
-    default: return SystemCapabilities.current.ramProfile.mlxConfiguration
+
+    default:
+        // "auto", legacy RAM-tier presets, unknown: profile is authoritative.
+        guard let p = profile else {
+            return SystemCapabilities.current.ramProfile.mlxConfiguration
+        }
+        return MLXConfiguration(
+            kvBits: p.kvBits,
+            kvGroupSize: p.kvGroupSize,
+            quantizedKVStart: p.quantizedKVStart,
+            maxKVSize: p.maxKVSize,
+            topP: p.topP,
+            temperature: p.temperature,
+            repetitionPenalty: p.repetitionPenalty ?? 1.1,
+            repetitionContextSize: p.repetitionContextSize,
+            contextLength: p.contextLength,
+            maxTokens: p.maxTokens,
+            prefillStepSize: p.prefillStepSize
+        )
     }
+}
+
+/// Zero-arg fallback for call sites without a model path (ChatWidget display
+/// logging). Production inference should prefer the `modelPath:` overload.
+public func getGlobalMLXConfiguration() -> MLXConfiguration {
+    SystemCapabilities.current.ramProfile.mlxConfiguration
 }

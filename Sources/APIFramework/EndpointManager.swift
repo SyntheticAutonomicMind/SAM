@@ -430,6 +430,78 @@ public class EndpointManager: ObservableObject {
         return nil
     }
 
+    /// Resolve a local model name (provider-style identifier like
+    /// `llama/lmstudio-community_Qwen3-8B-Instruct-GGUQ`) to its on-disk
+    /// GGUF path or MLX directory, so callers can feed it to
+    /// `ModelProfiler.profileModel` / `profileMLX`. Returns nil when the
+    /// model isn't a local llama.cpp/MLX model or can't be located.
+    ///
+    /// Reuses the same directory scan as `getLocalModelContextSize`; kept
+    /// separate so the context-size path doesn't need to change shape.
+    public func getLocalModelPath(modelName: String) -> String? {
+        let modelsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Caches/sam/models")
+        let fileManager = FileManager.default
+        let stripped = modelName.components(separatedBy: "/").last ?? modelName
+
+        // GGUF file path form: "llama/Qwen3-8B-Instruct-Q4_K_M.gguf".
+        if modelName.lowercased().hasSuffix(".gguf") {
+            let direct = modelsDir.appendingPathComponent(modelName).path
+            if fileManager.fileExists(atPath: direct) { return direct }
+        }
+
+        // Directory form: search provider dirs, then subdirectories.
+        let providerPrefixes: [String] = modelName.contains("/")
+            ? [String(modelName.split(separator: "/", maxSplits: 1)[0])]
+            : []
+
+        let providers: [URL]
+        if !providerPrefixes.isEmpty {
+            providers = providerPrefixes.compactMap {
+                modelsDir.appendingPathComponent($0, isDirectory: true)
+            }.filter { fileManager.fileExists(atPath: $0.path) }
+        } else {
+            // Search all provider dirs.
+            guard let entries = try? fileManager.contentsOfDirectory(
+                at: modelsDir, includingPropertiesForKeys: [.isDirectoryKey]
+            ) else { return nil }
+            providers = entries.filter { $0.hasDirectoryPath }
+                .filter { !fileManager.fileExists(atPath: $0.appendingPathComponent(stripped, isDirectory: true).path) == false }
+        }
+
+        for providerDir in providers {
+            let modelDir = providerDir.appendingPathComponent(stripped)
+            // Direct GGUF file.
+            if fileManager.fileExists(atPath: modelDir.path),
+               fileManager.fileExists(atPath: modelDir.path) && modelDir.pathExtension.lowercased() == "gguf" {
+                return modelDir.lastPathComponent == stripped ? modelDir.path : nil
+            }
+            // Directory containing a GGUF or MLX config.
+            if fileManager.fileExists(atPath: modelDir.path) {
+                if let contents = try? fileManager.contentsOfDirectory(at: modelDir, includingPropertiesForKeys: nil),
+                   contents.contains(where: { $0.pathExtension.lowercased() == "gguf" }) {
+                    return contents.first { $0.pathExtension.lowercased() == "gguf" }!.path
+                }
+                if fileManager.fileExists(atPath: modelDir.appendingPathComponent("config.json").path) {
+                    return modelDir.path  // MLX directory
+                }
+            }
+            // Subdirectories (case-insensitive match).
+            if let subDirs = try? fileManager.contentsOfDirectory(at: providerDir, includingPropertiesForKeys: nil) {
+                for sub in subDirs where sub.lastPathComponent.lowercased() == stripped.lowercased() {
+                    if fileManager.fileExists(atPath: sub.appendingPathComponent("config.json").path) {
+                        return sub.path
+                    }
+                    if let ggufs = try? fileManager.contentsOfDirectory(at: sub, includingPropertiesForKeys: nil),
+                       let gguf = ggufs.first(where: { $0.pathExtension.lowercased() == "gguf" }) {
+                        return gguf.path
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
     // MARK: - Remote Llama Context Size
 
     /// Fetch and cache context sizes from the remote llama.cpp server.
@@ -710,59 +782,6 @@ public class EndpointManager: ObservableObject {
             providers[providerId] = createProvider(type: providerType, config: config)
             logger.debug("Recreated provider \(providerId) with updated configuration")
         }
-    }
-
-    /// Register (or replace) a remote llama.cpp endpoint that points at a
-    /// locally-spawned CachyLLama server. Used by LocalLlamaServerPane
-    /// after the server is up so the user can immediately pick its models
-    /// from the provider list without retyping URLs.
-    ///
-    /// The model name is the GGUF file's basename, matching the value
-    /// CachyLLama reports in /v1/models.
-    @discardableResult
-    public func registerLocalCachyLLamaServer(
-        apiKey: String = "no-key-required",
-        baseURL: String,
-        modelName: String,
-        providerId: String
-    ) -> Bool {
-        let config = ProviderConfiguration(
-            providerId: providerId,
-            providerType: .remoteLlama,
-            isEnabled: true,
-            apiKey: apiKey,
-            baseURL: baseURL,
-            models: [modelName],
-            maxTokens: nil,
-            temperature: nil,
-            customHeaders: [:],
-            timeoutSeconds: 600,
-            retryCount: 1
-        )
-        providerConfigs[providerId] = config
-        saveProviderConfiguration(config, for: providerId)
-        providers[providerId] = createProvider(type: .remoteLlama, config: config)
-        /// Persist the provider ID so it survives restart.
-        var savedIds = UserDefaults.standard.stringArray(forKey: "saved_provider_ids") ?? []
-        if !savedIds.contains(providerId) {
-            savedIds.append(providerId)
-            UserDefaults.standard.set(savedIds, forKey: "saved_provider_ids")
-        }
-        logger.info("Registered local CachyLLama server provider '\(providerId)' at \(baseURL) (model: \(modelName))")
-        return true
-    }
-
-    /// Remove a previously-registered provider (used when the user stops
-    /// the local server). Idempotent.
-    public func unregisterProvider(_ providerId: String) {
-        providers.removeValue(forKey: providerId)
-        providerConfigs.removeValue(forKey: providerId)
-        UserDefaults.standard.removeObject(forKey: "provider_config_\(providerId)")
-        if var savedIds = UserDefaults.standard.stringArray(forKey: "saved_provider_ids") {
-            savedIds.removeAll { $0 == providerId }
-            UserDefaults.standard.set(savedIds, forKey: "saved_provider_ids")
-        }
-        logger.info("Unregistered provider '\(providerId)'")
     }
 
     // MARK: - Provider Management

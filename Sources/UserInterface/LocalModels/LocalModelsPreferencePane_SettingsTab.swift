@@ -17,7 +17,8 @@ struct LocalModelsPreferencePane_SettingsTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                /// Optimization Settings Section
+                /// Optimization Settings Section (unified — llama.cpp + MLX
+                /// tuning AND the llama.cpp server lifecycle are one pane).
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Model Optimization")
                         .font(.title2)
@@ -28,22 +29,6 @@ struct LocalModelsPreferencePane_SettingsTab: View {
                         .foregroundColor(.secondary)
 
                     LocalModelOptimizationSection()
-                }
-
-                Divider()
-
-                /// CachyLLama llama-server (lifecycle controls + SSD cache).
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("CachyLLama Server")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-
-                    Text("Spawn the CachyLLama llama-server binary as a child process to enable SSD-backed KV cache persistence, system-prompt caching, and per-conversation slot affinity.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    LocalLlamaServerPane()
-                        .environmentObject(endpointManager)
                 }
 
                 Divider()

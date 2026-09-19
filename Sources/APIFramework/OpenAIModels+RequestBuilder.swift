@@ -79,10 +79,10 @@ extension OpenAIChatRequest {
             "stream": streamEnabled
         ]
 
-        /// CachyLLama reads the OpenAI "user" field for slot affinity and
-        /// per-user concurrency limits. Other providers (OpenAI, Anthropic,
-        /// etc.) either use it for abuse detection or ignore it, so the
-        /// field is always safe to send.
+        /// The OpenAI "user" field pins a request to a llama-server slot for
+        /// prompt-cache reuse (same user -> same slot -> cache hit). Other
+        /// providers (OpenAI, Anthropic, etc.) either use it for abuse
+        /// detection or ignore it, so the field is always safe to send.
         ///
         /// Default to conversationId when user is not explicitly set, so
         /// the same conversation always lands on the same slot even if

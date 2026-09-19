@@ -82,6 +82,23 @@ actor LlamaContext {
     private var generationStartTime: Date?
     private var tokensGenerated: Int = 0
 
+    // MARK: - Helpers
+
+    /// Bridge our Swift GGMLType to the C `enum ggml_type` constant the
+    /// context params struct expects. Kept here rather than in ConfigurationSystem
+    /// because it depends on the imported `llama` module headers.
+    private static func ggmlTypeFrom(_ type: GGMLType) -> ggml_type {
+        switch type {
+        case .f32:  return GGML_TYPE_F32
+        case .f16:  return GGML_TYPE_F16
+        case .q8_0: return GGML_TYPE_Q8_0
+        case .q5_0: return GGML_TYPE_Q5_0
+        case .q5_1: return GGML_TYPE_Q5_1
+        case .q4_0: return GGML_TYPE_Q4_0
+        case .q4_1: return GGML_TYPE_Q4_1
+        }
+    }
+
     /// Accumulated text for text-based EOG detection.
     /// Some models generate EOG tokens as text instead of special tokens.
     private var accumulatedText: String = ""
@@ -106,28 +123,29 @@ actor LlamaContext {
 
     // MARK: - Lifecycle
 
-    init(model: OpaquePointer, context: OpaquePointer, contextSize: Int32, batchSize: Int32) {
+    init(model: OpaquePointer, context: OpaquePointer, contextSize: Int32, batchSize: Int32, samplerConfig: SamplerConfig) {
         self.model = model
         self.context = context
         self.contextSize = contextSize
         self.batchSize = batchSize
         self.tokens_list = []
-        /// Initial sampling chain built from the global LlamaConfiguration
-        /// so the Settings pane temperature / topP / repetition penalty
-        /// are honored as defaults. setSampling replaces it on every
-        /// per-request call to apply chat-popover overrides.
-        let initialSampler = getGlobalLlamaConfiguration()
+        /// Initial sampling chain built from the config passed by create_context
+        /// (which is sourced from ModelProfiler). setSampling replaces it on
+        /// every per-request call to apply chat-popover overrides.
         let defaultSamplerConfig = SamplerConfig(
-            temperature: Float(initialSampler.temperature),
-            topP: Float(initialSampler.topP),
-            topK: Int32(initialSampler.topK),
-            minP: Float(initialSampler.minP),
-            repetitionPenalty: Float(initialSampler.repetitionPenalty)
+            temperature: samplerConfig.temperature,
+            topP: samplerConfig.topP,
+            topK: samplerConfig.topK,
+            minP: samplerConfig.minP,
+            repetitionPenalty: samplerConfig.repetitionPenalty
         )
 
         /// Initialize batch with BATCH SIZE, not full context size Using full context (32k) causes massive memory allocation and crashes Batch size should be 512-2048 for prompt processing efficiency.
         self.batch = llama_batch_init(batchSize, 0, 1)
         self.temporary_invalid_cchars = []
+
+        vocab = llama_model_get_vocab(model)
+        let nVocab = llama_vocab_n_tokens(vocab)
 
         /// Build the initial sampler chain inline because the init
         /// context cannot call actor-isolated methods. setSampling
@@ -144,9 +162,11 @@ actor LlamaContext {
         }
         if defaultSamplerConfig.repetitionPenalty != nil,
            defaultSamplerConfig.repetitionPenalty ?? 1.0 != 1.0 {
+            /// llama.cpp stable requires n_vocab as the first argument to
+            /// llama_sampler_init_penalties. 64 here is penalty_last_n.
             llama_sampler_chain_add(
                 self.sampling,
-                llama_sampler_init_penalties(64, defaultSamplerConfig.repetitionPenalty ?? 1.0, 0.0, 0.0)
+                llama_sampler_init_penalties(nVocab, 64, defaultSamplerConfig.repetitionPenalty ?? 1.0, 0.0, 0.0)
             )
         }
         if let topP = defaultSamplerConfig.topP, topP > 0.0 && topP < 1.0 {
@@ -160,8 +180,6 @@ actor LlamaContext {
         }
         let initSeed = defaultSamplerConfig.seed ?? UInt32(Date().timeIntervalSince1970)
         llama_sampler_chain_add(self.sampling, llama_sampler_init_dist(initSeed))
-
-        vocab = llama_model_get_vocab(model)
 
         llamaLogger.info("LlamaContext initialized successfully with context size: \(contextSize)")
     }
@@ -340,7 +358,7 @@ actor LlamaContext {
         /// Resolve the active configuration. If the caller did not provide one,
         /// fall back to the global user preference so the Settings pane values
         /// are honored automatically.
-        let activeConfig = getGlobalLlamaConfiguration()
+        let activeConfig = getGlobalLlamaConfiguration(modelPath: path)
         llamaLogger.info("LlamaContext configuration: nGpuLayers=\(activeConfig.nGpuLayers) nCtx=\(activeConfig.nCtx) nBatch=\(activeConfig.nBatch) topP=\(activeConfig.topP) temp=\(activeConfig.temperature) repPenalty=\(activeConfig.repetitionPenalty) topK=\(activeConfig.topK) minP=\(activeConfig.minP)")
 
         llama_backend_init()
@@ -355,11 +373,16 @@ actor LlamaContext {
         model_params.n_gpu_layers = activeConfig.nGpuLayers > 0 ? Int32(activeConfig.nGpuLayers) : 999
         #endif
 
-        /// PERFORMANCE: Enable mmap for faster model loading and memory efficiency.
-        model_params.use_mmap = true
-
-        /// PERFORMANCE: Keep model in RAM to prevent swapping (LMStudio "Keep model in memory").
-        model_params.use_mlock = true
+        /// PERFORMANCE: Enable mmap + mlock for faster model loading and to
+        /// keep the model in RAM (prevents swapping). Mapped to the
+        /// llama_load_mode enum in the stable C API.
+        model_params.load_mode = LLAMA_LOAD_MODE_MMAP_MLOCK
+        /// mmap support is runtime-detected; fall back to direct load if
+        /// the host doesn't support it (e.g. some network filesystems).
+        if !llama_supports_mmap() {
+            model_params.load_mode = LLAMA_LOAD_MODE_NONE
+            llamaLogger.warning("mmap not supported on this host; loading model via direct read")
+        }
 
         let model = llama_model_load_from_file(path, model_params)
         guard let model else {
@@ -472,11 +495,20 @@ actor LlamaContext {
         /// Uses optimized attention kernels that avoid materializing the full attention matrix.
         ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED
 
-        /// PERFORMANCE: KV cache quantization - q8_0 for both K and V tensors.
-        /// Reduces KV cache memory by ~50% vs f16 with minimal quality loss.
-        /// Equivalent to --cache-type-k q8_0 --cache-type-v q8_0 in llama-server.
-        ctx_params.type_k = GGML_TYPE_Q8_0
-        ctx_params.type_v = GGML_TYPE_Q8_0
+        /// PERFORMANCE: KV cache quantization. The optimizer (ModelProfiler)
+        /// picks q8_0 on constrained memory (≤32 GB total) and f16 on
+        /// workstation-class boxes, matching llama-ai's heuristic. Encoder-only
+        /// models skip quantization (their KV cache is negligible). This is
+        /// equivalent to --cache-type-k/v on the server.
+        let profile = ModelProfiler.profileModel(at: path, modelCtxTrain: Int(model_ctx_train), modelSize: modelSize)
+        let kvType: GGMLType = profile?.kvCacheType ?? .q8_0
+        let ggmlType = ggmlTypeFrom(kvType)
+        ctx_params.type_k = ggmlType
+        ctx_params.type_v = ggmlType
+
+        if let p = profile {
+            llamaLogger.info("OPTIMIZER: arch=\(p.architecture.summary) tier=\(p.tier) kv=\(kvType) ctx=\(p.contextSize) batch=\(p.batchSize) temp=\(p.temperature) topP=\(p.topP) minP=\(p.minP) rep=\(p.repetitionPenalty ?? 1.0)")
+        }
 
         /// PERFORMANCE: Offload KV cache to GPU (LMStudio "Offload KV Cache to GPU").
         /// Stores the key/value cache on GPU instead of CPU RAM.
@@ -496,7 +528,19 @@ actor LlamaContext {
 
         llamaLogger.info("SUCCESS: BATCH_SIZE_FIX: Using batch_size=\(n_batch) (NOT context_size=\(n_ctx)) to prevent crash")
 
-        return LlamaContext(model: model, context: context, contextSize: n_ctx, batchSize: n_batch)
+        return LlamaContext(
+            model: model,
+            context: context,
+            contextSize: n_ctx,
+            batchSize: n_batch,
+            samplerConfig: SamplerConfig(
+                temperature: Float(activeConfig.temperature),
+                topP: Float(activeConfig.topP),
+                topK: Int32(activeConfig.topK),
+                minP: Float(activeConfig.minP),
+                repetitionPenalty: Float(activeConfig.repetitionPenalty)
+            )
+        )
     }
 
     // MARK: - Model Information
@@ -882,9 +926,13 @@ actor LlamaContext {
         }
 
         if let repetitionPenalty = config.repetitionPenalty, repetitionPenalty != 1.0 {
+            /// llama.cpp stable requires n_vocab as the first arg to
+            /// llama_sampler_init_penalties (the n_vocab, penalty_last_n,
+            /// penalty_repeat, penalty_freq, penalty_present ordering).
+            let nVocab = llama_vocab_n_tokens(vocab)
             llama_sampler_chain_add(
                 sampling,
-                llama_sampler_init_penalties(64, repetitionPenalty, 0.0, 0.0)
+                llama_sampler_init_penalties(nVocab, 64, repetitionPenalty, 0.0, 0.0)
             )
             chainSummary.append("penalties(\(repetitionPenalty))")
         }

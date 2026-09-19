@@ -143,9 +143,8 @@ public struct OpenAIChatRequest: Content {
     public let stream: Bool?
     public let tools: [OpenAITool]?
     /// Stable per-conversation identifier sent as the OpenAI "user" field.
-    /// CachyLLama uses this for slot affinity and per-user concurrency
-    /// (--max-concurrent-per-user), so conversations that share a user
-    /// get the same slot and KV cache. Other providers ignore it.
+    /// llama-server uses this for slot affinity (matching the same user to
+    /// the same slot/KV cache for prompt-cache reuse). Other providers ignore it.
     public let user: String?
 
     /// SAM-specific extensions for advanced configuration.

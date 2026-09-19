@@ -95,7 +95,16 @@ public class MLXProvider: AIProvider {
         /// ProviderConfiguration.mlxConfig. Per-conversation sampling (temperature, topP)
         /// comes from the request (set by AgentOrchestrator from conversation.settings).
         /// When the request specifies a repetitionPenalty, it overrides the MLX preset.
-        let mlxConfig = self.config.mlxConfig ?? getGlobalMLXConfiguration()
+        ///
+        /// When the user has NOT pinned a custom preset ("auto"), the
+        /// Single source of truth: ModelProfiler-derived MLXConfiguration
+        /// (KV quantization, sampling defaults, context/max-tokens), with
+        /// any "custom" preset overrides applied inside the accessor.
+        /// LLM's heuristic: q8 KV below 32 GB, none above; smaller prefill
+        /// for big models. Architecture-aware sampling (Qwen3 temp=1.0,
+        /// no rep penalty) follows the same defaults as the llama.cpp
+        /// provider for consistency.
+        let mlxConfig = getGlobalMLXConfiguration(modelPath: modelPath)
         let temperature = Float(request.temperature ?? mlxConfig.temperature)
         let topP = Float(request.topP ?? mlxConfig.topP)
         let maxTokens = request.maxTokens ?? mlxConfig.maxTokens
@@ -193,9 +202,9 @@ public class MLXProvider: AIProvider {
                             toolsEnabled: request.samConfig?.mcpToolsEnabled ?? true
                         )
 
-                        /// Per-provider MLX defaults from ProviderConfiguration.mlxConfig.
-                        /// Per-conversation sampling (temperature, topP) comes from the request.
-                        let mlxConfig = self.config.mlxConfig ?? getGlobalMLXConfiguration()
+                        /// Single source of truth: ModelProfiler-derived MLXConfiguration
+                        /// (KV quantization, sampling, context) from the accessor.
+                        let mlxConfig = getGlobalMLXConfiguration(modelPath: modelPath)
                         let temperature = Float(request.temperature ?? mlxConfig.temperature)
                         let topP = Float(request.topP ?? mlxConfig.topP)
                         let maxTokens = request.maxTokens ?? mlxConfig.maxTokens
@@ -306,6 +315,13 @@ public class MLXProvider: AIProvider {
         return true
     }
 
+    // MARK: - Optimizer
+
+    /// Layer ModelProfiler's model+RAM-aware KV quantization, maxKVSize,
+    /// and prefill step size onto top of the user's RAM-profile defaults.
+    /// Returns nil if profiling fails (e.g. MLX model dirs don't expose a
+    /// GGUF header), in which case the caller falls back to `baseConfig`.
+    ///
     // MARK: - Lifecycle
 
     public func cancelGeneration() async {

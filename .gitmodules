@@ -1,3 +1,4 @@
 [submodule "external/llama.cpp"]
 	path = external/llama.cpp
-	url = https://github.com/SyntheticAutonomicMind/CachyLLama.git
+	url = https://github.com/SyntheticAutonomicMind/llama.cpp.git
+	branch = stable

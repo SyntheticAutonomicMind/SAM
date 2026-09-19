@@ -359,11 +359,20 @@ public class LlamaProvider: AIProvider {
         }
     }
 
-    /// Build a sampler config from a request, falling back to defaults.
+    /// Build a sampler config from a request, falling back to model-aware
+    /// defaults. Per-request values always win; when the request omits a
+    /// field, SAM uses the optimizer-derived profile (ModelProfiler),
+    /// which knows Qwen3 must not receive a repetition penalty. The global
+    /// LlamaConfiguration is only a RAM-profile fallback used when the
+    /// GGUF header can't be read (e.g. tests).
     private func buildSamplerConfig(from request: OpenAIChatRequest) -> LlamaContext.SamplerConfig {
-        /// Per-request values win, but unset fields fall back to the
-        /// user's Settings pane values via the global LlamaConfiguration.
-        let global = getGlobalLlamaConfiguration()
+        // Single source of truth: profile-derived defaults, with the user's
+        // custom override (if pinned) applied inside the accessor.
+        let global = getGlobalLlamaConfiguration(modelPath: modelPath)
+
+        // Model-aware arch flag for the Qwen3/SSM penalty disable.
+        let profiled = ModelProfiler.profileModel(at: modelPath)
+
         var config = LlamaContext.SamplerConfig(
             temperature: Float(global.temperature),
             topP: Float(global.topP),
@@ -382,6 +391,16 @@ public class LlamaProvider: AIProvider {
         if let repetitionPenalty = request.repetitionPenalty {
             config.repetitionPenalty = Float(repetitionPenalty)
         }
+
+        // For Qwen3 thinking models the optimizer sets repetitionPenalty to
+        // 1.0 (effectively disabled). Clamp to nil-omit semantics so the
+        // penalties sampler is only inserted when the penalty != 1.0.
+        if profiled?.shouldSkipRepetitionPenalty == true {
+            config.repetitionPenalty = Float(1.0)
+            providerLogger.info("SAMPLER: Qwen3/SSM model detected, repetition penalty held at 1.0 (no penalty applied)")
+        }
+
+        providerLogger.debug("SAMPLER_CONFIG: temp=\(config.temperature) topP=\(config.topP) topK=\(config.topK) minP=\(config.minP) rep=\(config.repetitionPenalty ?? 1.0) arch=\(profiled?.architecture.summary ?? "dense")")
         return config
     }
 
@@ -449,10 +468,15 @@ public class LlamaProvider: AIProvider {
 /// the providers consume. Per-conversation KV cache management stays in the
 /// provider; the engine is conversation-agnostic.
 actor LlamaEngine {
+    /// The model path backing this provider. Exposed (read-only) so
+    /// EndpointManager can auto-spawn a llama.cpp server with the same
+    /// The LlamaContext init reads getGlobalLlamaConfiguration() directly
+    /// to install sampling defaults, so the engine does not need to track
+    /// its own copy. We keep the init parameter for explicit per-engine
+    /// overrides (e.g., tests or power users) but it is optional.
     private let modelPath: String
     private var context: LlamaContext?
     /// The LlamaContext init reads getGlobalLlamaConfiguration() directly
-    /// to install sampling defaults, so the engine does not need to track
     /// its own copy. We keep the init parameter for explicit per-engine
     /// overrides (e.g., tests or power users) but it is optional.
     init(modelPath: String) {

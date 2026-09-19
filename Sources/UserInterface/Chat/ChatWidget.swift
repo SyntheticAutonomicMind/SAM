@@ -142,6 +142,11 @@ public struct ChatWidget: View {
     /// Configuration - dynamically loaded.
     @AppStorage("defaultModel") var appDefaultModel: String = "gpt-4"
     @State var selectedModel: String = "gpt-4"
+
+    /// On-disk path for the selected local model, resolved through the
+    /// endpoint manager so the model-aware optimizer (ModelProfiler) can
+    /// read the GGUF header / MLX config.json. nil when not a local model.
+    @State private var resolvedModelPath: String? = nil
     @State var temperature: Double = 0.7
     @State var topP: Double = 1.0
     @State var repetitionPenalty: Double?
@@ -371,6 +376,9 @@ public struct ChatWidget: View {
             voiceBridge.shouldClearMessage = false
         }
         .onChange(of: selectedModel) { _, newValue in
+            // Resolve the on-disk path so the model-aware optimizer can read
+            // architecture flags from the GGUF header / MLX config.json.
+            resolvedModelPath = endpointManager.getLocalModelPath(modelName: newValue)
             handleModelChange(newValue)
         }
         .onChange(of: endpointManager.modelLoadingStatus) { _, newStatus in
@@ -1597,7 +1605,7 @@ public struct ChatWidget: View {
                         if isMLXModel || isLlamaModel {
                             /// Determine which optimization to apply based on actual provider type.
                             if isMLXModel {
-                                let mlxConfig = getGlobalMLXConfiguration()
+                                let mlxConfig = getGlobalMLXConfiguration(modelPath: resolvedModelPath ?? "")
 
                                 /// Use DISCOVERED context size as the max, not the RAM-based preset
                                 /// Max tokens = 50% of context, capped at 16k, minimum 2048
@@ -1622,7 +1630,7 @@ public struct ChatWidget: View {
 
                                 logger.debug("Applied MLX optimization (model context known): modelContext=\(effectiveMaxContext), maxMaxTokens=\(effectiveMaxTokens), currentContext=\(contextWindowSize), currentMaxTokens=\(self.maxTokens ?? 0), topP=\(mlxConfig.topP), temp=\(mlxConfig.temperature)")
                             } else if isLlamaModel {
-                                let llamaConfig = getGlobalLlamaConfiguration()
+                                let llamaConfig = getGlobalLlamaConfiguration(modelPath: resolvedModelPath ?? "")
 
                                 /// Use DISCOVERED context size as the max, not the RAM-based preset
                                 /// Max tokens = 50% of context, capped at 16k, minimum 2048
@@ -1693,7 +1701,7 @@ public struct ChatWidget: View {
                             let safeMaxTokensDefault = 2048
 
                             if isMLXModel {
-                                let mlxConfig = getGlobalMLXConfiguration()
+                                let mlxConfig = getGlobalMLXConfiguration(modelPath: resolvedModelPath ?? "")
 
                                 /// Use safe defaults as both max AND current values
                                 maxContextWindowSize = safeContextDefault
@@ -1709,7 +1717,7 @@ public struct ChatWidget: View {
 
                                 logger.debug("Model context UNKNOWN - Applied safe defaults: context=\(safeContextDefault), maxTokens=\(safeMaxTokensDefault), topP=\(mlxConfig.topP), temp=\(mlxConfig.temperature)")
                             } else if isLlamaModel {
-                                let llamaConfig = getGlobalLlamaConfiguration()
+                                let llamaConfig = getGlobalLlamaConfiguration(modelPath: resolvedModelPath ?? "")
 
                                 /// Use safe defaults as both max AND current values
                                 maxContextWindowSize = safeContextDefault
@@ -3439,12 +3447,18 @@ public struct ChatWidget: View {
         logger.debug("Loaded global MLX settings: preset=\(preset), topP=\(config.topP), repPenalty=\(config.repetitionPenalty?.description ?? "nil")")
     }
 
-    /// Load global llama.cpp settings from preferences. Mirror of
-    /// loadGlobalMLXSettings so the log line at chat-start names the
-    /// active llama preset and its topK/minP.
+    /// Load global llama.cpp settings from preferences. Names the active
+    /// preset + topK/minP in the startup log. When the selected model's
+    /// file path is resolvable, uses the model-aware profile; otherwise
+    /// falls back to the RAM profile for the log line only.
     func loadGlobalLlamaSettings() {
-        let llamaConfig = getGlobalLlamaConfiguration()
-        logger.debug("Loaded global llama settings: nCtx=\(llamaConfig.nCtx) topP=\(llamaConfig.topP) temp=\(llamaConfig.temperature) repPenalty=\(llamaConfig.repetitionPenalty) topK=\(llamaConfig.topK) minP=\(llamaConfig.minP)")
+        let cfg: LlamaConfiguration
+        if let path = endpointManager.getLocalModelPath(modelName: selectedModel) {
+            cfg = getGlobalLlamaConfiguration(modelPath: path)
+        } else {
+            cfg = getGlobalLlamaConfiguration()
+        }
+        logger.debug("Loaded global llama settings: nCtx=\(cfg.nCtx) topP=\(cfg.topP) temp=\(cfg.temperature) repPenalty=\(cfg.repetitionPenalty) topK=\(cfg.topK) minP=\(cfg.minP)")
     }
 
     /// Load system prompts - Ensure SystemPromptManager is initialized with default.
