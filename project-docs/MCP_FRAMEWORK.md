@@ -276,7 +276,7 @@ Tools are registered in a fixed order to maintain KV cache stability across requ
 
 **Operations:** `generate`, `list_models`
 
-Connects to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for GPU-accelerated Stable Diffusion image generation. No local GPU required. Only available when ALICE server is configured and reachable.
+Connects to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for GPU-accelerated Stable Diffusion image and audio generation. No local GPU required. Only available when ALICE server is configured and reachable.
 
 ---
 

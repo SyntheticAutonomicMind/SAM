@@ -34,7 +34,7 @@ SAM collects no usage data. There are no analytics, no crash reporters, no phone
 1. **AI provider requests** - When you use a cloud AI provider, your messages are sent to that provider's API
 2. **Update checks** - SAM checks for updates via Sparkle (can be disabled)
 3. **Web operations** - When you explicitly ask SAM to search or fetch web pages
-4. **ALICE image generation** - When you generate images, requests go to your ALICE server
+4. **ALICE image and audio generation** - When you generate images or music, requests go to your ALICE server
 
 ### What Cloud Providers See
 

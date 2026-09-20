@@ -224,8 +224,8 @@ These tools perform one specific function and don't use the operation parameter 
 - Unit conversions
 
 **9. image_generation**
-- Remote image generation via ALICE server
-- GPU-accelerated image generation via ALICE
+- Remote image and audio generation via ALICE server
+- GPU-accelerated image and audio generation via ALICE
 
 **12. read_tool_result**
 - Read results from previous tool executions

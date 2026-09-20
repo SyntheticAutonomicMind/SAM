@@ -91,7 +91,7 @@ The largest module. Handles all AI communication, orchestration, and the local A
   - `Providers.swift` - OpenAI, GitHub Copilot
   - `ExtendedProviders.swift` - DeepSeek, Google Gemini, MiniMax, Z.AI (Chat), Z.AI (Coding), Ollama Cloud, Custom
   - `OpenRouterProvider.swift` - OpenRouter multi-model gateway
-  - `ALICEProvider.swift` - ALICE image generation
+  - `ALICEProvider.swift` - ALICE image and audio generation
   - `MLXProvider.swift` - Local MLX models
   - `LlamaProvider.swift` - Local llama.cpp models
   - `RemoteLlamaProvider.swift` - Remote llama.cpp servers

@@ -18,7 +18,7 @@ func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerO
 - `GeminiProvider` - Google Gemini API with metadata discovery
 - `MiniMaxProvider` - MiniMax API with M2/M3 model support and thinking parameter
 - `OpenRouterProvider` - OpenRouter multi-model gateway
-- `ALICEProvider` - ALICE image generation service
+- `ALICEProvider` - ALICE image and audio generation service
 - `MLXProvider` - Local MLX models for Apple Silicon
 - `LlamaProvider` - Local GGUF models via llama.cpp
 - `RemoteLlamaProvider` - Remote llama.cpp inference servers

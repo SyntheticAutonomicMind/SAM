@@ -31,7 +31,7 @@
 
 ### What is SAM?
 
-SAM is a native macOS AI assistant that lives on your Mac. It's built with Swift and SwiftUI, runs natively on Apple Silicon and Intel Macs, and keeps all your data local. SAM connects to AI providers (cloud or local) to help you with writing, research, file management, image generation, math, and much more - all through natural conversation.
+SAM is a native macOS AI assistant that lives on your Mac. It's built with Swift and SwiftUI, runs natively on Apple Silicon and Intel Macs, and keeps all your data local. SAM connects to AI providers (cloud or local) to help you with writing, research, file management, image and audio generation, math, and much more - all through natural conversation.
 
 SAM was designed for everyday users, not just developers. You don't need technical skills to use it. Just type or speak, and SAM handles the rest.
 
@@ -353,9 +353,11 @@ Just describe what you want: "Create a Word document summarizing our discussion 
 
 ## Image Generation (ALICE)
 
+## Image and Audio Generation (ALICE)
+
 ### What is ALICE?
 
-[ALICE](https://github.com/SyntheticAutonomicMind/ALICE) (Artificial Language and Image Computing Engine) is a separate GPU-accelerated image generation server. SAM connects to an ALICE server on your network to generate images using Stable Diffusion models.
+[ALICE](https://github.com/SyntheticAutonomicMind/ALICE) (Artificial Latent Interpretive Creation Engine) is a separate GPU-accelerated image and audio generation server. SAM connects to an ALICE server on your network to generate images and music using Stable Diffusion and audio models.
 
 ### Setting Up ALICE
 

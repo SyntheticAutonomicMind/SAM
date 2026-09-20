@@ -6,7 +6,7 @@
 
 ## Overview
 
-SAM is a native macOS AI assistant with a comprehensive set of features for conversation, research, document management, file operations, image generation, math, and voice control. This document covers every feature in detail.
+SAM is a native macOS AI assistant with a comprehensive set of features for conversation, research, document management, file operations, image and audio generation, math, and voice control. This document covers every feature in detail.
 
 ---
 
@@ -245,7 +245,7 @@ All math is computed by a real Python 3 interpreter - no AI approximation.
 | `generate` | Generate images from text descriptions |
 | `list_models` | List available models on the ALICE server |
 
-Connects to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for GPU-accelerated Stable Diffusion image generation. Supports multiple models, automatic model discovery, and server health monitoring.
+Connects to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for GPU-accelerated Stable Diffusion image and audio generation. Supports multiple models, automatic model discovery, and server health monitoring.
 
 ### User Collaboration
 
@@ -391,9 +391,9 @@ Select specific input (microphone) and output (speaker) devices. SAM detects all
 
 ---
 
-## Image Generation (ALICE)
+## Image and Audio Generation (ALICE)
 
-Connect to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for Stable Diffusion image generation:
+Connect to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for Stable Diffusion image and audio generation:
 
 - **Automatic model discovery** - Detects models loaded on the ALICE server
 - **Multiple model support** - SD 1.5, SDXL, and custom models

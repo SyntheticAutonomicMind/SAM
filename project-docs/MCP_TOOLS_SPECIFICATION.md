@@ -387,7 +387,7 @@ Tools are registered in a fixed order to maintain KV cache stability across requ
 
 ### 13. image_generation (Conditional)
 
-**Remote image generation via ALICE server**
+**Remote image and audio generation via ALICE server**
 
 **Only available when:** ALICE server configured and reachable
 
