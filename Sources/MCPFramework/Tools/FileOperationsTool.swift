@@ -168,17 +168,17 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             ),
             "lineNumber": MCPToolParameter(
                 type: .integer,
-                description: "Line number for insert/replace (1-based, for insert_edit)",
+                description: "Line number for insert/replace (1-based, for insert_at_line)",
                 required: false
             ),
             "newText": MCPToolParameter(
                 type: .string,
-                description: "Text to insert or replace (for insert_edit)",
+                description: "Text to insert or replace (for insert_at_line)",
                 required: false
             ),
             "insertOperation": MCPToolParameter(
                 type: .string,
-                description: "Insert operation type: 'insert' or 'replace' (for insert_edit)",
+                description: "Insert operation type: 'insert' or 'replace' (for insert_at_line)",
                 required: false,
                 enumValues: ["insert", "replace"]
             ),
@@ -451,7 +451,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             let tool = MultiReplaceStringTool()
             return await tool.execute(parameters: multiReplaceParams, context: context)
 
-        case "insert_edit":
+        case "insert_at_line":
             /// Transform parameters: insertOperation → operation for InsertEditTool.
             var insertParams = resolvedParams
             if let insertOperation = resolvedParams["insertOperation"] as? String {
@@ -462,7 +462,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             /// Use stored authorization result (already consumed above).
             if isAuthorized || context.isUserInitiated {
                 insertParams["confirm"] = true
-                logger.debug("Adding confirm=true to insert_edit (authorized=\(isAuthorized), userInitiated=\(context.isUserInitiated))")
+                logger.debug("Adding confirm=true to insert_at_line (authorized=\(isAuthorized), userInitiated=\(context.isUserInitiated))")
             }
 
             let tool = InsertEditTool()
@@ -586,7 +586,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             }
             return "Applying multiple replacements"
 
-        case "insert_edit":
+        case "insert_at_line":
             if let filePath = parameters["filePath"] as? String {
                 let fileName = (filePath as NSString).lastPathComponent
                 let insertOp = parameters["insertOperation"] as? String ?? "edit"
@@ -681,7 +681,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 return operationError(operation, message: "Missing required parameter: replacements (array)")
             }
 
-        case "insert_edit":
+        case "insert_at_line":
             guard parameters["filePath"] is String else {
                 return operationError(operation, message: "Missing required parameter: filePath")
             }
@@ -797,7 +797,7 @@ extension FileOperationsTool: ToolDisplayInfoProvider {
             }
             return "Multi-editing file"
 
-        case "insert_edit":
+        case "insert_at_line":
             if let filePath = arguments["filePath"] as? String {
                 let filename = (filePath as NSString).lastPathComponent
                 return "Inserting in: \(filename)"
@@ -933,7 +933,7 @@ extension FileOperationsTool: ToolDisplayInfoProvider {
             }
             return details.isEmpty ? nil : details
 
-        case "insert_edit":
+        case "insert_at_line":
             if let filePath = arguments["filePath"] as? String {
                 details.append("File: \((filePath as NSString).lastPathComponent)")
             }

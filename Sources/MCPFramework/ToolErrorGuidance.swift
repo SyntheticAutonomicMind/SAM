@@ -353,8 +353,13 @@ public struct ToolErrorGuidance: Sendable {
             
             EXAMPLE (user_collaboration):
             {
-                "operation": "request_input",
-                "message": "What would you like me to do?"
+                "prompt": "I need clarification on your request. Which approach would you prefer: A (fast) or B (thorough)?"
+            }
+            
+            OPTIONAL context parameter:
+            {
+                "prompt": "What's the deadline for this task?",
+                "context": "Working on the release schedule for version 20260920"
             }
             """
         ]
