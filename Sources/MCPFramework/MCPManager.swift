@@ -379,9 +379,9 @@ public class MCPToolRegistry {
         /// memory_operations operations
         "store_memory": ("memory_operations", "store"),
         "retrieve_memory": ("memory_operations", "retrieve"),
-        "search_memory": ("memory_operations", "search"),
-        "list_memory": ("memory_operations", "list"),
-        "delete_memory": ("memory_operations", "delete"),
+        "search_memory": ("memory_operations", "search_memory"),
+        "list_memory": ("memory_operations", "list_collections"),
+        "delete_memory": ("memory_operations", "delete_key"),
         "recall_sessions": ("memory_operations", "recall_sessions"),
         "add_discovery": ("memory_operations", "add_discovery"),
         "add_solution": ("memory_operations", "add_solution"),
@@ -392,9 +392,9 @@ public class MCPToolRegistry {
         /// This keeps older prompts working but the canonical entry point is
         /// `web_operations` with `operation=...`. See ToolPromptSummary for the
         /// model-facing one-liner that points the model at web_operations.
-        "search_web": ("web_operations", "search_web"),
-        "fetch_url": ("web_operations", "fetch_url"),
-        "web_search": ("web_operations", "search_web"),
+        "search_web": ("web_operations", "web_search"),
+        "fetch_url": ("web_operations", "fetch"),
+        "web_search": ("web_operations", "web_search"),
         "web_research": ("web_operations", "research"),
 
         /// todo_operations operations
@@ -430,11 +430,10 @@ public class MCPToolRegistry {
         /// document_operations operations
         "document_create": ("document_operations", "document_create"),
         "document_import": ("document_operations", "document_import"),
-        "document_list": ("document_operations", "document_list"),
-        "document_delete": ("document_operations", "document_delete"),
+        "get_doc_info": ("document_operations", "get_doc_info"),
 
         /// image_generation operations
-        "generate_image": ("image_generation", "generate_image"),
+        "generate_image": ("image_generation", "generate"),
 
         /// math_operations - default to calculate when called directly without operation
         "math_operations": ("math_operations", "calculate"),
