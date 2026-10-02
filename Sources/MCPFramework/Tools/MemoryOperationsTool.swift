@@ -294,7 +294,7 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         if parameters["content"] as? String != nil { return "store_memory" }
         if parameters["key"] as? String != nil { return "retrieve" }
         if parameters["query"] as? String != nil { return "search_memory" }
-        return "list_collections"
+        return nil
     }
 
     @MainActor

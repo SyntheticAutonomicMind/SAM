@@ -84,7 +84,7 @@ public class TodoOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         if parameters["todoList"] is [[String: Any]] { return "write" }
         if parameters["todoUpdates"] is [[String: Any]] { return "update" }
         if parameters["newTodos"] is [[String: Any]] { return "add" }
-        return "read"
+        return nil
     }
 
     public var parameters: [String: MCPToolParameter] {
