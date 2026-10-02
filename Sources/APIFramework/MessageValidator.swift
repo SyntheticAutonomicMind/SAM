@@ -789,21 +789,21 @@ public struct MessageValidator {
                         let args = tc.function.arguments
                         toolsUsed[name, default: 0] += 1
 
-                        if name == "interact" {
-                            if let question = extractJsonStringValue(args, key: "message"), !question.isEmpty {
+                        if name == "interact" || name == "user_collaboration" {
+                            if let question = extractJsonStringValue(args, key: "prompt"), !question.isEmpty {
                                 collabToolCalls[tc.id] = question
                             }
                         }
 
                         if name == "file_operations" || name == "apply_patch" {
-                            for path in extractJsonStringValues(args, keys: ["path", "new_path", "old_path"]) {
+                            for path in extractJsonStringValues(args, keys: ["path", "filePath", "new_path", "newPath", "old_path", "oldPath"]) {
                                 if !path.hasPrefix(".") && !filesModified.contains(path) {
                                     filesModified.append(path)
                                 }
                             }
                         }
 
-                        if name == "interact" && content.contains("[COLLABORATION]") {
+                        if (name == "interact" || name == "user_collaboration") && content.contains("[COLLABORATION]") {
                             let dec = content
                                 .replacingOccurrences(of: "[COLLABORATION]", with: "")
                                 .replacingOccurrences(of: "\n", with: " ")

@@ -222,16 +222,59 @@ public class SAMAPIServer: ObservableObject, @unchecked Sendable {
         )
     }
 
-    private func convertMCPParametersToOpenAI(_ mcpParameters: [String: Any]) -> [String: Any] {
-        /// Convert MCP parameter schema to OpenAI function parameters format Both follow JSON Schema, so use parameters as-is or provide default structure.
-        if mcpParameters.isEmpty {
-            return [
-                "type": "object",
-                "properties": [:] as [String: Any],
-                "required": [] as [String]
+    private func convertMCPParametersToOpenAI(_ mcpParameters: [String: MCPToolParameter]) -> [String: Any] {
+        /// Convert MCP parameter definitions to OpenAI JSON Schema format.
+        /// This mirrors SharedConversationService's conversion logic.
+        let properties = mcpParameters.reduce(into: [String: [String: Any]]()) { result, param in
+            let (paramName, paramDef) = param
+
+            var paramSpec: [String: Any] = [
+                "type": paramDef.type.description,
+                "description": paramDef.description
             ]
+
+            if let enumValues = paramDef.enumValues {
+                paramSpec["enum"] = enumValues
+            }
+
+            /// Handle array types with arrayElementType.
+            if case .array = paramDef.type, let arrayElementType = paramDef.arrayElementType {
+                paramSpec["items"] = ["type": arrayElementType.description]
+            }
+
+            /// Handle object types with nested properties.
+            if case .object(let nestedProps) = paramDef.type {
+                let nestedProperties = nestedProps.reduce(into: [String: [String: Any]]()) { nestedResult, nestedParam in
+                    let (nestedName, nestedDef) = nestedParam
+                    var nestedSpec: [String: Any] = [
+                        "type": nestedDef.type.description,
+                        "description": nestedDef.description
+                    ]
+                    if let nestedEnum = nestedDef.enumValues {
+                        nestedSpec["enum"] = nestedEnum
+                    }
+                    if case .array = nestedDef.type, let nestedArrayElementType = nestedDef.arrayElementType {
+                        nestedSpec["items"] = ["type": nestedArrayElementType.description]
+                    }
+                    nestedResult[nestedName] = nestedSpec
+                }
+                let nestedRequired = nestedProps.compactMap { $0.value.required ? $0.key : nil }
+                paramSpec["properties"] = nestedProperties
+                paramSpec["required"] = nestedRequired
+            }
+
+            result[paramName] = paramSpec
         }
-        return mcpParameters
+
+        let requiredParams = mcpParameters.compactMap { param in
+            param.value.required ? param.key : nil
+        }
+
+        return [
+            "type": "object",
+            "properties": properties,
+            "required": requiredParams
+        ]
     }
 
     private func processMCPToolCalls(_ response: ServerOpenAIChatResponse, sessionId: String?) async throws -> ServerOpenAIChatResponse {
