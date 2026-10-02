@@ -297,17 +297,6 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         return "list_collections"
     }
 
-    /// Override validateParameters to allow inference.
-    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        if parameters["operation"] is String {
-            return true
-        }
-        if inferOperation(from: parameters) != nil {
-            return true
-        }
-        throw MCPError.invalidParameters("Missing 'operation' parameter")
-    }
-
     @MainActor
     public func routeOperation(
         _ operation: String,

@@ -87,17 +87,6 @@ public class TodoOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         return "read"
     }
 
-    /// Override validateParameters to allow inference (matches MathOperationsTool pattern).
-    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        if parameters["operation"] is String {
-            return true
-        }
-        if inferOperation(from: parameters) != nil {
-            return true
-        }
-        throw MCPError.invalidParameters("Missing 'operation' parameter")
-    }
-
     public var parameters: [String: MCPToolParameter] {
         return [
             "operation": MCPToolParameter(

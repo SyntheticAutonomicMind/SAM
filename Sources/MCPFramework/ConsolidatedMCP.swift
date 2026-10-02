@@ -12,6 +12,12 @@ public protocol ConsolidatedMCP: MCPTool {
     /// Validate that an operation name is supported Default implementation checks if operation is in supportedOperations array.
     func validateOperation(_ operation: String) -> Bool
 
+    /// Default operation to use when `operation` is omitted AND cannot be inferred
+    /// from other parameters. LLMs sometimes call consolidated tools with completely
+    /// empty arguments `{}`, leaving nothing to infer from. Each tool should
+    /// specify the most common/default operation. Default: first supported operation.
+    var defaultOperation: String { get }
+
     /// Route to specific operation implementation This is where consolidated tools implement operation-specific logic - Parameters: - operation: The operation name (e.g., "search_memory") - parameters: Tool parameters including operation-specific params - context: Execution context with conversation ID, user info, etc.
     @MainActor
     func routeOperation(
@@ -47,15 +53,19 @@ public extension ConsolidatedMCP {
 
         var params = parameters
 
-        /// Extract operation parameter, with fallback to inference.
+        /// Extract operation parameter, with fallback to inference, then default.
         /// LLMs frequently omit the `operation` parameter on consolidated tools.
-        /// Try the inferOperation hook before erroring.
+        /// Try inference first, then fall back to defaultOperation.
         var operation: String? = params["operation"] as? String
         if operation == nil {
             if let inferred = inferOperation(from: params) {
                 logger.info("INFERRED_OPERATION: '\(name)' inferred operation='\(inferred)' from parameters")
                 operation = inferred
                 params["operation"] = inferred
+            } else if !defaultOperation.isEmpty {
+                logger.info("DEFAULT_OPERATION: '\(name)' using default operation='\(defaultOperation)' (no operation provided, no inference possible)")
+                operation = defaultOperation
+                params["operation"] = defaultOperation
             }
         }
 
@@ -86,6 +96,12 @@ public extension ConsolidatedMCP {
         return supportedOperations.contains(operation)
     }
 
+    /// Default: first supported operation. Override when the most common
+    /// operation is not first in the list.
+    var defaultOperation: String {
+        return supportedOperations.first ?? ""
+    }
+
     /// Default: no operation inference. Override in concrete tools.
     func inferOperation(from parameters: [String: Any]) -> String? {
         return nil
@@ -101,7 +117,8 @@ public extension ConsolidatedMCP {
             }
             return true
         }
-        if inferOperation(from: parameters) != nil {
+        // No explicit operation, but inference or default may save us.
+        if inferOperation(from: parameters) != nil || !defaultOperation.isEmpty {
             return true
         }
         throw MCPError.invalidParameters("Missing 'operation' parameter")

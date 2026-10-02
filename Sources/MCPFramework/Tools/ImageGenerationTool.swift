@@ -50,6 +50,10 @@ public class ImageGenerationTool: ConsolidatedMCP, @unchecked Sendable {
     public let name = "image_generation"
     public let supportedOperations = ["generate", "list_models"]
 
+    /// Default to list_models when operation is omitted entirely — it's the
+    /// only operation that can succeed without any parameters.
+    public var defaultOperation: String { "list_models" }
+
     public var parameters: [String: MCPToolParameter] {
         [
             "operation": MCPToolParameter(
@@ -141,16 +145,6 @@ public class ImageGenerationTool: ConsolidatedMCP, @unchecked Sendable {
             throw NSError(domain: "ImageGenerationTool", code: 3, userInfo: [NSLocalizedDescriptionKey: "Image generation server not available"])
         }
         logger.info("ImageGenerationTool initialized - ALICE server is available")
-    }
-
-    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        if parameters["operation"] is String {
-            return true
-        }
-        if inferOperation(from: parameters) != nil {
-            return true
-        }
-        throw NSError(domain: "ImageGenerationTool", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing 'operation' parameter"])
     }
 
     /// Infer operation from parameters when `operation` is omitted.

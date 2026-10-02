@@ -80,17 +80,6 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
         logger.debug("NotesTool initialized")
     }
 
-    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        if parameters["operation"] is String {
-            return true
-        }
-        /// Allow validation to pass when operation can be inferred.
-        if inferOperation(from: parameters) != nil {
-            return true
-        }
-        throw MCPError.invalidParameters("Missing 'operation' parameter")
-    }
-
     /// Infer the operation from available parameters when `operation` is omitted.
     /// LLMs frequently drop the operation parameter; infer from context.
     public func inferOperation(from parameters: [String: Any]) -> String? {

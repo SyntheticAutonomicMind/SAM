@@ -85,16 +85,6 @@ public class SpotlightTool: ConsolidatedMCP, @unchecked Sendable {
         logger.debug("SpotlightTool initialized")
     }
 
-    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        if parameters["operation"] is String {
-            return true
-        }
-        if inferOperation(from: parameters) != nil {
-            return true
-        }
-        throw MCPError.invalidParameters("Missing 'operation' parameter")
-    }
-
     /// Infer operation from parameters when `operation` is omitted.
     public func inferOperation(from parameters: [String: Any]) -> String? {
         if parameters["operation"] as? String != nil { return nil }

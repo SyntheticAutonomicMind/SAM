@@ -126,18 +126,6 @@ public class MathOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         logger.debug("MathOperationsTool initialized")
     }
 
-    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        // Accept if operation is explicit OR can be inferred
-        if parameters["operation"] as? String != nil {
-            return true
-        }
-        // Infer operation from context
-        if inferOperation(from: parameters) != nil {
-            return true
-        }
-        throw MCPError.invalidParameters("'operation' parameter is required")
-    }
-
     /// Infer the operation when LLM omits the operation parameter.
     /// LLMs frequently call with just {"formula":"debt_payoff","parameters":{...}}
     /// instead of {"operation":"formula","formula":"debt_payoff","parameters":{...}}
