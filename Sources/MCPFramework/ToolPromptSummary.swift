@@ -116,7 +116,7 @@ public class ToolPromptSummaryRegistry {
         var lines: [String] = []
         lines.append("## Available Tools")
         lines.append("")
-        lines.append("Each tool has an `operation` parameter that selects the action. Always pass the tool name as `name` and the action as `operation` in the same tool call.")
+        lines.append("Each tool has an `operation` parameter that selects the action. Provide the operation and any required parameters from the tool's JSON schema in the `tools[]` array.")
         lines.append("")
         for (index, name) in sorted.enumerated() {
             let summary = summary(for: name)

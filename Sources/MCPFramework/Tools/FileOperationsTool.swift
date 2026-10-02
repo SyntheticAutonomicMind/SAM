@@ -86,8 +86,8 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
                 enumValues: [
                     "read_file", "list_dir", "get_file_info", "get_errors", "read_tool_result",
                     "file_search", "grep_search", "semantic_search", "list_usages",
-                    "create_file", "replace_string", "multi_replace_string",
-                    "insert_edit", "rename_file", "delete_file"
+                    "create_file", "write_file", "append_file", "replace_string", "multi_replace_string",
+                    "insert_at_line", "rename_file", "delete_file", "create_directory"
                 ]
             ),
             /// Common parameters
@@ -196,6 +196,26 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     private let logger = Logging.Logger(label: "com.sam.mcp.FileOperations")
+
+    /// Infer operation from parameters when `operation` is omitted.
+    /// LLMs sometimes call with parameter names as the hint.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["symbolName"] as? String != nil { return "list_usages" }
+        if parameters["replacements"] as? [Any] != nil { return "multi_replace_string" }
+        if parameters["oldString"] as? String != nil && parameters["newString"] as? String != nil { return "replace_string" }
+        if parameters["newText"] as? String != nil { return "insert_at_line" }
+        if parameters["newPath"] as? String != nil && parameters["oldPath"] as? String != nil { return "rename_file" }
+        if parameters["content"] as? String != nil && parameters["filePath"] as? String != nil { return "create_file" }
+        if parameters["content"] as? String != nil { return "create_file" }
+        if parameters["query"] as? String != nil { return "grep_search" }
+        if parameters["pattern"] as? String != nil { return "file_search" }
+        if parameters["filePaths"] as? [Any] != nil { return "get_errors" }
+        if parameters["path"] as? String != nil { return "list_dir" }
+        if parameters["filePath"] as? String != nil { return "read_file" }
+        if parameters["recursive"] as? Bool != nil { return "list_dir" }
+        return nil
+    }
 
     public init() {
         logger.debug("FileOperationsTool initialized - unified file operations (15 operations total)")

@@ -81,10 +81,26 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        guard parameters["operation"] is String else {
-            throw MCPError.invalidParameters("Missing 'operation' parameter")
+        if parameters["operation"] is String {
+            return true
         }
-        return true
+        /// Allow validation to pass when operation can be inferred.
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
+    }
+
+    /// Infer the operation from available parameters when `operation` is omitted.
+    /// LLMs frequently drop the operation parameter; infer from context.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["note_name"] as? String != nil && parameters["text"] as? String != nil { return "append_note" }
+        if parameters["note_name"] as? String != nil { return "get_note" }
+        if parameters["title"] as? String != nil && parameters["body"] as? String != nil { return "create_note" }
+        if parameters["query"] as? String != nil { return "search" }
+        if parameters["folder"] as? String != nil { return "list_notes" }
+        return nil
     }
 
     @MainActor

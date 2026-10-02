@@ -64,6 +64,30 @@ public class WebOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         return operations
     }
 
+    /// Infer operation from parameters when `operation` is omitted.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["url"] as? String != nil {
+            if parameters["selectors"] as? [Any] != nil { return "scrape" }
+            return "fetch"
+        }
+        if parameters["query"] as? String != nil && parameters["engine"] as? String != nil { return "serpapi" }
+        if parameters["query"] as? String != nil && (parameters["depth"] as? String != nil || parameters["type"] as? String != nil) { return "research" }
+        if parameters["query"] as? String != nil { return "web_search" }
+        return nil
+    }
+
+    /// Override validateParameters to allow inference.
+    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
+        if parameters["operation"] is String {
+            return true
+        }
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
+    }
+
     public var parameters: [String: MCPToolParameter] {
         var baseParams: [String: MCPToolParameter] = [
             "operation": MCPToolParameter(

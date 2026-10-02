@@ -98,10 +98,24 @@ public class ContactsTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        guard parameters["operation"] is String else {
-            throw MCPError.invalidParameters("Missing 'operation' parameter")
+        if parameters["operation"] is String {
+            return true
         }
-        return true
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
+    }
+
+    /// Infer operation from parameters when `operation` is omitted.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["contact_id"] as? String != nil && parameters["first_name"] as? String != nil { return "update_contact" }
+        if parameters["contact_id"] as? String != nil { return "get_contact" }
+        if parameters["first_name"] as? String != nil && parameters["last_name"] as? String != nil { return "create_contact" }
+        if parameters["query"] as? String != nil { return "search" }
+        if parameters["group_name"] as? String != nil { return "search_group" }
+        return nil
     }
 
     @MainActor

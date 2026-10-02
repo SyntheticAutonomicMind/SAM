@@ -86,10 +86,25 @@ public class SpotlightTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        guard parameters["operation"] is String else {
-            throw MCPError.invalidParameters("Missing 'operation' parameter")
+        if parameters["operation"] is String {
+            return true
         }
-        return true
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
+    }
+
+    /// Infer operation from parameters when `operation` is omitted.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["attribute"] as? String != nil && parameters["value"] as? String != nil { return "search_metadata" }
+        if parameters["attribute"] as? String != nil { return "search_metadata" }
+        if parameters["file_type"] as? String != nil { return "search" }
+        if parameters["hours"] as? Int != nil || parameters["hours"] as? Double != nil { return "recent_files" }
+        if parameters["path"] as? String != nil { return "file_info" }
+        if parameters["query"] as? String != nil { return "search" }
+        return nil
     }
 
     @MainActor

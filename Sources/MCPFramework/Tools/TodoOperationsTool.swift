@@ -78,6 +78,26 @@ public class TodoOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         return ["read", "write", "update", "add"]
     }
 
+    /// Infer operation from parameters when `operation` is omitted.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["todoList"] is [[String: Any]] { return "write" }
+        if parameters["todoUpdates"] is [[String: Any]] { return "update" }
+        if parameters["newTodos"] is [[String: Any]] { return "add" }
+        return "read"
+    }
+
+    /// Override validateParameters to allow inference (matches MathOperationsTool pattern).
+    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
+        if parameters["operation"] is String {
+            return true
+        }
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
+    }
+
     public var parameters: [String: MCPToolParameter] {
         return [
             "operation": MCPToolParameter(

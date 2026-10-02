@@ -282,6 +282,32 @@ public class MemoryOperationsTool: ConsolidatedMCP, @unchecked Sendable {
         logger.debug("MemoryManager injected into MemoryOperationsTool")
     }
 
+    /// Infer operation from parameters when `operation` is omitted.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["fact"] as? String != nil { return "add_discovery" }
+        if parameters["pattern"] as? String != nil { return "add_pattern" }
+        if parameters["error"] as? String != nil && parameters["solution"] as? String != nil { return "add_solution" }
+        if parameters["error"] as? String != nil { return "add_solution" }
+        if parameters["solution"] as? String != nil { return "add_solution" }
+        if parameters["content"] as? String != nil && parameters["key"] as? String != nil { return "store" }
+        if parameters["content"] as? String != nil { return "store_memory" }
+        if parameters["key"] as? String != nil { return "retrieve" }
+        if parameters["query"] as? String != nil { return "search_memory" }
+        return "list_collections"
+    }
+
+    /// Override validateParameters to allow inference.
+    public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
+        if parameters["operation"] is String {
+            return true
+        }
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
+    }
+
     @MainActor
     public func routeOperation(
         _ operation: String,

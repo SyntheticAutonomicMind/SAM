@@ -141,7 +141,7 @@ public class MathOperationsTool: ConsolidatedMCP, @unchecked Sendable {
     /// Infer the operation when LLM omits the operation parameter.
     /// LLMs frequently call with just {"formula":"debt_payoff","parameters":{...}}
     /// instead of {"operation":"formula","formula":"debt_payoff","parameters":{...}}
-    private func inferOperation(from parameters: [String: Any]) -> String? {
+    public func inferOperation(from parameters: [String: Any]) -> String? {
         if parameters["formula"] as? String != nil {
             return "formula"
         }

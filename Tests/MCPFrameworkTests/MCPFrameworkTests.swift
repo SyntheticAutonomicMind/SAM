@@ -76,10 +76,10 @@ final class MCPFrameworkTests: XCTestCase {
     func testFileOperationsValidOperations() {
         let tool = FileOperationsTool()
         let validOps = [
-            "read_file", "create_file", "replace_string", "multi_replace_string",
-            "insert_edit", "rename_file", "delete_file",
+            "read_file", "create_file", "write_file", "append_file", "replace_string", "multi_replace_string",
+            "insert_at_line", "rename_file", "delete_file", "create_directory",
             "list_dir", "file_search", "grep_search", "semantic_search",
-            "list_usages", "get_errors"
+            "list_usages", "get_errors", "read_tool_result"
         ]
         
         // Tool should have operation parameter with enum

@@ -144,10 +144,20 @@ public class ImageGenerationTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        guard parameters["operation"] is String else {
-            throw NSError(domain: "ImageGenerationTool", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing 'operation' parameter"])
+        if parameters["operation"] is String {
+            return true
         }
-        return true
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw NSError(domain: "ImageGenerationTool", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing 'operation' parameter"])
+    }
+
+    /// Infer operation from parameters when `operation` is omitted.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["prompt"] as? String != nil { return "generate" }
+        return nil
     }
 
     @MainActor

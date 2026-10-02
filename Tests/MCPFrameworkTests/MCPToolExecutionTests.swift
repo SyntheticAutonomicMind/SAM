@@ -109,9 +109,9 @@ final class MCPToolExecutionTests: XCTestCase {
         
         // Test all documented operations exist
         let expectedOps = [
-            "read_file", "create_file", "replace_string", "multi_replace_string",
-            "insert_edit", "rename_file", "delete_file",
-            "list_dir", "file_search", "grep_search"
+            "read_file", "create_file", "write_file", "append_file", "replace_string", "multi_replace_string",
+            "insert_at_line", "rename_file", "delete_file", "create_directory",
+            "list_dir", "file_search", "grep_search", "semantic_search", "list_usages", "get_errors", "read_tool_result"
         ]
         
         for op in expectedOps {

@@ -134,10 +134,26 @@ public class CalendarTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        guard parameters["operation"] is String else {
-            throw MCPError.invalidParameters("Missing 'operation' parameter")
+        if parameters["operation"] is String {
+            return true
         }
-        return true
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
+    }
+
+    /// Infer operation from parameters when `operation` is omitted.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["event_title"] as? String != nil { return "create_event" }
+        if parameters["reminder_title"] as? String != nil { return "create_reminder" }
+        if parameters["complete"] as? Bool != nil { return "complete_reminder" }
+        if parameters["due_date"] as? String != nil { return "complete_reminder" }
+        if parameters["query"] as? String != nil { return "search_events" }
+        if parameters["calendar_name"] as? String != nil { return "list_events" }
+        if parameters["list_name"] as? String != nil { return "list_reminders" }
+        return nil
     }
 
     @MainActor

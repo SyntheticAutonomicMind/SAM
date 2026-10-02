@@ -129,11 +129,12 @@ public class MCPManager: ObservableObject {
         } catch {
             logger.error("Parameter validation failed for tool \(resolvedName): \(error)")
             
-            // Provide enhanced error guidance (no schema available from protocol)
+            // Provide enhanced error guidance with the tool's schema.
+            let toolSchema = buildSchema(for: tool)
             let enhancedError = errorGuidance.enhanceToolError(
                 error: error.localizedDescription,
                 toolName: resolvedName,
-                toolSchema: nil,
+                toolSchema: toolSchema,
                 attemptedParams: resolvedParameters
             )
             throw MCPError.invalidParameters(enhancedError)
@@ -147,11 +148,12 @@ public class MCPManager: ObservableObject {
         if result.success {
             logger.debug("Tool \(resolvedName) executed successfully in \(String(format: "%.3f", executionTime))s")
         } else {
-            // Enhance failed tool results with guidance
+            // Enhance failed tool results with guidance including the tool's schema
+            let toolSchema = buildSchema(for: tool)
             let enhancedOutput = errorGuidance.enhanceToolError(
                 error: result.output.content,
                 toolName: resolvedName,
-                toolSchema: nil,
+                toolSchema: toolSchema,
                 attemptedParams: resolvedParameters
             )
             
@@ -167,6 +169,33 @@ public class MCPManager: ObservableObject {
         }
 
         return result
+    }
+
+    /// Build a schema dictionary from a tool's parameter definitions for error guidance.
+    private func buildSchema(for tool: any MCPTool) -> [String: Any] {
+        var properties: [String: Any] = [:]
+        var required: [String] = []
+        for (paramName, paramDef) in tool.parameters {
+            var paramSpec: [String: Any] = [
+                "type": paramDef.type.description,
+                "description": paramDef.description
+            ]
+            if let enumValues = paramDef.enumValues {
+                paramSpec["enum"] = enumValues
+            }
+            if case .array = paramDef.type, let arrayElementType = paramDef.arrayElementType {
+                paramSpec["items"] = ["type": arrayElementType.description]
+            }
+            properties[paramName] = paramSpec
+            if paramDef.required {
+                required.append(paramName)
+            }
+        }
+        return [
+            "type": "object",
+            "properties": properties,
+            "required": required
+        ]
     }
 
     public func getAvailableTools() -> [any MCPTool] {
@@ -423,16 +452,16 @@ public class MCPToolRegistry {
         "delete_reminder": ("calendar_operations", "delete_reminder"),
         "list_reminder_lists": ("calendar_operations", "list_reminder_lists"),
 
-        /// contacts_operations operations
-        "search_contacts": ("contacts_operations", "search_contacts"),
-        "get_contact": ("contacts_operations", "get_contact"),
+       /// contacts_operations operations
+        "search_contacts": ("contacts_operations", "search"),
+       "get_contact": ("contacts_operations", "get_contact"),
         "create_contact": ("contacts_operations", "create_contact"),
         "update_contact": ("contacts_operations", "update_contact"),
         "list_groups": ("contacts_operations", "list_groups"),
         "search_group": ("contacts_operations", "search_group"),
 
         /// notes_operations operations
-        "search_notes": ("notes_operations", "search_notes"),
+        "search_notes": ("notes_operations", "search"),
         "get_note": ("notes_operations", "get_note"),
         "create_note": ("notes_operations", "create_note"),
         "list_folders": ("notes_operations", "list_folders"),
@@ -440,7 +469,7 @@ public class MCPToolRegistry {
         "append_note": ("notes_operations", "append_note"),
 
         /// spotlight_search operations
-        "search_files": ("spotlight_search", "search_files"),
+        "search_files": ("spotlight_search", "search"),
         "search_content": ("spotlight_search", "search_content"),
         "search_metadata": ("spotlight_search", "search_metadata"),
         "file_info": ("spotlight_search", "file_info"),

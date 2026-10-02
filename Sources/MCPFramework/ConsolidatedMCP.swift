@@ -25,6 +25,13 @@ public protocol ConsolidatedMCP: MCPTool {
         _ operation: String,
         message: String
     ) -> MCPToolResult
+
+    /// Attempt to infer the operation from parameters when the `operation` parameter is omitted.
+    /// LLMs frequently omit the `operation` parameter when calling consolidated tools.
+    /// Default implementation returns nil (no inference). Override to provide inference.
+    /// - Parameter parameters: The parameters dictionary passed to execute().
+    /// - Returns: The inferred operation name, or nil if it cannot be inferred.
+    func inferOperation(from parameters: [String: Any]) -> String?
 }
 
 // MARK: - Default Implementations
@@ -38,8 +45,21 @@ public extension ConsolidatedMCP {
     ) async -> MCPToolResult {
         let logger = Logging.Logger(label: "com.sam.mcp.ConsolidatedMCP.\(name)")
 
-        /// Extract operation parameter.
-        guard let operation = parameters["operation"] as? String else {
+        var params = parameters
+
+        /// Extract operation parameter, with fallback to inference.
+        /// LLMs frequently omit the `operation` parameter on consolidated tools.
+        /// Try the inferOperation hook before erroring.
+        var operation: String? = params["operation"] as? String
+        if operation == nil {
+            if let inferred = inferOperation(from: params) {
+                logger.info("INFERRED_OPERATION: '\(name)' inferred operation='\(inferred)' from parameters")
+                operation = inferred
+                params["operation"] = inferred
+            }
+        }
+
+        guard let resolvedOperation = operation else {
             logger.error("Missing 'operation' parameter for \(self.name)")
             return operationError(
                 "",
@@ -48,22 +68,43 @@ public extension ConsolidatedMCP {
         }
 
         /// Validate operation.
-        guard validateOperation(operation) else {
-            logger.error("Unknown operation '\(operation)' for \(self.name)")
+        guard validateOperation(resolvedOperation) else {
+            logger.error("Unknown operation '\(resolvedOperation)' for \(self.name)")
             return operationError(
-                operation,
-                message: "Unknown operation '\(operation)'"
+                resolvedOperation,
+                message: "Unknown operation '\(resolvedOperation)'"
             )
         }
 
         /// Route to operation handler.
-        logger.debug("Routing \(self.name) to operation: \(operation)")
-        return await routeOperation(operation, parameters: parameters, context: context)
+        logger.debug("Routing \(self.name) to operation: \(resolvedOperation)")
+        return await routeOperation(resolvedOperation, parameters: params, context: context)
     }
 
     /// Default operation validation Checks if operation is in supportedOperations array.
     func validateOperation(_ operation: String) -> Bool {
         return supportedOperations.contains(operation)
+    }
+
+    /// Default: no operation inference. Override in concrete tools.
+    func inferOperation(from parameters: [String: Any]) -> String? {
+        return nil
+    }
+
+    /// Override of MCPTool.validateParameters that allows `operation` inference
+    /// for consolidated tools. If the operation is provided, validate it.
+    /// If it's missing but can be inferred, allow it. Otherwise reject.
+    func validateParameters(_ parameters: [String: Any]) throws -> Bool {
+        if let operation = parameters["operation"] as? String {
+            guard validateOperation(operation) else {
+                throw MCPError.invalidParameters("Unknown operation '\(operation)'. Valid operations: \(supportedOperations.joined(separator: ", "))")
+            }
+            return true
+        }
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
     }
 
     /// Default error message generation Shows available operations and example usage.

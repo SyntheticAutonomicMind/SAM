@@ -81,10 +81,21 @@ public class WeatherTool: ConsolidatedMCP, @unchecked Sendable {
     }
 
     public func validateParameters(_ parameters: [String: Any]) throws -> Bool {
-        guard parameters["operation"] is String else {
-            throw MCPError.invalidParameters("Missing 'operation' parameter")
+        if parameters["operation"] is String {
+            return true
         }
-        return true
+        if inferOperation(from: parameters) != nil {
+            return true
+        }
+        throw MCPError.invalidParameters("Missing 'operation' parameter")
+    }
+
+    /// Infer operation from parameters when `operation` is omitted.
+    public func inferOperation(from parameters: [String: Any]) -> String? {
+        if parameters["operation"] as? String != nil { return nil }
+        if parameters["hours"] as? Int != nil || parameters["hours"] as? Double != nil { return "hourly" }
+        if parameters["days"] as? Int != nil || parameters["days"] as? Double != nil { return "forecast" }
+        return "current"
     }
 
     @MainActor
