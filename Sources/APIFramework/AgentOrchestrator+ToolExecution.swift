@@ -1092,7 +1092,7 @@ extension AgentOrchestrator {
         // Code Operations
         case "replace_string_in_file", "multi_replace_string_in_file", "edit_file":
             return "arrow.left.arrow.right"
-        case "insert_edit":
+        case "insert_at_line":
             return "text.insert"
         case "apply_patch":
             return "bandage"
