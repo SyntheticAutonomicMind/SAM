@@ -407,7 +407,8 @@ public class MCPToolRegistry {
         "list_usages": ("code_intelligence", "list_usages"),
         "search_history": ("code_intelligence", "search_history"),
 
-        /// user_collaboration operations
+        /// user_collaboration operations (note: not a ConsolidatedMCP, no operation param)
+        "interact": ("user_collaboration", ""),
         "request_input": ("user_collaboration", "request_input"),
 
         /// agent_operations operations
