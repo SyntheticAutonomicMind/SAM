@@ -1152,7 +1152,7 @@ AVAILABLE TOOLS:
         }
 
         logger.debug("DEBUG: About to enhance request with memory")
-        logger.error("DEBUG_APISERVER: Processing request for model: \(chatRequest.model), streaming: \(chatRequest.stream ?? false)")
+        logger.debug("DEBUG_APISERVER: Processing request for model: \(chatRequest.model), streaming: \(chatRequest.stream ?? false)")
 
         /// Enhance request with memory context FIRST, then trim.
         /// CRITICAL FIX: Previously trimmed BEFORE memory enhancement, which meant
@@ -1908,7 +1908,7 @@ AVAILABLE TOOLS:
                             logger.warning("DEBUG_NONSTREAMING: Shared topic '\(topicName)' not found in database - skipping topic attachment")
                         }
                     } catch {
-                        logger.error("DEBUG_NONSTREAMING: Failed to attach shared topic: \(error)")
+                        logger.debug("DEBUG_NONSTREAMING: Failed to attach shared topic: \(error)")
                     }
                 }
 
@@ -1980,7 +1980,7 @@ AVAILABLE TOOLS:
                             logger.warning("DEBUG_NONSTREAMING: Shared topic '\(topicName)' not found in database - skipping topic attachment")
                         }
                     } catch {
-                        logger.error("DEBUG_NONSTREAMING: Failed to attach shared topic: \(error)")
+                        logger.debug("DEBUG_NONSTREAMING: Failed to attach shared topic: \(error)")
                     }
                 }
 
@@ -2045,13 +2045,13 @@ AVAILABLE TOOLS:
             return try await createOpenAICompatibleResponse(from: result, originalRequest: chatRequest, requestId: requestId)
 
         } catch let endpointError as EndpointManagerError {
-            logger.error("DEBUG_APISERVER: EndpointManager error: \(endpointError)")
+            logger.error("API_SERVER: EndpointManager error: \(endpointError)")
             throw Abort(.badRequest, reason: endpointError.localizedDescription)
         } catch let providerError as ProviderError {
-            logger.error("DEBUG_APISERVER: Provider error: \(providerError)")
+            logger.error("API_SERVER: Provider error: \(providerError)")
             throw Abort(.internalServerError, reason: providerError.localizedDescription)
         } catch {
-            logger.error("DEBUG_APISERVER: General error: \(error)")
+            logger.error("API_SERVER: General error: \(error)")
             throw Abort(.internalServerError, reason: "Failed to process request: \(error.localizedDescription)")
         }
     }

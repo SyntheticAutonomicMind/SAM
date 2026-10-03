@@ -2249,7 +2249,7 @@ public struct ChatWidget: View {
         /// This ensures UI messages (created from chunks) are not overwritten
         /// by stale data loaded from conversation file during streaming
         isActivelyStreaming = true
-        logger.error("STREAMING_START: Setting isActivelyStreaming=true")
+        logger.debug("STREAMING_START: Setting isActivelyStreaming=true")
 
         /// Store the streaming task so it can be cancelled.
         streamingTask = Task {
@@ -2564,7 +2564,7 @@ public struct ChatWidget: View {
 
     func processMessage(text: String) async {
         let processId = UUID().uuidString.prefix(8)
-        logger.error("🟢 PROCESS_MESSAGE_START: processId=\(processId)")
+        logger.debug("🟢 PROCESS_MESSAGE_START: processId=\(processId)")
         SAMLog.chatProcessMessage(text)
         let startTime = Date()
 

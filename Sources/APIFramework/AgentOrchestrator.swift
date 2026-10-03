@@ -2250,7 +2250,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         } else if context.lastResponse.isEmpty {
             logger.warning("DEBUG_MISSING_RESPONSE: SKIPPED - lastResponse is empty")
         } else {
-            logger.error("DEBUG_MISSING_RESPONSE: SKIPPED - Could not find conversation")
+            logger.debug("DEBUG_MISSING_RESPONSE: SKIPPED - Could not find conversation")
         }
 
         /// Report workflow completion metrics.
