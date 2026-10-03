@@ -16,10 +16,10 @@ public func getDefaultModel() -> String {
         return userDefault
     }
     
-    /// Return empty string to force user selection
-    /// This prevents the error where gpt-4 is selected but no API key is configured
-    /// The onboarding wizard will guide users to configure a model/provider
-    return ""
+    /// Return "sam-assistant" as the default placeholder model.
+    /// This matches the @AppStorage default in ChatWidget and the ModelListManager fallback.
+    /// On first launch, the onboarding wizard guides users to configure a provider/model.
+    return "sam-assistant"
 }
 
 // MARK: - Conversation Telemetry

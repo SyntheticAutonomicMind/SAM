@@ -3430,7 +3430,7 @@ AVAILABLE TOOLS:
     private func handleGetPreferences(_ req: Request) async throws -> Response {
         logger.debug("Getting user preferences")
 
-        let defaultModel = UserDefaults.standard.string(forKey: "defaultModel") ?? ""
+        let defaultModel = UserDefaults.standard.string(forKey: "defaultModel") ?? "sam-assistant"
         let defaultSystemPromptId = UserDefaults.standard.string(forKey: "defaultSystemPromptId") ?? "00000000-0000-0000-0000-000000000001"
         let defaultPersonalityId = UserDefaults.standard.string(forKey: "defaultPersonalityId") ?? "00000000-0000-0000-0000-000000000001"
 

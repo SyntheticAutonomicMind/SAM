@@ -1733,7 +1733,10 @@ extension EndpointManager: ConversationEngine.AIProviderProtocol {
         }
 
         /// Only log warning if we couldn't find the model even after stripping prefix.
-        if modelId == modelWithoutPrefix {
+        /// Suppress for empty string or known placeholder models (sam-assistant, sam-default)
+        /// to avoid noise at startup when no model has been selected yet.
+        if modelId == modelWithoutPrefix, !modelId.isEmpty,
+           modelId != "sam-assistant", modelId != "sam-default" {
             logger.warning("No provider found for model: \(modelId)")
         }
         return nil

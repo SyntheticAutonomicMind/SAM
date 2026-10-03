@@ -407,7 +407,7 @@ struct PreferencesSectionRow: View {
 
 struct GeneralPreferencesView: View {
     @EnvironmentObject private var endpointManager: EndpointManager
-    @AppStorage("defaultModel") private var defaultModel: String = ""
+    @AppStorage("defaultModel") private var defaultModel: String = "sam-assistant"
     
     /// Model list management - using shared ModelListManager
     @ObservedObject private var modelListManager = ModelListManager.shared
