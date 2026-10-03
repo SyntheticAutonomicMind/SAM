@@ -158,6 +158,10 @@ public class RemoteLlamaProvider: AIProvider {
                         if let chunk = try? JSONDecoder().decode(ServerOpenAIChatStreamChunk.self, from: jsonData) {
                             buffer = ""
                             continuation.yield(chunk)
+                        } else {
+                            // Decode failed - clear buffer to avoid unbounded growth
+                            // from a malformed/non-JSON chunk that will never decode.
+                            buffer = ""
                         }
                     }
 
