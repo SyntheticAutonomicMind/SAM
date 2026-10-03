@@ -3036,7 +3036,7 @@ public struct ChatWidget: View {
                         completeAllRunningTools()
                     }
                 } else {
-                    logger.error("MESSAGE_LIFECYCLE: Could not find message \(assistantMessageId?.uuidString.prefix(8) ?? "nil") to finalize!")
+                    logger.warning("MESSAGE_LIFECYCLE: Could not find message \(assistantMessageId?.uuidString.prefix(8) ?? "nil") to finalize!")
 
                     /// Even if we can't find message in array, try to speak the accumulated response
                     if !fullResponse.isEmpty {
@@ -3081,7 +3081,7 @@ public struct ChatWidget: View {
                 /// Must happen after syncMessagesToConversation() to prevent the sync from triggering
                 /// .onChange(of: activeConversation?.messages.count) which would reload from disk!
                 isActivelyStreaming = false
-                logger.error("STREAMING_END: Setting isActivelyStreaming=false (after sync)")
+                logger.debug("STREAMING_END: Setting isActivelyStreaming=false (after sync)")
             }
 
             /// REMOVED: Placeholder cleanup logic
@@ -3121,7 +3121,7 @@ public struct ChatWidget: View {
 
                     /// CRITICAL: Clear streaming flag on cancellation
                     isActivelyStreaming = false
-                    logger.error("STREAMING_END: Setting isActivelyStreaming=false (cancelled)")
+                    logger.debug("STREAMING_END: Setting isActivelyStreaming=false (cancelled)")
                 }
 
                 /// Complete performance tracking as cancelled
@@ -3209,7 +3209,7 @@ public struct ChatWidget: View {
 
                 /// CRITICAL: Clear streaming flag on error
                 isActivelyStreaming = false
-                logger.error("STREAMING_END: Setting isActivelyStreaming=false (error)")
+                logger.debug("STREAMING_END: Setting isActivelyStreaming=false (error)")
 
                 /// Auto-save current chat session.
                 saveCurrentChatSession()

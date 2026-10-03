@@ -449,8 +449,8 @@ actor LlamaContext {
             }
         }
 
-        llamaLogger.error("LLAMA_CONTEXT_DEBUG: selected_ctx=\(n_ctx), model_max=\(model_ctx_train), ram_limit=\(maxContextFromRAM), gpu_limit=\(maxContextFromGPU)")
-        llamaLogger.error("LLAMA_MEMORY_DEBUG: available_ram=\(availableMemory/(1024*1024*1024))GB, available_gpu=\(availableGPUMemory/(1024*1024*1024))GB, model_size=\(modelSize/(1024*1024*1024))GB, bytes_per_token=\(bytesPerToken)")
+        llamaLogger.debug("LLAMA_CONTEXT_DEBUG: selected_ctx=\(n_ctx), model_max=\(model_ctx_train), ram_limit=\(maxContextFromRAM), gpu_limit=\(maxContextFromGPU)")
+        llamaLogger.debug("LLAMA_MEMORY_DEBUG: available_ram=\(availableMemory/(1024*1024*1024))GB, available_gpu=\(availableGPUMemory/(1024*1024*1024))GB, model_size=\(modelSize/(1024*1024*1024))GB, bytes_per_token=\(bytesPerToken)")
         llamaLogger.info("Context calculation: model_max=\(model_ctx_train), ram_limit=\(maxContextFromRAM), gpu_limit=\(maxContextFromGPU), selected=\(n_ctx)")
         llamaLogger.info("Memory: available_ram=\(availableMemory/(1024*1024*1024))GB, available_gpu=\(availableGPUMemory/(1024*1024*1024))GB, model_size=\(modelSize/(1024*1024*1024))GB, bytes_per_token=\(bytesPerToken), total_ram=\(physicalMemory/(1024*1024*1024))GB)")
 

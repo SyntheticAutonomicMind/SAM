@@ -304,7 +304,7 @@ extension AgentOrchestrator {
                                             duration: CFAbsoluteTimeGetCurrent() - toolPerfStart)
         }
 
-        logger.error("SINGLE_TOOL_START: name=\(toolCall.name) id=\(toolCall.id)")
+        logger.debug("SINGLE_TOOL_START: name=\(toolCall.name) id=\(toolCall.id)")
         let startTime = Date()
 
         let toolMessageId = UUID()

@@ -1378,7 +1378,7 @@ extension AgentOrchestrator {
             streamingResponse = try await endpointManager.processStreamingChatCompletion(finalRequest)
             continue authRetryLoop
         } catch {
-            logger.error("AUTH_RETRY_DEBUG: Stream threw non-recoverable error: \(error), type=\(type(of: error))")
+            logger.debug("AUTH_RETRY_DEBUG: Stream threw non-recoverable error: \(error), type=\(type(of: error))")
             /// Stream errors also leak partial state - the assistant message was
             /// created mid-stream and any tool messages too. Clean up before
             /// propagating the error.

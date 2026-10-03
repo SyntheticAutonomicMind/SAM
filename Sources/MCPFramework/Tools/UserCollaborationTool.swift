@@ -322,7 +322,7 @@ public class UserCollaborationTool: MCPTool, @unchecked Sendable {
 
         guard result.found else {
             let availableIds = lockedRead { Array($0.keys).joined(separator: ", ") }
-            logger.error("COLLAB_DEBUG: No pending response found for toolCallId", metadata: [
+            logger.debug("COLLAB_DEBUG: No pending response found for toolCallId", metadata: [
                 "toolCallId": .string(toolCallId),
                 "availableToolCallIds": .string(availableIds)
             ])
