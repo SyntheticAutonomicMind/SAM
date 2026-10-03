@@ -465,6 +465,35 @@ public struct OpenAIToolCall: Content, Sendable {
         self.function = function
         self.index = index
     }
+
+    /// Custom decoder: makes `id` optional during decoding.
+    ///
+    /// In streaming (delta) chunks, OpenAI-compatible APIs (including
+    /// GitHub Copilot and OpenRouter) only include `id` and `function.name`
+    /// in the first chunk of a tool call. Subsequent chunks only contain
+    /// `index`, `type`, and `function.arguments` (incremental).
+    ///
+    /// A non-optional `id` would cause `keyNotFound` and silently drop
+    /// every incremental chunk, losing the tool call arguments entirely.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        /// Use decodeIfPresent so missing `id` (common in streaming deltas)
+        /// doesn't throw keyNotFound. StreamingToolCall.update only sets id
+        /// when non-nil, so later chunks won't clobber the real id from the
+        /// first chunk.
+        if let id = try container.decodeIfPresent(String.self, forKey: .id) {
+            self.id = id
+        } else {
+            self.id = ""
+        }
+        self.type = try container.decodeIfPresent(String.self, forKey: .type) ?? "function"
+        self.function = try container.decode(OpenAIFunctionCall.self, forKey: .function)
+        self.index = try container.decodeIfPresent(Int.self, forKey: .index)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, function, index
+    }
 }
 
 /// OpenAI function call structure.
@@ -479,18 +508,27 @@ public struct OpenAIFunctionCall: Content, Sendable {
 
     /// Custom decoder: handles arguments as either a JSON string (spec-required)
     /// or a JSON object (some servers like llama.cpp send this instead).
+    /// Also makes `name` optional for streaming deltas where only `arguments`
+    /// is present (name and id are only in the first chunk).
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.name = try container.decode(String.self, forKey: .name)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
 
-        /// Try decoding as String first (spec-compliant)
-        if let stringArgs = try? container.decode(String.self, forKey: .arguments) {
+        /// Try decoding as String first (spec-compliant for non-streaming).
+        let decodedStringArgs = try? container.decodeIfPresent(String.self, forKey: .arguments)
+        if let stringArgs = decodedStringArgs, !stringArgs.isEmpty {
             self.arguments = stringArgs
         } else {
-            /// Fall back to decoding as JSON object and re-encoding to string
-            let objectArgs = try container.decode([String: AnyCodable].self, forKey: .arguments)
-            let data = try JSONSerialization.data(withJSONObject: objectArgs.mapValues { $0.value }, options: [])
-            self.arguments = String(data: data, encoding: .utf8) ?? "{}"
+            /// Fall back: arguments may be a JSON object (some servers send this
+            /// instead of a JSON string). Also handles streaming chunks where
+            /// `arguments` may be absent entirely (returns empty string).
+            let objectArgs = try? container.decodeIfPresent([String: AnyCodable].self, forKey: .arguments)
+            if let objectArgs, !objectArgs.isEmpty {
+                let data = try JSONSerialization.data(withJSONObject: objectArgs.mapValues { $0.value }, options: [])
+                self.arguments = String(data: data, encoding: .utf8) ?? "{}"
+            } else {
+                self.arguments = ""
+            }
         }
     }
 
