@@ -133,7 +133,7 @@ extension AgentOrchestrator {
         conversationId: UUID?,
         streaming: ToolStreamingContext? = nil
     ) async throws -> [ToolExecution] {
-        logger.error("TOOL_EXEC_INPUT: count=\(toolCalls.count) ids=\(toolCalls.map { $0.id }.joined(separator: ",")) names=\(toolCalls.map { $0.name }.joined(separator: ","))")
+        logger.debug("TOOL_EXEC_INPUT: count=\(toolCalls.count) ids=\(toolCalls.map { $0.id }.joined(separator: ",")) names=\(toolCalls.map { $0.name }.joined(separator: ","))")
         logger.info("executeToolCalls: Executing \(toolCalls.count) tools with metadata-driven execution control")
 
         /// Separate tools by execution requirements - Blocking tools: MUST complete before workflow continues (user_collaboration, user_collaboration) - Serial tools: Execute one-at-a-time but don't block workflow - Parallel tools: Can execute concurrently.
@@ -168,7 +168,7 @@ extension AgentOrchestrator {
 
         var allExecutions: [ToolExecution] = []
 
-        logger.error("TOOL_CLASSIFICATION_RESULT: blocking=\(blockingToolCalls.count) serial=\(serialToolCalls.count) parallel=\(parallelToolCalls.count)")
+        logger.debug("TOOL_CLASSIFICATION_RESULT: blocking=\(blockingToolCalls.count) serial=\(serialToolCalls.count) parallel=\(parallelToolCalls.count)")
 
         /// Execute BLOCKING tools FIRST (serially, await each) These tools MUST complete before anything else runs Example: user_collaboration (wait for user).
         if !blockingToolCalls.isEmpty {
@@ -540,7 +540,7 @@ extension AgentOrchestrator {
         model: String,
         conversationId: UUID?
     ) async throws -> [ToolExecution] {
-        logger.error("PARALLEL_TOOLS_START: count=\(toolCalls.count) ids=\(toolCalls.map { $0.id }.joined(separator: ","))")
+        logger.debug("PARALLEL_TOOLS_START: count=\(toolCalls.count) ids=\(toolCalls.map { $0.id }.joined(separator: ","))")
 
         /// CRITICAL: Create tool messages in MessageBus for parallel execution BEFORE yielding chunks
         /// This ensures ChatWidget can track each tool via messageId
@@ -618,7 +618,7 @@ extension AgentOrchestrator {
                     self.toolCardsPending.insert(toolCall.id)
                     let tsPending = Date().timeIntervalSince1970
                     let microPending = Int(tsPending * 1_000_000)
-                    self.logger.error("TS:\(microPending) PENDING: Added execution ID: \(toolCall.id)")
+                    self.logger.debug("TS:\(microPending) PENDING: Added execution ID: \(toolCall.id)")
                 }
             }
         }
@@ -667,7 +667,7 @@ extension AgentOrchestrator {
 
         let tsReady = Date().timeIntervalSince1970
         let microReady = Int(tsReady * 1_000_000)
-        logger.error("TS:\(microReady) READY: UI acknowledged \(allToolIds.count) tool cards, proceeding with execution")
+        logger.debug("TS:\(microReady) READY: UI acknowledged \(allToolIds.count) tool cards, proceeding with execution")
 
         /// CRITICAL: Give SwiftUI time to actually RENDER the cards after messages array is updated
         /// ACK happens when message is added to array, but rendering is async
@@ -694,7 +694,7 @@ extension AgentOrchestrator {
                     let tsExecute = Date().timeIntervalSince1970
                     let microExecute = Int(tsExecute * 1_000_000)
                     await MainActor.run {
-                        self.logger.error("TS:\(microExecute) EXECUTE: index=\(index) name=\(toolCallName) id=\(toolCallId)")
+                        self.logger.debug("TS:\(microExecute) EXECUTE: index=\(index) name=\(toolCallName) id=\(toolCallId)")
                     }
                     let startTime = Date()
                     await MainActor.run {
