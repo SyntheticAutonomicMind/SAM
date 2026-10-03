@@ -1,6 +1,105 @@
 {
   "releases": [
     {
+      "version": "20261003.1",
+      "release_date": "October 3, 2026",
+      "introduction": "This release focuses on reliability. The most visible fix: streaming tool calls with OpenRouter and Copilot no longer lose their arguments and get SAM stuck in a loop. SAM also starts up with a local default model instead of warning about a missing OpenAI key, Notes search works again, and diagnostic logging is cleaned up so real errors are easier to spot.",
+      "highlights": [
+        {
+          "id": "streaming-tool-calls-reliable",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Streaming Tool Calls Work Reliably",
+          "description": "Streaming tool calls with OpenRouter and Copilot now assemble correctly instead of silently dropping their arguments. Previously, a streaming delta chunk that omitted the tool_call id would throw an error that swallowed every argument - the model kept emitting tool calls that never completed, looping without making progress. That loop is gone."
+        },
+        {
+          "id": "local-default-model",
+          "icon": "cpu.fill",
+          "title": "Local Default Model at Startup",
+          "description": "SAM starts up with its own local 'sam-assistant' model by default instead of 'gpt-4'. This means a fresh install works out of the box without configuring an API key, and the dozen 'No provider found for model' warnings that appeared at startup are gone."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "tool-operation-inference",
+          "icon": "wrench.and.screwdriver.fill",
+          "title": "Tool Operation Inference and Fallback",
+          "description": "When a model omits the operation parameter on a consolidated tool, SAM now infers it from the other parameters it did send. If the model calls with no parameters at all, SAM falls back to a sensible default operation instead of erroring. Nine redundant validation overrides were removed in the process (85 lines)."
+        },
+        {
+          "id": "clean-startup-warnings",
+          "icon": "slider.horizontal.3",
+          "title": "Clean Startup, No Missing-Key Warnings",
+          "description": "The default model is now 'sam-assistant' across all four places it is configured (ChatWidget, ConversationModel, PreferencesView, SAMAPIServer), and warnings for empty-string and placeholder model names are suppressed. Startup is quiet even before you have configured any providers."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "openrouter-copilot-streaming-decode",
+          "icon": "arrow.triangle.2.circlepath",
+          "title": "Fixed Streaming Tool Calls Losing Arguments with OpenRouter and Copilot",
+          "description": "Streaming tool_calls from OpenRouter and Copilot silently dropped all arguments. OpenAIToolCall.id was a non-optional string; when a provider's delta chunk omitted the id field (as they do for every chunk after the first of a tool call), JSONDecoder threw keyNotFound for that chunk, so arguments were never assembled into a complete call. The model kept retrying a tool call that never executed. OpenAIToolCall.id and OpenAIFunctionCall.name are now optional during decoding with empty-string fallbacks."
+        },
+        {
+          "id": "operation-alias-mismatches",
+          "icon": "hammer.fill",
+          "title": "Fixed Tool Operation Alias Mismatches",
+          "description": "Several operation aliases mapped to non-existent operation values, so calling them by name failed: generate_image mapped to generate, document_list and document_delete did not exist, search_web mapped to web_search, fetch_url mapped to fetch, search_memory mapped to search, list_memory mapped to list, and delete_memory mapped to delete. All alias mappings are corrected."
+        },
+        {
+          "id": "insert-at-line-consistency",
+          "icon": "doc.on.doc.fill",
+          "title": "Fixed insert_at_line in File Operations",
+          "description": "FileOperationsTool's schema, routeOperation switch cases, and validation all referenced 'insert_at_line', but one code path and the icon lookup still used the legacy 'insert_edit' name. A call to insert_at_line would pass schema validation but fall through to the default error case. All references now use insert_at_line consistently."
+        },
+        {
+          "id": "interact-alias",
+          "icon": "bubble.left.and.bubble.right.fill",
+          "title": "Fixed interact Alias for Collaboration Questions",
+          "description": "The tool listing documented 'interact' as a tool name, but it was never registered as an operation alias for user_collaboration, so if a model called interact() it received 'tool not found'. The alias now maps to user_collaboration."
+        },
+        {
+          "id": "notes-apple-script",
+          "icon": "note.text",
+          "title": "Fixed Notes Search Failing with AppleScript Error",
+          "description": "Searching Notes failed with a scripting error because the search script used AppleScript min() which returned a list instead of a scalar integer. Replaced with an explicit if/else that takes the first 200 characters of the note body or the full body when shorter."
+        },
+        {
+          "id": "remotellama-buffer-growth",
+          "icon": "server.rack",
+          "title": "Fixed Memory Growth in Remote llama.cpp Streaming",
+          "description": "If a chunk failed to decode in the RemoteLlamaProvider SSE parser, the buffer kept every subsequent chunk appended to it, growing without bound. The buffer now clears on decode failure so valid chunks are processed correctly and memory does not leak during a session."
+        },
+        {
+          "id": "api-schema-conversion",
+          "icon": "key.fill",
+          "title": "Fixed Tool Schemas Sent as Empty Through SAM API",
+          "description": "SAMAPIServer.convertMCPParametersToOpenAI passed raw MCPToolParameter structs to JSONSerialization, which silently serialized them as empty objects. Tool schemas sent through the SAM API now convert properly to OpenAI JSON Schema (properties, type, enum, required, and nested objects/arrays)."
+        },
+        {
+          "id": "message-validator-param-names",
+          "icon": "scissors",
+          "title": "Fixed File Paths and Prompts Not Tracked for Context Trimming",
+          "description": "MessageValidator extracted context paths using parameter names that did not match the tool schemas: file_operations used filePath, newPath, and oldPath but the validator looked for path, new_path, and old_path; user_collaboration used prompt but the validator looked for a 'message' key under tool name 'interact'. File paths and collaboration prompts are now correctly tracked for context trimming."
+        },
+        {
+          "id": "debug-logs-as-errors",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Debug Logs Reported as Errors",
+          "description": "Dozens of debug tracing logs (chunk arrival, tool execution, request lifecycle) were using logger.error() instead of logger.debug(), polluting the error log and inflating error counts in monitoring. These are now at debug or warning level so real errors are easy to spot."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "openaitoolcall-optional-decode",
+          "content": "OpenAIToolCall.id and OpenAIFunctionCall.name were non-optional String; made both optional during init(from:) using decodeIfPresent with an empty-string fallback. This matches StreamingToolCall.update, which already guards with !isEmpty before setting id/name. Without this fix, the first streaming delta chunk (which includes id and name) decoded fine, but every subsequent chunk (which omits them) threw keyNotFound, silently dropping all arguments."
+        },
+        {
+          "id": "default-operation-fallback",
+          "content": "Added defaultOperation property to the ConsolidatedMCP protocol (defaults to the first supported operation). When the operation parameter is missing and cannot be inferred from the provided arguments, SAM now falls back to defaultOperation instead of erroring. ImageGenerationTool.defaultOperation is set to 'list_models' so calling with empty parameters succeeds. Removed 9 redundant validateParameters overrides across CalendarTool, ContactsTool, DocumentOperationsTool, ImageGenerationTool, and others (~85 lines)."
+        }
+      ]
+    },
+    {
       "version": "20260825.1",
       "release_date": "August 25, 2026",
       "introduction": "SAM picks the right search tool for the job. Previously, a query like 'best treatment for migraine symptoms' could route to Yelp because the routing logic matched the words 'best X in Y' and assumed restaurants. Routing decisions now live in the system prompt, not in code, with explicit per-engine rules: Yelp is for restaurants, Amazon for products, TripAdvisor for travel, Google and Bing for everything else. Behind the scenes, SAM's prompt architecture is rebuilt for extensibility, and the Workflow Mode toggle in the chat toolbar is now actually wired through.",
