@@ -655,20 +655,20 @@ public class EndpointManager: ObservableObject {
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
         let requestId = UUID().uuidString.prefix(8)
         logger.warning("ENDPOINT_MANAGER: NON-STREAMING request [req:\(requestId)] - internal use only for model: \(request.model)")
-        logger.error("ENDPOINT_MANAGER_DEBUG: Processing chat completion [req:\(requestId)] for model: \(request.model)")
+        logger.debug("ENDPOINT_MANAGER_DEBUG: Processing chat completion [req:\(requestId)] for model: \(request.model)")
 
         /// Debug: List all available providers and their models.
-        logger.error("ENDPOINT_MANAGER_DEBUG: Available providers: \(self.providers.keys.sorted().joined(separator: ", "))")
+        logger.debug("ENDPOINT_MANAGER_DEBUG: Available providers: \(self.providers.keys.sorted().joined(separator: ", "))")
         for (id, provider) in self.providers where provider.config.isEnabled {
-            logger.error("ENDPOINT_MANAGER_DEBUG: Provider \(id) supports models: \(provider.config.models.joined(separator: ", "))")
+            logger.debug("ENDPOINT_MANAGER_DEBUG: Provider \(id) supports models: \(provider.config.models.joined(separator: ", "))")
         }
 
         guard let provider = try await selectProvider(for: request.model, requestId: String(requestId)) else {
-            logger.error("ENDPOINT_MANAGER_DEBUG: No provider available for model: \(request.model)")
+            logger.debug("ENDPOINT_MANAGER_DEBUG: No provider available for model: \(request.model)")
             throw EndpointManagerError.noProviderAvailable(model: request.model)
         }
 
-        logger.error("ENDPOINT_MANAGER_DEBUG: Selected provider \(provider.identifier) (type: \(type(of: provider))) for model: \(request.model)")
+        logger.debug("ENDPOINT_MANAGER_DEBUG: Selected provider \(provider.identifier) (type: \(type(of: provider))) for model: \(request.model)")
 
         do {
             let response = try await provider.processChatCompletion(request)

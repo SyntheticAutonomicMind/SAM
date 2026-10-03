@@ -140,8 +140,8 @@ public struct ChatWidget: View {
     let sharedTopicManager = SharedTopicManager()
 
     /// Configuration - dynamically loaded.
-    @AppStorage("defaultModel") var appDefaultModel: String = "gpt-4"
-    @State var selectedModel: String = "gpt-4"
+    @AppStorage("defaultModel") var appDefaultModel: String = "sam-assistant"
+    @State var selectedModel: String = "sam-assistant"
 
     /// On-disk path for the selected local model, resolved through the
     /// endpoint manager so the model-aware optimizer (ModelProfiler) can
@@ -2745,7 +2745,7 @@ public struct ChatWidget: View {
                 /// Log chunk arrival time for debugging handshake timing with microsecond precision
                 let ts = Date().timeIntervalSince1970
                 let microseconds = Int(ts * 1_000_000)
-                logger.error("TS:\(microseconds) CHUNK_ARRIVAL: processId=\(processId) chunkId=\(chunk.id)")
+                logger.debug("TS:\(microseconds) CHUNK_ARRIVAL: processId=\(processId) chunkId=\(chunk.id)")
 
                 /// Check if task was cancelled.
                 if Task.isCancelled {
@@ -2823,7 +2823,7 @@ public struct ChatWidget: View {
                     let currentToolName = chunk.toolName
                     let currentToolExecutionId = chunk.toolExecutionId
 
-                    logger.error("CHUNK_RECEIVED: isToolMessage=\(isToolMessage) toolName=\(currentToolName ?? "nil") executionId=\(currentToolExecutionId ?? "nil") content=\(content.prefix(50)) chunkId=\(chunk.id)")
+                    logger.debug("CHUNK_RECEIVED: isToolMessage=\(isToolMessage) toolName=\(currentToolName ?? "nil") executionId=\(currentToolExecutionId ?? "nil") content=\(content.prefix(50)) chunkId=\(chunk.id)")
 
                     /// METADATA UPDATE: If chunk has metadata and matches current message executionId, update metadata
                     if let metadata = chunk.toolMetadata,

@@ -1015,9 +1015,9 @@ public class GitHubCopilotProvider: AIProvider, ObservableObject {
                                                 }
 
                                                 if let chunk = self.transformCopilotStreamChunk(copilotChunk, requestId: requestId) {
-                                                    self.logger.error("SSE_BEFORE_YIELD: chunkId=\(chunk.id) content=\(chunk.choices.first?.delta.content?.prefix(50) ?? "nil")")
+                                                    self.logger.debug("SSE_BEFORE_YIELD: chunkId=\(chunk.id) content=\(chunk.choices.first?.delta.content?.prefix(50) ?? "nil")")
                                                     continuation.yield(chunk)
-                                                    self.logger.error("SSE_AFTER_YIELD: chunkId=\(chunk.id)")
+                                                    self.logger.debug("SSE_AFTER_YIELD: chunkId=\(chunk.id)")
                                                 }
                                             } catch {
                                                 self.logger.warning("Failed to parse streaming chunk: \(error)")

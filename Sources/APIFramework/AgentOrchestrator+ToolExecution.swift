@@ -609,7 +609,7 @@ extension AgentOrchestrator {
 
                 let ts = Date().timeIntervalSince1970
                 let microseconds = Int(ts * 1_000_000)
-                logger.error("TS:\(microseconds) CHUNK_YIELD: toolName=\(toolCall.name), actionDesc=\(actionDescription), isToolMessage=true, toolId=\(toolCall.id)")
+                logger.debug("TS:\(microseconds) CHUNK_YIELD: toolName=\(toolCall.name), actionDesc=\(actionDescription), isToolMessage=true, toolId=\(toolCall.id)")
 
                 continuation.yield(progressChunk)
 
