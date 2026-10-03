@@ -211,7 +211,11 @@ public class NotesTool: ConsolidatedMCP, @unchecked Sendable {
                 set noteBody to plaintext of n
                 if (noteName contains "\(escapedQuery)") or (noteBody contains "\(escapedQuery)") then
                     set noteDate to modification date of n
-                    set end of matchingNotes to noteName & "|||" & (noteDate as string) & "|||" & (text 1 thru (min of {200, length of noteBody}) of noteBody)
+                    set previewText to noteBody
+                    if length of noteBody > 200 then
+                        set previewText to text 1 thru 200 of noteBody
+                    end if
+                    set end of matchingNotes to noteName & "|||" & (noteDate as string) & "|||" & previewText
                     set noteCount to noteCount + 1
                 end if
             end repeat
