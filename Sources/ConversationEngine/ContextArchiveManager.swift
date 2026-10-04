@@ -274,10 +274,19 @@ public class ContextArchiveManager: ObservableObject {
             .order(timeStart.desc)
 
         for row in try db.prepare(query) {
-            let chunkId = UUID(uuidString: row[id])!
+            guard let chunkId = UUID(uuidString: row[id]) else {
+                logger.warning("Invalid chunk UUID in archive row (getMemoryMap), skipping")
+                continue
+            }
             let decoder = JSONDecoder()
-            let messagesData = row[messagesJson].data(using: .utf8)!
-            let topicsData = row[keyTopicsJson].data(using: .utf8)!
+            guard let messagesData = row[messagesJson].data(using: .utf8) else {
+                logger.warning("Failed to decode messages JSON, skipping chunk")
+                continue
+            }
+            guard let topicsData = row[keyTopicsJson].data(using: .utf8) else {
+                logger.warning("Failed to decode topics JSON, skipping chunk")
+                continue
+            }
 
             let messages = try decoder.decode([ArchivedMessage].self, from: messagesData)
             let topics = try decoder.decode([String].self, from: topicsData)
@@ -324,9 +333,18 @@ public class ContextArchiveManager: ObservableObject {
         let decoder = JSONDecoder()
 
         for row in try db.prepare(dbQuery) {
-            let chunkId = UUID(uuidString: row[id])!
-            let messagesData = row[messagesJson].data(using: .utf8)!
-            let topicsData = row[keyTopicsJson].data(using: .utf8)!
+            guard let chunkId = UUID(uuidString: row[id]) else {
+                logger.warning("Invalid chunk UUID in archive row (getMemoryMap), skipping")
+                continue
+            }
+            guard let messagesData = row[messagesJson].data(using: .utf8) else {
+                logger.warning("Failed to decode messages JSON, skipping chunk")
+                continue
+            }
+            guard let topicsData = row[keyTopicsJson].data(using: .utf8) else {
+                logger.warning("Failed to decode topics JSON, skipping chunk")
+                continue
+            }
 
             let messages = try decoder.decode([ArchivedMessage].self, from: messagesData)
             let topics = try decoder.decode([String].self, from: topicsData)
@@ -380,9 +398,18 @@ public class ContextArchiveManager: ObservableObject {
         let decoder = JSONDecoder()
 
         for row in try db.prepare(dbQuery) {
-            let chunkId = UUID(uuidString: row[id])!
-            let messagesData = row[messagesJson].data(using: .utf8)!
-            let topicsData = row[keyTopicsJson].data(using: .utf8)!
+            guard let chunkId = UUID(uuidString: row[id]) else {
+                logger.warning("Invalid chunk UUID in archive row (getMemoryMap), skipping")
+                continue
+            }
+            guard let messagesData = row[messagesJson].data(using: .utf8) else {
+                logger.warning("Failed to decode messages JSON, skipping chunk")
+                continue
+            }
+            guard let topicsData = row[keyTopicsJson].data(using: .utf8) else {
+                logger.warning("Failed to decode topics JSON, skipping chunk")
+                continue
+            }
 
             let messages = try decoder.decode([ArchivedMessage].self, from: messagesData)
             let topics = try decoder.decode([String].self, from: topicsData)

@@ -33,6 +33,7 @@ public class MemoryManager: ObservableObject {
     private let accessCount = column("access_count") as SQLite.Expression<Int>
     private let lastAccessed = column("last_accessed") as SQLite.Expression<Date>
     private let tags = columnOptional("tags") as SQLite.Expression<String?>
+    private let context = columnOptional("context") as SQLite.Expression<String?>
 
     public init(testMode: Bool = false) {
         self.isTestMode = testMode
@@ -80,7 +81,8 @@ public class MemoryManager: ObservableObject {
         conversationId: UUID,
         contentType: MemoryContentType = .message,
         importance: Double = 0.5,
-        tags: [String] = []
+        tags: [String] = [],
+        context: String = ""
     ) async throws -> UUID {
         /// Use per-conversation database for memory isolation.
         let db = try getDatabaseConnection(for: conversationId)
@@ -102,7 +104,8 @@ public class MemoryManager: ObservableObject {
                 createdAt <- Date(),
                 accessCount <- 0,
                 lastAccessed <- Date(),
-                self.tags <- tagString
+                self.tags <- tagString,
+                self.context <- context
             ))
 
             totalMemories += 1
@@ -134,7 +137,7 @@ public class MemoryManager: ObservableObject {
 
             /// Get all memories from this conversation's isolated database No filter needed - the per-conversation database already contains only this conversation's memories.
             for row in try db.prepare(memories) {
-                let memoryId = UUID(uuidString: row[id])!
+                guard let memoryId = UUID(uuidString: row[id]) else { continue }
                 let storedEmbedding = row[embedding]
 
                 var similarity = 0.0
@@ -163,7 +166,8 @@ public class MemoryManager: ObservableObject {
                         similarity: finalSimilarity,
                         createdAt: row[createdAt],
                         accessCount: row[accessCount] + 1,
-                        tags: row[tags]?.components(separatedBy: ",") ?? []
+                        tags: row[tags]?.components(separatedBy: ",") ?? [],
+                    context: row[context] ?? ""
                     )
                     relevantMemories.append(memory)
                 }
@@ -199,8 +203,8 @@ public class MemoryManager: ObservableObject {
             for (conversationId, db) in conversationDatabases {
                 do {
                     for row in try db.prepare(memories) {
-                        let memoryId = UUID(uuidString: row[id])!
-                        let memoryConversationId = UUID(uuidString: row[self.conversationId])!
+                        guard let memoryId = UUID(uuidString: row[id]) else { continue }
+                        guard let memoryConversationId = UUID(uuidString: row[self.conversationId]) else { continue }
                         let storedEmbedding = row[embedding]
                         let contentText = row[content]
 
@@ -224,7 +228,8 @@ public class MemoryManager: ObservableObject {
                                 similarity: finalSimilarity,
                                 createdAt: row[createdAt],
                                 accessCount: row[accessCount] + 1,
-                                tags: row[tags]?.components(separatedBy: ",") ?? []
+                                tags: row[tags]?.components(separatedBy: ",") ?? [],
+                            context: row[context] ?? ""
                             )
                             relevantMemories.append(memory)
                         }
@@ -239,8 +244,8 @@ public class MemoryManager: ObservableObject {
             if let legacyDb = database {
                 do {
                     for row in try legacyDb.prepare(memories) {
-                        let memoryId = UUID(uuidString: row[id])!
-                        let memoryConversationId = UUID(uuidString: row[conversationId])!
+                        guard let memoryId = UUID(uuidString: row[id]) else { continue }
+                        guard let memoryConversationId = UUID(uuidString: row[conversationId]) else { continue }
                         let storedEmbedding = row[embedding]
                         let contentText = row[content]
 
@@ -264,7 +269,8 @@ public class MemoryManager: ObservableObject {
                                 similarity: finalSimilarity,
                                 createdAt: row[createdAt],
                                 accessCount: row[accessCount] + 1,
-                                tags: row[tags]?.components(separatedBy: ",") ?? []
+                                tags: row[tags]?.components(separatedBy: ",") ?? [],
+                            context: row[context] ?? ""
                             )
                             relevantMemories.append(memory)
                         }
@@ -301,8 +307,12 @@ public class MemoryManager: ObservableObject {
             var allMemories: [ConversationMemory] = []
 
             for row in try db.prepare(conversationMemories) {
+                guard let memoryId = UUID(uuidString: row[id]) else {
+                    logger.warning("Invalid UUID in memory row (getAllMemories), skipping")
+                    continue
+                }
                 let memory = ConversationMemory(
-                    id: UUID(uuidString: row[id])!,
+                    id: memoryId,
                     conversationId: conversationId,
                     content: row[content],
                     contentType: MemoryContentType(rawValue: row[contentType]) ?? .message,
@@ -310,7 +320,8 @@ public class MemoryManager: ObservableObject {
                     similarity: 1.0,
                     createdAt: row[createdAt],
                     accessCount: row[accessCount],
-                    tags: row[tags]?.components(separatedBy: ",") ?? []
+                    tags: row[tags]?.components(separatedBy: ",") ?? [],
+                    context: row[context] ?? ""
                 )
                 allMemories.append(memory)
             }
@@ -339,8 +350,12 @@ public class MemoryManager: ObservableObject {
                     .limit(limit)
 
                 for row in try db.prepare(recentMemories) {
+                    guard let memoryId = UUID(uuidString: row[id]) else {
+                        logger.warning("Invalid UUID in memory row (getRecentMemories), skipping")
+                        continue
+                    }
                     let memory = ConversationMemory(
-                        id: UUID(uuidString: row[id])!,
+                        id: memoryId,
                         conversationId: conversationId,
                         content: row[content],
                         contentType: MemoryContentType(rawValue: row[contentType]) ?? .message,
@@ -348,7 +363,8 @@ public class MemoryManager: ObservableObject {
                         similarity: 1.0,
                         createdAt: row[createdAt],
                         accessCount: row[accessCount],
-                        tags: row[tags]?.components(separatedBy: ",") ?? []
+                        tags: row[tags]?.components(separatedBy: ",") ?? [],
+                        context: row[context] ?? ""
                     )
                     allMemories.append(memory)
                 }
@@ -476,12 +492,20 @@ public class MemoryManager: ObservableObject {
             table.column(accessCount, defaultValue: 0)
             table.column(lastAccessed)
             table.column(tags)
+            table.column(context)
         })
 
         /// Create indexes for efficient querying.
         try db.run("CREATE INDEX IF NOT EXISTS idx_conversation_id ON conversation_memories(conversation_id)")
         try db.run("CREATE INDEX IF NOT EXISTS idx_created_at ON conversation_memories(created_at)")
         try db.run("CREATE INDEX IF NOT EXISTS idx_importance ON conversation_memories(importance)")
+
+        /// Add context column if it doesn't exist (schema migration for existing databases).
+        let existingColumns = try db.prepare("PRAGMA table_info(conversation_memories)").map { ($0[1] as? String ?? "") }
+        if !existingColumns.contains("context") {
+            try db.run("ALTER TABLE conversation_memories ADD COLUMN context TEXT DEFAULT ''")
+            logger.debug("Added context column to existing memory database")
+        }
 
         logger.debug("Memory database schema created for connection")
     }
@@ -728,6 +752,7 @@ public struct ConversationMemory: Identifiable, Sendable {
     public let createdAt: Date
     public let accessCount: Int
     public let tags: [String]
+    public let context: String
 }
 
 /// Statistics about memories for a conversation.

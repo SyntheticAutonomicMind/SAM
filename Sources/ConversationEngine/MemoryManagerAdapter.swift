@@ -70,14 +70,15 @@ public class MemoryManagerAdapter: MemoryManagerProtocol, @unchecked Sendable {
             engineContentType = .document
         }
 
-        /// Use existing storeMemory method (note: no context parameter in the actual method).
+        /// Persist context alongside memory content.
         let conversationUUID = conversationId.flatMap { UUID(uuidString: $0) } ?? UUID()
         return try await memoryManager.storeMemory(
             content: content,
             conversationId: conversationUUID,
             contentType: engineContentType,
             importance: 0.5,
-            tags: tags
+            tags: tags,
+            context: context
         )
     }
 
@@ -146,7 +147,7 @@ private struct ConversationMemoryAdapter: MemoryEntry {
 
     var id: UUID { memory.id }
     var content: String { memory.content }
-    var context: String { "" }
+    var context: String { memory.context }
     var contentType: MCPFramework.MemoryContentType {
         /// Map from ConversationEngine.MemoryContentType to MCPFramework.MemoryContentType.
         switch memory.contentType {
