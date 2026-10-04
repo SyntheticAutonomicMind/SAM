@@ -52,7 +52,7 @@ public class ReplaceStringTool: MCPTool, @unchecked Sendable {
     private let logger = Logger(label: "com.sam.mcp.ReplaceStringTool")
 
     /// SECURITY: Rate limiting for destructive operations.
-    private var lastDestructiveOperation: Date?
+    nonisolated(unsafe) private static var lastDestructiveOperation: Date?
     private let destructiveOperationCooldown: TimeInterval = 5.0
 
     public init() {}
@@ -102,7 +102,7 @@ public class ReplaceStringTool: MCPTool, @unchecked Sendable {
 
         /// SECURITY LAYER 3: Rate limiting check.
         let currentTime = Date()
-        if let lastOp = lastDestructiveOperation, currentTime.timeIntervalSince(lastOp) < destructiveOperationCooldown {
+        if let lastOp = ReplaceStringTool.lastDestructiveOperation, currentTime.timeIntervalSince(lastOp) < destructiveOperationCooldown {
             let remaining = destructiveOperationCooldown - currentTime.timeIntervalSince(lastOp)
             logger.warning("SECURITY: replace_string_in_file rate limited - \(String(format: "%.1f", remaining))s remaining")
             return MCPToolResult(
@@ -152,7 +152,7 @@ public class ReplaceStringTool: MCPTool, @unchecked Sendable {
             """)
 
         /// Update rate limiter.
-        lastDestructiveOperation = currentTime
+        ReplaceStringTool.lastDestructiveOperation = currentTime
 
         /// Perform replacement.
         do {

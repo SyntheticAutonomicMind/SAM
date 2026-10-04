@@ -59,7 +59,7 @@ public class InsertEditTool: MCPTool, @unchecked Sendable {
     private let logger = Logger(label: "com.sam.mcp.InsertEditTool")
 
     /// SECURITY: Rate limiting for destructive operations.
-    private var lastDestructiveOperation: Date?
+    nonisolated(unsafe) private static var lastDestructiveOperation: Date?
     private let destructiveOperationCooldown: TimeInterval = 5.0
 
     public init() {}
@@ -130,7 +130,7 @@ public class InsertEditTool: MCPTool, @unchecked Sendable {
         }
 
         /// ====================================================================== SECURITY LAYER 3: Rate Limiting ====================================================================== Prevent rapid-fire file editing.
-        if let lastOperation = lastDestructiveOperation {
+        if let lastOperation = InsertEditTool.lastDestructiveOperation {
             let timeSinceLastOperation = Date().timeIntervalSince(lastOperation)
             if timeSinceLastOperation < destructiveOperationCooldown {
                 let waitTime = destructiveOperationCooldown - timeSinceLastOperation
@@ -157,7 +157,7 @@ public class InsertEditTool: MCPTool, @unchecked Sendable {
             sessionId=\(context.sessionId.uuidString)
             """)
 
-        lastDestructiveOperation = Date()
+        InsertEditTool.lastDestructiveOperation = Date()
 
         /// Parse parameters.
         guard let filePath = parameters["filePath"] as? String else {

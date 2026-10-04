@@ -61,7 +61,7 @@ public class RenameFileTool: MCPTool, @unchecked Sendable {
     private let logger = Logger(label: "com.sam.mcp.RenameFileTool")
 
     /// SECURITY: Rate limiting for destructive operations.
-    private var lastDestructiveOperation: Date?
+    nonisolated(unsafe) private static var lastDestructiveOperation: Date?
     private let destructiveOperationCooldown: TimeInterval = 5.0
 
     public init() {}
@@ -117,7 +117,7 @@ public class RenameFileTool: MCPTool, @unchecked Sendable {
 
         /// SECURITY LAYER 3: Rate limiting check.
         let currentTime = Date()
-        if let lastOp = lastDestructiveOperation, currentTime.timeIntervalSince(lastOp) < destructiveOperationCooldown {
+        if let lastOp = RenameFileTool.lastDestructiveOperation, currentTime.timeIntervalSince(lastOp) < destructiveOperationCooldown {
             let remaining = destructiveOperationCooldown - currentTime.timeIntervalSince(lastOp)
             logger.warning("SECURITY: rename_file rate limited - \(String(format: "%.1f", remaining))s remaining")
             return MCPToolResult(
@@ -157,7 +157,7 @@ public class RenameFileTool: MCPTool, @unchecked Sendable {
             """)
 
         /// Update rate limiter.
-        lastDestructiveOperation = currentTime
+        RenameFileTool.lastDestructiveOperation = currentTime
 
         logger.debug("Renaming file: \(oldPath) -> \(newPath)")
 

@@ -58,7 +58,7 @@ public class MemoryManagerAdapter: MemoryManagerProtocol, @unchecked Sendable {
             engineContentType = .message
 
         case .fact:
-            engineContentType = .contextInfo
+            engineContentType = .systemEvent
 
         case .preference:
             engineContentType = .userInput
@@ -67,7 +67,7 @@ public class MemoryManagerAdapter: MemoryManagerProtocol, @unchecked Sendable {
             engineContentType = .toolResult
 
         case .document:
-            engineContentType = .contextInfo
+            engineContentType = .document
         }
 
         /// Use existing storeMemory method (note: no context parameter in the actual method).
@@ -89,9 +89,9 @@ public class MemoryManagerAdapter: MemoryManagerProtocol, @unchecked Sendable {
 
         let interactionCount = (stats.byType[.message] ?? 0) +
                                (stats.byType[.assistantResponse] ?? 0)
-        let factCount = stats.byType[.contextInfo] ?? 0
-        let preferenceCount = (stats.byType[.userInput] ?? 0) +
-                              (stats.byType[.systemEvent] ?? 0)
+        let factCount = (stats.byType[.contextInfo] ?? 0) +
+                        (stats.byType[.systemEvent] ?? 0)
+        let preferenceCount = stats.byType[.userInput] ?? 0
         let taskCount = stats.byType[.toolResult] ?? 0
         let documentCount = stats.byType[.document] ?? 0
 
@@ -121,8 +121,8 @@ public class MemoryManagerAdapter: MemoryManagerProtocol, @unchecked Sendable {
     }
 
     public func getRecentMemories(limit: Int) async throws -> [any MemoryEntry] {
-        /// This requires implementing a cross-conversation recent memories query For now, return empty array.
-        return []
+        let recentMemories = try await memoryManager.getRecentMemories(limit: limit)
+        return recentMemories.map { ConversationMemoryAdapter(memory: $0) }
     }
 }
 
@@ -166,7 +166,7 @@ private struct ConversationMemoryAdapter: MemoryEntry {
             return .task
 
         case .contextInfo:
-            return .document
+            return .fact
 
         case .document:
             return .document

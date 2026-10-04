@@ -11,11 +11,9 @@ public class SharedConversationService: ObservableObject {
 
     private let conversationManager: ConversationManager
     private var endpointManager: EndpointManager?
-    private let toolRegistry: UniversalToolRegistry
 
     public init(conversationManager: ConversationManager) {
         self.conversationManager = conversationManager
-        self.toolRegistry = UniversalToolRegistry(conversationManager: conversationManager)
         logger.debug("SharedConversationService initialized")
     }
 
@@ -259,20 +257,21 @@ public class SharedConversationService: ObservableObject {
         return AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> { continuation in
             Task {
                 do {
-                    /// Accumulate all chunks and reconstruct complete response.
-                    var accumulatedContent = ""
-                    var accumulatedToolCalls: [OpenAIToolCall] = []
-                    var streamChunks: [ServerOpenAIChatStreamChunk] = []
-                    var lastModel = ""
-                    var responseId = ""
-                    var finishReason = "stop"
+                   /// Accumulate all chunks and reconstruct complete response.
+                   var accumulatedContent = ""
+                   var lastModel = ""
+                   var responseId = ""
+                   var finishReason = "stop"
+                    /// Use index-based accumulation for tool calls - streaming deltas send
+                    /// partial data across chunks (id/name in first chunk, arguments incrementally).
+                    /// A naive append creates duplicate entries with partial data.
+                    var toolCallMap: [Int: (id: String, name: String, arguments: String)] = [:]
+                    var toolCallNextIndex = 0
 
                     logger.debug("SHARED_SERVICE: Starting true sequential thinking - accumulating stream")
 
                     /// Collect all chunks from the original stream.
                     for try await chunk in originalStream {
-                        streamChunks.append(chunk)
-
                         /// Forward the chunk to the user immediately for real-time response.
                         continuation.yield(chunk)
 
@@ -281,10 +280,22 @@ public class SharedConversationService: ObservableObject {
                             if let content = choice.delta.content {
                                 accumulatedContent += content
                             }
-                            if let toolCalls = choice.delta.toolCalls {
-                                accumulatedToolCalls.append(contentsOf: toolCalls)
-                                logger.debug("SHARED_SERVICE: FOUND TOOL CALLS in chunk: \(toolCalls.count)")
-                            }
+                           if let toolCalls = choice.delta.toolCalls {
+                                /// Accumulate tool call deltas by index.
+                                /// Each delta may contain partial data: first chunk has id+name,
+                                /// subsequent chunks only have arguments.
+                                for tc in toolCalls {
+                                    let idx = tc.index ?? toolCallNextIndex
+                                    if idx >= toolCallNextIndex {
+                                        toolCallNextIndex = idx + 1
+                                    }
+                                    var entry = toolCallMap[idx] ?? (id: "", name: "", arguments: "")
+                                    if !tc.id.isEmpty { entry.id = tc.id }
+                                    if !tc.function.name.isEmpty { entry.name = tc.function.name }
+                                    entry.arguments += tc.function.arguments
+                                    toolCallMap[idx] = entry
+                                }
+                           }
 
                             /// Capture finish_reason from streaming chunks.
                             if let chunkFinishReason = choice.finishReason {
@@ -298,8 +309,30 @@ public class SharedConversationService: ObservableObject {
                         responseId = chunk.id
                     }
 
-                    logger.debug("SHARED_SERVICE: Stream complete, accumulated \(accumulatedContent.count) characters")
-                    logger.debug("SHARED_SERVICE: Final finish_reason: \(finishReason)")
+                   logger.debug("SHARED_SERVICE: Stream complete, accumulated \(accumulatedContent.count) characters")
+                   logger.debug("SHARED_SERVICE: Final finish_reason: \(finishReason)")
+                    logger.debug("SHARED_SERVICE: Accumulated \(toolCallMap.count) unique tool calls via index-based accumulation")
+                    /// Reconstruct complete tool calls from index-based accumulation.
+                    /// This correctly merges partial deltas that were spread across chunks.
+                    let accumulatedToolCalls = toolCallMap.sorted(by: { $0.key < $1.key }).compactMap { entry in
+                        let (id, name, arguments) = entry.value
+                        guard !id.isEmpty && !name.isEmpty else {
+                            logger.warning("SHARED_SERVICE: Skipping incomplete tool call (id=\(id.isEmpty ? "MISSING" : id), name=\(name.isEmpty ? "MISSING" : name))")
+                            return OpenAIToolCall(
+                                id: id.isEmpty ? UUID().uuidString : id,
+                                type: "function",
+                                function: OpenAIFunctionCall(name: name.isEmpty ? "unknown" : name, arguments: arguments),
+                                index: nil
+                            )
+                        }
+                        return OpenAIToolCall(
+                            id: id,
+                            type: "function",
+                            function: OpenAIFunctionCall(name: name, arguments: arguments),
+                            index: nil
+                        )
+                    }
+                    logger.debug("SHARED_SERVICE: Reconstructed \(accumulatedToolCalls.count) complete tool calls")
 
                     /// Handle tool calls based on finish_reason (VS Code Copilot Chat pattern).
                     if finishReason == "tool_calls" {

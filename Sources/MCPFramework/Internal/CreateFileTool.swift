@@ -18,7 +18,7 @@ public class CreateFileTool: MCPTool, @unchecked Sendable {
     private let fileOperationsSafety = FileOperationsSafety()
 
     /// SECURITY: Rate limiting for destructive operations.
-    private var lastDestructiveOperation: Date?
+    nonisolated(unsafe) private static var lastDestructiveOperation: Date?
     private let destructiveOperationCooldown: TimeInterval = 5.0
 
     public var parameters: [String: MCPToolParameter] {
@@ -36,6 +36,11 @@ public class CreateFileTool: MCPTool, @unchecked Sendable {
             "overwrite": MCPToolParameter(
                 type: .boolean,
                 description: "Optional: Whether to allow overwriting an existing file (default: false). If false and file exists, operation will fail with an error.",
+                required: false
+            ),
+            "append": MCPToolParameter(
+                type: .boolean,
+                description: "Optional: Whether to append content to an existing file (default: false). If true and file exists, content is appended to the end. If the file doesn't exist, it will be created.",
                 required: false
             )
         ]
@@ -59,6 +64,11 @@ public class CreateFileTool: MCPTool, @unchecked Sendable {
         /// Validate overwrite if provided.
         if let overwrite = params["overwrite"], !(overwrite is Bool) {
             throw MCPError.invalidParameters("overwrite parameter must be a boolean")
+        }
+
+        /// Validate append if provided.
+        if let append = params["append"], !(append is Bool) {
+            throw MCPError.invalidParameters("append parameter must be a boolean")
         }
     }
 
@@ -106,7 +116,7 @@ public class CreateFileTool: MCPTool, @unchecked Sendable {
         }
 
         /// ====================================================================== SECURITY LAYER 3: Rate Limiting ====================================================================== Prevent rapid-fire file creation.
-        if let lastOperation = lastDestructiveOperation {
+        if let lastOperation = CreateFileTool.lastDestructiveOperation {
             let timeSinceLastOperation = Date().timeIntervalSince(lastOperation)
             if timeSinceLastOperation < destructiveOperationCooldown {
                 let waitTime = destructiveOperationCooldown - timeSinceLastOperation
@@ -125,13 +135,14 @@ public class CreateFileTool: MCPTool, @unchecked Sendable {
             operation=create_file
             filePath=\(parameters["filePath"] as? String ?? "unknown")
             overwrite=\(overwrite)
+            append=\(parameters["append"] as? Bool ?? false)
             confirm=true
             isUserInitiated=\(context.isUserInitiated)
             timestamp=\(ISO8601DateFormatter().string(from: Date()))
             sessionId=\(context.sessionId.uuidString)
             """)
 
-        lastDestructiveOperation = Date()
+        CreateFileTool.lastDestructiveOperation = Date()
 
         /// Extract parameters.
         guard let filePath = parameters["filePath"] as? String else {
@@ -150,7 +161,7 @@ public class CreateFileTool: MCPTool, @unchecked Sendable {
             )
         }
 
-        guard let content = parameters["content"] as? String else {
+        guard var content = parameters["content"] as? String else {
             return MCPToolResult(
                 toolName: name,
                 success: false,
@@ -166,9 +177,42 @@ public class CreateFileTool: MCPTool, @unchecked Sendable {
             )
         }
 
+        /// Handle append mode: read existing file content, append new content, then write.
+        let append = parameters["append"] as? Bool ?? false
+        if append {
+            let fileManager = FileManager.default
+            if fileManager.fileExists(atPath: filePath) {
+                do {
+                    let existingContent = try String(contentsOfFile: filePath, encoding: .utf8)
+                    content = existingContent + content
+                    logger.debug("CreateFileTool: Appended content to existing file: \(filePath)")
+                } catch {
+                    logger.error("CreateFileTool: Failed to read existing file for append: \(error)")
+                    return MCPToolResult(
+                        toolName: name,
+                        success: false,
+                        output: MCPOutput(
+                            content: """
+                            {
+                                "error": true,
+                                "message": "Failed to read existing file for append: \(error.localizedDescription)"
+                            }
+                            """,
+                            mimeType: "application/json"
+                        )
+                    )
+                }
+            } else {
+                logger.debug("CreateFileTool: Append mode but file doesn't exist - creating new: \(filePath)")
+            }
+        }
+
+        /// In append mode, always overwrite (we're replacing with combined content).
+        let effectiveOverwrite = append ? true : overwrite
+
         do {
             /// Create file.
-            let result = try createFile(at: filePath, content: content, overwrite: overwrite)
+            let result = try createFile(at: filePath, content: content, overwrite: effectiveOverwrite)
 
             return MCPToolResult(
                 toolName: name,

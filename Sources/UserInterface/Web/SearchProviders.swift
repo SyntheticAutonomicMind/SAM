@@ -45,7 +45,7 @@ final class GoogleSearchProvider: SearchProvider, @unchecked Sendable {
 
         logger.debug("Performing Google search for: '\(query)'")
 
-        let url = buildSearchURL(query: query, options: options)
+        let url = try buildSearchURL(query: query, options: options)
         let response = try await performHTTPRequest(url: url)
         let results = try parseGoogleResults(response, searchEngine: name)
 
@@ -80,7 +80,7 @@ final class GoogleSearchProvider: SearchProvider, @unchecked Sendable {
 
         logger.debug("Performing Google image search for: '\(query)'")
 
-        let url = buildImageSearchURL(query: query, options: options)
+        let url = try buildImageSearchURL(query: query, options: options)
         let response = try await performHTTPRequest(url: url)
         let results = try parseGoogleImageResults(response)
 
@@ -90,8 +90,10 @@ final class GoogleSearchProvider: SearchProvider, @unchecked Sendable {
 
     // MARK: - Helper Methods
 
-    private func buildSearchURL(query: String, options: SearchOptions) -> URL {
-        var components = URLComponents(string: baseURL)!
+    private func buildSearchURL(query: String, options: SearchOptions) throws -> URL {
+        guard var components = URLComponents(string: baseURL) else {
+            throw WebResearchError.invalidConfiguration("Invalid baseURL: \(baseURL)")
+        }
 
         var queryItems = [
             URLQueryItem(name: "key", value: apiKey),
@@ -107,11 +109,16 @@ final class GoogleSearchProvider: SearchProvider, @unchecked Sendable {
         }
 
         components.queryItems = queryItems
-        return components.url!
+        guard let url = components.url else {
+            throw WebResearchError.invalidConfiguration("Invalid URL components for search")
+        }
+        return url
     }
 
-    private func buildImageSearchURL(query: String, options: ImageSearchOptions) -> URL {
-        var components = URLComponents(string: baseURL)!
+    private func buildImageSearchURL(query: String, options: ImageSearchOptions) throws -> URL {
+        guard var components = URLComponents(string: baseURL) else {
+            throw WebResearchError.invalidConfiguration("Invalid baseURL: \(baseURL)")
+        }
 
         var queryItems = [
             URLQueryItem(name: "key", value: apiKey),
@@ -131,7 +138,10 @@ final class GoogleSearchProvider: SearchProvider, @unchecked Sendable {
         }
 
         components.queryItems = queryItems
-        return components.url!
+        guard let url = components.url else {
+            throw WebResearchError.invalidConfiguration("Invalid URL components for image search")
+        }
+        return url
     }
 
     private func performHTTPRequest(url: URL) async throws -> Data {
@@ -288,7 +298,9 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
 
         logger.debug("Performing Bing search for: '\(query)'")
 
-        let url = URL(string: "\(baseURL)/search")!
+        guard let url = URL(string: "\(baseURL)/search") else {
+            throw WebResearchError.invalidConfiguration("Invalid Bing search URL")
+        }
         let response = try await performBingRequest(url: url, query: query, options: options)
         let results = try parseBingResults(response, searchEngine: name)
 
@@ -303,7 +315,9 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
 
         logger.debug("Performing Bing news search for: '\(query)'")
 
-        let url = URL(string: "\(baseURL)/news/search")!
+        guard let url = URL(string: "\(baseURL)/news/search") else {
+            throw WebResearchError.invalidConfiguration("Invalid Bing news URL")
+        }
         let response = try await performBingNewsRequest(url: url, query: query, options: options)
         let results = try parseBingNewsResults(response)
 
@@ -318,7 +332,9 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
 
         logger.debug("Performing Bing image search for: '\(query)'")
 
-        let url = URL(string: "\(baseURL)/images/search")!
+        guard let url = URL(string: "\(baseURL)/images/search") else {
+            throw WebResearchError.invalidConfiguration("Invalid Bing image search URL")
+        }
         let response = try await performBingImageRequest(url: url, query: query, options: options)
         let results = try parseBingImageResults(response)
 
@@ -329,7 +345,9 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
     // MARK: - Helper Methods
 
     private func performBingRequest(url: URL, query: String, options: SearchOptions) async throws -> Data {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw WebResearchError.invalidConfiguration("Invalid URL components for Bing request")
+        }
 
         var queryItems = [
             URLQueryItem(name: "q", value: query),
@@ -344,7 +362,10 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
 
         components.queryItems = queryItems
 
-        var request = URLRequest(url: components.url!)
+        guard let requestURL = components.url else {
+            throw WebResearchError.invalidConfiguration("Invalid URL from Bing query components")
+        }
+        var request = URLRequest(url: requestURL)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "Ocp-Apim-Subscription-Key")
         request.setValue("SAM-Research/1.0", forHTTPHeaderField: "User-Agent")
@@ -362,7 +383,9 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
     }
 
     private func performBingNewsRequest(url: URL, query: String, options: NewsSearchOptions) async throws -> Data {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw WebResearchError.invalidConfiguration("Invalid URL components for Bing news request")
+        }
 
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
@@ -372,7 +395,10 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
             URLQueryItem(name: "freshness", value: convertTimeRangeToBingFreshness(options.timeRange))
         ]
 
-        var request = URLRequest(url: components.url!)
+        guard let requestURL = components.url else {
+            throw WebResearchError.invalidConfiguration("Invalid URL from Bing news query components")
+        }
+        var request = URLRequest(url: requestURL)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "Ocp-Apim-Subscription-Key")
         request.setValue("SAM-Research/1.0", forHTTPHeaderField: "User-Agent")
@@ -389,7 +415,9 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
     }
 
     private func performBingImageRequest(url: URL, query: String, options: ImageSearchOptions) async throws -> Data {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw WebResearchError.invalidConfiguration("Invalid URL components for Bing image request")
+        }
 
         var queryItems = [
             URLQueryItem(name: "q", value: query),
@@ -407,7 +435,10 @@ final class BingSearchProvider: SearchProvider, @unchecked Sendable {
 
         components.queryItems = queryItems
 
-        var request = URLRequest(url: components.url!)
+        guard let requestURL = components.url else {
+            throw WebResearchError.invalidConfiguration("Invalid URL from Bing image query components")
+        }
+        var request = URLRequest(url: requestURL)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "Ocp-Apim-Subscription-Key")
         request.setValue("SAM-Research/1.0", forHTTPHeaderField: "User-Agent")
@@ -605,13 +636,18 @@ final class DuckDuckGoSearchProvider: SearchProvider, @unchecked Sendable {
         /// Use DuckDuckGo HTML search page scraping for actual web results.
         let searchURL = "https://html.duckduckgo.com/html/"
 
-        var components = URLComponents(string: searchURL)!
+        guard var components = URLComponents(string: searchURL) else {
+            throw WebResearchError.invalidConfiguration("Invalid DuckDuckGo search URL")
+        }
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "s", value: "0")
         ]
 
-        var request = URLRequest(url: components.url!)
+        guard let requestURL = components.url else {
+            throw WebResearchError.invalidConfiguration("Invalid URL from DuckDuckGo query components")
+        }
+        var request = URLRequest(url: requestURL)
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 30.0
 

@@ -40,23 +40,25 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
        Use when tool response contains [TOOL_RESULT_STORED] marker.
        Parameters: toolCallId (required), offset (optional, default: 0), length (optional, default: dynamic based on model context, max: 32768)
 
-    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ WRITE (8 operations) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ WRITE (9 operations) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     -  create_file - Create new file with content
-       Parameters: path (required), content (required)
+       Parameters: filePath (required), content (required)
     -  write_file - Overwrite existing file
-       Parameters: path (required), content (required)
+       Parameters: filePath (required), content (required)
     -  append_file - Append content to file
-       Parameters: path (required), content (required)
+       Parameters: filePath (required), content (required)
     -  replace_string - Find and replace text in file
-       Parameters: path (required), old_string (required), new_string (required)
+       Parameters: filePath (required), oldString (required), newString (required)
     -  multi_replace_string - Batch replace operations across multiple files
        Parameters: replacements (required, array of {path, old_string, new_string})
     -  insert_at_line - Insert content at specific line number
-       Parameters: path (required), line (required), content (required)
+       Parameters: filePath (required), lineNumber (required), newText (required), insertOperation (optional, "insert" or "replace")
     -  delete_file - Delete file or directory
-       Parameters: path (required), recursive (optional, for directories)
+       Parameters: filePath (required), recursive (optional, for directories)
     -  rename_file - Rename or move file
-       Parameters: old_path (required), new_path (required)
+       Parameters: oldPath (required), newPath (required)
+    -  create_directory - Create a directory structure (like mkdir -p)
+       Parameters: dirPath (required)
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     IMPORTANT: When a tool returns [TOOL_RESULT_STORED], use read_tool_result to access the full content.
@@ -70,8 +72,7 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             "read_file", "list_dir", "get_file_info", "get_errors", "read_tool_result",
             /// Search operations (4)
             "file_search", "grep_search", "semantic_search", "list_usages",
-            /// Write operations (6)
-            /// Write operations (8)
+            /// Write operations (9)
             "create_file", "write_file", "append_file", "replace_string", "multi_replace_string",
             "insert_at_line", "rename_file", "delete_file", "create_directory"
         ]
@@ -427,6 +428,56 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             let tool = CreateFileTool()
             return await tool.execute(parameters: createParams, context: context)
 
+        case "write_file":
+            /// write_file is equivalent to create_file with overwrite=true
+            var writeParams = resolvedParams
+            writeParams["overwrite"] = true
+
+            /// Use stored authorization result (already consumed above).
+            if isAuthorized || context.isUserInitiated {
+                writeParams["confirm"] = true
+                logger.debug("Adding confirm=true to write_file (authorized=\(isAuthorized), userInitiated=\(context.isUserInitiated))")
+            }
+
+            let tool = CreateFileTool()
+            return await tool.execute(parameters: writeParams, context: context)
+
+        case "append_file":
+            /// append_file appends content to an existing file (or creates it if it doesn't exist)
+            var appendParams = resolvedParams
+            appendParams["append"] = true
+
+            /// Use stored authorization result (already consumed above).
+            if isAuthorized || context.isUserInitiated {
+                appendParams["confirm"] = true
+                logger.debug("Adding confirm=true to append_file (authorized=\(isAuthorized), userInitiated=\(context.isUserInitiated))")
+            }
+
+            let tool = CreateFileTool()
+            return await tool.execute(parameters: appendParams, context: context)
+
+        case "create_directory":
+            /// create_directory is handled by the dedicated CreateDirectoryTool
+            /// Map filePath/path parameter to dirPath expected by CreateDirectoryTool.
+            var dirParams = resolvedParams
+            if let filePath = resolvedParams["filePath"] as? String {
+                dirParams["dirPath"] = filePath
+            } else if let path = resolvedParams["path"] as? String {
+                dirParams["dirPath"] = path
+            }
+            /// Remove filePath/path to avoid confusion - CreateDirectoryTool only uses dirPath
+            dirParams.removeValue(forKey: "filePath")
+            dirParams.removeValue(forKey: "path")
+
+            /// Use stored authorization result (already consumed above).
+            if isAuthorized || context.isUserInitiated {
+                dirParams["confirm"] = true
+                logger.debug("Adding confirm=true to create_directory (authorized=\(isAuthorized), userInitiated=\(context.isUserInitiated))")
+            }
+
+            let tool = CreateDirectoryTool()
+            return await tool.execute(parameters: dirParams, context: context)
+
         case "replace_string":
             var replaceParams = resolvedParams
 
@@ -571,6 +622,31 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             }
             return "Creating file"
 
+        case "write_file":
+            if let filePath = parameters["filePath"] as? String {
+                let fileName = (filePath as NSString).lastPathComponent
+                return "Writing to file: \(fileName)"
+            }
+            return "Writing file"
+
+        case "append_file":
+            if let filePath = parameters["filePath"] as? String {
+                let fileName = (filePath as NSString).lastPathComponent
+                return "Appending to file: \(fileName)"
+            }
+            return "Appending to file"
+
+        case "create_directory":
+            if let filePath = parameters["filePath"] as? String {
+                let dirName = (filePath as NSString).lastPathComponent
+                return "Creating directory: \(dirName)"
+            }
+            if let path = parameters["path"] as? String {
+                let dirName = (path as NSString).lastPathComponent
+                return "Creating directory: \(dirName)"
+            }
+            return "Creating directory"
+
         case "replace_string":
             if let filePath = parameters["filePath"] as? String {
                 let fileName = (filePath as NSString).lastPathComponent
@@ -660,6 +736,28 @@ public class FileOperationsTool: ConsolidatedMCP, @unchecked Sendable {
             }
             guard parameters["content"] is String else {
                 return operationError(operation, message: "Missing required parameter: content")
+            }
+
+        case "write_file":
+            guard parameters["filePath"] is String else {
+                return operationError(operation, message: "Missing required parameter: filePath")
+            }
+            guard parameters["content"] is String else {
+                return operationError(operation, message: "Missing required parameter: content")
+            }
+
+        case "append_file":
+            guard parameters["filePath"] is String else {
+                return operationError(operation, message: "Missing required parameter: filePath")
+            }
+            guard parameters["content"] is String else {
+                return operationError(operation, message: "Missing required parameter: content")
+            }
+
+        case "create_directory":
+            /// Requires either filePath or path parameter
+            guard parameters["filePath"] is String || parameters["path"] is String else {
+                return operationError(operation, message: "Missing required parameter: filePath (or path)")
             }
 
         case "replace_string":

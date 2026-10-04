@@ -356,7 +356,7 @@ public class MCPToolRegistry {
         "create_directory": ("file_operations", "create_directory"),
         "get_errors": ("file_operations", "get_errors"),
         "read_tool_result": ("file_operations", "read_tool_result"),
-        "list_dir_recursive": ("file_operations", "list_dir_recursive"),
+        "list_dir_recursive": ("file_operations", "list_dir"),  // list_dir supports recursive param
 
         /// version_control operations (git)
         "git": ("version_control", "status"),
@@ -377,12 +377,12 @@ public class MCPToolRegistry {
         "run_command": ("terminal_operations", "exec"),
 
         /// memory_operations operations
-        "store_memory": ("memory_operations", "store"),
+        "store_memory": ("memory_operations", "store_memory"),
         "retrieve_memory": ("memory_operations", "retrieve"),
         "search_memory": ("memory_operations", "search_memory"),
         "list_memory": ("memory_operations", "list_collections"),
         "delete_memory": ("memory_operations", "delete_key"),
-        "recall_sessions": ("memory_operations", "recall_sessions"),
+        "recall_sessions": ("memory_operations", "recall_history"),
         "add_discovery": ("memory_operations", "add_discovery"),
         "add_solution": ("memory_operations", "add_solution"),
         "add_pattern": ("memory_operations", "add_pattern"),
@@ -404,8 +404,9 @@ public class MCPToolRegistry {
         "todo_add": ("todo_operations", "add"),
 
         /// code_intelligence operations
-        "list_usages": ("code_intelligence", "list_usages"),
-        "search_history": ("code_intelligence", "search_history"),
+        /// NOTE: list_usages is handled by file_operations (not code_intelligence),
+        /// but search_history has no dedicated tool in SAM yet.
+        "list_usages": ("file_operations", "list_usages"),
 
         /// user_collaboration operations (note: not a ConsolidatedMCP, no operation param)
         "interact": ("user_collaboration", ""),

@@ -9,7 +9,7 @@ public class CreateDirectoryTool: MCPTool, @unchecked Sendable {
     private let logger = Logger(label: "com.sam.tools.create_directory")
 
     /// SECURITY: Rate limiting for destructive operations.
-    private var lastDestructiveOperation: Date?
+    nonisolated(unsafe) private static var lastDestructiveOperation: Date?
     private let destructiveOperationCooldown: TimeInterval = 5.0
 
     public let name = "create_directory"
@@ -74,7 +74,7 @@ public class CreateDirectoryTool: MCPTool, @unchecked Sendable {
         }
 
         /// ====================================================================== SECURITY LAYER 3: Rate Limiting ====================================================================== Prevent rapid-fire directory creation.
-        if let lastOperation = lastDestructiveOperation {
+        if let lastOperation = CreateDirectoryTool.lastDestructiveOperation {
             let timeSinceLastOperation = Date().timeIntervalSince(lastOperation)
             if timeSinceLastOperation < destructiveOperationCooldown {
                 let waitTime = destructiveOperationCooldown - timeSinceLastOperation
@@ -99,7 +99,7 @@ public class CreateDirectoryTool: MCPTool, @unchecked Sendable {
             sessionId=\(context.sessionId.uuidString)
             """)
 
-        lastDestructiveOperation = Date()
+        CreateDirectoryTool.lastDestructiveOperation = Date()
 
         /// Extract directory path.
         guard let dirPath = parameters["dirPath"] as? String, !dirPath.isEmpty else {

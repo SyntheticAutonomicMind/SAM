@@ -285,13 +285,13 @@ public class MemoryManager: ObservableObject {
             lastError = error.localizedDescription
             logger.error("ERROR: Cross-conversation search failed: \(error)")
             throw MemoryError.retrievalFailed(error.localizedDescription)
-        }
-    }
+       }
+   }
 
-    /// Get all memories for a specific conversation (for debugging/management).
-    public func getAllMemories(for conversationId: UUID) async throws -> [ConversationMemory] {
-        /// Use per-conversation database for memory isolation.
-        let db = try getDatabaseConnection(for: conversationId)
+   /// Get all memories for a specific conversation (for debugging/management).
+   public func getAllMemories(for conversationId: UUID) async throws -> [ConversationMemory] {
+       /// Use per-conversation database for memory isolation.
+       let db = try getDatabaseConnection(for: conversationId)
 
         do {
             let conversationMemories = memories
@@ -322,6 +322,46 @@ public class MemoryManager: ObservableObject {
             logger.error("Failed to get all memories: \(error)")
             throw MemoryError.retrievalFailed(error.localizedDescription)
         }
+    }
+
+    /// Get recent memories across all conversations (cross-conversation query).
+    /// - Parameter limit: Maximum number of memories to return.
+    /// - Returns: Array of memories sorted by creation date (newest first).
+    public func getRecentMemories(limit: Int) async throws -> [ConversationMemory] {
+        logger.debug("Getting \(limit) recent memories across all conversations")
+
+        var allMemories: [ConversationMemory] = []
+
+        for (conversationId, db) in conversationDatabases {
+            do {
+                let recentMemories = memories
+                    .order(createdAt.desc)
+                    .limit(limit)
+
+                for row in try db.prepare(recentMemories) {
+                    let memory = ConversationMemory(
+                        id: UUID(uuidString: row[id])!,
+                        conversationId: conversationId,
+                        content: row[content],
+                        contentType: MemoryContentType(rawValue: row[contentType]) ?? .message,
+                        importance: row[importance],
+                        similarity: 1.0,
+                        createdAt: row[createdAt],
+                        accessCount: row[accessCount],
+                        tags: row[tags]?.components(separatedBy: ",") ?? []
+                    )
+                    allMemories.append(memory)
+                }
+            } catch {
+                logger.warning("Failed to get recent memories from conversation \(conversationId): \(error)")
+            }
+        }
+
+        allMemories.sort { $0.createdAt > $1.createdAt }
+        let results = Array(allMemories.prefix(limit))
+
+        logger.debug("Retrieved \(results.count) recent memories across \(conversationDatabases.count) conversations")
+        return results
     }
 
    /// Clear all memories for a specific conversation.

@@ -11,13 +11,13 @@ import ConfigurationSystem
 
 extension AgentOrchestrator {
 
-    /// Parses todo list from manage_todo_list tool result Extracts structured todo items for autonomous execution.
+    /// Parses todo list from todo_operations tool result. Extracts structured todo items for autonomous execution.
     func parseTodoList(from toolResult: String) -> [TodoItem] {
         logger.debug("parseTodoList: Attempting to parse todo list from tool result")
 
         var todos: [TodoItem] = []
 
-        /// The tool returns a formatted string, but we need to call manage_todo_list with operation=read to get the actual structured data.
+        /// The tool returns a formatted string, but we need to call todo_operations with operation=read to get the actual structured data.
 
         let lines = toolResult.components(separatedBy: "\n")
         var currentId: Int?
