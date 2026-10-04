@@ -281,15 +281,31 @@ public enum ContextBudget {
     /// Minimum tokens to keep after trimming (absolute floor).
     public static let defaultPostTrimFloor: Int = 24_000
 
-    // MARK: CSSS slot bounds
+    // MARK: CSSS slot bounds (ported from CLIO's _compute_summary_cap)
 
-    /// Minimum CSSS slot size. The first trim creates a naturally small
+    /// Maximum CSSS slot size: the cache-stable summary cap.
+    /// Ported from CLIO's `_compute_summary_cap`: ~2.5% of the context window
+    /// in tokens:
+    ///   32K ctx  -> ~800 tokens
+    ///   64K ctx  -> ~1,600 tokens
+    ///   128K ctx -> ~3,200 tokens
+    ///   256K ctx -> ~6,400 tokens
+    ///   1M ctx   -> ~15,000 tokens (capped)
+    /// Bounded to [1000, 15000] tokens (token equivalent of CLIO's
+    /// [4000, 60000] char bounds at default 4.0 ratio).
+    public static func csssMaxSlotTokens(contextWindow: Int) -> Int {
+        let cap = Int(Double(contextWindow) * 0.025)
+        return max(1000, min(cap, 15_000))
+    }
+
+    /// Minimum CSSS slot floor. The first trim creates a naturally small
     /// summary; without this floor, CSSS locks to that tiny size and
-    /// starves all subsequent summaries.
-    public static let minCSSSlotTokens: Int = 8_000
-
-    /// Maximum CSSS slot size. Prevents unbounded growth.
-    public static let maxCSSSlotTokens: Int = 12_000
+    /// starves all subsequent summaries. Always at least 1000 tokens and
+    /// at most 1/4 of the max slot, so the floor scales with context size.
+    public static func csssMinSlotTokens(contextWindow: Int) -> Int {
+        let maxSlot = csssMaxSlotTokens(contextWindow: contextWindow)
+        return max(1000, maxSlot / 4)
+    }
 
     // MARK: Per-message overhead
 
@@ -308,8 +324,9 @@ public enum ContextBudget {
     public static let defaultCharsPerToken: Double = 4.0
 
     /// Learned ratio clamp bounds.
+    /// Ported from CLIO's TokenEstimator (ratio clamped to [1.5, 5.0]).
     public static let minLearnedRatio: Double = 1.5
-    public static let maxLearnedRatio: Double = 4.0
+    public static let maxLearnedRatio: Double = 5.0
 
     // MARK: Drift-aware threshold
 

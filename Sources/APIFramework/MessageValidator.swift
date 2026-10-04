@@ -137,16 +137,19 @@ public struct MessageValidator {
         // CSSS (Cache-Stable Summary Slot) slot target.
         // If an existing summary exists, use its token count as the slot target
         // (clamped to [min, max]). Proactive growth when dropped content > 1.5x slot.
-        // First trim: use MIN_CSSS_SLOT_TOKENS as floor so the summary isn't
+        // First trim: use csssMinSlotTokens as floor so the summary isn't
         // naturally tiny and starving subsequent trims.
+        let contextWindow = config.caps.contextWindow
+        let csssMinSlot = ContextBudget.csssMinSlotTokens(contextWindow: contextWindow)
+        let csssMaxSlot = ContextBudget.csssMaxSlotTokens(contextWindow: contextWindow)
         var summarySlotTarget: Int = 0
         if let summary = summaryUnit {
             let currentSlot = summary.tokens
-            summarySlotTarget = max(currentSlot, ContextBudget.minCSSSlotTokens)
-            logger.debug("Context: CSSS base slot target \(summarySlotTarget) (current: \(currentSlot), min: \(ContextBudget.minCSSSlotTokens))")
+            summarySlotTarget = max(currentSlot, csssMinSlot)
+            logger.debug("Context: CSSS base slot target \(summarySlotTarget) (current: \(currentSlot), min: \(csssMinSlot), ctx: \(contextWindow))")
         } else if startIdx < units.count {
-            summarySlotTarget = ContextBudget.minCSSSlotTokens
-            logger.debug("Context: CSSS first-trim slot target \(summarySlotTarget)")
+            summarySlotTarget = csssMinSlot
+            logger.debug("Context: CSSS first-trim slot target \(summarySlotTarget) (min: \(csssMinSlot), ctx: \(contextWindow))")
         }
 
         // Budget walk: newest to oldest.
@@ -197,8 +200,7 @@ public struct MessageValidator {
 
         // CSSS proactive growth: if dropped content > 1.5x slot, grow the slot
         if summarySlotTarget > 0 && droppedTokens > summarySlotTarget * 1 {
-            let maxSlot = ContextBudget.maxCSSSlotTokens
-            let newSlot = min(Int(Double(summarySlotTarget) * 1.5), maxSlot)
+            let newSlot = min(Int(Double(summarySlotTarget) * 1.5), csssMaxSlot)
             if newSlot > summarySlotTarget {
                 logger.info("Context: CSSS proactive growth \(summarySlotTarget) -> \(newSlot) (dropped: \(droppedTokens) tokens)")
                 summarySlotTarget = newSlot
@@ -902,7 +904,8 @@ public struct MessageValidator {
         // Seed buckets from previous summary (accumulates across trim cycles).
         // Use full overload to also carry user requests and collaboration
         // exchanges across cycles (CLIO parses all sections, not just
-        // commits/files/decisions/tools).
+        // commits/files/decisions/tools), plus the "Current task:" carryover.
+        var carriedTask: String? = nil
         if !previousSummary.isEmpty {
             var userReqs: [String]? = userRequests
             var collabEx: [(question: String, response: String)]? = collaborationExchanges
@@ -913,7 +916,8 @@ public struct MessageValidator {
                 decisions: &decisions,
                 toolsUsed: &toolsUsed,
                 userRequests: &userReqs,
-                collaborationExchanges: &collabEx
+                collaborationExchanges: &collabEx,
+                carriedTask: &carriedTask
             )
             userRequests = userReqs ?? []
             collaborationExchanges = collabEx ?? []
@@ -1044,6 +1048,12 @@ public struct MessageValidator {
         if let first = firstUserRequest { allRequests.append(first) }
         allRequests.append(contentsOf: userRequests)
         currentTask = findSubstantiveTask(candidate: lastUserContent, messages: allRequests)
+        // Fallback to the carried-over "Current task:" from the previous
+        // summary if neither the last user message nor any request was
+        // substantive (ported from CLIO's _carried_task logic).
+        if currentTask.count < 50, let carried = carriedTask, carried.count >= 50 {
+            currentTask = carried
+        }
 
         // Build structured thread_summary
         var parts: [String] = []
@@ -1057,10 +1067,12 @@ public struct MessageValidator {
         }
 
         if !collaborationExchanges.isEmpty {
-            parts.append("Active discussion (agent-user collaboration exchanges):")
+            parts.append("Discussion:")
             for (i, ex) in collaborationExchanges.enumerated() {
-                parts.append("  Agent asked: \(ex.question)")
-                parts.append("  User replied: \(ex.response)")
+                let q = ex.question.count > 1500 ? String(ex.question.prefix(1500)) : ex.question
+                let a = ex.response.count > 1500 ? String(ex.response.prefix(1500)) : ex.response
+                parts.append("- Q: \(q)")
+                parts.append("  A: \(a)")
                 if i < collaborationExchanges.count - 1 {
                     parts.append("")
                 }
@@ -1131,6 +1143,7 @@ public struct MessageValidator {
     ) {
         var dummyUR: [String]? = nil
         var dummyCollab: [(question: String, response: String)]? = nil
+        var dummyTask: String? = nil
         parsePreviousSummary(
             summaryText,
             commits: &commits,
@@ -1138,13 +1151,14 @@ public struct MessageValidator {
             decisions: &decisions,
             toolsUsed: &toolsUsed,
             userRequests: &dummyUR,
-            collaborationExchanges: &dummyCollab
+            collaborationExchanges: &dummyCollab,
+            carriedTask: &dummyTask
         )
     }
 
-    /// Full parse overload — also carries user requests and collaboration
-    /// exchanges across trim cycles (CLIO parses all sections, not just
-    /// commits/files/decisions/tools).
+    /// Full parse overload — also carries user requests, collaboration
+    /// exchanges, and the carried-over "Current task:" line across trim
+    /// cycles (CLIO parses all sections, not just commits/files/decisions/tools).
     public static func parsePreviousSummary(
         _ summaryText: String,
         commits: inout [String],
@@ -1152,11 +1166,24 @@ public struct MessageValidator {
         decisions: inout [String],
         toolsUsed: inout [String: Int],
         userRequests: inout [String]?,
-        collaborationExchanges: inout [(question: String, response: String)]?
+        collaborationExchanges: inout [(question: String, response: String)]?,
+        carriedTask: inout String?
     ) {
         let cleaned = summaryText
             .replacingOccurrences(of: "<thread_summary>", with: "")
             .replacingOccurrences(of: "</thread_summary>", with: "")
+
+        // Carry forward the "Current task:" line (ported from CLIO's
+        // compress_messages). Used as a fallback when the last user message
+        // or carried user requests don't yield a substantive task (>= 50 chars).
+        if let taskRange = cleaned.range(of: "Current task: ") {
+            let rest = cleaned[taskRange.upperBound...]
+            let taskEnd = rest.firstIndex(of: "\n") ?? rest.endIndex
+            let task = String(rest[..<taskEnd]).trimmingCharacters(in: .whitespaces)
+            if !task.isEmpty {
+                carriedTask = task
+            }
+        }
 
         if let commitsBlock = extractSection(text: cleaned, header: "Git commits made during compressed period") {
             for line in commitsBlock.components(separatedBy: "\n") {
@@ -1206,6 +1233,7 @@ public struct MessageValidator {
         // Parse user requests (including [original] marker) for carryover.
         // Without this, user requests from prior cycles are lost when
         // they've already been compressed into a prior summary.
+        // Note: Swift value semantics — must write back to the inout param.
         if var ur = userRequests {
             if let urBlock = extractSection(text: cleaned, header: "Recent user requests") {
                 for line in urBlock.components(separatedBy: "\n") {
@@ -1219,30 +1247,53 @@ public struct MessageValidator {
                     }
                 }
             }
+            userRequests = ur
         }
 
         // Parse collaboration exchanges (Q/A pairs from Discussion section).
+        // Ported from CLIO's _parse_previous_summary. Captures the full
+        // section (including blank lines between entries) up to the next
+        // section header or end of text.
         if var collab = collaborationExchanges {
-            if let discussionBlock = extractSection(text: cleaned, header: "Discussion") {
-                let lines = discussionBlock.components(separatedBy: "\n")
-                var i = 0
-                while i < lines.count {
-                    let qLine = lines[i].trimmingCharacters(in: .whitespaces)
-                    if qLine.hasPrefix("Q: ") {
-                        let qText = String(qLine.dropFirst("Q: ".count))
-                        if i + 1 < lines.count {
-                            let aLine = lines[i + 1].trimmingCharacters(in: .whitespaces)
-                            if aLine.hasPrefix("A: ") {
-                                let aText = String(aLine.dropFirst("A: ".count))
-                                collab.append((question: qText, response: aText))
-                                i += 2
-                                continue
-                            }
+            // Find "Discussion:" header, collect lines until the next
+            // section header (Capitalized words + colon) or EOF.
+            let lines = cleaned.components(separatedBy: "\n")
+            var collecting = false
+            var sectionLines: [String] = []
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if !collecting {
+                    if trimmed == "Discussion:" {
+                        collecting = true
+                    }
+                    continue
+                }
+                // Stop at the next section header (Capitalized + colon, no leading space).
+                if trimmed.range(of: "^[A-Z][\\w ]+:$", options: .regularExpression) != nil {
+                    break
+                }
+                sectionLines.append(trimmed)
+            }
+
+            // Parse Q/A pairs from the captured section.
+            var i = 0
+            while i < sectionLines.count {
+                let qLine = sectionLines[i]
+                if qLine.hasPrefix("- Q: ") {
+                    let qText = String(qLine.dropFirst("- Q: ".count))
+                    if i + 1 < sectionLines.count {
+                        let aLine = sectionLines[i + 1]
+                        if aLine.hasPrefix("A: ") {
+                            let aText = String(aLine.dropFirst("A: ".count))
+                            collab.append((question: qText, response: aText))
+                            i += 2
+                            continue
                         }
                     }
-                    i += 1
                 }
+                i += 1
             }
+            collaborationExchanges = collab
         }
     }
 

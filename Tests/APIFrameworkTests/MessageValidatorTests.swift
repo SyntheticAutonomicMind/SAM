@@ -508,7 +508,7 @@ final class MessageValidatorTests: XCTestCase {
     // MARK: - CSSS Slot Tests
 
     func testCSSSSlot_MinFloorOnFirstTrim() {
-        // First trim (no existing summary): CSSS slot should use minCSSSlotTokens floor.
+        // First trim (no existing summary): CSSS slot should use csssMinSlotTokens floor.
         // Use explicit trimThreshold to guarantee trimming regardless of estimation buffer.
         let caps = ContextCapabilities(contextWindow: 128_000, maxOutputTokens: 8_000)
         let config = TrimConfig(caps: caps, tokenRatio: 4.0, trimThreshold: 5_000)
@@ -534,6 +534,118 @@ final class MessageValidatorTests: XCTestCase {
         let lastMessage = result.messages.last!
         XCTAssertTrue(lastMessage.content?.contains("<thread_summary>") ?? false,
                       "Summary should be at the END of the output")
+    }
+
+    // MARK: - CSSS Slot Scaling Tests
+
+    func testCSSSMaxSlotTokens_ScalesWithContextWindow() {
+        // Ported from CLIO's _compute_summary_cap: 2.5% of context window,
+        // clamped [1000, 15000] tokens (token equivalent of CLIO's
+        // [4000, 60000] char bounds at 4.0 chars/token).
+        XCTAssertEqual(ContextBudget.csssMaxSlotTokens(contextWindow: 65_536), 1_638)
+        XCTAssertEqual(ContextBudget.csssMaxSlotTokens(contextWindow: 128_000), 3_200)
+        XCTAssertEqual(ContextBudget.csssMaxSlotTokens(contextWindow: 256_000), 6_400)
+        XCTAssertEqual(ContextBudget.csssMaxSlotTokens(contextWindow: 1_000_000), 15_000)
+        XCTAssertEqual(ContextBudget.csssMaxSlotTokens(contextWindow: 10_000), 1_000) // clamped to floor
+    }
+
+    func testCSSSMinSlotTokens_NeverBelowFloor() {
+        // Min floor is always >= 1000 and at most maxSlot/4
+        XCTAssertEqual(ContextBudget.csssMinSlotTokens(contextWindow: 128_000), 1_000) // max(1000, 3200/4=800)
+        XCTAssertEqual(ContextBudget.csssMinSlotTokens(contextWindow: 10_000), 1_000) // floor (maxSlot=1000)
+        XCTAssertEqual(ContextBudget.csssMinSlotTokens(contextWindow: 1_000_000), 3_750) // 15000/4
+    }
+
+    // MARK: - Discussion Round-Trip Tests
+
+    func testCompressDropped_DiscussionRoundTrip() {
+        // Regression test: compressDropped output must be parseable by
+        // parsePreviousSummary (Discussion section header + Q/A format).
+        // Previously the output used "Active discussion..." / "Agent asked:"
+        // which the parser (expecting "Discussion:" / "Q: ") silently failed to match.
+        let toolCall = OpenAIToolCall(
+            id: "tc1",
+            function: OpenAIFunctionCall(name: "interact", arguments: "{\"prompt\": \"What do you think?\"}")
+        )
+        let assistant = OpenAIChatMessage(role: "assistant", content: nil, toolCalls: [toolCall])
+        let result = OpenAIChatMessage(
+            role: "tool",
+            content: "[COLLABORATION]The user wants to continue the conversation",
+            toolCallId: "tc1"
+        )
+        let dropped = MessageUnit_with([assistant, result], toolCallIds: ["tc1"])
+
+        let summary = MessageValidator.compressDropped(
+            [dropped],
+            lastUserUnit: nil,
+            previousSummary: ""
+        )
+
+        let content = summary.content ?? ""
+        XCTAssertTrue(content.contains("<thread_summary>"), "Should contain thread_summary")
+        XCTAssertTrue(content.contains("Discussion:"), "Should contain Discussion header")
+        XCTAssertTrue(content.contains("- Q: What do you think?"), "Should contain - Q: format")
+        XCTAssertTrue(content.contains("  A:"), "Should contain A: format")
+
+        // Now parse it back — the Discussion entries should survive the round-trip
+        var collab: [(question: String, response: String)]? = []
+        var commits: [String] = []
+        var files: [String] = []
+        var decisions: [String] = []
+        var tools: [String: Int] = [:]
+        var userReqs: [String]? = []
+        var carriedTask: String? = nil
+        MessageValidator.parsePreviousSummary(
+            content,
+            commits: &commits, filesModified: &files, decisions: &decisions,
+            toolsUsed: &tools, userRequests: &userReqs,
+            collaborationExchanges: &collab, carriedTask: &carriedTask
+        )
+
+        XCTAssertNotNil(collab, "collaborationExchanges should be parsed")
+        XCTAssertGreaterThan(collab!.count, 0, "Should parse at least one Q/A pair from the Discussion section")
+        XCTAssertEqual(collab?.first?.question, "What do you think?")
+    }
+
+    func testParsePreviousSummary_CarriesCurrentTask() {
+        // Regression test: "Current task:" line should be carried over
+        // across trim cycles via parsePreviousSummary.
+        let summary = """
+        <thread_summary>
+
+        Current task: Investigate the YaRM context management system in SAM vs CLIO.
+
+        Discussion:
+        - Q: What did you find?
+          A: Several gaps, but most are minor.
+
+        Recent user requests:
+        - Build and test the changes
+
+        </thread_summary>
+        """
+
+        var commits: [String] = []
+        var files: [String] = []
+        var decisions: [String] = []
+        var tools: [String: Int] = [:]
+        var userReqs: [String]? = []
+        var collab: [(question: String, response: String)]? = []
+        var carriedTask: String? = nil
+
+        MessageValidator.parsePreviousSummary(
+            summary,
+            commits: &commits, filesModified: &files, decisions: &decisions,
+            toolsUsed: &tools, userRequests: &userReqs,
+            collaborationExchanges: &collab, carriedTask: &carriedTask
+        )
+
+        XCTAssertEqual(carriedTask, "Investigate the YaRM context management system in SAM vs CLIO.")
+        XCTAssertEqual(userReqs?.count, 1)
+        XCTAssertEqual(userReqs?.first, "Build and test the changes")
+        XCTAssertEqual(collab?.count, 1)
+        XCTAssertEqual(collab?.first?.question, "What did you find?")
+        XCTAssertEqual(collab?.first?.response, "Several gaps, but most are minor.")
     }
 
     // MARK: - Deinterleave Tool Results Tests
@@ -627,19 +739,20 @@ final class MessageValidatorTests: XCTestCase {
     func testDriftTracker_LearnedRatio_Clamped() {
         let tracker = DriftTracker()
 
-        // Very high ratio (should clamp to maxLearnedRatio = 4.0)
+        // Very high ratio (should clamp to maxLearnedRatio = 5.0)
         // totalChars=10000, actualTokens=100 -> ratio = 100 (way too high)
-        // New = 4.0*0.8 + 100*0.2 = 3.2 + 20 = 23.2 -> clamped to 4.0
+        // New = 4.0*0.8 + 100*0.2 = 3.2 + 20 = 23.2 -> clamped to 5.0
         tracker.learnFromAPIResponse(totalChars: 10000, actualPromptTokens: 100, estimatedPromptTokens: 50)
-        XCTAssertEqual(tracker.learnedRatio, 4.0, "Ratio should be clamped to max (4.0)")
+        XCTAssertEqual(tracker.learnedRatio, 5.0, "Ratio should be clamped to max (5.0)")
 
         tracker.reset()
 
         // Very low ratio (should clamp to minLearnedRatio = 1.5)
         // totalChars=100, actualTokens=1000 -> ratio = 0.1 (too low)
-        // New = 4.0*0.8 + 0.1*0.2 = 3.2 + 0.02 = 3.22
+        // Note: reset() only clears drift data, learnedRatio stays at 5.0
+        // New = 5.0*0.8 + 0.1*0.2 = 4.0 + 0.02 = 4.02
         tracker.learnFromAPIResponse(totalChars: 100, actualPromptTokens: 1000, estimatedPromptTokens: 1200)
-        XCTAssertEqual(tracker.learnedRatio, 3.22, accuracy: 0.01)
+        XCTAssertEqual(tracker.learnedRatio, 4.02, accuracy: 0.01)
     }
 
     func testDriftTracker_DriftAwareThreshold_TightensWhenUnderestimating() {
