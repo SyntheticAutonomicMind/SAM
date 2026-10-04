@@ -82,11 +82,40 @@ public struct ChunkSummary: Codable {
     public let tokenCount: Int
 }
 
+/// A single message stored in the durable session thread.
+/// Unlike ArchiveChunk (which stores compressed groups), the durable thread
+/// stores every message individually with a turn number, so the original
+/// substantive task can be recovered even after many trim cycles.
+/// Ported from CLIO's `$self->{threads}` durable history.
+public struct DurableThreadMessage: Codable {
+    public let id: UUID
+    public let conversationId: UUID
+    public let role: String
+    public let content: String
+    public let isFromUser: Bool
+    public let turnNumber: Int
+    public let timestamp: Date
+    public let messageIndex: Int
+
+    public init(id: UUID, conversationId: UUID, role: String, content: String,
+                isFromUser: Bool, turnNumber: Int, timestamp: Date, messageIndex: Int) {
+        self.id = id
+        self.conversationId = conversationId
+        self.role = role
+        self.content = content
+        self.isFromUser = isFromUser
+        self.turnNumber = turnNumber
+        self.timestamp = timestamp
+        self.messageIndex = messageIndex
+    }
+}
+
 /// Memory map showing all available archived context
 public struct MemoryMap: Codable {
     public let conversationId: UUID
     public let totalChunks: Int
     public let totalTokensArchived: Int
+    public let durableThreadCount: Int
     public let chunks: [ChunkSummary]
 
     /// Generate context hint for injection into system prompt
@@ -126,7 +155,20 @@ public class ContextArchiveManager: ObservableObject {
     private let reason = column("reason") as SQLite.Expression<String>
     private let createdAt = column("created_at") as SQLite.Expression<Date>
 
+    // Durable thread schema — stores EVERY message (not just dropped ones)
+    // so the original task can be recovered across trim cycles.
+    private let durableThread = Table("durable_thread_messages")
+    private let durableId = column("dt_id") as SQLite.Expression<String>
+    private let durableConvId = column("dt_conversation_id") as SQLite.Expression<String>
+    private let durableRole = column("dt_role") as SQLite.Expression<String>
+    private let durableContent = column("dt_content") as SQLite.Expression<String>
+    private let durableIsUser = column("dt_is_from_user") as SQLite.Expression<Bool>
+    private let durableTurnNum = column("dt_turn_number") as SQLite.Expression<Int>
+    private let durableTimestamp = column("dt_timestamp") as SQLite.Expression<Date>
+    private let durableMsgIdx = column("dt_message_index") as SQLite.Expression<Int>
+
     @Published public var totalArchivedChunks: Int = 0
+    @Published public var totalDurableThreadMessages: Int = 0
 
     public init() {
         logger.debug("ContextArchiveManager initialized")
@@ -176,6 +218,20 @@ public class ContextArchiveManager: ObservableObject {
         // Create indexes for efficient querying
         try db.run(archives.createIndex(conversationId, ifNotExists: true))
         try db.run(archives.createIndex(timeStart, ifNotExists: true))
+
+        // Durable thread schema — stores every message for recovery
+        try db.run(durableThread.create(ifNotExists: true) { t in
+            t.column(durableId, primaryKey: true)
+            t.column(durableConvId)
+            t.column(durableRole)
+            t.column(durableContent)
+            t.column(durableIsUser)
+            t.column(durableTurnNum)
+            t.column(durableTimestamp)
+            t.column(durableMsgIdx)
+        })
+        try db.run(durableThread.createIndex(durableConvId, ifNotExists: true))
+        try db.run(durableThread.createIndex(durableTurnNum, ifNotExists: true))
     }
 
     // MARK: - Archive Operations
@@ -263,6 +319,111 @@ public class ContextArchiveManager: ObservableObject {
         return chunk
     }
 
+    // MARK: - Durable Thread Operations
+
+    /// Store every message in the durable session thread (append-only log).
+    /// Called on every turn to preserve the full history so the original
+    /// substantive task can be recovered even after many trim cycles.
+    /// Ported from CLIO's `$self->{threads}` append.
+    ///
+    /// - Parameters:
+    ///   - messages: All current conversation messages (as EnhancedMessage)
+    ///   - conversationId: The conversation UUID
+    ///   - turnNumber: The current turn number (0-based)
+    public func storeDurableThread(
+        messages: [EnhancedMessage],
+        conversationId: UUID,
+        turnNumber: Int
+    ) async throws {
+        let db = try getDatabaseConnection(for: conversationId)
+
+        for (index, msg) in messages.enumerated() {
+            let content = msg.content
+            guard !content.isEmpty else { continue }
+
+            // Determine role from EnhancedMessage fields
+            let role: String
+            if msg.isFromUser {
+                role = "user"
+            } else if msg.toolCallId != nil {
+                role = "tool"
+            } else {
+                role = "assistant"
+            }
+
+            // Truncate very large tool results for storage
+            let truncated = content.count > 50_000
+                ? String(content.prefix(50_000)) + "..."
+                : content
+
+            try db.run(durableThread.insert(
+                durableId <- UUID().uuidString,
+                durableConvId <- conversationId.uuidString,
+                durableRole <- role,
+                durableContent <- truncated,
+                durableIsUser <- (role == "user"),
+                durableTurnNum <- turnNumber,
+                durableTimestamp <- Date(),
+                durableMsgIdx <- index
+            ))
+        }
+
+        // Update the count
+        totalDurableThreadMessages += messages.filter { !$0.content.isEmpty }.count
+
+        logger.debug("Stored \(messages.count) messages in durable thread (turn \(turnNumber), total: \(totalDurableThreadMessages))")
+    }
+
+    /// Recover the original substantive task from the durable thread.
+    /// Walks all stored messages to find the first user message with
+    /// substantive content (>= 50 chars). Used as a fallback when the
+    /// active conversation history has been trimmed and the current task
+    /// can't be inferred from the remaining messages.
+    ///
+    /// Ported from CLIO's `recover_substantive_task`.
+    public func recoverSubstantiveTask(conversationId: UUID) async throws -> String? {
+        let db = try getDatabaseConnection(for: conversationId)
+        let query = durableThread
+            .filter(durableConvId == conversationId.uuidString)
+            .filter(durableIsUser == true)
+            .order(durableTurnNum.asc, durableMsgIdx.asc)
+            .limit(50)
+
+        for row in try db.prepare(query) {
+            let content = row[durableContent]
+            if content.count >= 50 {
+                return content
+            }
+        }
+
+        return nil
+    }
+
+    /// Recover the last N messages from the durable thread (for recall or recovery).
+    public func recoverLastMessages(conversationId: UUID, limit: Int = 20) async throws -> [DurableThreadMessage] {
+        let db = try getDatabaseConnection(for: conversationId)
+        let query = durableThread
+            .filter(durableConvId == conversationId.uuidString)
+            .order(durableTurnNum.desc, durableMsgIdx.desc)
+            .limit(limit)
+
+        var messages: [DurableThreadMessage] = []
+        for row in try db.prepare(query) {
+            messages.append(DurableThreadMessage(
+                id: UUID(),
+                conversationId: conversationId,
+                role: row[durableRole],
+                content: row[durableContent],
+                isFromUser: row[durableIsUser],
+                turnNumber: row[durableTurnNum],
+                timestamp: row[durableTimestamp],
+                messageIndex: row[durableMsgIdx]
+            ))
+        }
+
+        return messages.reversed()
+    }
+
     /// Get memory map showing available archived context
     public func getMemoryMap(conversationId: UUID) async throws -> MemoryMap {
         let db = try getDatabaseConnection(for: conversationId)
@@ -311,6 +472,7 @@ public class ContextArchiveManager: ObservableObject {
             conversationId: conversationId,
             totalChunks: chunks.count,
             totalTokensArchived: totalTokens,
+            durableThreadCount: totalDurableThreadMessages,
             chunks: chunks
         )
     }

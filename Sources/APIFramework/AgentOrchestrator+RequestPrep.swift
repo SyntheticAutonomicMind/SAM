@@ -391,13 +391,53 @@ extension AgentOrchestrator {
 
         logger.debug("\(loggerPrefix): Budget = \(config.effectiveBudget) tokens (ctx=\(caps.contextWindow), maxOut=\(caps.maxOutputTokens), ratio=\(tokenRatio))")
 
-        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
+        // Durable session thread: store every message before projection/trimming
+        // so the original task can be recovered across multiple trim cycles.
+        // Ported from CLIO's YaRM $self->{threads} append.
+        let turnNumber = messages.filter { $0.role == "user" }.count
+        // Convert to EnhancedMessage for the durable thread (avoid importing
+        // OpenAIChatMessage into ConversationEngine which would create a
+        // circular dependency). Skip system messages — they're regenerated
+        // each turn and aren't part of the durable user/assistant/tool history.
+        let enhancedForThread = messages.compactMap { msg -> EnhancedMessage? in
+            guard msg.role != "system" else { return nil }
+            guard let content = msg.content, !content.isEmpty else { return nil }
+            return EnhancedMessage(content: content, isFromUser: msg.role == "user")
+        }
+        Task { [conversationManager, logger] in
+            do {
+                try await conversationManager.contextArchiveManager.storeDurableThread(
+                    messages: enhancedForThread,
+                    conversationId: conversationId,
+                    turnNumber: turnNumber
+                )
+            } catch {
+                logger.warning("\(loggerPrefix): Failed to store durable thread: \(error)")
+            }
+        }
+
+        // Turn-based projection: split into turns, keep recent N, compress older
+        // turns into a thread_summary. Reduces message count before the budget
+        // walk for better cache stability and faster processing. Ported from
+        // CLIO's build_projection.
+        let projection = ProjectionBuilder.project(
             messages: messages,
+            caps: caps,
+            tokenRatio: tokenRatio
+        )
+        var projectedMessages = projection.messages
+        if let summary = projection.compressedSummary {
+            projectedMessages.append(summary)
+            logger.debug("\(loggerPrefix): Projection compressed \(messages.count - projection.messages.count) messages into thread_summary")
+        }
+
+        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
+            messages: projectedMessages,
             config: config
         )
 
         if truncationResult.wasTrimmed {
-            logger.info("\(loggerPrefix): MessageValidator trimmed \(messages.count) -> \(truncationResult.messages.count) messages (\(truncationResult.droppedMessages.count) dropped)")
+            logger.info("\(loggerPrefix): Context trimmed \(messages.count) -> \(truncationResult.messages.count) messages (\(truncationResult.droppedMessages.count) dropped by budget walk)")
 
             if !truncationResult.droppedMessages.isEmpty {
                 Task { [conversationManager, logger] in
