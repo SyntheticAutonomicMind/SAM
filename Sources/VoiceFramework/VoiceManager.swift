@@ -27,7 +27,6 @@ public class VoiceManager: ObservableObject {
     private let speechRecognition = SpeechRecognitionService()
     private let speechSynthesis = SpeechSynthesisService()
     private let wakeWordDetector = WakeWordDetector()
-    private let commandRecognizer = CommandRecognizer()
     private let pauseDetector = PauseDetector()
 
     /// Audio device manager for input/output device and voice selection

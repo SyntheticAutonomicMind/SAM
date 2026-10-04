@@ -141,12 +141,6 @@ public class ConversationMessageBus: ObservableObject {
         isPinned: Bool = false,
         toolCalls: [SimpleToolCall]? = nil
     ) -> UUID {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.addAssistantMessage",
-                                            duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         logger.debug("🟢 ADD_ASST: id=\(id.uuidString.prefix(8)), streaming=\(isStreaming), hasParts=\(contentParts != nil), pinned=\(isPinned)")
 
         /// Calculate importance score for assistant message
@@ -176,12 +170,6 @@ public class ConversationMessageBus: ObservableObject {
     /// Update streaming message (real-time content updates)
     /// Update specific streaming message content (delta sync - avoids copying entire message array)
     public func updateStreamingMessage(id: UUID, content: String) {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.updateStreamingMessage",
-                                            duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         logger.debug("UPDATE_STREAMING: id=\(id.uuidString.prefix(8)), found=\(messageCache[id] != nil)")
 
         guard let index = messageCache[id] else {
@@ -237,12 +225,6 @@ public class ConversationMessageBus: ObservableObject {
         performanceMetrics: MessagePerformanceMetrics? = nil,
         processingTime: TimeInterval? = nil
     ) {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.completeStreamingMessage",
-                                            duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         logger.debug("COMPLETE_STREAMING: id=\(id.uuidString.prefix(8)), found=\(messageCache[id] != nil)")
 
         guard let index = messageCache[id] else {
@@ -357,12 +339,6 @@ public class ConversationMessageBus: ObservableObject {
     /// Remove a message by ID
     /// Used for cleaning up placeholders on error/cancellation
     public func removeMessage(id: UUID) {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.removeMessage",
-                                                   duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         logger.debug("REMOVE_MESSAGE: id=\(id.uuidString.prefix(8))")
 
         guard let index = messageCache[id] else {
@@ -386,12 +362,6 @@ public class ConversationMessageBus: ObservableObject {
 
     /// Toggle message pin status
     public func togglePin(id: UUID) {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.togglePin",
-                                                   duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         logger.debug("TOGGLE_PIN: id=\(id.uuidString.prefix(8))")
 
         guard let index = messageCache[id] else {
@@ -439,12 +409,6 @@ public class ConversationMessageBus: ObservableObject {
 
     /// Update message importance
     public func updateImportance(id: UUID, importance: Double) {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.updateImportance",
-                                                   duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         logger.debug("UPDATE_IMPORTANCE: id=\(id.uuidString.prefix(8)), importance=\(String(format: "%.2f", importance))")
 
         guard let index = messageCache[id] else {
@@ -733,12 +697,6 @@ public class ConversationMessageBus: ObservableObject {
     // MARK: - Private Implementation
 
     private func appendMessage(_ message: EnhancedMessage) {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.appendMessage",
-                                            duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         messages.append(message)
         messageCache[message.id] = messages.count - 1
 
@@ -880,12 +838,6 @@ public class ConversationMessageBus: ObservableObject {
 
     /// Notify conversation to sync messages from MessageBus (with throttling for streaming)
     private func notifyConversationOfChanges() {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.notifyConversationOfChanges",
-                                            duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         /// Throttle syncs to prevent excessive UI updates during streaming
         /// 5ms = max 200 updates/sec, supports 50+ tps inference speed
         let now = Date()
@@ -903,12 +855,6 @@ public class ConversationMessageBus: ObservableObject {
     /// DELTA SYNC: Notify conversation of specific message update
     /// This avoids copying entire message array - just update one message
     private func notifyConversationOfMessageUpdate(id: UUID, index: Int, message: EnhancedMessage) {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("MessageBus.notifyConversationOfMessageUpdate",
-                                            duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
         /// CRITICAL: Throttle delta syncs during streaming to prevent SwiftUI churn
         /// At 40+ TPS, we get 40+ delta syncs per second
         /// SwiftUI re-renders on each objectWillChange.send()

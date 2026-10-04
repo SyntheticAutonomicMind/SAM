@@ -664,30 +664,18 @@ public class ConversationModel: ObservableObject, Identifiable {
 
     /// Sync messages from MessageBus (called by MessageBus when messages change)
     public func syncMessagesFromMessageBus() {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("ConversationModel.syncMessagesFromMessageBus",
-                                            duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
+       guard let messageBus = self.messageBus else { return }
+       messages = messageBus.messages
 
-        guard let messageBus = self.messageBus else { return }
-        messages = messageBus.messages
+       /// @Published on messages already triggers objectWillChange - no explicit send needed
+   }
 
-        /// @Published on messages already triggers objectWillChange - no explicit send needed
-    }
+   /// DELTA SYNC: Update single message without copying entire array
+   /// Used during streaming to avoid performance bottleneck
+   public func updateMessage(at index: Int, with message: EnhancedMessage) {
+       guard index >= 0 && index < messages.count else { return }
+       messages[index] = message
 
-    /// DELTA SYNC: Update single message without copying entire array
-    /// Used during streaming to avoid performance bottleneck
-    public func updateMessage(at index: Int, with message: EnhancedMessage) {
-        let perfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("ConversationModel.updateMessage",
-                                            duration: CFAbsoluteTimeGetCurrent() - perfStart)
-        }
-
-        guard index >= 0 && index < messages.count else { return }
-        messages[index] = message
-
-        /// @Published on messages already triggers objectWillChange - no explicit send needed
-    }
+       /// @Published on messages already triggers objectWillChange - no explicit send needed
+   }
 }

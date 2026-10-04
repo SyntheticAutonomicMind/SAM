@@ -293,18 +293,12 @@ extension AgentOrchestrator {
     /// Execute a single tool.
     /// If `streaming` is non-nil, streams tool-card events; otherwise runs silently.
     func executeSingleToolWithStreaming(
-        _ toolCall: ToolCall,
-        iteration: Int,
-        streaming: ToolStreamingContext?,
-        conversationId: UUID?
-    ) async throws -> ToolExecution {
-        let toolPerfStart = CFAbsoluteTimeGetCurrent()
-        defer {
-            InternalOperationMonitor.shared.record("AgentOrchestrator.executeSingleToolWithStreaming",
-                                            duration: CFAbsoluteTimeGetCurrent() - toolPerfStart)
-        }
-
-        logger.debug("SINGLE_TOOL_START: name=\(toolCall.name) id=\(toolCall.id)")
+       _ toolCall: ToolCall,
+       iteration: Int,
+       streaming: ToolStreamingContext?,
+       conversationId: UUID?
+   ) async throws -> ToolExecution {
+       logger.debug("SINGLE_TOOL_START: name=\(toolCall.name) id=\(toolCall.id)")
         let startTime = Date()
 
         let toolMessageId = UUID()
