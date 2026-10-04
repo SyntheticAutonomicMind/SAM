@@ -98,10 +98,11 @@ final class MessageValidatorTests: XCTestCase {
             OpenAIChatMessage(role: "assistant", content: "Hi there!")
         ]
         let tokens = MessageValidator.estimateTokens(messages)
-        // Each message has 4 base overhead + content/4 = 4 + 11/4 = ~7 for "Hello world"
-        // Total: 4 + 3 + 4 + 3 = ~14
-        XCTAssertGreaterThan(tokens, 10)
-        XCTAssertLessThan(tokens, 25)
+        // Each message: 3 base overhead + max(1, content_chars/4)
+        // "Hello world" (11 chars): 3 + max(1, Int(11/4)) = 3 + 2 = 5
+        // "Hi there!" (9 chars):    3 + max(1, Int(9/4)) = 3 + 2 = 5
+        // Total: 10
+        XCTAssertEqual(tokens, 10)
     }
 
     func testEstimateTokens_ToolCallCounted() {

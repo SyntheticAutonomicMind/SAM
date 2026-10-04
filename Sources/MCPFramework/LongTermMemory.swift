@@ -888,6 +888,15 @@ public class LongTermMemory: ObservableObject {
                 for i in patterns.discoveries.indices {
                     let text = entryText(patterns.discoveries[i], category: category)
                     guard text.lowercased().contains(searchLC) else { continue }
+                    alreadyCorroborated = patterns.discoveries[i].corroborationSources.contains(sourceKey)
+                    if alreadyCorroborated {
+                        // Same source has already corroborated this entry —
+                        // return without modifying state. CLIO's add_corroboration:
+                        // skips append/increment when the source key is already present.
+                        return CorroborationResult(found: true, promoted: false, tier: patterns.discoveries[i].tier,
+                                                   corroborationCount: patterns.discoveries[i].corroborationCount,
+                                                   alreadyCorroborated: true)
+                    }
                     patterns.discoveries[i].corroborationSources.append(sourceKey)
                     patterns.discoveries[i].corroborationCount += 1
                     patterns.discoveries[i].updated = now
@@ -904,8 +913,12 @@ public class LongTermMemory: ObservableObject {
                 for i in patterns.problemSolutions.indices {
                     let text = entryText(patterns.problemSolutions[i], category: category)
                     guard text.lowercased().contains(searchLC) else { continue }
-                    // Check if already corroborated by this source
                     alreadyCorroborated = patterns.problemSolutions[i].corroborationSources.contains(sourceKey)
+                    if alreadyCorroborated {
+                        return CorroborationResult(found: true, promoted: false, tier: patterns.problemSolutions[i].tier,
+                                                   corroborationCount: patterns.problemSolutions[i].corroborationCount,
+                                                   alreadyCorroborated: true)
+                    }
                     patterns.problemSolutions[i].corroborationSources.append(sourceKey)
                     patterns.problemSolutions[i].corroborationCount += 1
                     patterns.problemSolutions[i].updated = now
@@ -923,6 +936,11 @@ public class LongTermMemory: ObservableObject {
                     let text = entryText(patterns.codePatterns[i], category: category)
                     guard text.lowercased().contains(searchLC) else { continue }
                     alreadyCorroborated = patterns.codePatterns[i].corroborationSources.contains(sourceKey)
+                    if alreadyCorroborated {
+                        return CorroborationResult(found: true, promoted: false, tier: patterns.codePatterns[i].tier,
+                                                   corroborationCount: patterns.codePatterns[i].corroborationCount,
+                                                   alreadyCorroborated: true)
+                    }
                     patterns.codePatterns[i].corroborationSources.append(sourceKey)
                     patterns.codePatterns[i].corroborationCount += 1
                     patterns.codePatterns[i].updated = now
@@ -940,6 +958,11 @@ public class LongTermMemory: ObservableObject {
                     let text = entryText(patterns.workflows[i], category: category)
                     guard text.lowercased().contains(searchLC) else { continue }
                     alreadyCorroborated = patterns.workflows[i].corroborationSources.contains(sourceKey)
+                    if alreadyCorroborated {
+                        return CorroborationResult(found: true, promoted: false, tier: patterns.workflows[i].tier,
+                                                   corroborationCount: patterns.workflows[i].corroborationCount,
+                                                   alreadyCorroborated: true)
+                    }
                     patterns.workflows[i].corroborationSources.append(sourceKey)
                     patterns.workflows[i].corroborationCount += 1
                     patterns.workflows[i].updated = now
@@ -957,6 +980,11 @@ public class LongTermMemory: ObservableObject {
                     let text = entryText(patterns.failures[i], category: category)
                     guard text.lowercased().contains(searchLC) else { continue }
                     alreadyCorroborated = patterns.failures[i].corroborationSources.contains(sourceKey)
+                    if alreadyCorroborated {
+                        return CorroborationResult(found: true, promoted: false, tier: patterns.failures[i].tier,
+                                                   corroborationCount: patterns.failures[i].corroborationCount,
+                                                   alreadyCorroborated: true)
+                    }
                     patterns.failures[i].corroborationSources.append(sourceKey)
                     patterns.failures[i].corroborationCount += 1
                     patterns.failures[i].updated = now

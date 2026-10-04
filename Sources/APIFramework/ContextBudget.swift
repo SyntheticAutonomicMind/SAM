@@ -294,7 +294,7 @@ public enum ContextBudget {
     // MARK: Per-message overhead
 
     /// Per-message token overhead (role + delimiters).
-    public static let tokensPerMessage: Int = 4
+    public static let tokensPerMessage: Int = 3
 
     /// Tool message extra overhead (name + tool_call_id fields).
     public static let toolMessageOverhead: Int = 8

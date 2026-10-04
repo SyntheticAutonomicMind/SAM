@@ -588,7 +588,7 @@ public struct MessageValidator {
         let ratio = tokenRatio ?? DriftTracker.shared.learnedRatio
         var total = 0
         for msg in messages {
-            total += 4 // per-message overhead
+            total += ContextBudget.tokensPerMessage // per-message overhead (role + delimiters)
             if let content = msg.content {
                 total += max(1, Int(Double(content.count) / ratio))
             }
@@ -899,15 +899,24 @@ public struct MessageValidator {
         var collaborationExchanges: [(question: String, response: String)] = []
         var toolsUsed: [String: Int] = [:]
 
-        // Seed buckets from previous summary (accumulates across trim cycles)
+        // Seed buckets from previous summary (accumulates across trim cycles).
+        // Use full overload to also carry user requests and collaboration
+        // exchanges across cycles (CLIO parses all sections, not just
+        // commits/files/decisions/tools).
         if !previousSummary.isEmpty {
+            var userReqs: [String]? = userRequests
+            var collabEx: [(question: String, response: String)]? = collaborationExchanges
             parsePreviousSummary(
                 previousSummary,
                 commits: &commits,
                 filesModified: &filesModified,
                 decisions: &decisions,
-                toolsUsed: &toolsUsed
+                toolsUsed: &toolsUsed,
+                userRequests: &userReqs,
+                collaborationExchanges: &collabEx
             )
+            userRequests = userReqs ?? []
+            collaborationExchanges = collabEx ?? []
         }
 
         // Track interaction tool_call IDs for pairing questions with responses
@@ -1109,12 +1118,41 @@ public struct MessageValidator {
     // MARK: - Summary Parse-and-Merge
 
     /// Parse structured sections from a previous thread_summary to seed extraction buckets.
+    /// Ported from CLIO's `_parse_previous_summary` which parses ALL sections
+    /// (user requests, decisions, files, commits, tool counts, collaboration
+    /// exchanges) so no historical information is silently dropped between
+    /// compression cycles.
     public static func parsePreviousSummary(
         _ summaryText: String,
         commits: inout [String],
         filesModified: inout [String],
         decisions: inout [String],
         toolsUsed: inout [String: Int]
+    ) {
+        var dummyUR: [String]? = nil
+        var dummyCollab: [(question: String, response: String)]? = nil
+        parsePreviousSummary(
+            summaryText,
+            commits: &commits,
+            filesModified: &filesModified,
+            decisions: &decisions,
+            toolsUsed: &toolsUsed,
+            userRequests: &dummyUR,
+            collaborationExchanges: &dummyCollab
+        )
+    }
+
+    /// Full parse overload — also carries user requests and collaboration
+    /// exchanges across trim cycles (CLIO parses all sections, not just
+    /// commits/files/decisions/tools).
+    public static func parsePreviousSummary(
+        _ summaryText: String,
+        commits: inout [String],
+        filesModified: inout [String],
+        decisions: inout [String],
+        toolsUsed: inout [String: Int],
+        userRequests: inout [String]?,
+        collaborationExchanges: inout [(question: String, response: String)]?
     ) {
         let cleaned = summaryText
             .replacingOccurrences(of: "<thread_summary>", with: "")
@@ -1161,6 +1199,48 @@ public struct MessageValidator {
                             toolsUsed[name, default: 0] += count
                         }
                     }
+                }
+            }
+        }
+
+        // Parse user requests (including [original] marker) for carryover.
+        // Without this, user requests from prior cycles are lost when
+        // they've already been compressed into a prior summary.
+        if var ur = userRequests {
+            if let urBlock = extractSection(text: cleaned, header: "Recent user requests") {
+                for line in urBlock.components(separatedBy: "\n") {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed.hasPrefix("- ") {
+                        var request = String(trimmed.dropFirst(2))
+                        if request.hasPrefix("[original] ") {
+                            request = String(request.dropFirst("[original] ".count))
+                        }
+                        ur.append(request)
+                    }
+                }
+            }
+        }
+
+        // Parse collaboration exchanges (Q/A pairs from Discussion section).
+        if var collab = collaborationExchanges {
+            if let discussionBlock = extractSection(text: cleaned, header: "Discussion") {
+                let lines = discussionBlock.components(separatedBy: "\n")
+                var i = 0
+                while i < lines.count {
+                    let qLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if qLine.hasPrefix("Q: ") {
+                        let qText = String(qLine.dropFirst("Q: ".count))
+                        if i + 1 < lines.count {
+                            let aLine = lines[i + 1].trimmingCharacters(in: .whitespaces)
+                            if aLine.hasPrefix("A: ") {
+                                let aText = String(aLine.dropFirst("A: ".count))
+                                collab.append((question: qText, response: aText))
+                                i += 2
+                                continue
+                            }
+                        }
+                    }
+                    i += 1
                 }
             }
         }

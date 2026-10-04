@@ -92,6 +92,39 @@ final class LongTermMemoryTests: XCTestCase {
         XCTAssertEqual(result.corroborationCount, 0)
     }
 
+    func testAddCorroboration_DuplicateSameSource_AlreadyCorroborated() async throws {
+        // Calling addCorroboration twice from the same source:session pair
+        // should report alreadyCorroborated=true and NOT inflate the count.
+        // This is a regression test for the bug where the corroboration
+        // was still appended/incremented even when the source was already
+        // present (CLIO skips append/increment when source key is already
+        // in corroboration_sources).
+        let ltm = await LongTermMemory()
+        await ltm.addDiscovery("test discovery for dup check")
+
+        // First corroboration from clio:session-1
+        let result1 = await ltm.addCorroboration(
+            searchText: "dup check",
+            sourceAgent: "clio",
+            sourceSession: "session-1"
+        )
+        XCTAssertTrue(result1.found)
+        XCTAssertFalse(result1.alreadyCorroborated)
+        XCTAssertEqual(result1.corroborationCount, 1)
+
+        // Second corroboration from the SAME source:session — should
+        // be detected as alreadyCorroborated, NOT inflate count.
+        let result2 = await ltm.addCorroboration(
+            searchText: "dup check",
+            sourceAgent: "clio",
+            sourceSession: "session-1"
+        )
+        XCTAssertTrue(result2.found)
+        XCTAssertTrue(result2.alreadyCorroborated)
+        XCTAssertEqual(result2.corroborationCount, 1)  // unchanged — no inflation
+        XCTAssertEqual(result2.tier, "unverified")    // not promoted (same source)
+    }
+
     func testNewEntriesAreUnverified() async throws {
         let ltm = await LongTermMemory()
         await ltm.addDiscovery("test fact")
