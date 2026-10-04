@@ -103,9 +103,20 @@ public struct MessageValidator {
         let estimatedTokens = estimateTokens(messages, tokenRatio: tokenRatio)
 
         if estimatedTokens <= effectiveBudget {
-            // Within budget - still run deinterleave + summary-at-end (CLIO behavior:
-            // structural normalization happens even when no trimming is needed).
+            // Within budget - use byte-stability fast path when possible.
+            // CLIO's _validate_or_passthrough scans for orphans/dupes and returns
+            // the original array ref unchanged when the array is already clean, so
+            // provider KV caches stay warm for messages that haven't changed. We
+            // do the same: if the array is already structurally normalized (summary
+            // at end, tool results deinterleaved) and has no orphan/dupe issues,
+            // return the original message references without re-serialization.
             logger.debug("Context: within budget (\(estimatedTokens)/\(effectiveBudget)), normalizing structure only")
+            if !needsValidation(messages) && alreadyNormalized(messages) {
+                logger.debug("Context: byte-stable fast path — no orphans/dupes, already normalized, returning original refs")
+                return TruncationResult(messages: messages, droppedMessages: [])
+            }
+            // Structural normalization needed: run validation + summary-at-end.
+            logger.debug("Context: within budget but structural normalization needed")
             let normalized = validateToolMessagePairs(messages)
             return TruncationResult(messages: normalizeSummaryToEnd(messages: normalized), droppedMessages: [])
         }
@@ -336,6 +347,79 @@ public struct MessageValidator {
             result.append(summary)
         }
         return result
+    }
+
+    // MARK: - Byte-Stability Fast Path (CLIO: _validate_or_passthrough)
+
+    /// Scan messages for orphaned tool_calls, orphaned tool_results, or duplicate IDs.
+    /// Mirrors CLIO's `_validate_or_passthrough` orphan/dupe detection.
+    /// Returns true if the array needs validation (has issues to fix).
+    private static func needsValidation(_ messages: [OpenAIChatMessage]) -> Bool {
+        var tcIdToIdx: [String: Int] = [:]
+        var trIdToIdx: [String: Int] = [:]
+        var idCount: [String: Int] = [:]
+
+        for (i, msg) in messages.enumerated() {
+            if msg.role == "assistant", let toolCalls = msg.toolCalls {
+                for tc in toolCalls {
+                    if idCount[tc.id] != nil {
+                        // Duplicate tool_call_id — providers reject these
+                        return true
+                    }
+                    tcIdToIdx[tc.id] = i
+                    idCount[tc.id] = 1
+                }
+            }
+            if msg.role == "tool", let toolCallId = msg.toolCallId {
+                trIdToIdx[toolCallId] = i
+            }
+        }
+
+        // Orphaned tool_calls (no matching result)
+        for tcId in tcIdToIdx.keys {
+            if trIdToIdx[tcId] == nil { return true }
+        }
+        // Orphaned tool_results (no matching call)
+        for trId in trIdToIdx.keys {
+            if tcIdToIdx[trId] == nil { return true }
+        }
+        return false
+    }
+
+    /// Check if the message array is already structurally normalized: summary
+    /// at END, all tool results after dialog (no interleaving).
+    /// Used by the byte-stability fast path to skip normalizeSummaryToEnd
+    /// when the array is already in the correct layout.
+    private static func alreadyNormalized(_ messages: [OpenAIChatMessage]) -> Bool {
+        var summaryIndex: Int?
+        var lastDialogIndex: Int?
+        var firstToolResultIndex: Int?
+
+        for (i, msg) in messages.enumerated() {
+            if msg.role == "system", let content = msg.content, content.contains("<thread_summary>") {
+                summaryIndex = i
+            } else if msg.role == "tool" {
+                if firstToolResultIndex == nil { firstToolResultIndex = i }
+            } else {
+                lastDialogIndex = i
+            }
+        }
+
+        // No summary and no tool results — trivially normalized
+        if summaryIndex == nil && firstToolResultIndex == nil { return true }
+
+        // If there's a summary, it must be the last message
+        if let summaryIdx = summaryIndex, summaryIdx != messages.count - 1 {
+            return false
+        }
+
+        // If there are tool results, they must all come after all dialog
+        // (no tool result before a dialog message).
+        if let firstTR = firstToolResultIndex, let lastDialog = lastDialogIndex {
+            if firstTR < lastDialog { return false }
+        }
+
+        return true
     }
 
     // MARK: - Continuation Prompt Filtering (ported from CLIO)
@@ -705,14 +789,20 @@ public struct MessageValidator {
     public static func validateToolMessagePairs(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
         guard !messages.isEmpty else { return [] }
 
-        // Build bidirectional maps
+        // Build bidirectional maps + duplicate detection
         var tcIdToAssistantIdx: [String: Int] = [:]
         var trIdToResultIdx: [String: Int] = [:]
+        var duplicateTcIds = Set<String>()
 
         for (i, msg) in messages.enumerated() {
             if msg.role == "assistant", let toolCalls = msg.toolCalls {
                 for tc in toolCalls {
-                    tcIdToAssistantIdx[tc.id] = i
+                    if tcIdToAssistantIdx.keys.contains(tc.id) {
+                        // Duplicate ID — CLIO keeps first occurrence, drops the rest
+                        duplicateTcIds.insert(tc.id)
+                    } else {
+                        tcIdToAssistantIdx[tc.id] = i
+                    }
                 }
             }
             if msg.role == "tool", let toolCallId = msg.toolCallId {
@@ -741,12 +831,15 @@ public struct MessageValidator {
             }
         }
 
-        if orphanedTcIds.isEmpty && orphanedResultIndices.isEmpty {
+        // If no issues whatsoever (no orphans, no dupes, no misordered), return unchanged
+        if orphanedTcIds.isEmpty && orphanedResultIndices.isEmpty && duplicateTcIds.isEmpty {
             return messages
         }
 
-        // Rebuild: remove orphaned results, selectively strip orphaned tool_calls
+        // Rebuild: remove orphaned results, strip orphaned + duplicate tool_calls
+        // (first occurrence of each ID wins, matching CLIO's validate_tool_message_pairs)
         var validated: [OpenAIChatMessage] = []
+        var keptTcIds = Set<String>()
         for (i, msg) in messages.enumerated() {
             if orphanedResultIndices.contains(i) {
                 logger.debug("Context: removing orphaned/misordered tool_result at index \(i)")
@@ -754,17 +847,29 @@ public struct MessageValidator {
             }
 
             if msg.role == "assistant", let toolCalls = msg.toolCalls {
-                let validCalls = toolCalls.filter { !orphanedTcIds.contains($0.id) }
-                if validCalls.count != toolCalls.count {
-                    logger.debug("Context: stripped \(toolCalls.count - validCalls.count) orphaned tool_calls from assistant at index \(i)")
-                    validated.append(OpenAIChatMessage(
-                        id: msg.id, role: msg.role, content: msg.content,
-                        toolCalls: validCalls.isEmpty ? nil : validCalls,
-                        toolCallId: msg.toolCallId
-                    ))
-                } else {
-                    validated.append(msg)
+                // Keep first occurrence of each tool_call_id, drop orphans and dupes.
+                // CLIO's validate_tool_message_pairs: first occurrence wins, subsequent dropped.
+                var keptCalls: [OpenAIToolCall] = []
+                var droppedCount = 0
+                for tc in toolCalls {
+                    if orphanedTcIds.contains(tc.id) {
+                        droppedCount += 1
+                    } else if keptTcIds.contains(tc.id) {
+                        // Duplicate — already kept from an earlier message
+                        droppedCount += 1
+                    } else {
+                        keptCalls.append(tc)
+                        keptTcIds.insert(tc.id)
+                    }
                 }
+                if droppedCount > 0 {
+                    logger.debug("Context: stripped \(droppedCount) orphaned/duplicate tool_calls from assistant at index \(i)")
+                }
+                validated.append(OpenAIChatMessage(
+                    id: msg.id, role: msg.role, content: msg.content,
+                    toolCalls: keptCalls.isEmpty ? nil : keptCalls,
+                    toolCallId: msg.toolCallId
+                ))
             } else {
                 validated.append(msg)
             }

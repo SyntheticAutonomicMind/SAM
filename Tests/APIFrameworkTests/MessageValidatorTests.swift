@@ -340,6 +340,78 @@ final class MessageValidatorTests: XCTestCase {
         XCTAssertNotNil(result)
     }
 
+    // MARK: - Byte-Stability Fast Path
+
+    func testValidateAndTruncate_WithinBudget_CleanArray_ByteStable() {
+        // A clean, normalized array (no orphans, no dupes, summary at end,
+        // tool results after dialog) should be returned byte-stable — the
+        // same array instance (not rebuilt) to preserve provider KV cache.
+        // We use id fields to verify identity is preserved through the fast path.
+        let systemMsg = OpenAIChatMessage(id: "sys1", role: "system", content: "You are a helpful assistant.")
+        let userMsg = OpenAIChatMessage(id: "usr1", role: "user", content: "Hello world")
+        let assistantMsg = OpenAIChatMessage(id: "asst1", role: "assistant", content: "Hi there!")
+        let messages = [systemMsg, userMsg, assistantMsg]
+
+        let config = TrimConfig(caps: ContextCapabilities(contextWindow: 100_000), tokenRatio: 4.0)
+        let result = MessageValidator.validateAndTruncateWithDropped(messages: messages, config: config)
+
+        XCTAssertEqual(result.messages.count, 3)
+        // Fast path preserves ids without rebuilding the array
+        XCTAssertEqual(result.messages[0].id, "sys1")
+        XCTAssertEqual(result.messages[1].id, "usr1")
+        XCTAssertEqual(result.messages[2].id, "asst1")
+        XCTAssertFalse(result.wasTrimmed)
+    }
+
+    func testValidateAndTruncate_WithinBudget_HasOrphans_TriggersValidation() {
+        // Array WITH an orphan tool_call must go through validation
+        // (not byte-stable fast path), and the orphan should be stripped.
+        let orphanCall = OpenAIToolCall(id: "orphan1", function: OpenAIFunctionCall(name: "search", arguments: "{}"))
+        let assistantWithOrphan = OpenAIChatMessage(role: "assistant", content: "I'll search", toolCalls: [orphanCall])
+        let userMsg = OpenAIChatMessage(role: "user", content: "Hello")
+        let messages = [userMsg, assistantWithOrphan]
+
+        let config = TrimConfig(caps: ContextCapabilities(contextWindow: 100_000), tokenRatio: 4.0)
+        let result = MessageValidator.validateAndTruncateWithDropped(messages: messages, config: config)
+
+        // Orphan tool_call should be stripped → assistant becomes plain text
+        XCTAssertEqual(result.messages.count, 2)
+        let assistantResult = result.messages.first { $0.role == "assistant" }
+        XCTAssertNotNil(assistantResult)
+        XCTAssertNil(assistantResult?.toolCalls)
+    }
+
+    func testValidateAndTruncate_WithinBudget_SummaryNotAtEnd_Normalizes() {
+        // A thread_summary that is NOT at the end triggers normalizeSummaryToEnd.
+        let systemMsg = OpenAIChatMessage(role: "system", content: "You are helpful.")
+        let summary = OpenAIChatMessage(role: "system", content: "<thread_summary>\n\nPrevious work summary.\n\n</thread_summary>")
+        let userMsg = OpenAIChatMessage(role: "user", content: "New question")
+        let assistantMsg = OpenAIChatMessage(role: "assistant", content: "Answer")
+        let messages = [systemMsg, summary, userMsg, assistantMsg]
+
+        let config = TrimConfig(caps: ContextCapabilities(contextWindow: 100_000), tokenRatio: 4.0)
+        let result = MessageValidator.validateAndTruncateWithDropped(messages: messages, config: config)
+
+        // Summary should be moved to the END
+        XCTAssertEqual(result.messages.count, 4)
+        let lastMsg = result.messages.last
+        XCTAssertTrue(lastMsg?.content?.contains("<thread_summary>") ?? false)
+    }
+
+    func testBytesToCharsRatio_NeedsValidation_DetectsDuplicates() {
+        let validCall = OpenAIToolCall(id: "tc1", function: OpenAIFunctionCall(name: "search", arguments: "{}"))
+        let dupCall = OpenAIToolCall(id: "tc1", function: OpenAIFunctionCall(name: "read", arguments: "{}"))
+        let assistant = OpenAIChatMessage(role: "assistant", content: nil, toolCalls: [validCall, dupCall])
+        let toolResult = OpenAIChatMessage(role: "tool", content: "Result", toolCallId: "tc1")
+        let messages = [assistant, toolResult]
+
+        // needsValidation is private, but we can observe its effect through
+        // validateToolMessagePairs which has the same detection logic.
+        let validated = MessageValidator.validateToolMessagePairs(messages)
+        let assistantMsg = validated.first { $0.role == "assistant" }
+        XCTAssertEqual(assistantMsg?.toolCalls?.count, 1)
+    }
+
     // MARK: - TrimConfig + Budget Tests
 
     func testComputePromptBudget_WithTools_OptimizedOutputReserve() {
