@@ -93,6 +93,10 @@ public struct MessageValidator {
     ) -> TruncationResult {
         guard !messages.isEmpty else { return TruncationResult(messages: [], droppedMessages: []) }
 
+        // Ported from CLIO: strip trivial continuation prompts ("continue", "ok", etc.)
+        let filteredMessages = filterContinuationPrompts(messages)
+        let messages = filteredMessages.isEmpty ? messages : filteredMessages
+
         let effectiveBudget = config.effectiveBudget
         let tokenRatio = config.tokenRatio
 
@@ -332,6 +336,38 @@ public struct MessageValidator {
             result.append(summary)
         }
         return result
+    }
+
+    // MARK: - Continuation Prompt Filtering (ported from CLIO)
+
+    /// Short continuation prompts that carry no new information.
+    /// Ported from CLIO's ContextBuilder::filter_continuation_prompts.
+    private static let continuationPrompts: Set<String> = [
+        "continue",
+        "ok",
+        "okay",
+        "right",
+        "yes",
+        "yeah",
+        "yep",
+        "please continue",
+        "please proceed",
+        "proceed",
+        "go on",
+        "carry on",
+        "keep going",
+    ]
+
+    /// Filter out trivial continuation prompts ("continue", "ok", etc.) that
+    /// carry no new information but consume budget and confuse the budget walk.
+    /// Ported from CLIO's filter_continuation_prompts.
+    public static func filterContinuationPrompts(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
+        return messages.filter { msg in
+            let content = (msg.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased().trimmingCharacters(in: .punctuationCharacters)
+            if content.isEmpty { return false }
+            if continuationPrompts.contains(content) { return false }
+            return true
+        }
     }
 
     // MARK: - Backward-Compatible API

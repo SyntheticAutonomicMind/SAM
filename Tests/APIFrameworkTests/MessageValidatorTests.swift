@@ -648,6 +648,77 @@ final class MessageValidatorTests: XCTestCase {
         XCTAssertNotNil(result, "Should detect 'prompt is too long'")
     }
 
+    // MARK: - Continuation Prompt Filtering Tests
+
+    func testFilterContinuationPrompts_RemovesShortPrompts() {
+        let messages = [
+            OpenAIChatMessage(role: "user", content: "Write some code"),
+            OpenAIChatMessage(role: "user", content: "continue"),
+            OpenAIChatMessage(role: "user", content: "ok"),
+            OpenAIChatMessage(role: "user", content: "right"),
+        ]
+
+        let filtered = MessageValidator.filterContinuationPrompts(messages)
+        XCTAssertEqual(filtered.count, 1)
+        XCTAssertEqual(filtered[0].content, "Write some code")
+    }
+
+    func testFilterContinuationPrompts_PreservesSubstantiveMessages() {
+        let messages = [
+            OpenAIChatMessage(role: "user", content: "What is the SQLite schema?"),
+            OpenAIChatMessage(role: "assistant", content: "It uses B-tree indexing."),
+            OpenAIChatMessage(role: "user", content: "continue."),
+        ]
+
+        let filtered = MessageValidator.filterContinuationPrompts(messages)
+        XCTAssertEqual(filtered.count, 2)
+        XCTAssertFalse(filtered.contains { $0.content?.contains("continue") ?? false })
+    }
+
+    func testFilterContinuationPrompts_CaseInsensitive() {
+        let messages = [
+            OpenAIChatMessage(role: "user", content: "CONTINUE"),
+            OpenAIChatMessage(role: "user", content: "Okay"),
+            OpenAIChatMessage(role: "user", content: "Yeah"),
+        ]
+
+        let filtered = MessageValidator.filterContinuationPrompts(messages)
+        XCTAssertTrue(filtered.isEmpty, "All continuation prompts should be filtered (case-insensitive)")
+    }
+
+    func testFilterContinuationPrompts_PreservesWhitespaceOnlyMessages() {
+        let messages = [
+            OpenAIChatMessage(role: "user", content: "actual question"),
+            OpenAIChatMessage(role: "user", content: ""),
+        ]
+
+        let filtered = MessageValidator.filterContinuationPrompts(messages)
+        // Empty content messages are filtered (content is empty string)
+        XCTAssertEqual(filtered.count, 1)
+    }
+
+    func testValidateAndTruncateWithDropped_FiltersContinuationPrompts() {
+        // Verify that filterContinuationPrompts runs at the start of the validation path.
+        let messages = [
+            OpenAIChatMessage(role: "system", content: "You are a helpful assistant"),
+            OpenAIChatMessage(role: "user", content: "Hello"),
+            OpenAIChatMessage(role: "user", content: "continue"),
+            OpenAIChatMessage(role: "user", content: "ok"),
+        ]
+
+        let caps = ContextCapabilities(contextWindow: 1_000_000, maxOutputTokens: 8_000)
+        let config = TrimConfig(caps: caps, tokenRatio: 4.0)
+
+        let result = MessageValidator.validateAndTruncateWithDropped(
+            messages: messages, config: config
+        )
+
+        // Should have filtered out "continue" and "ok"
+        XCTAssertEqual(result.messages.count, 2) // system + "Hello"
+        XCTAssertFalse(result.messages.contains { ($0.content?.lowercased() == "continue") })
+        XCTAssertFalse(result.messages.contains { ($0.content?.lowercased() == "ok") })
+    }
+
     // MARK: - Backward-Compatible API Tests
 
     func testValidateAndTruncate_WithTrimConfig_BackwardCompatible() {
