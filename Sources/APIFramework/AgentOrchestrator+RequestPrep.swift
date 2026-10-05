@@ -425,16 +425,25 @@ extension AgentOrchestrator {
             caps: caps,
             tokenRatio: tokenRatio
         )
-        var projectedMessages = projection.messages
-        if let summary = projection.compressedSummary {
-            projectedMessages.append(summary)
-            logger.debug("\(loggerPrefix): Projection compressed \(messages.count - projection.messages.count) messages into thread_summary")
+       var projectedMessages = projection.messages
+       if let summary = projection.compressedSummary {
+           projectedMessages.append(summary)
+           logger.debug("\(loggerPrefix): Projection compressed \(messages.count - projection.messages.count) messages into thread_summary")
+       }
+
+        // ALWAYS append the current user message as the last message.
+        // selectTurns returns it separately (currentTurn) so it's never compressed
+        // or dropped by the projection/compression layer. This ensures the model
+        // always sees the user's latest input — without this, the model receives
+        // the same context every turn and produces the same response repeatedly.
+        if let currentTurn = projection.currentTurn {
+            projectedMessages.append(contentsOf: currentTurn)
         }
 
-        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
-            messages: projectedMessages,
-            config: config
-        )
+       let truncationResult = MessageValidator.validateAndTruncateWithDropped(
+           messages: projectedMessages,
+           config: config
+       )
 
         if truncationResult.wasTrimmed {
             logger.info("\(loggerPrefix): Context trimmed \(messages.count) -> \(truncationResult.messages.count) messages (\(truncationResult.droppedMessages.count) dropped by budget walk)")

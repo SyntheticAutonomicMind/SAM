@@ -203,34 +203,34 @@ public struct ProjectionBuilder {
 
     /// Select recent turns and dropped turns from a list of turns.
     /// Ported from CLIO's `_select_turns`:
-    /// - Drops the current (incomplete) turn if it only has a user message
+    /// - Extracts the current (incomplete) turn if it only has user messages
+    ///   (no assistant/tool responses yet) — returns it as `current` so the
+    ///   caller can append it as the last message in the projected output
     /// - Preserves turns with tool_calls in the recent window
     /// - Selects the last N recent turns
-    public static func selectTurns(_ turns: inout [[OpenAIChatMessage]]) -> (recent: [[OpenAIChatMessage]], dropped: [[OpenAIChatMessage]]) {
-        guard !turns.isEmpty else { return ([], []) }
+    public static func selectTurns(_ turns: inout [[OpenAIChatMessage]]) -> (recent: [[OpenAIChatMessage]], dropped: [[OpenAIChatMessage]], current: [OpenAIChatMessage]?) {
+        guard !turns.isEmpty else { return ([], [], nil) }
 
         var work = turns
 
-        // Drop the current (incomplete) turn if it only contains user messages
-        // (no assistant/tool responses yet).
-        let lastTurn = work[work.count - 1]
-        let hasAssistantOrTool = lastTurn.contains { $0.role == "assistant" || $0.role == "tool" }
-        if !hasAssistantOrTool {
-            let incompleteTurn = work.removeLast()
-            // The current user message is delivered separately — don't compress it.
-            // (It will be the last user message in the final message array.)
-            work.append(incompleteTurn) // put it back at the end — caller will handle
-            // Actually, we need to return the incomplete turn separately so the
-            // caller can add it to the end as the "current user message".
-            // But for SAM's architecture, the current user message is already
-            // in the messages array passed to validateAndArchiveContext.
-            // We just skip it for projection purposes.
-            _ = work.removeLast() // discard — it's the current user input
+        // Extract the current (incomplete) turn if it only contains user messages
+        // (no assistant/tool responses yet). This is the user's latest message
+        // that hasn't been answered yet — it must be preserved and returned
+        // separately so it appears as the last message in the projected output.
+        // If we let it be compressed or mixed into the recent window, the model
+        // would never see the current user input, causing repeated responses.
+        var currentTurn: [OpenAIChatMessage]? = nil
+        if !work.isEmpty {
+            let lastTurn = work[work.count - 1]
+            let hasAssistantOrTool = lastTurn.contains { $0.role == "assistant" || $0.role == "tool" }
+            if !hasAssistantOrTool {
+                currentTurn = work.removeLast()
+            }
         }
 
-        // Recalculate total after potential drop
+        // Recalculate total after extracting the current turn
         let totalTurns = work.count
-        guard totalTurns > 0 else { return ([], []) }
+        guard totalTurns > 0 else { return ([], [], currentTurn) }
 
         let recentTarget = recentCount(for: totalTurns)
         var recentCount = min(recentTarget, totalTurns)
@@ -258,7 +258,7 @@ public struct ProjectionBuilder {
         let recent = Array(work[startIndex..<totalTurns])
         let dropped = Array(work[0..<startIndex])
 
-        return (recent, dropped)
+        return (recent, dropped, currentTurn)
     }
 
     // MARK: - Public API
@@ -266,15 +266,23 @@ public struct ProjectionBuilder {
     /// Result of a projection operation.
     public struct ProjectionResult {
         /// The projected message array: system messages + recent turns.
+        /// Does NOT include the current (incomplete) user turn — that's in
+        /// `currentTurn`. Does NOT include the compressed summary — that's in
+        /// `compressedSummary`.
         public let messages: [OpenAIChatMessage]
         /// A thread_summary system message from compressed dropped turns (if any).
         public let compressedSummary: OpenAIChatMessage?
+        /// The current (incomplete) turn — the user's latest message that hasn't
+        /// been answered yet. Must be appended at the end of the final message
+        /// array so the model sees the current request.
+        public let currentTurn: [OpenAIChatMessage]?
         /// Estimated token count of the projected messages.
         public let tokenEstimate: Int
 
-        public init(messages: [OpenAIChatMessage], compressedSummary: OpenAIChatMessage?, tokenEstimate: Int) {
+        public init(messages: [OpenAIChatMessage], compressedSummary: OpenAIChatMessage?, currentTurn: [OpenAIChatMessage]?, tokenEstimate: Int) {
             self.messages = messages
             self.compressedSummary = compressedSummary
+            self.currentTurn = currentTurn
             self.tokenEstimate = tokenEstimate
         }
     }
@@ -298,7 +306,7 @@ public struct ProjectionBuilder {
         guard messages.count > 4 else {
             // Too few messages to benefit from projection — return as-is.
             let tokens = MessageValidator.estimateTokens(messages, tokenRatio: tokenRatio)
-            return ProjectionResult(messages: messages, compressedSummary: nil, tokenEstimate: tokens)
+            return ProjectionResult(messages: messages, compressedSummary: nil, currentTurn: nil, tokenEstimate: tokens)
         }
 
         // Separate leading system messages from the rest.
@@ -313,7 +321,7 @@ public struct ProjectionBuilder {
         guard restStartIdx < messages.count else {
             // Only system messages — nothing to project.
             let tokens = MessageValidator.estimateTokens(messages, tokenRatio: tokenRatio)
-            return ProjectionResult(messages: messages, compressedSummary: nil, tokenEstimate: tokens)
+            return ProjectionResult(messages: messages, compressedSummary: nil, currentTurn: nil, tokenEstimate: tokens)
         }
 
         let conversationMessages = Array(messages[restStartIdx...])
@@ -322,18 +330,19 @@ public struct ProjectionBuilder {
         var turns = splitIntoTurns(conversationMessages)
         guard turns.count > 0 else {
             let tokens = MessageValidator.estimateTokens(messages, tokenRatio: tokenRatio)
-            return ProjectionResult(messages: messages, compressedSummary: nil, tokenEstimate: tokens)
+            return ProjectionResult(messages: messages, compressedSummary: nil, currentTurn: nil, tokenEstimate: tokens)
         }
 
-        // Select recent vs. dropped turns.
+        // Select recent vs. dropped turns. The incomplete (current user) turn
+        // is returned separately so it can be appended as the last message.
         var droppedTurnMessages: [OpenAIChatMessage] = []
-        let (recentTurns, droppedTurns) = selectTurns(&turns)
+        let (recentTurns, droppedTurns, currentTurn) = selectTurns(&turns)
 
         for turn in droppedTurns {
             droppedTurnMessages.append(contentsOf: turn)
         }
 
-        // Cross-turn dedup on the recent + anchor turns.
+        // Cross-turn dedup on the recent turns.
         let dedupedRecent = collapseRepeatedToolCalls(recentTurns)
 
         // Build projected message array: system + recent turns (flattened)
@@ -362,6 +371,7 @@ public struct ProjectionBuilder {
         return ProjectionResult(
             messages: projected,
             compressedSummary: compressedSummary,
+            currentTurn: currentTurn,
             tokenEstimate: tokenEstimate
         )
     }

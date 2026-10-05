@@ -64,8 +64,6 @@ final class ProjectionBuilderTests: XCTestCase {
     // MARK: - Turn Selection
 
     func testSelectTurns_KeepsRecentAndDropsOld() {
-        // 10 turns: 5 dropped, 5 recent (but max recent is 8, so all 10 kept if < 100)
-        // Actually 10 turns falls in medium band (31-100) = 5 recent
         var turns: [[OpenAIChatMessage]] = []
         for i in 0..<10 {
             let user = OpenAIChatMessage(role: "user", content: "Turn \(i)")
@@ -73,35 +71,40 @@ final class ProjectionBuilderTests: XCTestCase {
             turns.append([user, assistant])
         }
 
-        let (recent, dropped) = ProjectionBuilder.selectTurns(&turns)
+        let (recent, dropped, _) = ProjectionBuilder.selectTurns(&turns)
 
         // 10 turns in short band (<= 30 turns -> 3 recent)
         XCTAssertEqual(recent.count, 3)
         XCTAssertEqual(dropped.count, 7)
     }
 
-    func testSelectTurns_DropsIncompleteLastTurn() {
+    func testSelectTurns_PreservesIncompleteLastTurnAsCurrent() {
+        // When the last turn is incomplete (user only, no assistant/tool response),
+        // it should be returned as `current`, NOT dropped or compressed.
+        // This is the critical regression test: at request-prep time, the current
+        // user message has no assistant response yet, and it must reach the model.
         var turns: [[OpenAIChatMessage]] = []
         for i in 0..<5 {
             let user = OpenAIChatMessage(role: "user", content: "Turn \(i)")
             let assistant = OpenAIChatMessage(role: "assistant", content: "Response \(i)")
             turns.append([user, assistant])
         }
-        // Add incomplete turn (user only)
+        // Add incomplete turn (user only — simulating the current user message)
         turns.append([OpenAIChatMessage(role: "user", content: "Current question")])
 
-        let (recent, dropped) = ProjectionBuilder.selectTurns(&turns)
+        let (recent, dropped, current) = ProjectionBuilder.selectTurns(&turns)
 
-        // The incomplete turn is dropped (current user message)
-        // 5 completed turns, short band (5 turns <= 30) -> 3 recent, 2 dropped
+        // 5 completed turns (short band, <= 30 -> 3 recent), incomplete turn returned separately
         XCTAssertEqual(recent.count, 3)
         XCTAssertEqual(dropped.count, 2)
+        XCTAssertNotNil(current, "Incomplete turn should be returned as current, not dropped")
+        XCTAssertEqual(current?.count, 1, "Current turn should contain exactly one message")
+        XCTAssertEqual(current?.first?.role, "user")
+        XCTAssertEqual(current?.first?.content, "Current question")
     }
 
     func testSelectTurns_ToolTurnPreservation() {
         // Last turn has a tool_call — should be force-included in recent window
-        // 11 turns total: short band (11 <= 30) -> 3 recent
-        // Tool-turn preservation extends to 1 (last turn), but recentCount=3 >= 1.
         var turns: [[OpenAIChatMessage]] = []
         for i in 0..<10 {
             let user = OpenAIChatMessage(role: "user", content: "Turn \(i)")
@@ -117,7 +120,7 @@ final class ProjectionBuilderTests: XCTestCase {
             )
         ])
 
-        let (recent, dropped) = ProjectionBuilder.selectTurns(&turns)
+        let (recent, dropped, _) = ProjectionBuilder.selectTurns(&turns)
 
         // 11 turns, short band -> 3 recent. Force-include the tool turn.
         XCTAssertEqual(recent.count, 3)
@@ -186,10 +189,11 @@ final class ProjectionBuilderTests: XCTestCase {
 
         XCTAssertEqual(result.messages.count, 3)
         XCTAssertNil(result.compressedSummary)
+        XCTAssertNil(result.currentTurn)
     }
 
     func testProject_LargeConversation_ProducesCompressedSummary() {
-        // 30+ turns — should trigger projection
+        // 25 complete turns — should trigger projection
         var messages: [OpenAIChatMessage] = [
             OpenAIChatMessage(role: "system", content: "You are helpful")
         ]
@@ -211,10 +215,13 @@ final class ProjectionBuilderTests: XCTestCase {
         // Projected messages should be fewer than original
         // (system + recent turns, not all 51 original messages)
         XCTAssertLessThan(result.messages.count, messages.count)
+
+        // No current turn — conversation is complete (last message is assistant)
+        XCTAssertNil(result.currentTurn, "Complete conversation should have no current turn")
     }
 
     func testProject_PreservesRecentTurns() {
-        // Build a conversation with 15 turns
+        // Build a conversation with 15 complete turns
         var messages: [OpenAIChatMessage] = [
             OpenAIChatMessage(role: "system", content: "System prompt")
         ]
@@ -240,5 +247,55 @@ final class ProjectionBuilderTests: XCTestCase {
             msg.role == "user" && (msg.content?.contains("Question 0") ?? false)
         }
         XCTAssertFalse(hasOldUser, "Projected messages should not contain the oldest user message")
+
+        // No current turn — conversation is complete
+        XCTAssertNil(result.currentTurn)
+    }
+
+    func testProject_UnrespondedToUserMessage_PreservesCurrentTurn() {
+        // Regression test for the "same response over and over" bug.
+        // The conversation ends with a user message that hasn't been answered yet
+        // (the current request). project() must return this message in currentTurn
+        // so the caller can append it as the last message sent to the model.
+        var messages: [OpenAIChatMessage] = [
+            OpenAIChatMessage(role: "system", content: "You are helpful")
+        ]
+        for i in 0..<15 {
+            messages.append(OpenAIChatMessage(role: "user", content: "Question \(i)"))
+            messages.append(OpenAIChatMessage(role: "assistant", content: "Answer \(i)"))
+        }
+        // Add the CURRENT user message (no assistant response yet)
+        messages.append(OpenAIChatMessage(role: "user", content: "CURRENT QUESTION — this must reach the model"))
+
+        let caps = ContextCapabilities(contextWindow: 128_000, maxOutputTokens: 8_000)
+        let result = ProjectionBuilder.project(messages: messages, caps: caps, tokenRatio: 4.0)
+
+        // System message preserved at front
+        XCTAssertEqual(result.messages[0].role, "system")
+
+        // currentTurn should carry the current user message
+        XCTAssertNotNil(result.currentTurn, "currentTurn should be non-nil for unfinished conversation")
+        XCTAssertEqual(result.currentTurn?.count, 1)
+        XCTAssertEqual(result.currentTurn?.first?.content, "CURRENT QUESTION — this must reach the model")
+        XCTAssertEqual(result.currentTurn?.first?.role, "user")
+
+        // The current user message should NOT be in result.messages — it's in currentTurn
+        let hasCurrentUserInMessages = result.messages.contains { msg in
+            msg.content?.contains("CURRENT QUESTION") ?? false
+        }
+        XCTAssertFalse(hasCurrentUserInMessages, "Current user message should be in currentTurn, not in messages")
+
+        // When assembled in the order AgentOrchestrator uses
+        // (messages + compressedSummary + currentTurn), the current user
+        // message is the LAST message — this is what fixes the bug.
+        var assembled = result.messages
+        if let summary = result.compressedSummary {
+            assembled.append(summary)
+        }
+        if let current = result.currentTurn {
+            assembled.append(contentsOf: current)
+        }
+        XCTAssertEqual(assembled.last?.content, "CURRENT QUESTION — this must reach the model")
+        XCTAssertEqual(assembled.last?.role, "user")
     }
 }
