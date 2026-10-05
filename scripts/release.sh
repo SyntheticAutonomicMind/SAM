@@ -58,7 +58,11 @@ echo "Synchronizing CFBundleVersion..."
 
 # Commit the version change
 git add Info.plist
-git commit -m "chore(release): bump version to $VERSION"
+if ! git diff --cached --quiet; then
+    git commit -m "chore(release): bump version to $VERSION"
+else
+    echo "Info.plist already at version $VERSION, skipping commit."
+fi
 
 # Create annotated tag
 git tag -a "$VERSION" -m "SAM $VERSION"
