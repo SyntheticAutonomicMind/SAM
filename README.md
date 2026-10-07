@@ -16,7 +16,7 @@ I built SAM for my wife. She wanted an AI assistant that could work with her doc
 
 SAM is a native macOS app for people who aren't developers. Say "Hey SAM" to go hands-free. Upload a PDF and ask questions about it. Research a purchase across Amazon, Walmart, and eBay in one conversation. Generate images by connecting to ALICE. All without touching a command line.
 
-**Your data stays on your Mac.** Run local models with MLX or CachyLLama and nothing leaves your machine. Switch to cloud providers when you want more capability - you choose.
+**Your data stays on your Mac.** Run local models with MLX or llama.cpp and nothing leaves your machine. Switch to cloud providers when you want more capability - you choose.
 
 ### Documents & Research
 
@@ -78,7 +78,7 @@ Choose how SAM talks to you - friendly, professional, creative, or create your o
     <td width="50%">
       <h3>Flexible AI Provider Selection</h3>
       <img src=".images/sam-image-2.png"/>
-      <em>Choose from local models (MLX, CachyLLama, llama.cpp), or cloud providers (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Ollama Cloud, Z.AI)</em>
+      <em>Choose from local models (MLX, llama.cpp, llama.cpp), or cloud providers (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Ollama Cloud, Z.AI)</em>
     </td>
   </tr>
 </table>
@@ -116,7 +116,7 @@ Choose how SAM talks to you - friendly, professional, creative, or create your o
 | **Z.AI (Chat)** | GLM models for conversation and reasoning |
 | **Z.AI (Coding)** | GLM models optimized for coding |
 | **Local MLX** | Run models on Apple Silicon Macs |
-| **Local CachyLLama** | High-performance GGUF inference on Apple Silicon |
+| **Local llama.cpp** | High-performance GGUF inference on Apple Silicon |
 | **Local llama.cpp** | Run models on any Mac (Intel or Apple Silicon) |
 | **Remote llama.cpp** | Connect to remote llama.cpp server |
 | **Custom** | Use any OpenAI-compatible API |
@@ -165,7 +165,7 @@ Press `N` for a new conversation. Type your message. Say "Hey SAM" for hands-fre
 **For local AI models:**
 - 16GB+ RAM recommended
 - 20GB+ free disk space (models can be large)
-- Apple Silicon (M1/M2/M3/M4) recommended for MLX/CachyLLama
+- Apple Silicon (M1/M2/M3/M4) recommended for MLX/llama.cpp
 - Intel Macs can use llama.cpp models
 
 ---
@@ -215,4 +215,4 @@ SAM is part of [Synthetic Autonomic Mind](https://github.com/SyntheticAutonomicM
 
 Created by Andrew Wyatt (Fewtarius) · [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org) · [github.com/SyntheticAutonomicMind/SAM](https://github.com/SyntheticAutonomicMind/SAM)
 
-Built with open source: [Vapor](https://vapor.codes) · [MLX](https://github.com/ml-explore/mlx-swift) · [llama.cpp](https://github.com/ggerganov/llama.cpp) · [CachyLLama](https://github.com/cachy-llama/llama.cpp) · [Sparkle](https://sparkle-project.org)
+Built with open source: [Vapor](https://vapor.codes) · [MLX](https://github.com/ml-explore/mlx-swift) · [llama.cpp](https://github.com/ggerganov/llama.cpp) · [llama.cpp](https://github.com/cachy-llama/llama.cpp) · [Sparkle](https://sparkle-project.org)

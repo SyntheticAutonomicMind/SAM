@@ -47,7 +47,7 @@ Each provider has their own data retention and privacy policies. SAM minimizes w
 
 ### Local Models See Nothing External
 
-When you use local models (MLX, CachyLLama, or llama.cpp), all processing happens on your Mac. Zero data leaves your machine.
+When you use local models (MLX, llama.cpp, or llama.cpp), all processing happens on your Mac. Zero data leaves your machine.
 
 ---
 

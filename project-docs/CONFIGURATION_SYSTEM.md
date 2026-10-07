@@ -184,7 +184,7 @@ let workDir = config.buildPath(subdirectory: "My Conversation")
 - Z.AI (Chat)
 - Z.AI (Coding)
 - Local MLX
-- Local CachyLLama
+- Local llama.cpp
 - Local llama.cpp
 - Remote llama.cpp
 - Custom OpenAI-compatible

@@ -26,7 +26,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 | **Z.AI (Coding)** | Pay-per-token | Fast | Cloud | GLM coding models |
 | **MLX (Local)** | Free | Varies | Full privacy | Offline use, sensitive data, Apple Silicon |
 | **llama.cpp (Local)** | Free | Varies | Full privacy | Offline use, Intel or Apple Silicon |
-| **CachyLLama (Local)** | Free | Fast | Full privacy | High-performance local, Apple Silicon |
+| **llama.cpp (Local)** | Free | Fast | Full privacy | High-performance local, Apple Silicon |
 | **Remote llama.cpp** | Free | Varies | Self-hosted | Self-hosted inference servers |
 | **Custom Endpoint** | Varies | Varies | Self-hosted | Self-hosted servers, Ollama, LM Studio |
 
@@ -288,9 +288,9 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ---
 
-### CachyLLama (Apple Silicon)
+### llama.cpp (Apple Silicon)
 
-**What you get:** High-performance GGUF inference using the CachyLLama fork of llama.cpp with Metal optimizations.
+**What you get:** High-performance GGUF inference using the llama.cpp fork of llama.cpp with Metal optimizations.
 
 **Requirements:**
 - Apple Silicon Mac (M1, M2, M3, M4)
@@ -299,7 +299,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 **Setup:**
 1. In SAM Settings > AI Providers, click Add Provider
-2. Choose "Local CachyLLama Model"
+2. Choose "Local llama.cpp Model"
 3. Browse available models (Hugging Face GGUF)
 4. Click Download on your chosen model
 5. Wait for the download to complete
@@ -375,13 +375,13 @@ You can have multiple providers configured simultaneously and switch between the
 | Use Case | Recommended Approach |
 |----------|---------------------|
 | **Daily use** | Cloud provider (GPT-4o or Claude via Copilot) for quality and speed |
-| **Sensitive content** | Local model (MLX or CachyLLama) for complete privacy |
+| **Sensitive content** | Local model (MLX or llama.cpp) for complete privacy |
 | **Budget-conscious** | DeepSeek, MiniMax, or local models for routine tasks, GPT-4o for complex ones |
 | **Coding** | GPT-4o or Claude for best tool use, DeepSeek Coder for budget |
 | **Long documents** | Gemini (1M context), MiniMax (128K), or local models with large context |
-| **Offline use** | Local models (MLX, CachyLLama, or llama.cpp) |
+| **Offline use** | Local models (MLX, llama.cpp, or llama.cpp) |
 | **Experimentation** | OpenRouter for access to many models |
-| **Best local speed (Apple Silicon)** | CachyLLama for highest performance |
+| **Best local speed (Apple Silicon)** | llama.cpp for highest performance |
 
 ---
 
@@ -413,7 +413,7 @@ You can have multiple providers configured simultaneously and switch between the
 - Try a smaller model
 - Check that the model file isn't corrupted (re-download if needed)
 - For MLX: verify you're on Apple Silicon
-- For CachyLLama: verify you're on Apple Silicon
+- For llama.cpp: verify you're on Apple Silicon
 - For llama.cpp: verify the file is in GGUF format
 
 ---

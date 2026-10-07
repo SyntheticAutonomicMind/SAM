@@ -197,7 +197,7 @@ Tools requiring system permissions:
 | Entitlement | Purpose |
 |------------|---------|
 | `com.apple.security.keychain` | Secure API key storage |
-| `com.apple.security.cs.allow-jit` | MLX/CachyLLama JIT compilation |
+| `com.apple.security.cs.allow-jit` | MLX/llama.cpp JIT compilation |
 | `com.apple.security.cs.allow-unsigned-executable-memory` | MLX Metal operations |
 | `com.apple.security.cs.disable-library-validation` | MLX framework loading |
 
@@ -254,7 +254,7 @@ SAM collects **no usage data**:
 
 ### Local Models = Zero External Data
 
-When using MLX, CachyLLama, or llama.cpp:
+When using MLX, llama.cpp, or llama.cpp:
 - All inference on-device
 - No data leaves Mac
 - No API keys required

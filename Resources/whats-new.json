@@ -594,8 +594,8 @@
         {
           "id": "cachyllama-backend",
           "icon": "cpu",
-          "title": "CachyLLama Local Model Engine",
-          "description": "The local model backend now runs on CachyLLama with a modern sampler chain. You get new top-K and min-P controls alongside temperature and top-P, configurable globally in Preferences or per-conversation. The sampler chain is visible so you can see exactly what's active."
+          "title": "llama.cpp Local Model Engine",
+          "description": "The local model backend now runs on llama.cpp with a modern sampler chain. You get new top-K and min-P controls alongside temperature and top-P, configurable globally in Preferences or per-conversation. The sampler chain is visible so you can see exactly what's active."
         },
         {
           "id": "markdown-print-overhaul",

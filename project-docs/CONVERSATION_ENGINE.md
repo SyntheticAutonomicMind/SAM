@@ -561,7 +561,7 @@ struct UserContext {
 ```
 
 **Why userContext Separation?**
-- KV cache in local models (MLX, CachyLLama) benefits from static prefix
+- KV cache in local models (MLX, llama.cpp) benefits from static prefix
 - Dynamic content (date, conversation ID) changes every request
 - Separating them allows KV cache reuse for static portions
 - Reduces recomputation and improves inference speed

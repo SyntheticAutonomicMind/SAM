@@ -113,10 +113,10 @@ Each conversation stores its own UI state:
 - Compiled as a native framework (included as git submodule)
 - CPU and GPU inference modes
 
-**CachyLLama (Apple Silicon)**
+**llama.cpp (Apple Silicon)**
 - High-performance llama.cpp fork with Metal optimizations
 - Runs GGUF models with improved Apple Silicon performance
-- Includes CachyLLama-specific sampler chain (top-K, min-P, temperature, etc.)
+- Includes llama.cpp-specific sampler chain (top-K, min-P, temperature, etc.)
 - Requires Apple Silicon Mac
 
 **Remote llama.cpp**

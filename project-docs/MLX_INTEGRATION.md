@@ -12,7 +12,7 @@
 
 ## Overview
 
-The MLX Integration provides a Swift wrapper around Apple's MLX framework for efficient on-device machine learning inference. It manages MLX model lifecycle, caching, performance monitoring, and Metal GPU acceleration for local language models. Additionally, SAM now supports **CachyLLama** - a high-performance fork of llama.cpp optimized for Apple Silicon.
+The MLX Integration provides a Swift wrapper around Apple's MLX framework for efficient on-device machine learning inference. It manages MLX model lifecycle, caching, performance monitoring, and Metal GPU acceleration for local language models. Additionally, SAM now supports **llama.cpp** - a high-performance fork of llama.cpp optimized for Apple Silicon.
 
 **Key Responsibilities:**
 - MLX framework Swift bindings
@@ -22,7 +22,7 @@ The MLX Integration provides a Swift wrapper around Apple's MLX framework for ef
 - Memory management for large models
 - Model loading and unloading
 - Inference request handling
-- **CachyLLama integration** - optimized GGUF inference on Apple Silicon
+- **llama.cpp integration** - optimized GGUF inference on Apple Silicon
 
 **Design Philosophy:**
 - Minimal overhead Swift wrapper over MLX
@@ -77,10 +77,10 @@ classDiagram
         +contextLength: Int
     }
     
-    class CachyLLamaManager {
+    class llama.cppManager {
         -logger: Logger
         -serverProcess: Process?
-        -modelCache: CachyLLamaModelCache
+        -modelCache: llama.cppModelCache
         +initialize() async throws
         +loadModel(path: URL) async throws
         +generateText(prompt: String, options: GenerationOptions) async throws
@@ -90,7 +90,7 @@ classDiagram
     AppleMLXAdapter --> MLXModelCache
     AppleMLXAdapter --> MLXPerformanceMonitor
     AppleMLXAdapter --> MLXConfig
-    CachyLLamaManager --> CachyLLamaModelCache
+    llama.cppManager --> llama.cppModelCache
 ```
 
 ---
@@ -336,14 +336,14 @@ public enum MLXDeviceType {
 
 ---
 
-### CachyLLamaManager (New: 2026-06)
+### llama.cppManager (New: 2026-06)
 
-**File:** `CachyLLamaManager.swift`  
-**Type:** Main facade for CachyLLama operations  
-**Purpose:** Primary interface for CachyLLama server management and inference
+**File:** `llama.cppManager.swift`  
+**Type:** Main facade for llama.cpp operations  
+**Purpose:** Primary interface for llama.cpp server management and inference
 
 **Key Features:**
-- Runs CachyLLama as a child process (llama-server)
+- Runs llama.cpp as a child process (llama-server)
 - High-performance GGUF inference with Metal optimizations
 - Advanced sampler chain (top-K, min-P, temperature, top-P, typical-P)
 - Improved KV cache handling
@@ -353,51 +353,51 @@ public enum MLXDeviceType {
 
 ```swift
 @MainActor
-public class CachyLLamaManager {
-    public static let shared = CachyLLamaManager()
+public class llama.cppManager {
+    public static let shared = llama.cppManager()
     
     private let logger = Logger(label: "com.sam.cachyllama")
-    private let serverManager = CachyLLamaServerManager()
-    private let modelCache = CachyLLamaModelCache()
-    private var config: CachyLLamaConfig
+    private let serverManager = llama.cppServerManager()
+    private let modelCache = llama.cppModelCache()
+    private var config: llama.cppConfig
     
     // Initialization
     public func initialize() async throws
     
     // Model Management
-    public func loadModel(path: URL, modelId: String) async throws -> CachyLLamaModel
+    public func loadModel(path: URL, modelId: String) async throws -> llama.cppModel
     public func unloadModel(modelId: String) async
     public func isModelLoaded(modelId: String) -> Bool
-    public func getModelInfo(modelId: String) -> CachyLLamaModelInfo?
+    public func getModelInfo(modelId: String) -> llama.cppModelInfo?
     
     // Inference
     public func generateText(
         modelId: String,
         prompt: String,
-        options: CachyLLamaGenerationOptions
+        options: llama.cppGenerationOptions
     ) async throws -> String
     
     public func generateTextStreaming(
         modelId: String,
         prompt: String,
-        options: CachyLLamaGenerationOptions,
+        options: llama.cppGenerationOptions,
         onToken: @escaping (String) -> Void
     ) async throws
     
     // Server Management
-    public func getServerStatus() -> CachyLLamaServerStatus
+    public func getServerStatus() -> llama.cppServerStatus
     public func restartServer() async throws
     
     // Configuration
-    public func updateConfig(_ config: CachyLLamaConfig)
-    public func getConfig() -> CachyLLamaConfig
+    public func updateConfig(_ config: llama.cppConfig)
+    public func getConfig() -> llama.cppConfig
 }
 ```
 
-**CachyLLama Generation Options:**
+**llama.cpp Generation Options:**
 
 ```swift
-public struct CachyLLamaGenerationOptions {
+public struct llama.cppGenerationOptions {
     // Standard parameters
     public var temperature: Double = 0.7
     public var topP: Double = 0.9
@@ -405,7 +405,7 @@ public struct CachyLLamaGenerationOptions {
     public var stopSequences: [String] = []
     public var repetitionPenalty: Double = 1.1
     
-    // CachyLLama-specific sampler chain
+    // llama.cpp-specific sampler chain
     public var topK: Int = 40
     public var minP: Double = 0.05
     public var typicalP: Double = 1.0
@@ -421,7 +421,7 @@ public struct CachyLLamaGenerationOptions {
 **Server Status:**
 
 ```swift
-public struct CachyLLamaServerStatus {
+public struct llama.cppServerStatus {
     public let isRunning: Bool
     public let modelId: String?
     public let port: Int
@@ -434,7 +434,7 @@ public struct CachyLLamaServerStatus {
 **Usage Example:**
 
 ```swift
-let manager = CachyLLamaManager.shared
+let manager = llama.cppManager.shared
 try await manager.initialize()
 
 // Load model (GGUF format from Hugging Face)
@@ -443,8 +443,8 @@ let model = try await manager.loadModel(
     modelId: "llama-3.1-8b-instruct"
 )
 
-// Generate text with CachyLLama sampler chain
-let options = CachyLLamaGenerationOptions(
+// Generate text with llama.cpp sampler chain
+let options = llama.cppGenerationOptions(
     temperature: 0.7,
     topK: 40,
     minP: 0.05
@@ -461,9 +461,9 @@ await manager.unloadModel(modelId: "llama-3.1-8b-instruct")
 
 ---
 
-### CachyLLamaServerManager
+### llama.cppServerManager
 
-**File:** `CachyLLamaServerManager.swift`  
+**File:** `llama.cppServerManager.swift`  
 **Purpose:** Manages the llama-server child process lifecycle
 
 **Key Features:**
@@ -475,7 +475,7 @@ await manager.unloadModel(modelId: "llama-3.1-8b-instruct")
 **Server Configuration:**
 
 ```swift
-public struct CachyLLamaServerConfig {
+public struct llama.cppServerConfig {
     public var host: String = "127.0.0.1"
     public var port: Int = 8081
     public var modelPath: String?
@@ -490,10 +490,10 @@ public struct CachyLLamaServerConfig {
 
 ---
 
-### CachyLLamaModelCache
+### llama.cppModelCache
 
-**File:** `CachyLLamaModelCache.swift`  
-**Purpose:** Manage downloaded CachyLLama models (GGUF files)
+**File:** `llama.cppModelCache.swift`  
+**Purpose:** Manage downloaded llama.cpp models (GGUF files)
 
 **Cache Location:**
 ```
@@ -612,12 +612,12 @@ sequenceDiagram
 
 ---
 
-## Inference Flow (CachyLLama)
+## Inference Flow (llama.cpp)
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Manager as CachyLLamaManager
+    participant Manager as llama.cppManager
     participant Server as llama-server
     participant Metal as Metal GPU
     
@@ -710,10 +710,10 @@ public enum MLXError: LocalizedError {
 }
 ```
 
-### Common Errors (CachyLLama)
+### Common Errors (llama.cpp)
 
 ```swift
-public enum CachyLLamaError: LocalizedError {
+public enum llama.cppError: LocalizedError {
     case serverNotRunning
     case serverStartFailed(String)
     case modelNotLoaded(String)
@@ -755,8 +755,8 @@ func loadModelWithRetry(path: URL, modelId: String, retries: Int = 3) async thro
 
 ### APIFramework
 - `MLXProvider` calls `AppleMLXAdapter` for MLX models
-- `CachyLLamaProvider` calls `CachyLLamaManager` for CachyLLama models
-- Model registry includes both MLX and CachyLLama model metadata
+- `llama.cppProvider` calls `llama.cppManager` for llama.cpp models
+- Model registry includes both MLX and llama.cpp model metadata
 - Inference requests routed through appropriate manager
 
 ### ConversationEngine
@@ -765,7 +765,7 @@ func loadModelWithRetry(path: URL, modelId: String, retries: Int = 3) async thro
 - Performance metrics tracked per conversation
 
 ### ConfigurationSystem
-- MLXConfig / CachyLLamaConfig stored in ApplicationPreferences
+- MLXConfig / llama.cppConfig stored in ApplicationPreferences
 - Model paths configured in WorkingDirectoryConfiguration
 - Cache settings managed by ConfigurationManager
 
@@ -778,14 +778,14 @@ func loadModelWithRetry(path: URL, modelId: String, retries: Int = 3) async thro
 | Model Size | Engine | Load Time | Tokens/sec (7B) | Memory (7B) | Best For |
 |------------|--------|-----------|-----------------|-------------|----------|
 | 7B Q4_K_M | MLX | ~3-5s | 25-35 | 5-6 GB | Quality, compatibility |
-| 7B Q4_K_M | CachyLLama | ~2-4s | 35-50 | 4-5 GB | Speed, efficiency |
+| 7B Q4_K_M | llama.cpp | ~2-4s | 35-50 | 4-5 GB | Speed, efficiency |
 | 13B Q4_K_M | MLX | ~5-8s | 15-25 | 9-11 GB | Quality |
-| 13B Q4_K_M | CachyLLama | ~4-6s | 20-35 | 8-10 GB | Speed |
+| 13B Q4_K_M | llama.cpp | ~4-6s | 20-35 | 8-10 GB | Speed |
 | 70B Q4_K_M | MLX | ~15-25s | 3-8 | 40-48 GB | Maximum capability |
-| 70B Q4_K_M | CachyLLama | ~12-20s | 5-12 | 35-42 GB | Large model speed |
+| 70B Q4_K_M | llama.cpp | ~12-20s | 5-12 | 35-42 GB | Large model speed |
 
 **Notes:**
-- CachyLLama typically 20-40% faster than MLX on Apple Silicon
+- llama.cpp typically 20-40% faster than MLX on Apple Silicon
 - MLX has slightly better quality on some benchmarks
 - Both use Metal GPU acceleration
 - Memory usage includes KV cache and model weights
@@ -804,7 +804,7 @@ let adapter2 = AppleMLXAdapter()
 let adapter = AppleMLXAdapter.shared
 try await adapter.initialize()
 
-let cachy = CachyLLamaManager.shared
+let cachy = llama.cppManager.shared
 try await cachy.initialize()
 ```
 
@@ -851,7 +851,7 @@ do {
 let provider = MLXProvider()
 
 // For best speed on Apple Silicon
-let provider = CachyLLamaProvider()
+let provider = llama.cppProvider()
 
 // For Intel Macs or specific GGUF models
 let provider = LlamaProvider()
@@ -863,7 +863,7 @@ let provider = LlamaProvider()
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 3.0 | 2026-08-23 | Added CachyLLamaManager, CachyLLamaServerManager, CachyLLamaModelCache; performance comparison table; dual-engine support |
+| 3.0 | 2026-08-23 | Added llama.cppManager, llama.cppServerManager, llama.cppModelCache; performance comparison table; dual-engine support |
 | 2.2 | 2025-12-01 | MLX 0.22+ compatibility, Swift 6 concurrency |
 | 2.0 | 2025-10-15 | Major refactor for Swift 6, actor isolation |
 | 1.0 | 2025-08-01 | Initial MLX integration |

@@ -15,8 +15,8 @@ Everything you need to get SAM running on your Mac.
 
 ### Apple Silicon vs Intel
 
-- **Apple Silicon** - best experience overall, including MLX and CachyLLama local models
-- **Intel** - cloud providers and `llama.cpp` local models work, but MLX and CachyLLama are not available
+- **Apple Silicon** - best experience overall, including MLX and llama.cpp local models
+- **Intel** - cloud providers and `llama.cpp` local models work, but MLX and llama.cpp are not available
 
 ---
 
@@ -85,7 +85,7 @@ SAM needs at least one provider before it can respond.
    - **Z.AI (Chat)**
    - **Z.AI (Coding)**
    - **Local MLX**
-   - **Local CachyLLama**
+   - **Local llama.cpp**
    - **Local llama.cpp**
    - **Remote llama.cpp**
    - **Custom OpenAI-compatible endpoint**

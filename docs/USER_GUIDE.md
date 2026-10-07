@@ -76,7 +76,7 @@ When you open SAM for the first time:
 1. **Set up an AI provider** - Open Settings (`,`) and go to the AI Providers tab
 2. **Choose your provider:**
    - **Cloud AI** - OpenAI, GitHub Copilot, DeepSeek, Google Gemini, MiniMax, OpenRouter, Ollama Cloud, Z.AI (Chat), Z.AI (Coding)
-   - **Local AI** - Download and run a model directly on your Mac (Apple Silicon recommended for MLX/CachyLLama)
+   - **Local AI** - Download and run a model directly on your Mac (Apple Silicon recommended for MLX/llama.cpp)
 3. **Enter your API key** (for cloud providers)
 4. **Start chatting** - Press N for a new conversation, type your message, and press Enter
 
@@ -145,7 +145,7 @@ Run AI completely on your Mac with no internet connection required:
 | Engine | Best For | Requirements |
 |--------|----------|-------------|
 | **MLX** | Apple Silicon Macs, quality | M1+ chip, 8GB+ RAM |
-| **CachyLLama** | Apple Silicon Macs, speed | M1+ chip, 8GB+ RAM |
+| **llama.cpp** | Apple Silicon Macs, speed | M1+ chip, 8GB+ RAM |
 | **llama.cpp** | Any Mac (Intel or Apple Silicon) | 8GB+ RAM |
 
 Local models are downloaded once and run entirely offline. SAM includes a model browser in Settings where you can discover, download, and manage local models.
@@ -611,7 +611,7 @@ SAM's default system prompt is built from modular components:
 
 1. **Close other apps** - Free up RAM for model inference
 2. **Use quantized models** - Q4_K_M balances speed and quality
-3. **Try CachyLLama** - Best speed on Apple Silicon
+3. **Try llama.cpp** - Best speed on Apple Silicon
 4. **Monitor memory** - Watch the Performance panel
 
 ### For Cloud Providers
@@ -655,7 +655,7 @@ SAM's default system prompt is built from modular components:
 - Ensure you have enough free RAM
 - Try a smaller model
 - Check that the model file isn't corrupted (re-download if needed)
-- For MLX/CachyLLama: verify you're on Apple Silicon
+- For MLX/llama.cpp: verify you're on Apple Silicon
 - For llama.cpp: verify the file is in GGUF format
 
 ### Blank window on launch
@@ -673,7 +673,7 @@ SAM's default system prompt is built from modular components:
 ## FAQ
 
 **Q: Does SAM work offline?**
-A: Yes, with local models (MLX, CachyLLama, llama.cpp) and no cloud providers configured.
+A: Yes, with local models (MLX, llama.cpp, llama.cpp) and no cloud providers configured.
 
 **Q: Can I use SAM on iPhone/iPad?**
 A: Not directly, but [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) provides browser access from any device on your network.
@@ -687,8 +687,8 @@ A: Yes. All data stays on your Mac. Cloud providers only receive the messages yo
 **Q: Can I train my own models?**
 A: Yes, SAM includes LoRA training for MLX and GGUF models. See the LoRA Training section in Settings.
 
-**Q: What's the difference between MLX and CachyLLama?**
-A: MLX uses Apple's MLX framework (best quality). CachyLLama is an optimized llama.cpp fork (best speed on Apple Silicon).
+**Q: What's the difference between MLX and llama.cpp?**
+A: MLX uses Apple's MLX framework (best quality). llama.cpp is an optimized llama.cpp fork (best speed on Apple Silicon).
 
 **Q: How do I update SAM?**
 A: Homebrew: `brew upgrade --cask sam`. Manual: Download new DMG from GitHub Releases.
