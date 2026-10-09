@@ -16,7 +16,7 @@ APP_BUNDLE_DEBUG = .build/Build/Products/Debug/SAM.app
 APP_BUNDLE_RELEASE = .build/Build/Products/Release/SAM.app
 
 # Build targets
-.PHONY: all build clean test test-unit test-e2e test-all test-quick run help metallib llamacpp build-debug build-release
+.PHONY: all build clean test test-unit test-e2e test-all test-quick run help metallib llamacpp build-debug build-release check-build-cleanliness
 .PHONY: sign sign-debug sign-release verify-signature notarize staple distribute production
 .PHONY: dist
 .PHONY: build-dev release-dev appcast-dev release
@@ -41,8 +41,30 @@ llamacpp:
 	@echo "SUCCESS: llama.cpp framework built successfully"
 	@echo "Framework: external/llama.cpp/build-apple/llama.xcframework"
 
+# check-build-cleanliness: Detects and removes SPM artifacts that conflict
+# with xcodebuild on macOS. If `swift build` was run before, it leaves
+# .build/out/ and checkpoint files that cause Xcode 27's clang dependency
+# scanner to crash with "Clang dependency scanning failure" errors.
+# We remove only SPM-specific artifacts, leaving xcodebuild's own
+# ExplicitPrecompiledModules in place so it can reuse them.
+check-build-cleanliness:
+	@if [ -d ".build/out" ] || [ -f ".build/.build-file-checkpoints.json" ]; then \
+		echo "WARNING: Detected SPM build artifacts in .build that conflict with xcodebuild."; \
+		echo "Removing stale SPM artifacts (ModuleCache, SDK caches, etc.)..."; \
+		rm -rf .build/ModuleCache.noindex; \
+		rm -rf .build/Index.noindex; \
+		rm -rf .build/SDKStatCaches.noindex; \
+		rm -rf .build/SDKExplicitPrecompiledModules; \
+		rm -rf .build/out; \
+		rm -rf .build/.build-file-checkpoints.json; \
+		echo "Cleaned SPM artifacts. Proceeding with xcodebuild."; \
+	else \
+		echo "Build directory is clean."; \
+	fi
+
 # Build debug version
 build-debug: llamacpp
+	@$(MAKE) check-build-cleanliness
 	@echo "Setting build version from git commit..."
 	@./scripts/set-build-version.sh Debug
 	@echo "Building SAM [Debug]..."
@@ -98,6 +120,7 @@ build-debug: llamacpp
 
 # Build release version
 build-release: llamacpp
+	@$(MAKE) check-build-cleanliness
 	@echo "Setting build version from git commit..."
 	@./scripts/set-build-version.sh Release
 	@echo "Building SAM [Release]..."

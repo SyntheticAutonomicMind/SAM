@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "version": "20261009.1",
+      "release_date": "October 9, 2026",
+      "introduction": "Three reliability fixes that close gaps discovered in the 20261005.1 context release: the model no longer responds to stale context at the start of a streaming turn, trimming no longer crashes when leading system messages are present, and the model selector now shows a clear placeholder instead of an empty field. The default model is now empty (Select a model) so you decide what to use rather than having a pre-selected default.",
+      "highlights": [
+        {
+          "id": "user-message-safety-net",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Wrong User Message in Streaming Turns",
+          "description": "When starting a new streaming turn, the current user message wasn't reliably queued before the LLM request was sent, so the model could respond to stale context. A safety net now ensures the active user message is appended before streaming begins, so SAM always sees what you just typed."
+        },
+        {
+          "id": "trim-crash-fix",
+          "icon": "xmark.octagon.fill",
+          "title": "Fixed Crash During Context Trimming",
+          "description": "Trimming conversation context could crash with an index-out-of-range error when system messages were at the start of the message array. The calculation is corrected so trimming now handles any message ordering safely."
+        },
+        {
+          "id": "model-picker-placeholder",
+          "icon": "popcorn.fill",
+          "title": "Model Picker Shows Select a Model Placeholder",
+          "description": "When no model is selected, the model picker now displays 'Select a model' instead of showing a blank or empty value. This makes it clear when no model is configured for the current conversation."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "csss-slot-clamp",
+          "icon": "slider.horizontal.3",
+          "title": "Fixed Summary Slot Overflow Starving Context Budget",
+          "description": "A bloated thread_summary could grow beyond the summary slot cap, starving the rest of the context budget walk and trimming less than it should. The summary slot is now clamped to its configured bounds, keeping the trim budget calculation accurate."
+        },
+        {
+          "id": "deduplicated-request-prep",
+          "icon": "doc.text.wrench",
+          "title": "Shared Request Preparation Eliminates Divergence",
+          "description": "The streaming and non-streaming code paths had diverged, with one path carrying dead code that the other did not. Both now share the same request preparation logic (injectCustomInstructions, injectDynamicContextIntoLastUserMessage), keeping behavior consistent and removing about 200 lines of duplicated or dead code."
+        }
+      ],
+      "developer_notes": [
+        {
+          "id": "context-preservation-tests",
+          "content": "Added ContextPreservationTests regression suite covering user message injection timing, CSSS slot clamping, and trim crash prevention with leading system messages."
+        }
+      ]
+    },
+    {
       "version": "20261005.1",
       "release_date": "October 5, 2026",
       "introduction": "Sam now trims context more intelligently by aligning with CLIO's proven context management pipeline. Long sessions use turn-based projection (recent N turns kept in full, older turns compressed into a thread summary), and a durable session thread preserves every message so the original task can be recovered even after multiple trim cycles. The CSSS summary slot now scales with your model's context window, thread summary parsing round-trips correctly for Discussion sections, and LTM corroboration no longer double-counts entries from the same source.",
