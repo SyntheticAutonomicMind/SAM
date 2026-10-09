@@ -39,9 +39,15 @@ struct ModelPickerView: View {
             /// Show just the beautified model name in the collapsed state
             /// Use fixed width based on longest model name
             HStack {
-                Text(beautifyModelName(extractBaseModelId(from: selectedModel)))
-                    .font(.system(.caption, design: .monospaced))
-                    .lineLimit(1)
+                if selectedModel.isEmpty {
+                    Text("Select a model")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                } else {
+                    Text(beautifyModelName(extractBaseModelId(from: selectedModel)))
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                }
                 Spacer()
                 Image(systemName: "chevron.down")
                     .font(.caption2)

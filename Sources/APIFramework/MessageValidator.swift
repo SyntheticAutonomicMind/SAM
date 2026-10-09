@@ -145,8 +145,12 @@ public struct MessageValidator {
         var summarySlotTarget: Int = 0
         if let summary = summaryUnit {
             let currentSlot = summary.tokens
-            summarySlotTarget = max(currentSlot, csssMinSlot)
-            logger.debug("Context: CSSS base slot target \(summarySlotTarget) (current: \(currentSlot), min: \(csssMinSlot), ctx: \(contextWindow))")
+            /// Clamp existing summary size to [min, max] to prevent a bloated
+            /// summary from starving the budget walk (previously a 10K+ token
+            /// summary in an 8K window would set summarySlotTarget = currentSlot,
+            /// causing all conversation units to be dropped).
+            summarySlotTarget = min(max(currentSlot, csssMinSlot), csssMaxSlot)
+            logger.debug("Context: CSSS base slot target \(summarySlotTarget) (current: \(currentSlot), min: \(csssMinSlot), max: \(csssMaxSlot), ctx: \(contextWindow))")
         } else if startIdx < units.count {
             summarySlotTarget = csssMinSlot
             logger.debug("Context: CSSS first-trim slot target \(summarySlotTarget) (min: \(csssMinSlot), ctx: \(contextWindow))")
@@ -163,7 +167,15 @@ public struct MessageValidator {
         let remaining = Array(units[startIdx..<units.count])
 
         for (idx, unit) in remaining.reversed().enumerated() {
-            let unitIdx = startIdx + (units.count - 1 - idx)
+            /// unitIdx maps the reversed enumeration index back to the original
+            /// units array. remaining has (units.count - startIdx) elements;
+            /// reversed idx=0 -> last element (units.count - 1), idx=last -> first
+            /// remaining element (startIdx). The correct formula is
+            /// units.count - 1 - idx (NOT startIdx + units.count - 1 - idx,
+            /// which overflows when startIdx > 0 — the old bug caused
+            /// "Index out of range" crashes whenever leading system messages
+            /// were present and budget truncation was needed).
+            let unitIdx = units.count - 1 - idx
 
             if unit.isOrphanToolResult {
                 continue

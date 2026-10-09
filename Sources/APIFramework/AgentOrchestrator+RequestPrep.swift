@@ -304,7 +304,8 @@ extension AgentOrchestrator {
     /// and inject them into the last user message for immediate salience.
     func injectCustomInstructions(
         into messages: inout [OpenAIChatMessage],
-        conversation: ConversationModel
+        conversation: ConversationModel,
+        loggerPrefix: String
     ) {
         guard !conversation.enabledCustomInstructionIds.isEmpty else { return }
         let customInstructionText = CustomInstructionManager.shared.getInjectedText(
@@ -324,7 +325,7 @@ extension AgentOrchestrator {
                 isPinned: true,
                 isSystemGenerated: true
             )
-            logger.info("callLLM: Persisted custom instruction content as hidden message (\(customInstructionText.count) chars)")
+            logger.info("\(loggerPrefix): Persisted custom instruction content as hidden message (\(customInstructionText.count) chars)")
         }
 
         // Ephemeral injection into last user message.
@@ -333,7 +334,7 @@ extension AgentOrchestrator {
             if !existingContent.contains(customInstructionText.prefix(100)) {
                 let injectedContent = existingContent + "\n\n<userContext>\n\(customInstructionText)\n</userContext>"
                 messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
-                logger.info("callLLM: Ephemeral custom instruction injection into last user message (\(customInstructionText.count) chars)")
+                logger.info("\(loggerPrefix): Ephemeral custom instruction injection into last user message (\(customInstructionText.count) chars)")
             }
         }
     }

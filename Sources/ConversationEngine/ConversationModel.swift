@@ -16,10 +16,9 @@ public func getDefaultModel() -> String {
         return userDefault
     }
     
-    /// Return "sam-assistant" as the default placeholder model.
-    /// This matches the @AppStorage default in ChatWidget and the ModelListManager fallback.
+    /// Return empty string as the default placeholder, prompting users to select a model.
     /// On first launch, the onboarding wizard guides users to configure a provider/model.
-    return "sam-assistant"
+    return ""
 }
 
 // MARK: - Conversation Telemetry

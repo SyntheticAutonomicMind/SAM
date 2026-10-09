@@ -140,8 +140,8 @@ public struct ChatWidget: View {
     let sharedTopicManager = SharedTopicManager()
 
     /// Configuration - dynamically loaded.
-    @AppStorage("defaultModel") var appDefaultModel: String = "sam-assistant"
-    @State var selectedModel: String = "sam-assistant"
+    @AppStorage("defaultModel") var appDefaultModel: String = ""
+    @State var selectedModel: String = ""
 
     /// On-disk path for the selected local model, resolved through the
     /// endpoint manager so the model-aware optimizer (ModelProfiler) can
@@ -2598,7 +2598,8 @@ public struct ChatWidget: View {
             /// FIXED: Use MessageBus for user message creation
             /// Messages now flow: MessageBus → ConversationModel → ChatWidget (computed property)
             activeConversation?.messageBus?.addUserMessage(content: text)
-            /// Note: User message must exist before AgentOrchestrator runs (for getRecentMessages)
+            /// Note: User message is now in ConversationModel via MessageBus sync,
+            /// ready for AgentOrchestrator to read.
             processingStatus = .generating
         }
 
@@ -2619,98 +2620,18 @@ public struct ChatWidget: View {
         var assistantMessageId: UUID?
 
         do {
-            /// Build request using user configuration with system prompt.
-            var openAIMessages: [OpenAIChatMessage] = []
+            /// The orchestrator (makeInternalAPIRequest -> AgentOrchestrator) rebuilds
+            /// the full message array from conversation.messages and generates its own
+            /// system prompt + memory context. The old "SAM 1.0 partial context" code
+            /// that built openAIMessages here was dead code — only the user message
+            /// text was extracted from the request.
 
-            /// Add system prompt - RESTORED editable implementation.
-            let systemPromptContent: String
-            if let selectedId = systemPromptManager.selectedConfigurationId {
-                systemPromptContent = systemPromptManager.generateSystemPrompt(for: selectedId, toolsEnabled: enableTools)
-                logger.debug("Using selected system prompt: \(selectedId)")
-            } else {
-                /// Fallback to default generation (should not happen - init() sets default).
-                systemPromptContent = systemPromptManager.generateSystemPrompt(toolsEnabled: enableTools)
-                logger.debug("Using fallback system prompt generation")
-            }
-
-            logger.debug("System prompt content length: \(systemPromptContent.count)")
-            if !systemPromptContent.isEmpty {
-                openAIMessages.append(OpenAIChatMessage(role: "system", content: systemPromptContent))
-                logger.debug("Added system message to request")
-            }
-
-            /// SAM 1.0 PARTIAL CONTEXT STRATEGY: Use memory system + recent messages instead of full history This matches SAM 1.0's sophisticated memory approach with intelligent context windowing.
-
-            /// 1. ADAPTIVE CONTEXT WINDOW: Grow context with conversation length
-            /// Short conversations: 8 messages (standard)
-            /// Medium conversations: 16 messages (more context needed)
-            /// Long conversations: 24 messages (complex multi-turn scenarios like D&D)
-            /// This prevents middle context loss in long conversations
-            let totalMessages = activeConversation?.messages.count ?? 0
-            let contextWindowSize: Int = {
-                if totalMessages < 10 {
-                    return 8   // Short: standard window
-                } else if totalMessages < 30 {
-                    return 16  // Medium: expanded window
-                } else {
-                    return 24  // Long: large window for complex scenarios
-                }
-            }()
-            let recentMessages = getRecentMessages(limit: contextWindowSize, excludingId: nil)  // No need to exclude - message not created yet
-
-            /// 2.
-            let memoryContext = await retrieveMemoryContext(query: text, conversationId: activeConversation?.id.uuidString)
-
-            /// 3.
-            let enhancedSystemPrompt = enhanceSystemPromptWithMemory(
-                originalPrompt: systemPromptContent,
-                memoryContext: memoryContext,
-                recentMessages: recentMessages
+            let openAIRequest = OpenAIChatRequest(
+                model: selectedModel,
+                messages: [OpenAIChatMessage(role: "user", content: text)],
+                stream: true
             )
 
-            /// 4.
-            if let systemMessageIndex = openAIMessages.firstIndex(where: { $0.role == "system" }) {
-                openAIMessages[systemMessageIndex] = OpenAIChatMessage(role: "system", content: enhancedSystemPrompt)
-            } else if !enhancedSystemPrompt.isEmpty {
-                openAIMessages.insert(OpenAIChatMessage(role: "system", content: enhancedSystemPrompt), at: 0)
-            }
-
-            /// 5.
-            for message in recentMessages {
-                let role = message.isFromUser ? "user" : "assistant"
-                openAIMessages.append(OpenAIChatMessage(role: role, content: message.content))
-            }
-
-            /// 6. CRITICAL: Add current user message
-            /// Recent messages might not include it yet due to async sync from MessageBus
-            /// Explicitly add current user input to ensure it's in the request
-            openAIMessages.append(OpenAIChatMessage(role: "user", content: text))
-
-            logger.debug("PARTIAL_CONTEXT: Using \(recentMessages.count) recent messages + memory context (vs full history)")
-            logger.debug("PARTIAL_CONTEXT: Enhanced system prompt length: \(enhancedSystemPrompt.count) chars")
-
-            var requestData: [String: Any] = [
-                "model": selectedModel,
-                "messages": openAIMessages.map { ["role": $0.role, "content": $0.content] },
-                "temperature": temperature,
-                "top_p": topP,
-                "stream": true
-            ]
-
-            /// Add max tokens if specified.
-            if let maxTokensValue = maxTokens {
-                requestData["max_tokens"] = maxTokensValue
-            }
-
-            /// Add repetition penalty if enabled (MLX-specific parameter).
-            if let repPenalty = repetitionPenalty {
-                requestData["repetition_penalty"] = repPenalty
-            }
-
-            let requestJSON = try JSONSerialization.data(withJSONObject: requestData)
-            let openAIRequest = try JSONDecoder().decode(OpenAIChatRequest.self, from: requestJSON)
-
-            /// Route UI through internal API server to ensure tool injection This ensures UI and API have identical behavior including MCP tool integration.
             SAMLog.chatStreamingStart(model: selectedModel, temperature: temperature)
             let streamingResponse = try await makeInternalAPIRequest(openAIRequest)
             var fullResponse = ""
@@ -3217,90 +3138,6 @@ public struct ChatWidget: View {
         }
     }
 
-    // MARK: - SAM 1.0 PARTIAL CONTEXT IMPLEMENTATION
-
-    func getRecentMessages(limit: Int, excludingId: UUID?) -> [Message] {
-        guard let messages = activeConversation?.messages else { return [] }
-
-        /// Get messages excluding the specified ID (usually the placeholder assistant message).
-        let filteredMessages = messages.filter { message in
-            if let excludeId = excludingId {
-                return message.id != excludeId
-            }
-            return true
-        }
-
-        /// CONTEXT PRESERVATION: Prioritize pinned messages to prevent context loss
-        /// Pinned messages (first 10 user messages, collaboration responses) must ALWAYS be included
-        /// This ensures agent retains critical context even in long conversations
-        
-        /// Step 1: Separate pinned and unpinned messages
-        let pinnedMessages = filteredMessages.filter { $0.isPinned }
-        let unpinnedMessages = filteredMessages.filter { !$0.isPinned }
-        
-        /// Step 2: Calculate remaining slots after pinned messages
-        let remainingSlots = max(0, limit - pinnedMessages.count)
-        
-        /// Step 3: Get most recent unpinned messages to fill remaining slots
-        let recentUnpinned = Array(unpinnedMessages.suffix(remainingSlots))
-        
-        /// Step 4: Combine pinned + recent unpinned and sort chronologically
-        /// Chronological order is critical for conversation coherence
-        let combined = (pinnedMessages + recentUnpinned).sorted { $0.timestamp < $1.timestamp }
-        
-        logger.debug("CONTEXT_WINDOW: Total=\(combined.count), Pinned=\(pinnedMessages.count), Recent=\(recentUnpinned.count), Requested=\(limit), TotalMsgs=\(filteredMessages.count)")
-        
-        return combined
-    }
-
-    func retrieveMemoryContext(query: String, conversationId: String?) async -> String {
-        /// Use ConversationManager's memory context method (SAM 1.0 style).
-        guard let conversation = activeConversation else {
-            return ""
-        }
-
-        return await conversationManager.getMemoryContext(for: query, conversationId: conversation.id)
-    }
-
-    func enhanceSystemPromptWithMemory(originalPrompt: String, memoryContext: String, recentMessages: [Message]) -> String {
-        var enhancedPrompt = originalPrompt
-
-        /// Add memory capabilities information with anti-hallucination controls.
-        enhancedPrompt += "\n\nCRITICAL - MEMORY TOOL PROTOCOL:"
-        enhancedPrompt += "\n• You HAVE the memory_operations tool with operation=search available RIGHT NOW in this conversation"
-        enhancedPrompt += "\n• NEVER claim memory is 'not enabled' or 'not available' - this is FALSE"
-        enhancedPrompt += "\n• DO NOT make disclaimers about memory limitations - you have full memory access"
-        enhancedPrompt += "\n• WHEN users ask about past conversations, IMMEDIATELY call the memory_operations tool with operation='search_memory'"
-        enhancedPrompt += "\n• WHEN users want to store information, IMMEDIATELY call memory_operations with operation='store_memory'"
-        enhancedPrompt += "\n• The memory_operations tool provides: search_memory, store_memory, list_collections, get_similar operations"
-        enhancedPrompt += "\n• MANDATORY: Call tools directly - do not ask permission or explain what you will do first"
-
-        /// List actual available tools to reinforce their existence.
-        let availableTools = conversationManager.getAvailableMCPTools()
-        if !availableTools.isEmpty {
-            enhancedPrompt += "\n\nAVAILABLE TOOLS (USE IMMEDIATELY WHEN RELEVANT):"
-            for tool in availableTools {
-                enhancedPrompt += "\n• \(tool.name): \(tool.description)"
-            }
-            enhancedPrompt += "\n\nTOOL EXECUTION PATTERN: When users mention memory/past conversations → CALL memory_operations with operation=search → provide results"
-            enhancedPrompt += "\n\nEXAMPLE: User asks 'search my memories' → You call memory_operations tool with operation=search → You show the search results"
-        }
-
-        /// Add memory context if available.
-        if !memoryContext.isEmpty {
-            enhancedPrompt += "\n\nRELEVANT MEMORIES:\n" + memoryContext
-        }
-
-        /// Add conversation context summary if we have recent messages.
-        if !recentMessages.isEmpty {
-            enhancedPrompt += "\n\nCONVERSATION CONTEXT: This conversation has \(recentMessages.count) recent messages in the context window."
-        }
-
-        return enhancedPrompt
-    }
-
-    /// Load available models from EndpointManager with provider configuration consistency CRITICAL PATTERN: This method ensures ChatWidget sees the same models as the API server.
-    /// Load shared topics list from SharedTopicManager
     func loadSharedTopics() async {
         do {
             let list = try sharedTopicManager.listTopics()

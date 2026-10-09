@@ -776,9 +776,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// Used for delta-only message slicing to avoid timing dependencies.
         var statefulMarkerMessageCount: Int?
 
-        /// Number of internal messages sent in last LLM request (for stateful marker tracking).
-        var sentInternalMessagesCount: Int
-
         // MARK: - Workflow Metadata
 
         /// Whether any tools have been executed in this workflow.
@@ -876,7 +873,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
             /// GitHub Copilot session state.
             self.currentStatefulMarker = currentStatefulMarker
             self.statefulMarkerMessageCount = nil
-            self.sentInternalMessagesCount = 0
 
             /// Workflow metadata.
             self.toolsExecutedInWorkflow = false
@@ -1351,7 +1347,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                 samConfig: samConfig,
                                 statefulMarker: context.currentStatefulMarker,
                                 statefulMarkerMessageCount: context.statefulMarkerMessageCount,
-                                sentInternalMessagesCount: context.sentInternalMessagesCount,
                                 retrievedMessageIds: &context.retrievedMessageIds
                             )
                             forcedTrimThreshold = nil
@@ -1436,7 +1431,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                                 iteration: context.iteration,
                                 samConfig: samConfig,
                                 statefulMarker: context.currentStatefulMarker,
-                                sentInternalMessagesCount: context.sentInternalMessagesCount,
+                                statefulMarkerMessageCount: context.statefulMarkerMessageCount,
                                 retrievedMessageIds: &context.retrievedMessageIds
                             )
                             forcedTrimThreshold = nil
@@ -1509,9 +1504,6 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         }
                     }
                 }
-
-                /// Track how many internal messages we sent in this request (for next iteration).
-                context.sentInternalMessagesCount = context.internalMessages.count
 
                 /// Check cancellation before processing - the LLM call may have
                 /// taken several seconds and the user may have clicked stop.
@@ -1601,7 +1593,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// Capture statefulMarker for next iteration (GitHub Copilot session continuity).
                 if let marker = response.statefulMarker {
                     context.currentStatefulMarker = marker
-                    logger.debug("SUCCESS: Updated statefulMarker for next iteration: \(marker.safePrefix(20))...")
+                    // Record the conversation message count at marker capture time.
+                    // This enables the preferred message-count-based delta slicing in
+                    // callLLMStreaming (previously always nil, forcing fallback to fragile
+                    // githubCopilotResponseId string search).
+                    if let conv = conversationManager.conversations.first(where: { $0.id == conversationId }) {
+                        context.statefulMarkerMessageCount = conv.messages.filter { !$0.isToolMessage }.count
+                    }
+                    logger.debug("SUCCESS: Updated statefulMarker + messageCount for next iteration: \(marker.safePrefix(20))...")
                 }
 
                 logger.debug("SUCCESS: LLM response received, finish_reason=\(context.lastFinishReason)")

@@ -35,7 +35,6 @@ extension AgentOrchestrator {
         samConfig: SAMConfig? = nil,
         statefulMarker: String? = nil,
         statefulMarkerMessageCount: Int? = nil,
-        sentInternalMessagesCount: Int = 0,
         retrievedMessageIds: inout Set<UUID>
     ) async throws -> LLMResponse {
         logger.debug("callLLM: Building OpenAI request for model '\(model)'")
@@ -295,66 +294,13 @@ extension AgentOrchestrator {
         logger.debug("callLLM: Request has \(messages.count) messages (\(messagesToSend.count) conversation + \(internalMessages.count) internal)")
         logger.debug("callLLM: User sees \(conversation.messages.count) messages, LLM context uses \(messagesToSend.count) messages")
 
-        /// CUSTOM INSTRUCTION INJECTION: Append custom instruction content to the last user message
-        /// in the API payload. This is NOT persisted to conversation history - it only exists
-        /// in the messages array sent to the API. Models pay more attention to content in user
-        /// messages than system prompts, so this gets custom instructions acted on rather than ignored.
-        ///
-        /// ONE-TIME PERSIST: When custom instructions are enabled mid-conversation, we also add a
-        /// hidden system-generated user message to conversation history so the model retains
-        /// context about WHY it made certain decisions even after the instruction is disabled.
-        if !conversation.enabledCustomInstructionIds.isEmpty {
-            let customInstructionText = CustomInstructionManager.shared.getInjectedText(
-                for: conversation.id,
-                enabledIds: conversation.enabledCustomInstructionIds
-            )
-            if !customInstructionText.isEmpty {
-                /// Check if custom instruction content is already persisted in conversation history
-                let alreadyPersisted = conversation.messages.contains { msg in
-                    msg.isFromUser && msg.content.contains(customInstructionText.prefix(100))
-                }
-
-                /// One-time persist: Add hidden message if not already in history.
-                /// This ensures the model retains context for its decisions even after
-                /// the custom instruction is disabled. Hidden from UI via isSystemGenerated.
-                if !alreadyPersisted {
-                    let persistContent = "<userContext>\n\(customInstructionText)\n</userContext>"
-                    conversation.messageBus?.addUserMessage(
-                        content: persistContent,
-                        isPinned: true,
-                        isSystemGenerated: true
-                    )
-                    logger.info("callLLM: Persisted custom instruction content as hidden message for conversation continuity (\(customInstructionText.count) chars)")
-                }
-
-                /// Ephemeral injection into last user message for immediate salience
-                if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
-                    let existingContent = messages[lastUserIndex].content ?? ""
-                    if !existingContent.contains(customInstructionText.prefix(100)) {
-                        let injectedContent = existingContent + "\n\n<userContext>\n\(customInstructionText)\n</userContext>"
-                        messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
-                        logger.info("callLLM: Ephemeral custom instruction injection into last user message (\(customInstructionText.count) chars)")
-                    } else {
-                        logger.debug("callLLM: Custom instruction already present in last user message")
-                    }
-                }
-            }
-        }
+        /// CUSTOM INSTRUCTION INJECTION + ONE-TIME PERSIST
+        /// Uses shared helper - models act on user-message content, ignore system prompt tail.
+        injectCustomInstructions(into: &messages, conversation: conversation, loggerPrefix: "callLLM")
 
         /// KV CACHE OPTIMIZATION: Inject dynamic context into last user message.
-        /// This keeps the system prompt byte-identical across turns, enabling full KV cache reuse.
-        /// Dynamic context includes: conversation ID, tool listing, working directory, shared topic,
-        /// LTM entries, and session naming instruction.
-        if !dynamicContext.isEmpty {
-            if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
-                let existingContent = messages[lastUserIndex].content ?? ""
-                let injectedContent = existingContent + "\n\n<userContext>\n\(dynamicContext)\n</userContext>"
-                messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
-                logger.debug("callLLM: Injected dynamic context (\(dynamicContext.count) chars) into last user message for KV cache stability")
-            } else {
-                logger.warning("callLLM: No user message found for dynamic context injection")
-            }
-        }
+        /// Uses shared helper - keeps the system prompt byte-identical across turns.
+        injectDynamicContextIntoLastUserMessage(into: &messages, dynamicContext: dynamicContext, loggerPrefix: "callLLM")
 
         /// CONTEXT MANAGEMENT: MessageValidator performs budget walk with atomic unit
         /// grouping and compresses dropped context into a thread_summary. Shared helper
@@ -634,7 +580,6 @@ extension AgentOrchestrator {
         samConfig: SAMConfig? = nil,
         statefulMarker: String? = nil,
         statefulMarkerMessageCount: Int? = nil,
-        sentInternalMessagesCount: Int = 0,
         retrievedMessageIds: inout Set<UUID>
     ) async throws -> LLMResponse {
         logger.debug("callLLMStreaming: Building OpenAI streaming request for model '\(model)'")
@@ -890,6 +835,23 @@ extension AgentOrchestrator {
             }
         }
 
+        /// CRITICAL SAFETY NET: Ensure the current user message is in the messages array.
+        /// The non-streaming path (callLLM) has this check; the streaming path was missing it,
+        /// causing the model to receive the previous turn's context without the current user input
+        /// when conversation.messages hadn't synced from MessageBus yet.
+        /// Only inject on iteration 0 (new user request), never for "Please continue" continuations.
+        if message != "Please continue" && iteration == 0 {
+            let newMessageNotInHistory = conversationMessages.isEmpty ||
+                                         !conversationMessages.last!.isFromUser ||
+                                         conversationMessages.last!.content != message
+            if newMessageNotInHistory {
+                messages.append(OpenAIChatMessage(role: "user", content: message))
+                logger.info("MISSING_USER_MESSAGE: Current user message was not in conversation history — explicitly appended to request")
+            } else {
+                logger.debug("callLLMStreaming: Current user message found in conversation history (no duplicate needed)")
+            }
+        }
+
         /// VS CODE COPILOT PATTERN: Inject reminders at the END of messages (high salience)
         /// This is critical for multi-step workflows - agent needs to see reminders right before responding
         let activeTodoCount = TodoManager.shared.getProgressStatistics(for: conversation.id.uuidString).totalTodos
@@ -924,70 +886,13 @@ extension AgentOrchestrator {
         /// Claude models via GitHub Copilot/OpenRouter don't need tool result batching -
         /// those proxies handle Claude conversion internally and expect OpenAI format.
 
-        /// Apply alternation fix before validation so the budget walk sees the
-        /// pre-merge message structure (alternation can grow the message count
-        /// by collapsing two user messages into one - safer to budget first).
-        messages = ensureMessageAlternation(messages)
-        logger.debug("callLLMStreaming: Applied message alternation fix - \(messages.count) messages after merging")
-
-        /// Safety net: validate tool message pairs after alternation merging.
-        /// The alternation function can create orphaned tool results if it merges
-        /// assistant messages incorrectly. This catches any issues before the API call.
-        messages = MessageValidator.validateToolMessagePairs(messages)
-        logger.debug("callLLMStreaming: Validated tool message pairs - \(messages.count) messages after validation")
-
         /// CUSTOM INSTRUCTION INJECTION + ONE-TIME PERSIST
-        /// See callLLM for full rationale - models act on user-message content, ignore system prompt tail.
-        if !conversation.enabledCustomInstructionIds.isEmpty {
-            let customInstructionText = CustomInstructionManager.shared.getInjectedText(
-                for: conversation.id,
-                enabledIds: conversation.enabledCustomInstructionIds
-            )
-            if !customInstructionText.isEmpty {
-                /// Check if custom instruction content is already persisted in conversation history
-                let alreadyPersisted = conversation.messages.contains { msg in
-                    msg.isFromUser && msg.content.contains(customInstructionText.prefix(100))
-                }
-
-                /// One-time persist: Add hidden message if not already in history
-                if !alreadyPersisted {
-                    let persistContent = "<userContext>\n\(customInstructionText)\n</userContext>"
-                    conversation.messageBus?.addUserMessage(
-                        content: persistContent,
-                        isPinned: true,
-                        isSystemGenerated: true
-                    )
-                    logger.info("callLLMStreaming: Persisted custom instruction content as hidden message (\(customInstructionText.count) chars)")
-                }
-
-                /// Ephemeral injection into last user message for immediate salience
-                if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
-                    let existingContent = messages[lastUserIndex].content ?? ""
-                    if !existingContent.contains(customInstructionText.prefix(100)) {
-                        let injectedContent = existingContent + "\n\n<userContext>\n\(customInstructionText)\n</userContext>"
-                        messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
-                        logger.info("callLLMStreaming: Ephemeral custom instruction injection into last user message (\(customInstructionText.count) chars)")
-                    } else {
-                        logger.debug("callLLMStreaming: Custom instruction already present in last user message")
-                    }
-                }
-            }
-        }
+        /// Uses shared helper - models act on user-message content, ignore system prompt tail.
+        injectCustomInstructions(into: &messages, conversation: conversation, loggerPrefix: "callLLMStreaming")
 
         /// KV CACHE OPTIMIZATION: Inject dynamic context into last user message.
-        /// This keeps the system prompt byte-identical across turns, enabling full KV cache reuse.
-        /// Dynamic context includes: conversation ID, tool listing, working directory, shared topic,
-        /// LTM entries, and session naming instruction.
-        if !dynamicContext.isEmpty {
-            if let lastUserIndex = messages.lastIndex(where: { $0.role == "user" }) {
-                let existingContent = messages[lastUserIndex].content ?? ""
-                let injectedContent = existingContent + "\n\n<userContext>\n\(dynamicContext)\n</userContext>"
-                messages[lastUserIndex] = OpenAIChatMessage(role: "user", content: injectedContent)
-                logger.debug("callLLMStreaming: Injected dynamic context (\(dynamicContext.count) chars) into last user message for KV cache stability")
-            } else {
-                logger.warning("callLLMStreaming: No user message found for dynamic context injection")
-            }
-        }
+        /// Uses shared helper - keeps the system prompt byte-identical across turns.
+        injectDynamicContextIntoLastUserMessage(into: &messages, dynamicContext: dynamicContext, loggerPrefix: "callLLMStreaming")
 
         // MessageValidator performs budget walk with atomic unit grouping and
         // compresses dropped context into a thread_summary. Shared helper ensures
