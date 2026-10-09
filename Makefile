@@ -41,23 +41,60 @@ llamacpp:
 	@echo "SUCCESS: llama.cpp framework built successfully"
 	@echo "Framework: external/llama.cpp/build-apple/llama.xcframework"
 
-# check-build-cleanliness: Detects and removes SPM artifacts that conflict
-# with xcodebuild on macOS. If `swift build` was run before, it leaves
-# .build/out/ and checkpoint files that cause Xcode 27's clang dependency
-# scanner to crash with "Clang dependency scanning failure" errors.
-# We remove only SPM-specific artifacts, leaving xcodebuild's own
-# ExplicitPrecompiledModules in place so it can reuse them.
+# check-build-cleanliness: Detects and removes stale build artifacts that
+# conflict with xcodebuild on macOS.
+#
+# Xcode 27's clang dependency scanner crashes in two scenarios:
+#   1. SPM build artifacts (.build/out/, .build/.build-file-checkpoints.json)
+#      coexist with xcodebuild in the same derived-data path. `swift build`
+#      and `xcodebuild` produce incompatible .build/Build/ layouts — stale
+#      intermediates from swift build cause "Clang dependency scanning
+#      failure" and "Unable to resolve module dependency" errors for C
+#      module targets like CAsyncHTTPClient and CSystem in EventSource.
+#   2. Module caches are stale from a previous SDK or toolchain version
+#      (e.g. after an Xcode or macOS SDK upgrade).
+#
+# This target uses a marker file (.build/.build-version) to record the
+# current Xcode + SDK version. If the marker is missing or the version has
+# changed, stale caches are cleaned.
+#
+# When any stale state is detected, we remove the entire .build/Build/
+# directory (forcing xcodebuild to rebuild from scratch) while preserving
+# .build/SourcePackages/ (dependency checkouts — expensive to re-download).
+# This is faster than `make clean` which would also re-resolve all packages.
+# The swift build and xcodebuild artifact layouts are incompatible, and SDK
+# changes invalidate .pcm/.swiftmodule files, so a full .build/Build/ wipe
+# is required rather than selective cache removal.
 check-build-cleanliness:
-	@if [ -d ".build/out" ] || [ -f ".build/.build-file-checkpoints.json" ]; then \
-		echo "WARNING: Detected SPM build artifacts in .build that conflict with xcodebuild."; \
-		echo "Removing stale SPM artifacts (ModuleCache, SDK caches, etc.)..."; \
+	@echo "Checking build directory cleanliness..."
+	@CURRENT_VERSION=$$(xcodebuild -version 2>/dev/null | head -2 | tr '\n' '|') && \
+	MARKER_FILE=".build/.build-version" && \
+	NEEDS_CLEAN=0 && \
+	REASON="" && \
+	if [ -d ".build/out" ] || [ -f ".build/.build-file-checkpoints.json" ]; then \
+		NEEDS_CLEAN=1 && REASON="SPM artifacts detected"; \
+	fi; \
+	if [ -f "$$MARKER_FILE" ]; then \
+		CACHED_VERSION=$$(cat "$$MARKER_FILE" 2>/dev/null); \
+		if [ "$$CACHED_VERSION" != "$$CURRENT_VERSION" ]; then \
+			NEEDS_CLEAN=1 && REASON="SDK/toolchain change ($$CACHED_VERSION -> $$CURRENT_VERSION)"; \
+		fi; \
+	else \
+		NEEDS_CLEAN=1 && REASON="No build version marker found (first build or after make clean)"; \
+	fi; \
+	if [ $$NEEDS_CLEAN -eq 1 ]; then \
+		echo "WARNING: $$REASON - cleaning stale build caches."; \
 		rm -rf .build/ModuleCache.noindex; \
 		rm -rf .build/Index.noindex; \
 		rm -rf .build/SDKStatCaches.noindex; \
 		rm -rf .build/SDKExplicitPrecompiledModules; \
+		echo "Removing .build/Build/ to clear stale artifacts..."; \
+		rm -rf .build/Build; \
 		rm -rf .build/out; \
 		rm -rf .build/.build-file-checkpoints.json; \
-		echo "Cleaned SPM artifacts. Proceeding with xcodebuild."; \
+		mkdir -p .build; \
+		echo "$$CURRENT_VERSION" > "$$MARKER_FILE"; \
+		echo "Cleaned stale caches. Proceeding with xcodebuild."; \
 	else \
 		echo "Build directory is clean."; \
 	fi
