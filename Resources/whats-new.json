@@ -1,6 +1,41 @@
 {
   "releases": [
     {
+      "version": "20261011.1",
+      "release_date": "October 11, 2026",
+      "introduction": "This release makes streaming conversations feel more polished and reliable. Message bubbles no longer flicker or disappear mid-stream, tool results stay connected to their parent tools, and a stray thinking tag that sometimes appeared as visible text is now cleaned up automatically. These are the kinds of small papercuts that add up when you're working with SAM for a while.",
+      "highlights": [
+        {
+          "id": "message-bubble-stability",
+          "icon": "bubble.left.and.right.fill",
+          "title": "Streaming Messages No Longer Vanish Mid-Response",
+          "description": "When the model was actively typing a response, the message bubble could appear, disappear, and not come back until you scrolled. This happened because key message metadata was being dropped while cleaning up internal markers during streaming. That metadata is now preserved, so bubbles stay stable from the first token all the way through to completion."
+        },
+        {
+          "id": "tool-card-hierarchy",
+          "icon": "cube.fill",
+          "title": "Tool Results Show Up Reliably",
+          "description": "Tool results that ran as sub-tasks of another tool weren't always showing their results — they'd stay stuck in a loading state or appear disconnected from their parent. The parent-child connection between tools is now preserved through the entire streaming lifecycle, so tool cards display their results correctly."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "streaming-update-throttle",
+          "icon": "slider.horizontal.3",
+          "title": "Smoother Streaming Updates",
+          "description": "The background task that throttles streaming content updates to the chat UI now waits cleanly for any in-flight update to finish before starting the next one. This prevents rare visual stutters where content could briefly show stale state."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "thinking-tag-cleanup",
+          "icon": "brain.head.profile",
+          "title": "Stray Thinking Tag Removed from Chat",
+          "description": "With some providers, a raw thinking tag would occasionally appear as visible text in the chat bubble instead of being rendered as a collapsible thinking card. Both the backend and frontend now filter these tags consistently so they only show up in their intended thinking card."
+        }
+      ]
+    },
+    {
       "version": "20261009.1",
       "release_date": "October 9, 2026",
       "introduction": "Three reliability fixes that close gaps discovered in the 20261005.1 context release: the model no longer responds to stale context at the start of a streaming turn, trimming no longer crashes when leading system messages are present, and the model selector now shows a clear placeholder instead of an empty field. The default model is now empty (Select a model) so you decide what to use rather than having a pre-selected default.",
