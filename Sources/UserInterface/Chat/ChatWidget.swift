@@ -2532,8 +2532,14 @@ public struct ChatWidget: View {
             streamingUpdateCount += 1
         }
 
-        /// Cancel existing update task if running.
-        streamingUpdateTask?.cancel()
+        /// Cancel existing update task if running and await its cancellation
+        /// to prevent overlapping tasks from writing stale content.
+        if let existingTask = streamingUpdateTask {
+            existingTask.cancel()
+            /// Yield to let the cancelled task's cleanup run, preventing
+            /// a race where a new task starts before the old one finishes.
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
 
         /// Create throttled update task.
         streamingUpdateTask = Task {
@@ -4038,20 +4044,31 @@ public struct ChatWidget: View {
             id: message.id,
             type: messageType,
             content: cleanedContent,
+            contentParts: message.contentParts,
             isFromUser: message.isFromUser,
             timestamp: message.timestamp,
             toolName: toolName,
             toolStatus: toolStatus,
+            toolDisplayData: message.toolDisplayData,
             toolDetails: toolDetails,
-            toolDuration: message.processingTime,
+            toolDuration: message.toolDuration,
             toolIcon: toolIcon,
-            toolCategory: nil,
+            toolCategory: message.toolCategory,
+            parentToolName: message.parentToolName,
+            toolMetadata: message.toolMetadata,
+            toolCalls: message.toolCalls,
+            toolCallId: message.toolCallId,
             processingTime: message.processingTime,
             reasoningContent: message.reasoningContent,
             showReasoning: message.showReasoning,
             performanceMetrics: message.performanceMetrics,
             isStreaming: message.isStreaming,
-            isToolMessage: message.isToolMessage
+            isToolMessage: message.isToolMessage,
+            githubCopilotResponseId: message.githubCopilotResponseId,
+            isPinned: message.isPinned,
+            importance: message.importance,
+            lastModified: message.lastModified,
+            isSystemGenerated: message.isSystemGenerated
         )
     }
 
@@ -4297,6 +4314,21 @@ public struct ChatWidget: View {
 
             /// Filter session naming markers (auto-naming feature)
             if trimmed.contains("<!--session:") && trimmed.contains("-->") {
+                continue
+            }
+
+            /// Filter bare <thinking> and </thinking> tags (MiniMax M2.x and other
+            /// providers emit these as content chunks, but they are rendered via
+            /// ThinkingCard, not as inline text). This is a defense-in-depth safety
+            /// net — stripSystemReminders in AgentOrchestrator also handles this,
+            /// but uncleaned content can reach ChatWidget through other paths.
+            if trimmed == "<thinking>" || trimmed == "</thinking>" ||
+               trimmed == "<thinking/>" || (trimmed.hasPrefix("<thinking") && trimmed.hasSuffix(">")) ||
+               (trimmed.hasPrefix("</thinking") && trimmed.hasSuffix(">")) {
+                /// Replace with blank line to preserve paragraph separation.
+                if outputLines.last != "" {
+                    outputLines.append("")
+                }
                 continue
             }
 

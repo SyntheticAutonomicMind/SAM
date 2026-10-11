@@ -1098,6 +1098,7 @@ extension AgentOrchestrator {
                         name: chunk.toolName ?? "unknown",
                         status: toolStatus,
                         details: "",  /// Will be updated as chunks arrive
+                        parentToolName: chunk.parentToolName,
                         toolDisplayData: chunk.toolDisplayData,
                         toolCallId: executionId
                     ) ?? UUID()
