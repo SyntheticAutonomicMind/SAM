@@ -324,7 +324,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
     /// before showing to user or saving to conversation
     func stripSystemReminders(from content: String) -> String {
         /// Quick exit if no tags present
-        if content.isEmpty || !content.contains("system-reminder") {
+        if content.isEmpty || (!content.contains("system-reminder") && !content.contains("<thinking") && !content.contains("</thinking")) {
             return content
         }
 
@@ -352,6 +352,22 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         /// In case there are unclosed opening tags
         let orphanedOpeningPattern = "<system-reminder[^>]*>"
         if let regex = try? NSRegularExpression(pattern: orphanedOpeningPattern, options: .caseInsensitive) {
+            let range = NSRange(cleaned.startIndex..., in: cleaned)
+            cleaned = regex.stringByReplacingMatches(in: cleaned, range: range, withTemplate: "")
+        }
+
+        /// Pattern 4: Remove think tags (MiniMax M2.x and other providers emit thinking in <thinking>...</thinking> blocks)
+        /// Some providers emit stray closing tags that arrive before any opening tag is parsed,
+        /// so these get stored in messageBus.content and rendered as visible text.
+        let thinkPattern = "<thinking[^>]*>.*?</thinking>"
+        if let regex = try? NSRegularExpression(pattern: thinkPattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) {
+            let range = NSRange(cleaned.startIndex..., in: cleaned)
+            cleaned = regex.stringByReplacingMatches(in: cleaned, range: range, withTemplate: "")
+        }
+
+        /// Pattern 5: Handle orphaned think tags (bare <thinking> or </thinking> without a pair)
+        let orphanedThinkPattern = "<[/]?thinking[^>]*>"
+        if let regex = try? NSRegularExpression(pattern: orphanedThinkPattern, options: .caseInsensitive) {
             let range = NSRange(cleaned.startIndex..., in: cleaned)
             cleaned = regex.stringByReplacingMatches(in: cleaned, range: range, withTemplate: "")
         }
