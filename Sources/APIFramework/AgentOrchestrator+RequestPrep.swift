@@ -387,7 +387,8 @@ extension AgentOrchestrator {
             tools: nil,
             toolTokens: 0,
             tokenRatio: tokenRatio,
-            trimThreshold: driftThreshold
+            trimThreshold: driftThreshold,
+            isLocalInference: endpointManager.isLocalModel(model)
         )
 
         logger.debug("\(loggerPrefix): Budget = \(config.effectiveBudget) tokens (ctx=\(caps.contextWindow), maxOut=\(caps.maxOutputTokens), ratio=\(tokenRatio))")
@@ -439,6 +440,27 @@ extension AgentOrchestrator {
         // the same context every turn and produces the same response repeatedly.
         if let currentTurn = projection.currentTurn {
             projectedMessages.append(contentsOf: currentTurn)
+        }
+
+        // For local-inference providers (llama.cpp, SAM, LM Studio), the projection's
+        // compressed_summary must be folded into the last user message, NOT emitted
+        // as a separate system message. Local inference uses Jinja chat templates
+        // (e.g. Qwen3) that reject mid-conversation role=system messages with
+        // "System message must be at the beginning" exceptions. Cloud providers
+        // (OpenAI, OpenRouter, etc.) handle system messages anywhere, so for them
+        // the summary stays as a system message appended above.
+        let isLocalInference = endpointManager.isLocalModel(model)
+        if isLocalInference, let summary = projection.compressedSummary {
+            // Fold summary content into the last user message (prepend).
+            // The last user message is currentTurn, which was just appended.
+            if let lastUserIdx = projectedMessages.lastIndex(where: { $0.role == "user" }) {
+                let existing = projectedMessages[lastUserIdx].content ?? ""
+                projectedMessages[lastUserIdx] = OpenAIChatMessage(
+                    role: "user",
+                    content: (summary.content ?? "") + "\n\n" + existing
+                )
+                logger.debug("\(loggerPrefix): Folded projection summary into user message (local inference)")
+            }
         }
 
        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
