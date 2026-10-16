@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "20261016.1",
+      "release_date": "October 16, 2026",
+      "introduction": "Fixes a bug where long conversations using local models (llama.cpp, MLX, SAM server) could break when context trimming kicked in. The compressed summary that SAM generates when context gets full was being sent as a system message in the middle of the conversation, which local model chat formats reject — now it's folded into the user's message where local models expect it.",
+      "highlights": [
+        {
+          "id": "local-model-context-fold",
+          "icon": "exclamationmark.triangle.fill",
+          "title": "Fixed Context Trimming Breaking Local Models",
+          "description": "When a conversation grew long enough to trigger context trimming, the compressed thread summary was emitted as a system message mid-conversation. Local inference models (llama.cpp, MLX, LM Studio) use chat templates that only accept system messages at the start of the conversation, so this caused an error that broke the conversation. The summary is now folded into the last user message for local models, while cloud models keep the previous behavior."
+        }
+      ]
+    },
+    {
       "version": "20261011.1",
       "release_date": "October 11, 2026",
       "introduction": "This release makes streaming conversations feel more polished and reliable. Message bubbles no longer flicker or disappear mid-stream, tool results stay connected to their parent tools, and a stray thinking tag that sometimes appeared as visible text is now cleaned up automatically. These are the kinds of small papercuts that add up when you're working with SAM for a while.",
