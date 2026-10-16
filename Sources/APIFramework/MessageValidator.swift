@@ -111,14 +111,18 @@ public struct MessageValidator {
             // at end, tool results deinterleaved) and has no orphan/dupe issues,
             // return the original message references without re-serialization.
             logger.debug("Context: within budget (\(estimatedTokens)/\(effectiveBudget)), normalizing structure only")
-            if !needsValidation(messages) && alreadyNormalized(messages) {
+            if !needsValidation(messages) && alreadyNormalized(messages, isLocalInference: config.isLocalInference) {
                 logger.debug("Context: byte-stable fast path — no orphans/dupes, already normalized, returning original refs")
                 return TruncationResult(messages: messages, droppedMessages: [])
             }
-            // Structural normalization needed: run validation + summary-at-end.
+            // Structural normalization needed: run validation + summary folding.
             logger.debug("Context: within budget but structural normalization needed")
             let normalized = validateToolMessagePairs(messages)
-            return TruncationResult(messages: normalizeSummaryToEnd(messages: normalized), droppedMessages: [])
+            let result = normalizeSummaryToEnd(
+                messages: normalized,
+                isLocalInference: config.isLocalInference
+            )
+            return TruncationResult(messages: result, droppedMessages: [])
         }
 
         // Need to truncate
@@ -326,7 +330,41 @@ public struct MessageValidator {
         _ = preservedGeneralSystem
         truncated.append(contentsOf: finalMessages)
         if let summary = summaryToUse {
-            truncated.append(summary)
+            if config.isLocalInference {
+                // For local-inference providers (llama.cpp, SAM, LM Studio), fold
+                // the thread_summary INTO the last user message instead of emitting
+                // a separate system message. Jinja chat templates (e.g. Qwen3)
+                // require system messages only at position 0; a mid-conversation
+                // role=system triggers "System message must be at the beginning"
+                // exceptions. The <thread_summary> tags are self-identifying —
+                // same regexes the trim paths use to find/seed extraction buckets.
+                let summaryContent = summary.content ?? ""
+                if let lastUserIdx = truncated.lastIndex(where: { $0.role == "user" }) {
+                    let existingContent = truncated[lastUserIdx].content ?? ""
+                    truncated[lastUserIdx] = OpenAIChatMessage(
+                        role: "user",
+                        content: summaryContent + "\n\n" + existingContent
+                    )
+                    logger.info("Context: folded thread_summary into user message for local inference (\(droppedMessages.count) proactively-dropped messages)")
+                } else {
+                    // No user message found — fall back to system message
+                    // (rare edge case — local inference with no user msg is
+                    // already invalid for the API, so this is best-effort).
+                    truncated.append(summary)
+                    logger.warning("Context: local inference but no user message found — keeping summary as system message")
+                }
+            } else {
+                // Cloud providers handle mid-conversation system messages correctly.
+                // Insert before the last user message — the summary is context about
+                // prior turns, so it should precede the user's current request.
+                // (CLIO inserts the compressed summary before the last user message too.)
+                let lastUserIdx = truncated.lastIndex(where: { $0.role == "user" })
+                if let idx = lastUserIdx {
+                    truncated.insert(summary, at: idx)
+                } else {
+                    truncated.append(summary)
+                }
+            }
         }
 
         let finalTokens = estimateTokens(truncated, tokenRatio: tokenRatio)
@@ -340,7 +378,15 @@ public struct MessageValidator {
     /// Normalize message structure: move any existing `<thread_summary>` system
     /// message to the END, and deinterleave tool results after regular dialog.
     /// Runs even when no trimming occurs (CLIO always normalizes structure).
-    public static func normalizeSummaryToEnd(messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
+    ///
+    /// When `isLocalInference` is true, the thread_summary is folded into the
+    /// last user message instead of being appended as a system message, because
+    /// local-inference providers (llama.cpp, SAM, LM Studio) use Jinja chat
+    /// templates that reject mid-conversation role=system messages.
+    public static func normalizeSummaryToEnd(
+        messages: [OpenAIChatMessage],
+        isLocalInference: Bool = false
+    ) -> [OpenAIChatMessage] {
         var summaryMsg: OpenAIChatMessage?
         var dialog: [OpenAIChatMessage] = []
         var toolResults: [OpenAIChatMessage] = []
@@ -355,10 +401,40 @@ public struct MessageValidator {
             }
         }
 
-        // Rebuild: dialog first, then tool results, then summary at END
+        // Rebuild: dialog first, then tool results.
         var result = dialog + toolResults
         if let summary = summaryMsg {
-            result.append(summary)
+            if isLocalInference {
+                // Fold the thread_summary content into the last user message.
+                // Local inference providers (Jinja chat templates) reject
+                // mid-conversation role=system messages, so the summary
+                // must live inside a user message. The <thread_summary> tags
+                // are self-identifying — same regexes work on both sides.
+                let summaryContent = summary.content ?? ""
+                if let lastUserIdx = result.lastIndex(where: { $0.role == "user" }) {
+                    let existing = result[lastUserIdx].content ?? ""
+                    result[lastUserIdx] = OpenAIChatMessage(
+                        role: "user",
+                        content: summaryContent + "\n\n" + existing
+                    )
+                    logger.debug("Context: folded thread_summary into user message (local inference normalization)")
+                } else {
+                    // No user message — keep as fallback system message.
+                    result.append(summary)
+                }
+            } else {
+                // Cloud providers handle mid-conversation system messages correctly.
+                // Insert the summary BEFORE the last user message — this is the user's
+                // current task context, so it should precede their latest input.
+                // (CLIO inserts the compressed tail before the last user message too.)
+                let lastUserIdx = result.lastIndex(where: { $0.role == "user" })
+                if let idx = lastUserIdx {
+                    result.insert(summary, at: idx)
+                } else {
+                    // No user message — append at end as fallback.
+                    result.append(summary)
+                }
+            }
         }
         return result
     }
@@ -400,14 +476,22 @@ public struct MessageValidator {
         return false
     }
 
-    /// Check if the message array is already structurally normalized: summary
-    /// at END, all tool results after dialog (no interleaving).
+    /// Check if the message array is already structurally normalized.
     /// Used by the byte-stability fast path to skip normalizeSummaryToEnd
     /// when the array is already in the correct layout.
-    private static func alreadyNormalized(_ messages: [OpenAIChatMessage]) -> Bool {
+    ///
+    /// For cloud providers: summary is "normalized" when it sits right before
+    ///   the last user message (or at END if no user message).
+    /// For local inference: summary is "normalized" when it has been folded
+    ///   into a user message (no standalone thread_summary system message).
+    private static func alreadyNormalized(
+        _ messages: [OpenAIChatMessage],
+        isLocalInference: Bool = false
+    ) -> Bool {
         var summaryIndex: Int?
         var lastDialogIndex: Int?
         var firstToolResultIndex: Int?
+        var lastDialogIdx: Int?
 
         for (i, msg) in messages.enumerated() {
             if msg.role == "system", let content = msg.content, content.contains("<thread_summary>") {
@@ -415,16 +499,38 @@ public struct MessageValidator {
             } else if msg.role == "tool" {
                 if firstToolResultIndex == nil { firstToolResultIndex = i }
             } else {
-                lastDialogIndex = i
+                lastDialogIdx = i
             }
+        }
+        lastDialogIndex = lastDialogIdx
+
+        // For local inference: no standalone summary system message should exist
+        // (it's been folded into the user message). If there IS one, not normalized.
+        if isLocalInference, summaryIndex != nil {
+            return false
         }
 
         // No summary and no tool results — trivially normalized
         if summaryIndex == nil && firstToolResultIndex == nil { return true }
 
-        // If there's a summary, it must be the last message
-        if let summaryIdx = summaryIndex, summaryIdx != messages.count - 1 {
-            return false
+        if let summaryIdx = summaryIndex {
+            if isLocalInference {
+                // Already handled above — if we reach here, summaryIndex is nil
+                return true
+            }
+            // Cloud: summary must be immediately before the last user message
+            // (or at END if there's no user message after it).
+            if let lastUserIdx = lastDialogIndex {
+                // Summary should be at lastUserIdx - 1 (right before last user msg)
+                if summaryIdx != lastUserIdx - 1 {
+                    return false
+                }
+            } else {
+                // No user message — summary must be at end
+                if summaryIdx != messages.count - 1 {
+                    return false
+                }
+            }
         }
 
         // If there are tool results, they must all come after all dialog

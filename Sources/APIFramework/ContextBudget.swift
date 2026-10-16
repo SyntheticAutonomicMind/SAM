@@ -87,6 +87,14 @@ public struct TrimConfig: Sendable {
     /// When nil, MessageValidator computes the budget from `caps`.
     public let trimThreshold: Int?
 
+    /// Whether the current provider is a local-inference server (llama.cpp,
+    /// SAM, LM Studio). When true, thread_summary is folded into the last
+    /// user message instead of emitted as a separate system message, because
+    /// local-inference providers use Jinja chat templates (e.g. Qwen3) that
+    /// reject mid-conversation role=system messages with "System message must
+    /// be at the beginning" errors.
+    public let isLocalInference: Bool
+
     /// Whether the request includes tool definitions (for budget computation).
     public var hasTools: Bool { (tools?.isEmpty == false) }
 
@@ -95,7 +103,8 @@ public struct TrimConfig: Sendable {
         tools: [OpenAITool]? = nil,
         toolTokens: Int = 0,
         tokenRatio: Double = ContextBudget.defaultCharsPerToken,
-        trimThreshold: Int? = nil
+        trimThreshold: Int? = nil,
+        isLocalInference: Bool = false
     ) {
         self.caps = caps
         self.tools = tools
@@ -103,6 +112,7 @@ public struct TrimConfig: Sendable {
         self.tokenRatio = max(ContextBudget.minLearnedRatio,
                               min(tokenRatio, ContextBudget.maxLearnedRatio))
         self.trimThreshold = trimThreshold
+        self.isLocalInference = isLocalInference
     }
 
     /// The effective budget that MessageValidator uses as the walk ceiling.
