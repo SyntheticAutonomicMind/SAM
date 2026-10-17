@@ -57,31 +57,29 @@ Each conversation stores its own UI state:
 ### Cloud Providers
 
 **OpenAI**
-- Models: GPT-4o, GPT-4, GPT-3.5 Turbo, o1, o3
+- Models: Frontier models with strong reasoning and coding
 - Streaming support with real-time token delivery
 - Function calling and tool use
 
 **GitHub Copilot**
-- Models: GPT-4o, Claude 3.5, o1 (varies by subscription)
+- Models: Multiple model families (varies by subscription)
 - Device flow authentication (no manual API key needed)
 - Automatic token refresh
 
 **DeepSeek**
-- Models: DeepSeek Chat, DeepSeek Coder
+- Models: General and coding-optimized variants
 - Cost-effective alternative for coding and general tasks
 
 **Google Gemini**
-- Models: Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.0 Flash
-- Large context windows (up to 1M tokens)
+- Models: Multimodal models with large context (up to 1M tokens)
 - Strong multimodal capabilities
 
 **MiniMax**
-- Models: MiniMax-M3, MiniMax-M3-highspeed, MiniMax-M2.7, MiniMax-M2.5
-- 128K token context window
+- Models: Large-context models optimized for efficiency
 - Competitive pricing with good tool use
 
 **OpenRouter**
-- Access 100+ models from multiple providers through a single API
+- Access models from multiple providers through a single API
 - Automatic model routing and load balancing
 
 **Ollama Cloud**
@@ -142,7 +140,7 @@ Connect to any OpenAI-compatible API:
 
 ## Autonomous Tool System
 
-SAM has 12 consolidated tools that the AI uses autonomously to accomplish tasks. Each consolidated tool contains multiple operations (80+ total operations).
+SAM has 13 consolidated tools (12 standard plus 1 conditional ALICE image generation) that the AI uses autonomously to accomplish tasks. Each consolidated tool contains multiple operations (80+ total operations).
 
 ### File Operations
 

@@ -32,12 +32,12 @@ This document defines the comprehensive API integration system for SAM, designed
 
 ### Provider Registry System
 ```swift
-class APIProviderRegistry: ObservableObject {
-    @Published var availableProviders: [APIProvider] = []
-    @Published var activeProviders: [String: APIProvider] = [:]
-    @Published var defaultProvider: APIProvider?
+class AIProviderRegistry: ObservableObject {
+    @Published var availableProviders: [AIProvider] = []
+    @Published var activeProviders: [String: AIProvider] = [:]
+    @Published var defaultProvider: AIProvider?
     
-    func registerProvider(_ provider: APIProvider) async throws {
+    func registerProvider(_ provider: AIProvider) async throws {
         // Validate provider capabilities and configuration
         let validation = await validateProvider(provider)
         guard validation.isValid else {
@@ -55,7 +55,7 @@ class APIProviderRegistry: ObservableObject {
         await updateProviderMetrics(provider, test: connectionTest)
     }
     
-    func selectOptimalProvider(for request: ChatRequest) async -> APIProvider? {
+    func selectOptimalProvider(for request: ChatRequest) async -> AIProvider? {
         // Intelligent provider selection based on:
         // - Request requirements (model availability, features needed)
         // - Provider health and response times
@@ -73,7 +73,7 @@ class APIProviderRegistry: ObservableObject {
     }
 }
 
-protocol APIProvider: Identifiable {
+protocol AIProvider: Identifiable {
     var id: String { get }
     var displayName: String { get }
     var description: String { get }
@@ -94,10 +94,10 @@ protocol APIProvider: Identifiable {
 
 #### OpenAI Provider
 ```swift
-class OpenAIProvider: APIProvider {
+class OpenAIProvider: AIProvider {
     let id = "openai"
     let displayName = "OpenAI"
-    let description = "Access to GPT-4, GPT-3.5, and other OpenAI models"
+    let description = "Access to OpenAI frontier models"
     
     var supportedModels: [AIModel] = [
         AIModel(
@@ -156,7 +156,7 @@ class OpenAIProvider: APIProvider {
 
 #### Anthropic Provider
 ```swift
-class AnthropicProvider: APIProvider {
+class AnthropicProvider: AIProvider {
     let id = "anthropic"
     let displayName = "Anthropic"
     let description = "Access to Claude models for analysis and reasoning"
@@ -193,7 +193,7 @@ class AnthropicProvider: APIProvider {
 
 #### Local Model Provider
 ```swift
-class LocalModelProvider: APIProvider {
+class LocalModelProvider: AIProvider {
     let id = "local"
     let displayName = "Local Models"
     let description = "Privacy-focused local AI models"
@@ -245,7 +245,7 @@ class LocalModelProvider: APIProvider {
 
 ### Plugin Provider Support
 ```swift
-class PluginAPIProvider: APIProvider {
+class PluginAIProvider: AIProvider {
     let plugin: SAMPlugin
     private let pluginAPIHandler: PluginAPIHandler
     
@@ -475,7 +475,7 @@ struct ProviderConfigurationView: View {
 ### Intelligent Request Router
 ```swift
 class RequestRouter {
-    private let providerRegistry: APIProviderRegistry
+    private let providerRegistry: AIProviderRegistry
     private let loadBalancer: LoadBalancer
     private let costOptimizer: CostOptimizer
     
@@ -507,9 +507,9 @@ class RequestRouter {
     }
     
     private func selectOptimalProvider(
-        from providers: [APIProvider],
+        from providers: [AIProvider],
         requirements: RequestRequirements
-    ) async -> APIProvider {
+    ) async -> AIProvider {
         // Score providers based on multiple factors
         let scoredProviders = providers.map { provider in
             ScoredProvider(
@@ -522,7 +522,7 @@ class RequestRouter {
     }
     
     private func calculateProviderScore(
-        _ provider: APIProvider,
+        _ provider: AIProvider,
         requirements: RequestRequirements
     ) -> Double {
         var score: Double = 0.0
@@ -554,7 +554,7 @@ class RequestRouter {
 class FailoverManager {
     func executeWithFailover(
         _ request: ChatRequest,
-        provider: APIProvider
+        provider: AIProvider
     ) async throws -> ChatResponse {
         var lastError: Error?
         let maxAttempts = 3
@@ -693,7 +693,7 @@ class StreamingResponseHandler: ObservableObject {
     @Published var currentResponse: String = ""
     @Published var isStreaming: Bool = false
     
-    func handleStreamingRequest(_ request: ChatRequest, provider: APIProvider) -> AsyncThrowingStream<String, Error> {
+    func handleStreamingRequest(_ request: ChatRequest, provider: AIProvider) -> AsyncThrowingStream<String, Error> {
         return AsyncThrowingStream { continuation in
             Task {
                 await MainActor.run {
@@ -883,7 +883,7 @@ class ResponseCache {
 class ConnectionPool {
     private var pools: [String: URLSessionPool] = [:]
     
-    func getSession(for provider: APIProvider) -> URLSession {
+    func getSession(for provider: AIProvider) -> URLSession {
         if let pool = pools[provider.id] {
             return pool.getSession()
         } else {
@@ -919,7 +919,7 @@ class SecureCredentialsManager {
 ### Data Privacy
 ```swift
 class PrivacyManager {
-    func shouldSendToProvider(_ request: ChatRequest, provider: APIProvider) -> Bool {
+    func shouldSendToProvider(_ request: ChatRequest, provider: AIProvider) -> Bool {
         // Check privacy settings and provider trust level
         let privacyLevel = UserDefaults.standard.privacyLevel
         let providerTrustLevel = provider.trustLevel

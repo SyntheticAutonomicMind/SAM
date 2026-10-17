@@ -14,7 +14,7 @@
 
 The **MCPFramework** is SAM's tool execution system, implementing a consolidated tool architecture where related operations are grouped under unified tools with an `operation` parameter. Internal sub-tools handle individual operations but are not directly visible to the LLM.
 
-**Tool Count:** 12 consolidated tools exposed to the LLM  
+**Tool Count:** 13 consolidated tools exposed to the LLM  
 **Internal Tools:** ~80 sub-operations dispatched by consolidated tools
 
 ---
@@ -50,7 +50,7 @@ The **MCPFramework** is SAM's tool execution system, implementing a consolidated
 | **ToolRegistry** | `ToolRegistry.swift` | Legacy registry (being phased out) |
 | **ToolResult** | `ToolResult.swift` | Standardized result format |
 | **Authorization** | `Authorization/` | Path-based authorization checks |
-| **Tools/** | `Tools/` | 12 consolidated tool implementations |
+| **Tools/** | `Tools/` | 13 consolidated tool implementations |
 
 ---
 
@@ -336,7 +336,7 @@ This keeps autonomous behavior visible and inspectable.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 2.0 | 2026-08-23 | Expanded to 12 consolidated tools, added macOS integration tools, detailed all operations |
+| 2.0 | 2026-08-23 | Expanded to 13 consolidated tools, added macOS integration tools, detailed all operations |
 | 1.4 | 2025-12-05 | Initial documentation |
 | 1.0 | 2025-12-05 | Initial specification |
 

@@ -9,14 +9,14 @@ Everything you need to get SAM running on your Mac.
 | Requirement | Minimum | Recommended |
 |------------|---------|-------------|
 | **macOS** | 14.0 (Sonoma) | 15.0+ (Sequoia) |
-| **Processor** | Intel or Apple Silicon | Apple Silicon (M1+) |
+| **Processor** | Apple Silicon | Apple Silicon |
 | **RAM** | 8GB | 16GB+ for local models |
 | **Storage** | 500MB for the app | 10GB+ if you plan to use local models |
 
 ### Apple Silicon vs Intel
 
-- **Apple Silicon** - best experience overall, including MLX and llama.cpp local models
-- **Intel** - cloud providers and `llama.cpp` local models work, but MLX and llama.cpp are not available
+- **Apple Silicon** - full local model support with MLX and llama.cpp
+- **Intel** - cloud providers only (MLX and llama.cpp are Apple Silicon only)
 
 ---
 
@@ -86,7 +86,6 @@ SAM needs at least one provider before it can respond.
    - **Z.AI (Coding)**
    - **Local MLX**
    - **Local llama.cpp**
-   - **Local llama.cpp**
    - **Remote llama.cpp**
    - **Custom OpenAI-compatible endpoint**
 
@@ -148,7 +147,7 @@ After installation, SAM stores data in these locations:
 | **Conversations** | `~/Library/Application Support/SAM/conversations/` |
 | **Working files** | `~/SAM/` |
 | **API keys** | macOS Keychain |
-| **Local models** | `~/Library/Caches/sam-rewritten/models/` |
+| **Local models** | `~/Library/Caches/sam/models/` |
 | **Generated ALICE images** | `~/Library/Caches/sam/images/` |
 
 ---

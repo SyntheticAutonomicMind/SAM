@@ -15,7 +15,7 @@ This directory contains comprehensive technical documentation for SAM developers
 |----------|-------------|-------|
 | [API_FRAMEWORK.md](API_FRAMEWORK.md) | Provider system, endpoints, authentication, OpenAI compatibility | 885 |
 | [AGENT_ORCHESTRATOR.md](AGENT_ORCHESTRATOR.md) | Agent loop, tool dispatch, streaming, auto-continue | 584 |
-| [MCP_TOOLS_SPECIFICATION.md](MCP_TOOLS_SPECIFICATION.md) | Complete tool API reference (8 tools, 60+ operations) | 208 |
+| [MCP_TOOLS_SPECIFICATION.md](MCP_TOOLS_SPECIFICATION.md) | Complete tool API reference (13 tools, 80+ operations) | 208 |
 | [CONVERSATION_ENGINE.md](CONVERSATION_ENGINE.md) | Chat processing, state management, persistence | 946 |
 | [MESSAGING_ARCHITECTURE.md](MESSAGING_ARCHITECTURE.md) | Message flow, transformations, streaming | 1,018 |
 | [STREAMING_CONVERSATIONAL_ARCHITECTURE.md](STREAMING_CONVERSATIONAL_ARCHITECTURE.md) | Real-time streaming implementation | 237 |
@@ -26,7 +26,6 @@ This directory contains comprehensive technical documentation for SAM developers
 
 | Document | Description | Lines |
 |----------|-------------|-------|
-| [MLX_INTEGRATION.md](MLX_INTEGRATION.md) | Local model support for Apple Silicon (MLX framework) | 670 |
 | [SOUND.md](SOUND.md) | Voice input/output, wake word detection, speech synthesis | 496 |
 | [MERMAID_ARCHITECTURE.md](MERMAID_ARCHITECTURE.md) | Diagram rendering (15 diagram types) | 679 |
 | [CONFIGURATION_SYSTEM.md](CONFIGURATION_SYSTEM.md) | Settings, preferences, persistence | 749 |
@@ -82,9 +81,9 @@ All documentation files follow these standards:
 ### April 7, 2026
 - **Full documentation QA pass:** Verified all claims against actual source code
 - **Provider accuracy:** Updated all provider lists to include Google Gemini, MiniMax, OpenRouter
-- **Tool accuracy:** Fixed tool counts (8 tools), verified operation lists against code
+- **Tool accuracy:** Verified tool counts (13 tools), verified operation lists against code
 - **Math formulas:** Expanded formula list from 10 to 24 (matching actual implementation)
-- **Storage paths:** Corrected model cache path (`sam-rewritten/models/`), verified `memory.db` paths
+- **Storage paths:** Verified model cache path (`sam/models/`), verified `memory.db` paths
 - **Keyboard shortcuts:** Expanded shortcuts table with all documented commands
 - **Cross-doc consistency:** Ensured provider lists, tool names, and paths match across all docs
 

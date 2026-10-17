@@ -25,7 +25,7 @@ For multi-step work, SAM can chain tool calls together and track progress with a
 
 ## Current Tool Surface
 
-The current built-in tool set includes 12 consolidated tools:
+The current built-in tool set includes 13 consolidated tools (12 standard plus 1 ALICE image generation):
 
 - `user_collaboration`
 - `todo_operations`

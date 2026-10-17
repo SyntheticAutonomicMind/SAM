@@ -83,8 +83,8 @@ When you open SAM for the first time:
 ### System Requirements
 
 - macOS 14.0 (Sonoma) or later
-- Apple Silicon (M1/M2/M3/M4) recommended for local models
-- Intel Macs supported (cloud providers and llama.cpp local models)
+- Apple Silicon recommended for local models
+- Intel Macs supported for cloud providers and core features (local models are Apple Silicon only)
 - 8GB RAM minimum, 16GB+ recommended for local models
 
 ---
@@ -127,16 +127,16 @@ SAM supports multiple AI providers. You can configure one or many and switch bet
 
 | Provider | Models | Notes |
 |----------|--------|-------|
-| **OpenAI** | GPT-4o, GPT-4, GPT-3.5, o1, o3 | Most popular, broad capabilities |
+| **OpenAI** | Frontier models | Most popular, broad capabilities |
 | **Anthropic** | Via OpenRouter | Claude models available through OpenRouter |
-| **GitHub Copilot** | GPT-4o, Claude 3.5, o1 | Requires GitHub Copilot subscription |
-| **DeepSeek** | DeepSeek Chat, DeepSeek Coder | Cost-effective, good for coding |
-| **Google Gemini** | Gemini 2.5 Pro/Flash, 2.0 Flash | Large context (up to 1M tokens) |
-| **MiniMax** | MiniMax-M3, M3-highspeed, M2.7 | 128K context, competitive pricing |
-| **OpenRouter** | 100+ models | Access many providers through one API |
-| **Ollama Cloud** | Various Ollama models | Cloud-hosted, no local server needed |
-| **Z.AI (Chat)** | GLM-5.1, GLM-4.9 | Bilingual Chinese/English |
-| **Z.AI (Coding)** | GLM-5.1, GLM-4.9 | Specialized for coding |
+| **GitHub Copilot** | Multiple model families | Requires GitHub Copilot subscription |
+| **DeepSeek** | General and coding models | Cost-effective, good for coding |
+| **Google Gemini** | Multimodal models with large context | Up to 1M token context |
+| **MiniMax** | Large-context models | Competitive pricing |
+| **OpenRouter** | Many models | Access many providers through one API |
+| **Ollama Cloud** | Various models | Cloud-hosted, no local server needed |
+| **Z.AI (Chat)** | Bilingual Chinese/English | Bilingual Chinese/English |
+| **Z.AI (Coding)** | Coding-optimized | Specialized for coding |
 
 ### Local Models
 
@@ -144,9 +144,8 @@ Run AI completely on your Mac with no internet connection required:
 
 | Engine | Best For | Requirements |
 |--------|----------|-------------|
-| **MLX** | Apple Silicon Macs, quality | M1+ chip, 8GB+ RAM |
-| **llama.cpp** | Apple Silicon Macs, speed | M1+ chip, 8GB+ RAM |
-| **llama.cpp** | Any Mac (Intel or Apple Silicon) | 8GB+ RAM |
+| **MLX** | Apple Silicon Macs, quality | Apple Silicon, 8GB+ RAM |
+| **llama.cpp** | Apple Silicon Macs, speed | Apple Silicon, 8GB+ RAM |
 
 Local models are downloaded once and run entirely offline. SAM includes a model browser in Settings where you can discover, download, and manage local models.
 
@@ -582,16 +581,16 @@ SAM's default system prompt is built from modular components:
 
 | Shortcut | Action |
 |----------|--------|
-| N | New conversation |
-| K | Clear current conversation |
-| ⇧R | Rename conversation |
-| ⇧D | Duplicate conversation |
-| ⇧E | Export conversation |
-|  | Delete conversation |
-| F | Search conversations |
-| ⇧/ | Show help |
-| , | Open Settings |
-| W | Close window |
+| ⌘N | New conversation |
+| ⌘K | Clear current conversation |
+| ⇧⌘R | Rename conversation |
+| ⇧⌘D | Duplicate conversation |
+| ⇧⌘E | Export conversation |
+| ⌘⌫ | Delete conversation |
+| ⌘F | Search conversations |
+| ⇧⌘/ | Show help |
+| ⌘, | Open Settings |
+| ⌘W | Close window |
 | Enter | Send message |
 | Shift+Enter | New line in message |
 
@@ -673,7 +672,7 @@ SAM's default system prompt is built from modular components:
 ## FAQ
 
 **Q: Does SAM work offline?**
-A: Yes, with local models (MLX, llama.cpp, llama.cpp) and no cloud providers configured.
+A: Yes, with local models (MLX, llama.cpp) and no cloud providers configured.
 
 **Q: Can I use SAM on iPhone/iPad?**
 A: Not directly, but [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) provides browser access from any device on your network.
@@ -688,7 +687,7 @@ A: Yes. All data stays on your Mac. Cloud providers only receive the messages yo
 A: Yes, SAM includes LoRA training for MLX and GGUF models. See the LoRA Training section in Settings.
 
 **Q: What's the difference between MLX and llama.cpp?**
-A: MLX uses Apple's MLX framework (best quality). llama.cpp is an optimized llama.cpp fork (best speed on Apple Silicon).
+A: MLX uses Apple's MLX framework (best quality). llama.cpp is an optimized fork (best speed on Apple Silicon).
 
 **Q: How do I update SAM?**
 A: Homebrew: `brew upgrade --cask sam`. Manual: Download new DMG from GitHub Releases.

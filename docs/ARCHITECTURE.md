@@ -18,7 +18,7 @@ This document is a starting point for understanding SAM's design. For deep imple
 graph TB
     UI["UserInterface<br/>ChatWidget - Preferences - Documents - Help - Search"]
     API["APIFramework<br/>AgentOrchestrator - Providers - EndpointManager<br/>ToolCallExtractor - TokenCounter - SAMAPIServer"]
-    MCP["MCPFramework<br/>Tools - 12 consolidated"]
+    MCP["MCPFramework<br/>Tools - 13 consolidated"]
     CONV["ConversationEngine<br/>Memory - VectorRAG"]
     CONFIG["ConfigurationSystem<br/>Preferences - Prompts"]
     MLX["MLXIntegration<br/>Local Models"]
@@ -49,7 +49,7 @@ graph TB
 
 ## Module Overview
 
-SAM is organized into eleven Swift modules (SPM targets), each with a clear responsibility:
+SAM is organized into ten Swift modules (SPM library/executable targets) plus one binary target (llama), eleven SPM targets total, each with a clear responsibility:
 
 ### SAM (Entry Point)
 
@@ -111,7 +111,7 @@ The tool system. Implements the Model Context Protocol pattern where tools are r
 - **Authorization/** - Path-based authorization for file access
 - **Internal/** - Sub-tools dispatched by consolidated tools
 
-SAM exposes 12 consolidated tools to the AI, which internally dispatch to ~80 sub-operations. This keeps the tool interface clean for the AI while providing fine-grained functionality.
+SAM exposes 13 consolidated tools to the AI, which internally dispatch to ~80 sub-operations. This keeps the tool interface clean for the AI while providing fine-grained functionality.
 
 ### ConversationEngine
 
@@ -278,7 +278,6 @@ SAM uses Swift Package Manager (SPM) with a Makefile wrapper:
 - [project-docs/AGENT_ORCHESTRATOR.md](../project-docs/AGENT_ORCHESTRATOR.md) - Agent loop details
 - [project-docs/CONVERSATION_ENGINE.md](../project-docs/CONVERSATION_ENGINE.md) - Conversation system internals
 - [project-docs/MESSAGING_ARCHITECTURE.md](../project-docs/MESSAGING_ARCHITECTURE.md) - Message flow details
-- [project-docs/MLX_INTEGRATION.md](../project-docs/MLX_INTEGRATION.md) - MLX implementation
 - [project-docs/SOUND.md](../project-docs/SOUND.md) - Voice framework details
 - [project-docs/CONFIGURATION_SYSTEM.md](../project-docs/CONFIGURATION_SYSTEM.md) - Configuration internals
 - [project-docs/SECURITY_SPECIFICATION.md](../project-docs/SECURITY_SPECIFICATION.md) - Security model details

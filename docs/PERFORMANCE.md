@@ -46,7 +46,7 @@ Local inference dominates memory usage because model weights must be loaded into
 Local models are stored under:
 
 ```text
-~/Library/Caches/sam-rewritten/models/
+~/Library/Caches/sam/models/
 ```
 
 ### Network usage
@@ -72,12 +72,11 @@ Best use cases:
 
 ### Intel Macs
 
-Intel remains usable for:
-- cloud providers
-- llama.cpp local models
-- general SAM usage without MLX
+Intel Macs are not supported for local model inference. Cloud providers
+and all other SAM features (web search, document tools, file tools, voice,
+etc.) work on Intel.
 
-If local inference matters a lot, Apple Silicon is the better experience.
+If local inference matters, Apple Silicon is required.
 
 ---
 
@@ -88,7 +87,7 @@ Local performance depends on:
 - quantization
 - available RAM / unified memory
 - current system load
-- chosen engine (MLX vs llama.cpp vs llama.cpp)
+- chosen engine (MLX vs llama.cpp)
 
 ### General guidance
 
@@ -96,7 +95,6 @@ Local performance depends on:
 - larger models may improve quality but increase latency and memory usage
 - MLX is usually the best option on Apple Silicon for quality
 - llama.cpp is the best option on Apple Silicon for speed
-- llama.cpp is the fallback for Intel or GGUF-specific local workflows
 
 ### Model engine comparison (Apple Silicon)
 
@@ -104,7 +102,6 @@ Local performance depends on:
 |--------|-------|---------|-------------------|----------|
 | **MLX** | Fast | Best | Good | General local use, quality priority |
 | **llama.cpp** | Fastest | Very Good | Best | Speed priority, large models |
-| **llama.cpp** | Moderate | Good | Good | Intel Macs, specific GGUF models |
 
 ---
 

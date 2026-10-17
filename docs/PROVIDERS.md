@@ -20,12 +20,11 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 | **DeepSeek** | Pay-per-token (low cost) | Fast | Cloud | Budget-friendly general use |
 | **Google Gemini** | Pay-per-token | Fast | Cloud | Google ecosystem, multimodal |
 | **MiniMax** | Pay-per-token | Fast | Cloud | Cost-effective, large context |
-| **OpenRouter** | Varies by model | Varies | Cloud | Access to 100+ models |
+| **OpenRouter** | Varies by model | Varies | Cloud | Access models from multiple providers |
 | **Ollama Cloud** | Pay-per-token | Varies | Cloud | Cloud-hosted Ollama models |
 | **Z.AI (Chat)** | Pay-per-token | Fast | Cloud | GLM models, Chinese/English bilingual |
 | **Z.AI (Coding)** | Pay-per-token | Fast | Cloud | GLM coding models |
 | **MLX (Local)** | Free | Varies | Full privacy | Offline use, sensitive data, Apple Silicon |
-| **llama.cpp (Local)** | Free | Varies | Full privacy | Offline use, Intel or Apple Silicon |
 | **llama.cpp (Local)** | Free | Fast | Full privacy | High-performance local, Apple Silicon |
 | **Remote llama.cpp** | Free | Varies | Self-hosted | Self-hosted inference servers |
 | **Custom Endpoint** | Varies | Varies | Self-hosted | Self-hosted servers, Ollama, LM Studio |
@@ -36,7 +35,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ### OpenAI
 
-**What you get:** GPT-4o, GPT-4, GPT-3.5 Turbo, o1, o3 reasoning models
+**What you get:** Leading frontier models with strong reasoning and coding
 
 **Setup:**
 1. Create an account at [platform.openai.com](https://platform.openai.com)
@@ -46,9 +45,9 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 5. Select your default model
 
 **Model Recommendations:**
-- **GPT-4o** - Best overall balance of speed, quality, and cost
-- **GPT-3.5 Turbo** - Fast and cheap for simple tasks
-- **o1 / o3** - Reasoning models for complex logic and math (slower, more expensive)
+- Top-tier model - Best overall balance of speed, quality, and cost
+- Fast model - Fast and cheap for simple tasks
+- Reasoning model - For complex logic and math (slower, more expensive)
 
 **Pricing:** See [openai.com/pricing](https://openai.com/pricing) for current rates.
 
@@ -56,7 +55,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ### GitHub Copilot
 
-**What you get:** Access to GPT-4o, Claude 3.5, o1, and other models through your Copilot subscription.
+**What you get:** Multiple model families via your Copilot subscription
 
 **Setup:**
 1. You need an active GitHub Copilot subscription (Individual, Business, or Enterprise)
@@ -79,7 +78,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ### DeepSeek
 
-**What you get:** DeepSeek Chat, DeepSeek Coder
+**What you get:** General-purpose and coding-optimized models
 
 **Setup:**
 1. Create an account at [platform.deepseek.com](https://platform.deepseek.com)
@@ -88,8 +87,8 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 4. Paste your API key
 
 **Model Recommendations:**
-- **DeepSeek Chat** - General conversation and tasks
-- **DeepSeek Coder** - Optimized for coding tasks
+- General conversation and task models
+- Coding-optimized variants
 
 **Advantages:**
 - Significantly lower cost than OpenAI or Anthropic
@@ -99,7 +98,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ### Google Gemini
 
-**What you get:** Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.0 Flash
+**What you get:** State-of-the-art multimodal models with large context
 
 **Setup:**
 1. Get an API key from [aistudio.google.com](https://aistudio.google.com)
@@ -108,9 +107,9 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 4. Select your default model
 
 **Model Recommendations:**
-- **Gemini 2.5 Pro** - Top-tier reasoning and long context
-- **Gemini 2.5 Flash** - Fast and cost-effective
-- **Gemini 2.0 Flash** - Budget-friendly for simple tasks
+- Top-tier reasoning and long context models
+- Fast and cost-effective variants
+- Budget-friendly options for simple tasks
 
 **Advantages:**
 - Large context windows (up to 1M tokens on some models)
@@ -121,7 +120,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ### MiniMax
 
-**What you get:** MiniMax-M3, MiniMax-M3-highspeed, MiniMax-M2.7, MiniMax-M2.5
+**What you get:** Large-context models optimized for efficiency
 
 **Setup:**
 1. Create an account at [minimax.io](https://www.minimax.io)
@@ -130,12 +129,11 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 4. Paste your API key
 
 **Model Recommendations:**
-- **MiniMax-M3** - Latest model, best quality
-- **MiniMax-M3-highspeed** - Faster variant with slightly lower quality
-- **MiniMax-M2.7** - Previous generation, still capable
+- Latest model - best quality
+- Previous generation - still capable
 
 **Advantages:**
-- 128K token context window
+- Large context windows (up to 1M+ tokens on M3)
 - Competitive pricing
 - Good tool use capabilities
 - Supports thinking parameter for extended reasoning
@@ -144,7 +142,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ### OpenRouter
 
-**What you get:** Access to 100+ models from multiple providers through a single API.
+**What you get:** Access to models from multiple providers through a single API.
 
 **Setup:**
 1. Create an account at [openrouter.ai](https://openrouter.ai)
@@ -160,7 +158,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 - Pay-per-token across all models
 
 **Recommended Model for New Users:**
-- **minimax/minimax-m2.7** - Excellent all-around model with 1M token context, strong reasoning, and competitive pricing. A great starting point when using OpenRouter.
+- A MiniMax model - Excellent all-around performance with large context, strong reasoning, and competitive pricing. A great starting point when using OpenRouter.
 
 ---
 
@@ -192,7 +190,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 3. In SAM Settings > AI Providers, add Z.AI (Chat)
 4. Paste your API key
 
-**Models:** GLM-5.1, GLM-4.9
+**Models:** Latest GLM family models
 
 **Features:**
 - Strong bilingual capabilities (Chinese/English)
@@ -211,7 +209,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 3. In SAM Settings > AI Providers, add Z.AI (Coding)
 4. Paste your API key
 
-**Models:** GLM-5.1, GLM-4.9
+**Models:** Latest GLM family models
 
 **Features:**
 - Specialized for code generation and analysis
@@ -227,7 +225,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 **What you get:** Run language models directly on your Mac using Apple's MLX framework with Metal GPU acceleration.
 
 **Requirements:**
-- Apple Silicon Mac (M1, M2, M3, M4)
+- Apple Silicon Mac
 - 8GB+ unified memory (16GB+ recommended)
 - macOS 14.0+
 
@@ -262,38 +260,12 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 ---
 
-### llama.cpp (Any Mac)
-
-**What you get:** Run GGUF-format models on any Mac, including Intel.
-
-**Requirements:**
-- Any Mac (Apple Silicon or Intel)
-- 8GB+ RAM
-- macOS 14.0+
-
-**Setup:**
-1. Download a GGUF model file (from Hugging Face or other sources)
-2. In SAM Settings > AI Providers, add llama.cpp
-3. Point to the model file location
-4. Configure context size and other parameters
-
-**Advantages:**
-- Works on Intel Macs (unlike MLX)
-- Supports GGUF quantized models for lower memory usage
-- Wide model compatibility
-
-**Limitations:**
-- Generally slower than MLX on Apple Silicon
-- Manual model file management
-
----
-
 ### llama.cpp (Apple Silicon)
 
-**What you get:** High-performance GGUF inference using the llama.cpp fork of llama.cpp with Metal optimizations.
+**What you get:** High-performance GGUF inference with Metal GPU acceleration.
 
 **Requirements:**
-- Apple Silicon Mac (M1, M2, M3, M4)
+- Apple Silicon Mac
 - 8GB+ RAM
 - macOS 14.0+
 
@@ -370,19 +342,6 @@ You can have multiple providers configured simultaneously and switch between the
 - Switch mid-conversation - the history carries forward
 - Each conversation remembers which model was last used
 
-### Strategy Recommendations
-
-| Use Case | Recommended Approach |
-|----------|---------------------|
-| **Daily use** | Cloud provider (GPT-4o or Claude via Copilot) for quality and speed |
-| **Sensitive content** | Local model (MLX or llama.cpp) for complete privacy |
-| **Budget-conscious** | DeepSeek, MiniMax, or local models for routine tasks, GPT-4o for complex ones |
-| **Coding** | GPT-4o or Claude for best tool use, DeepSeek Coder for budget |
-| **Long documents** | Gemini (1M context), MiniMax (128K), or local models with large context |
-| **Offline use** | Local models (MLX, llama.cpp, or llama.cpp) |
-| **Experimentation** | OpenRouter for access to many models |
-| **Best local speed (Apple Silicon)** | llama.cpp for highest performance |
-
 ---
 
 ## Troubleshooting
@@ -424,4 +383,3 @@ You can have multiple providers configured simultaneously and switch between the
 - [Features](FEATURES.md) - Complete feature reference
 - [project-docs/API_FRAMEWORK.md](../project-docs/API_FRAMEWORK.md) - API implementation details
 - [project-docs/API_INTEGRATION_SPECIFICATION.md](../project-docs/API_INTEGRATION_SPECIFICATION.md) - Provider integration specification
-- [project-docs/MLX_INTEGRATION.md](../project-docs/MLX_INTEGRATION.md) - MLX implementation details

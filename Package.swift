@@ -251,6 +251,11 @@ let package = Package(
             name: "MCPFrameworkTests",
             dependencies: ["MCPFramework", "ConfigurationSystem", "APIFramework"],
             path: "Tests/MCPFrameworkTests"
+        ),
+        .testTarget(
+            name: "SecurityFrameworkTests",
+            dependencies: ["SecurityFramework"],
+            path: "Tests/SecurityFrameworkTests"
         )
     ]
 )

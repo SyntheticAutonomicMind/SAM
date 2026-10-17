@@ -78,7 +78,7 @@ Choose how SAM talks to you - friendly, professional, creative, or create your o
     <td width="50%">
       <h3>Flexible AI Provider Selection</h3>
       <img src=".images/sam-image-2.png"/>
-      <em>Choose from local models (MLX, llama.cpp, llama.cpp), or cloud providers (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Ollama Cloud, Z.AI)</em>
+      <em>Choose from local models (MLX, llama.cpp) or cloud providers (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Ollama Cloud, Z.AI)</em>
     </td>
   </tr>
 </table>
@@ -105,19 +105,18 @@ Choose how SAM talks to you - friendly, professional, creative, or create your o
 
 | Provider | What You Get |
 |----------|--------------|
-| **OpenAI** | GPT-4, GPT-4o, GPT-3.5, o1/o3 models |
+| **OpenAI** | Leading frontier models with strong reasoning and coding |
 | **Anthropic** | Claude models available via GitHub Copilot and OpenRouter |
-| **GitHub Copilot** | GPT-4o, Claude 3.5, o1 (requires subscription) |
-| **DeepSeek** | Cost-effective AI models |
-| **Google Gemini** | Gemini 2.5 Pro/Flash, large context windows |
-| **MiniMax** | MiniMax-M3, M3-highspeed, M2.7 (128K context) |
-| **OpenRouter** | Access 100+ models from multiple providers |
+| **GitHub Copilot** | Multiple model families via Copilot subscription |
+| **DeepSeek** | Budget-friendly models with strong coding support |
+| **Google Gemini** | State-of-the-art multimodal models with large context |
+| **MiniMax** | Large-context models optimized for efficiency |
+| **OpenRouter** | Access models from multiple providers |
 | **Ollama Cloud** | Cloud-hosted Ollama models |
 | **Z.AI (Chat)** | GLM models for conversation and reasoning |
 | **Z.AI (Coding)** | GLM models optimized for coding |
 | **Local MLX** | Run models on Apple Silicon Macs |
-| **Local llama.cpp** | High-performance GGUF inference on Apple Silicon |
-| **Local llama.cpp** | Run models on any Mac (Intel or Apple Silicon) |
+| **Local llama.cpp** | High-performance GGUF inference on Apple Silicon Macs |
 | **Remote llama.cpp** | Connect to remote llama.cpp server |
 | **Custom** | Use any OpenAI-compatible API |
 
@@ -165,8 +164,7 @@ Press `N` for a new conversation. Type your message. Say "Hey SAM" for hands-fre
 **For local AI models:**
 - 16GB+ RAM recommended
 - 20GB+ free disk space (models can be large)
-- Apple Silicon (M1/M2/M3/M4) recommended for MLX/llama.cpp
-- Intel Macs can use llama.cpp models
+- Apple Silicon recommended for MLX/llama.cpp
 
 ---
 
@@ -215,4 +213,4 @@ SAM is part of [Synthetic Autonomic Mind](https://github.com/SyntheticAutonomicM
 
 Created by Andrew Wyatt (Fewtarius) · [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org) · [github.com/SyntheticAutonomicMind/SAM](https://github.com/SyntheticAutonomicMind/SAM)
 
-Built with open source: [Vapor](https://vapor.codes) · [MLX](https://github.com/ml-explore/mlx-swift) · [llama.cpp](https://github.com/ggerganov/llama.cpp) · [llama.cpp](https://github.com/cachy-llama/llama.cpp) · [Sparkle](https://sparkle-project.org)
+Built with open source: [Vapor](https://vapor.codes) · [MLX](https://github.com/ml-explore/mlx-swift) · [llama.cpp](https://github.com/ggerganov/llama.cpp) · [Sparkle](https://sparkle-project.org)

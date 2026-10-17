@@ -154,13 +154,13 @@ curl http://localhost:8080/v1/models/github_copilot/gpt-4.1
 4. Track premium model usage for billing purposes
 
 ### Remote Providers
-- **GitHub Copilot**: `github_copilot/gpt-4.1`, `github_copilot/gpt-4o`, `github_copilot/o1-preview`
-- **OpenAI**: `openai/gpt-4`, `openai/gpt-4-turbo`, `openai/gpt-3.5-turbo`
-- **Anthropic**: `anthropic/claude-4-sonnet`, `anthropic/claude-3.5-sonnet`
-- **Google Gemini**: `gemini/gemini-2.5-pro`, `gemini/gemini-2.5-flash`, `gemini/gemini-2.0-flash`
-- **DeepSeek**: `deepseek/deepseek-coder`, `deepseek/deepseek-chat`
-- **MiniMax**: `minimax/MiniMax-M2.7`, `minimax/MiniMax-M2.5`
-- **OpenRouter**: Any model available on OpenRouter (e.g., `openrouter/anthropic/claude-4-sonnet`)
+- **GitHub Copilot**: `github_copilot/*` (Copilot-provided models)
+- **OpenAI**: `openai/*` (frontier models)
+- **Anthropic**: `anthropic/*` (Claude family models)
+- **Google Gemini**: `gemini/*` (multimodal models)
+- **DeepSeek**: `deepseek/*` (budget-friendly models)
+- **MiniMax**: `minimax/*` (large-context models)
+- **OpenRouter**: Any model available on OpenRouter (e.g., `openrouter/anthropic/*`)
 
 ### Local Models (if you have them installed)
 - **MLX**: `mlx/mlx-community/Llama-3.2-3B-Instruct-4bit`

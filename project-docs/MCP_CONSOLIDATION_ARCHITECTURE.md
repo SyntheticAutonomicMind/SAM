@@ -14,7 +14,7 @@
 
 ## Overview
 
-SAM's MCP (Model Context Protocol) tools have been consolidated from ~39 individual tools into 8 tools, with the 3 major operational tools (file, memory, todo) using a unified operation-based interface. This consolidation reduces system prompt size while preserving all functionality and improving agent decision-making through clearer tool organization.
+SAM's MCP (Model Context Protocol) tools have been consolidated from ~39 individual tools into 13 tools, with the 3 major operational tools (file, memory, todo) using a unified operation-based interface. This consolidation reduces system prompt size while preserving all functionality and improving agent decision-making through clearer tool organization.
 
 **Historical Note**: This document describes the CURRENT architecture (December 2025). An intermediate consolidation occurred in October 2025 where file operations were split into 3 separate tools (FileReadOperationsTool, FileSearchOperationsTool, FileWriteOperationsTool). These have since been unified into a single FileOperationsTool.
 

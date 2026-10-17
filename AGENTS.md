@@ -5,7 +5,7 @@ SAM (Synthetic Autonomic Mind) is a native macOS AI assistant built with Swift a
 ## Quick Facts
 
 - **Language:** Swift 6.0+ (strict concurrency mode enabled)
-- **Platform:** macOS 14.0+, Apple Silicon (arm64) preferred, Intel support secondary
+- **Platform:** macOS 14.0+, Apple Silicon (arm64) required for local models
 - **Build System:** Swift Package Manager (SPM) + Makefile
 - **Architecture:** Modular, actor-based concurrency, privacy-first design
 - **Testing:** XCTest framework, CI/CD via GitHub Actions
@@ -21,7 +21,7 @@ SAM (Synthetic Autonomic Mind) is a native macOS AI assistant built with Swift a
 agent_operations(operation: "spawn", task: "...", working_dir: "./SAM", model: "minimax/minimax-m2.7")
 ```
 
-MiniMax-M2.7 via MiniMax is the recommended default for all standard tasks: investigation, QA, implementation, code review, refactoring, documentation.
+MiniMax is the recommended default for all standard tasks: investigation, QA, implementation, code review, refactoring, documentation.
 
 ---
 
@@ -41,7 +41,7 @@ MiniMax-M2.7 via MiniMax is the recommended default for all standard tasks: inve
 git clone --recursive https://github.com/SyntheticAutonomicMind/SAM.git
 cd SAM
 
-# First build automatically builds llama.cpp framework
+# Build
 make build-debug
 ```
 
@@ -135,7 +135,7 @@ logger.warning("Warning message")
 logger.error("Error message")
 ```
 
-Logger label format: `com.sam.<module>` (e.g., `com.sam.orchestrator`, `com.sam.conversation`)
+Logger label format: `com.sam.<module>.<subsystem>` (e.g., `com.sam.api.deepseek`, `com.sam.llama.LlamaProvider`, `com.sam.mcp.FileOperationsTool`)
 
 ---
 
@@ -170,7 +170,7 @@ SAM uses **Swift 6 strict concurrency checking**. All code MUST follow these rul
 
 4. **Expected Build Results**
    - **0 errors** (always)
-   - **~211 warnings** (Sendable-related, non-blocking, acceptable)
+   - Build output may contain warnings, which are acceptable
    - Run `make build-debug` to verify locally
    - Run `./scripts/test_like_pipeline.sh` to simulate CI/CD
 
@@ -213,14 +213,22 @@ Sources/
 │   └── PropertiesStorage/
 ├── APIFramework/               - Multi-provider support, orchestration
 │   ├── AIProvider.swift (protocol)
-│   ├── Providers/ (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter, Z.AI, Ollama Cloud, Local MLX, Local llama.cpp, Remote llama.cpp, Custom)
-│   ├── AgentOrchestrator.swift (multi-step workflows)
-│   └── ToolCallExtractor.swift
+│   ├── EndpointManager.swift (model routing, provider management)
+│   ├── AgentOrchestrator.swift (multi-step workflows, + extensions)
+│   ├── ToolCallExtractor.swift
+│   ├── Providers.swift (OpenAI, GitHub Copilot)
+│   ├── ExtendedProviders.swift (DeepSeek, Gemini, MiniMax, Z.AI, Ollama, Custom)
+│   ├── OpenRouterProvider.swift
+│   ├── MLXProvider.swift
+│   ├── LlamaProvider.swift
+│   ├── RemoteLlamaProvider.swift
+│   ├── ALICEProvider.swift
+│   └── SAMAPIServer.swift (Vapor-based local HTTP server)
 ├── MCPFramework/               - Model Context Protocol tools
-│   ├── MCPTool.swift (protocol)
-│   ├── Tools/ (12 consolidated tools, 80+ operations)
-│   ├── ToolRegistry.swift
-│   └── ToolResult.swift
+│   ├── MCPManager.swift (tool registration, lifecycle)
+│   ├── ConsolidatedMCP.swift (protocol for consolidated tools)
+│   ├── Tools/ (13 consolidated tools, 80+ operations)
+│   └── MCPTypes.swift (result types)
 ├── SharedData/                 - Shared types, thread-safe storage
 │   ├── SharedTopics.swift
 │   ├── Storage.swift
@@ -262,7 +270,7 @@ Tests/
 ├── ConversationEngineTests/    - Conversation, memory, database
 ├── MCPFrameworkTests/          - Tool registry, tool execution
 ├── UserInterfaceTests/         - UI components
-├── SecurityFrameworkTests/     - Security operations
+├── SecurityFrameworkTests/   - Security operations
 ├── e2e/                        - End-to-end integration
 ├── test_workspace/             - Test data directory
 ├── run_all_tests.sh            - Master test runner
@@ -389,8 +397,8 @@ git commit -m "docs(api): Add ALICE integration guide"
 ### Adding a New Tool to MCP Framework
 
 1. Create file in `Sources/MCPFramework/Tools/MyTool.swift`
-2. Implement `MCPTool` protocol
-3. Register in `UniversalToolRegistry`
+2. Implement `ConsolidatedMCP` protocol
+3. Register in `MCPManager.swift` -> `initializeBuiltinTools()`
 4. Add tests in `Tests/MCPFrameworkTests/`
 5. Document in tool's docstring
 6. Add entry to CHANGELOG
@@ -418,11 +426,11 @@ When adding UI state that should persist per conversation:
 
 ### Adding a New AI Provider
 
-1. Create provider in `Sources/APIFramework/Providers/MyProvider.swift`
+1. Create provider in `Sources/APIFramework/` (e.g., `MyProvider.swift`)
 2. Implement `AIProvider` protocol
 3. Handle streaming responses
 4. Add tests with mock responses
-5. Register in `ProviderRegistry`
+5. Register in `EndpointManager`
 
 ### Updating Dependencies
 
@@ -455,16 +463,20 @@ make distribute
 - **NO telemetry, NO tracking by default**
 - All conversations stored locally in SQLite
 - API credentials stored in macOS Keychain
-- Local models run entirely offline (MLX, llama.cpp, llama.cpp)
+- Local models run entirely offline (MLX, llama.cpp)
 - Cloud providers (OpenAI, Anthropic, etc.) are opt-in only
 
 ### Entitlements
 
 See `SAM.entitlements` for:
-- File system access requirements
-- Network access for API providers
-- Microphone access for voice
-- Camera access (if image analysis needed)
+- Keychain access (API key storage)
+- JIT compilation (required for MLX and llama.cpp)
+- Unsigned executable memory (required for MLX Metal)
+- Disable library validation (required for framework loading)
+
+Privacy usage descriptions (in `Info.plist`):
+- Microphone and speech recognition (for voice input)
+- Calendar, contacts, reminders, Apple Events (for tool access)
 
 ---
 
@@ -493,7 +505,7 @@ make build-debug
 ### Tests Fail with Path Issues
 
 - Ensure `Tests/test_workspace/` exists
-- Run tests from project root: `cd SAM && swift test`
+- Run tests from project root: `swift test`
 - Check file permissions: `chmod -R 755 Tests/`
 
 ### DMG Creation Fails

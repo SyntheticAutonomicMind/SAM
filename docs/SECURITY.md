@@ -22,7 +22,7 @@ Everything SAM stores lives on your Mac:
 | Configuration | `~/Library/Application Support/SAM/` | At rest (macOS FileVault) |
 | API keys | macOS Keychain | Yes (Keychain encryption) |
 | Working files | `~/SAM/` | At rest (macOS FileVault) |
-| Local models | `~/Library/Caches/sam-rewritten/models/` | At rest (macOS FileVault) |
+| Local models | `~/Library/Caches/sam/models/` | At rest (macOS FileVault) |
 | LTM database | `~/Library/Application Support/SAM/ltm.db` | At rest (macOS FileVault) |
 
 SAM does not maintain any cloud storage, remote databases, or sync services.
@@ -47,7 +47,7 @@ Each provider has their own data retention and privacy policies. SAM minimizes w
 
 ### Local Models See Nothing External
 
-When you use local models (MLX, llama.cpp, or llama.cpp), all processing happens on your Mac. Zero data leaves your machine.
+When you use local models (MLX, llama.cpp), all processing happens on your Mac. Zero data leaves your machine.
 
 ---
 
@@ -196,8 +196,9 @@ To remove all SAM data from your Mac:
 1. Quit SAM
 2. Delete `~/Library/Application Support/SAM/`
 3. Delete `~/SAM/`
-4. Remove SAM's Keychain entries (search for "syntheticautonomicmind" in Keychain Access)
-5. Delete SAM.app from Applications
+4. Delete `~/Library/Caches/sam/models/` (local models)
+5. Remove SAM's Keychain entries (search for "syntheticautonomicmind" in Keychain Access)
+6. Delete SAM.app from Applications
 
 ---
 

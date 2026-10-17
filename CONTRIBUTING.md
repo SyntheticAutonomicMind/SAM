@@ -24,8 +24,8 @@ We are committed to providing a welcoming and inclusive environment. Please:
 ## Getting Started
 
 ### Prerequisites
-- macOS 14.0 (Sonoma) or later
-- Xcode 26.1+ with Swift 6.2.1+
+- macOS 14.0 (Sonoma) or later (macOS 15.0+ for development)
+- Xcode 16.0+ with Swift 6.0+
 - Familiarity with Swift and SwiftUI
 - Understanding of Swift 6 concurrency (async/await, actors, Sendable)
 
@@ -536,7 +536,7 @@ Update README.md for:
 
 1. **Create provider** in `Sources/APIFramework/`:
    ```swift
-   class MyProvider: APIProvider {
+   class MyProvider: AIProvider {
        // Implement required protocol methods
    }
    ```

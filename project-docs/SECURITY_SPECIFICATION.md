@@ -106,7 +106,7 @@ public func authorizePath(_ path: String, for tool: String, operation: String) a
 | Configuration | `~/Library/Application Support/SAM/` | FileVault |
 | API Keys | macOS Keychain | Keychain encryption (hardware-backed on Apple Silicon) |
 | Working Files | `~/SAM/` | FileVault |
-| Local Models | `~/Library/Caches/sam-rewritten/models/` | FileVault |
+| Local Models | `~/Library/Caches/sam/models/` | FileVault |
 | LTM Database | `~/Library/Application Support/SAM/ltm.db` | FileVault |
 | KV Store | `~/Library/Application Support/SAM/kv_store.db` | FileVault |
 
