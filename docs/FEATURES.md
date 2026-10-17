@@ -140,7 +140,7 @@ Connect to any OpenAI-compatible API:
 
 ## Autonomous Tool System
 
-SAM has 13 consolidated tools (12 standard plus 1 conditional ALICE image generation) that the AI uses autonomously to accomplish tasks. Each consolidated tool contains multiple operations (80+ total operations).
+SAM has 14 consolidated tools (12 standard plus 2 conditional ALICE image/audio generation) that the AI uses autonomously to accomplish tasks. Each consolidated tool contains multiple operations (80+ total operations).
 
 ### File Operations
 
@@ -244,6 +244,22 @@ All math is computed by a real Python 3 interpreter - no AI approximation.
 | `list_models` | List available models on the ALICE server |
 
 Connects to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for GPU-accelerated Stable Diffusion image and audio generation. Supports multiple models, automatic model discovery, and server health monitoring.
+
+### Music Operations
+
+| Operation | What It Does |
+|-----------|-------------|
+| `generate` | Generate music/audio from text prompts |
+| `list_models` | List available audio generation models on the ALICE server |
+
+Connects to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for GPU-accelerated music and audio generation:
+
+- **Stable Audio Open 1.0** - 47 seconds of stereo audio at 44.1 kHz from text prompts
+- **MiniMax Music 3** - Up to 6-minute songs with lyrics and structured music descriptions
+- **Instrumental generation** - MiniMax Music 3 supports `is_instrumental=true` with vocal activity detection and seed retry to prevent vocal leakage
+- **Automatic model discovery** - Detects audio models loaded on the ALICE server
+- **Health monitoring** - Connection status and server availability
+- **No local GPU required** - Generation happens on the ALICE server
 
 ### User Collaboration
 
@@ -391,10 +407,12 @@ Select specific input (microphone) and output (speaker) devices. SAM detects all
 
 ## Image and Audio Generation (ALICE)
 
-Connect to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for Stable Diffusion image and audio generation:
+Connect to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) server for Stable Diffusion image and music/audio generation:
 
 - **Automatic model discovery** - Detects models loaded on the ALICE server
-- **Multiple model support** - SD 1.5, SDXL, and custom models
+- **Multiple image model support** - SD 1.5, SDXL, FLUX, and custom models
+- **Audio generation** - Stable Audio Open 1.0 (47s stereo at 44.1 kHz) and MiniMax Music 3 (up to 6-minute songs with lyrics)
+- **Instrumental music** - MiniMax Music 3 supports `is_instrumental` with vocal activity detection and seed retry
 - **Health monitoring** - Connection status and server availability
 - **No local GPU required** - Generation happens on the ALICE server
 - **In-chat display** - Generated images appear directly in the conversation

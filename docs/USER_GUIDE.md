@@ -374,10 +374,27 @@ Just describe what you want:
 
 SAM sends the request to your ALICE server, which generates the image and returns it to SAM for display.
 
+### Generating Music
+
+Ask SAM to generate music or audio:
+- "Generate a 30-second ambient soundscape with soft pads"
+- "Create a 2-minute instrumental jazz piece with brushed drums"
+- "Generate a 180-second cinematic orchestral score"
+- "Create an instrumental track with no vocals for my YouTube video"
+
+SAM sends the request to your ALICE server's audio generation endpoint. Supported models:
+
+- **Stable Audio Open 1.0** - 47 seconds of stereo audio at 44.1 kHz from text prompts
+- **MiniMax Music 3** - Up to 6-minute songs with lyrics and structured music descriptions
+
+For MiniMax Music 3, you can specify `is_instrumental: true` to generate vocal-free music with automatic vocal activity detection and seed retry to prevent vocal leakage.
+
 ### Features
 
 - **Automatic model discovery** - SAM detects all models loaded on your ALICE server
-- **Multiple model support** - SD 1.5, SDXL, and any other Stable Diffusion model
+- **Multiple model support** - SD 1.5, SDXL, FLUX, and any other Stable Diffusion model
+- **Audio generation** - Stable Audio Open 1.0 and MiniMax Music 3
+- **Instrumental music** - Vocal-free generation with automatic leakage prevention
 - **Health monitoring** - Connection status displayed in Settings
 - **No local GPU required** - All generation happens on the ALICE server
 
