@@ -14,6 +14,10 @@ struct SAMRewrittenApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     private let logger = Logger(label: "com.sam.app")
 
+    /// Binds to "fontSizeScale" in UserDefaults so changes in Preferences
+    /// immediately propagate through the environment to open chat windows.
+    @AppStorage("fontSizeScale") private var fontSizeScale: Double = FontManager.defaultScale
+
     /// StateObjects for dependency management.
     @StateObject private var conversationManager = ConversationManager()
     @StateObject private var endpointManager: EndpointManager
@@ -152,7 +156,7 @@ struct SAMRewrittenApp: App {
                 .environmentObject(conversationManager)
                 .environmentObject(endpointManager)
                 .environmentObject(sharedConversationService)
-                .environment(\.fontSizeScale, FontManager.resolvedScale(from: UserDefaults.standard.double(forKey: FontManager.storageKey)))
+                .environment(\.fontSizeScale, fontSizeScale)
                 .onAppear {
                     #if DEBUG
                     logger.debug("Main window appeared")
