@@ -15,6 +15,7 @@ public class MCPManager: ObservableObject {
     private var memoryManager: MemoryManagerProtocol?
     
     private var imageGenerationService: ImageGenerationService?
+    private var audioGenerationService: AudioGenerationService?
     
     /// Error guidance for providing helpful messages when tool calls fail
     private let errorGuidance = ToolErrorGuidance()
@@ -36,6 +37,13 @@ public class MCPManager: ObservableObject {
     public func setImageGenerationService(_ service: ImageGenerationService) {
         self.imageGenerationService = service
         logger.debug("ImageGenerationService set on MCPManager")
+    }
+
+    /// Set audio generation service for the music_operations tool.
+    /// Must be called before initialize() so the service is available during tool setup.
+    public func setAudioGenerationService(_ service: AudioGenerationService) {
+        self.audioGenerationService = service
+        logger.debug("AudioGenerationService set on MCPManager")
     }
 
     public func setAdvancedToolsFactory(_ factory: @escaping () async -> [any MCPTool]) {
@@ -244,6 +252,14 @@ public class MCPManager: ObservableObject {
             logger.debug("ImageGenerationService injected into ImageGenerationTool")
         }
         candidateTools.append(imageGenTool)
+
+        /// Add music generation tool if service is available.
+        let musicGenTool = MusicGenerationTool()
+        if let audioService = self.audioGenerationService {
+            musicGenTool.setService(audioService)
+            logger.debug("AudioGenerationService injected into MusicGenerationTool")
+        }
+        candidateTools.append(musicGenTool)
 
         /// Add macOS integration tools.
         candidateTools.append(CalendarTool())

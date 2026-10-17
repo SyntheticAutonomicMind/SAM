@@ -137,6 +137,10 @@ struct SAMRewrittenApp: App {
         let aliceService = ALICEImageGenerationService()
         conversationManager.mcpManager.setImageGenerationService(aliceService)
 
+        /// Inject ALICE music generation service if configured.
+        let aliceMusicService = ALICEMusicService()
+        conversationManager.mcpManager.setAudioGenerationService(aliceMusicService)
+
         #if DEBUG
         logger.debug("Advanced tools factory injected into MCP system")
         #endif

@@ -3,6 +3,7 @@
 
 import SwiftUI
 import APIFramework
+import Logging
 
 /// Preferences pane for ALICE image generation server connection.
 struct ALICEPreferencesPane: View {
@@ -12,9 +13,13 @@ struct ALICEPreferencesPane: View {
     @State private var healthStatus: HealthStatus = .unknown
     @State private var healthResponse: ALICEHealthResponse?
     @State private var availableModels: [ALICEModel] = []
+    @State private var audioModels: [ALICEAudioModel] = []
     @State private var isChecking = false
+    @State private var isCheckingAudio = false
     @State private var errorMessage: String?
     @State private var showingAPIKeyField = false
+
+    private let logger = Logger(label: "com.sam.ui.ALICEPreferences")
 
     enum HealthStatus {
         case unknown, checking, healthy, unreachable
@@ -180,6 +185,80 @@ struct ALICEPreferencesPane: View {
                         .foregroundColor(.secondary)
                 }
             }
+
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.title)
+                            .foregroundColor(.blue)
+
+                        VStack(alignment: .leading) {
+                            Text("ALICE Audio Generation")
+                                .font(.headline)
+                            Text("Music and speech synthesis via Stable Audio and MiniMax Music")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.bottom, 4)
+
+                    Text("ALICE supports two audio models: **stable-audio-open-1.0** (47s stereo audio at 44.1 kHz) and **minimax-music-3** (up to 6-minute songs with lyrics). Once connected, SAM can generate music through the music_operations tool.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if let health = healthResponse, healthStatus == .healthy {
+                        Button("Refresh Audio Models") {
+                            Task {
+                                await refreshAudioModels()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isCheckingAudio)
+
+                        if !audioModels.isEmpty {
+                            ForEach(audioModels) { model in
+                                HStack {
+                                    Image(systemName: "waveform.path.eco")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 20)
+
+                                    VStack(alignment: .leading) {
+                                        Text(model.displayName)
+                                            .font(.body)
+                                        Text(model.id)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+
+                                        if let maxSec = model.maxSeconds {
+                                            Text("Max duration: \(maxSec)s")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Text(model.type)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.blue.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                }
+                            }
+                        }
+
+                        if audioModels.isEmpty && !isCheckingAudio {
+                            Text("No audio models found. The audio generation backend may not be configured on the server.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
         .onAppear {
@@ -259,6 +338,15 @@ struct ALICEPreferencesPane: View {
             let models = try await provider.fetchAvailableModels()
             availableModels = models
 
+            /// Fetch audio models if available.
+            do {
+                let audioModelsList = try await provider.fetchAudioModels()
+                audioModels = audioModelsList
+            } catch {
+                logger.debug("No audio models available: \(error.localizedDescription)")
+                audioModels = []
+            }
+
             /// Save as shared provider for the app.
             ALICEProvider.shared = provider
 
@@ -269,5 +357,18 @@ struct ALICEPreferencesPane: View {
         }
 
         isChecking = false
+    }
+
+    private func refreshAudioModels() async {
+        guard let provider = ALICEProvider.shared else { return }
+        isCheckingAudio = true
+        do {
+            let models = try await provider.fetchAudioModels()
+            audioModels = models
+        } catch {
+            logger.debug("Failed to fetch audio models: \(error.localizedDescription)")
+            audioModels = []
+        }
+        isCheckingAudio = false
     }
 }

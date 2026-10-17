@@ -44,6 +44,43 @@ public struct ImageGenerationResult: Sendable {
     }
 }
 
+/// Protocol for audio generation service, injected from APIFramework to avoid circular dependency.
+public protocol AudioGenerationService: Sendable {
+    /// Check if the audio generation server is available.
+    @MainActor func isAvailable() async -> Bool
+
+    /// Get available audio model IDs with display names and types.
+    @MainActor func listModels() async throws -> [(id: String, displayName: String, type: String)]
+
+    /// Generate audio from a text prompt and return local file paths.
+    @MainActor func generate(
+        prompt: String,
+        model: String?,
+        seconds: Int?,
+        steps: Int?,
+        guidanceScale: Float?,
+        seed: Int?,
+        isInstrumental: Bool?
+    ) async throws -> AudioGenerationResult
+}
+
+/// Result from audio generation.
+public struct AudioGenerationResult: Sendable {
+    public let localPaths: [String]
+    public let model: String
+    public let durationSeconds: Double
+    public let sampleRate: Int
+    public let seed: Int?
+
+    public init(localPaths: [String], model: String, durationSeconds: Double, sampleRate: Int, seed: Int?) {
+        self.localPaths = localPaths
+        self.model = model
+        self.durationSeconds = durationSeconds
+        self.sampleRate = sampleRate
+        self.seed = seed
+    }
+}
+
 /// MCP tool for AI image generation via remote server (ALICE).
 /// Uses injected ImageGenerationService to avoid circular module dependency.
 public class ImageGenerationTool: ConsolidatedMCP, @unchecked Sendable {

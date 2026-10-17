@@ -258,6 +258,171 @@ public class ALICEProvider: ObservableObject {
         try data.write(to: localPath)
         logger.debug("Downloaded image to: \(localPath.path)")
     }
+
+    // MARK: - Audio Model Discovery
+
+    public func fetchAudioModels() async throws -> [ALICEAudioModel] {
+        let audioModelsURL = "\(baseURL)/audio/models"
+
+        guard let url = URL(string: audioModelsURL) else {
+            throw ALICEError.invalidConfiguration("Invalid ALICE audio models URL")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        if let apiKey = apiKey, !apiKey.isEmpty {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Api-Key")
+        }
+
+        request.timeoutInterval = 30.0
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ALICEError.networkError("Invalid response type")
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw ALICEError.networkError("Failed to fetch audio models (\(httpResponse.statusCode)): \(errorText)")
+        }
+
+        let modelsResponse = try JSONDecoder().decode(ALICEAudioModelsResponse.self, from: data)
+        logger.info("Fetched \(modelsResponse.data.count) audio models from ALICE")
+
+        return modelsResponse.data
+    }
+
+    // MARK: - Audio Generation
+
+    public func generateAudio(
+        prompt: String,
+        model: String? = nil,
+        seconds: Int? = nil,
+        steps: Int? = nil,
+        guidanceScale: Float? = nil,
+        seed: Int? = nil,
+        isInstrumental: Bool? = nil
+    ) async throws -> ALICEAudioResult {
+        let audioGenerationsURL = "\(baseURL)/audio/generations"
+
+        guard let url = URL(string: audioGenerationsURL) else {
+            throw ALICEError.invalidConfiguration("Invalid ALICE audio generations URL")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        if let apiKey = apiKey, !apiKey.isEmpty {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Api-Key")
+        }
+
+        /// Build request body — only include fields that have values.
+        var requestBody: [String: Any] = [
+            "prompt": prompt
+        ]
+
+        if let model {
+            requestBody["model"] = model
+        }
+        if let seconds {
+            requestBody["seconds"] = seconds
+        }
+        if let steps {
+            requestBody["steps"] = steps
+        }
+        if let guidanceScale {
+            requestBody["cfg_scale"] = guidanceScale
+        }
+        if let seed {
+            requestBody["seed"] = seed
+        }
+        if let isInstrumental {
+            requestBody["is_instrumental"] = isInstrumental
+        }
+
+        request.httpBody = try deterministicJSONData(from: requestBody)
+        request.timeoutInterval = 600.0
+
+        logger.info("Generating audio via ALICE: model=\(model ?? "default"), prompt=\(prompt.prefix(50))")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ALICEError.networkError("Invalid response type")
+        }
+
+        guard 200...299 ~= httpResponse.statusCode else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+            switch httpResponse.statusCode {
+            case 401: throw ALICEError.authenticationFailed("Invalid or missing API key")
+            case 400: throw ALICEError.invalidRequest("Bad request: \(errorText)")
+            case 503: throw ALICEError.serverBusy("Server is busy, try again later")
+            default: throw ALICEError.networkError("Audio generation failed (\(httpResponse.statusCode)): \(errorText)")
+            }
+        }
+
+        let audioResponse = try JSONDecoder().decode(ALICEAudioGenerationResponse.self, from: data)
+
+        logger.info("ALICE generated audio: duration=\(audioResponse.durationSeconds)s, model=\(audioResponse.model)")
+
+        return ALICEAudioResult(
+            url: audioResponse.url,
+            model: audioResponse.model,
+            durationSeconds: audioResponse.durationSeconds,
+            sampleRate: audioResponse.sampleRate,
+            seed: audioResponse.seed,
+            steps: audioResponse.steps,
+            guidanceScale: audioResponse.cfgScale,
+            generationTimeSeconds: audioResponse.generationTimeSeconds,
+            sizeBytes: audioResponse.sizeBytes,
+            retries: audioResponse.retries,
+            prompt: audioResponse.prompt
+        )
+    }
+
+    // MARK: - Audio Download
+
+    public func downloadAudio(from urlString: String, to localPath: URL) async throws {
+        /// The ALICE audio response gives a relative path like /v1/audio/alice_12345678_seed42.wav.
+        /// We need to construct the full URL.
+        let fullURLString: String
+        if urlString.hasPrefix("http") {
+            fullURLString = urlString
+        } else {
+            /// Relative path — strip the /v1 prefix if present (ALICE serves at both /v1/audio/ and /audio/).
+            let cleanPath = urlString.hasPrefix("/v1") ? String(urlString.dropFirst(3)) : urlString
+            fullURLString = baseURL.replacingOccurrences(of: "/v1", with: "") + cleanPath
+        }
+
+        guard let audioURL = URL(string: fullURLString) else {
+            throw ALICEError.invalidConfiguration("Invalid audio URL: \(fullURLString)")
+        }
+
+        var request = URLRequest(url: audioURL)
+        if let apiKey = apiKey, !apiKey.isEmpty {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Api-Key")
+        }
+        request.timeoutInterval = 300.0
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw ALICEError.audioDownloadFailed("Failed to download audio from ALICE")
+        }
+
+        try FileManager.default.createDirectory(
+            at: localPath.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        try data.write(to: localPath)
+        logger.debug("Downloaded audio to: \(localPath.path)")
+    }
 }
 
 // MARK: - Error Types
@@ -270,6 +435,8 @@ public enum ALICEError: LocalizedError {
     case generationFailed(String)
     case downloadFailed(String)
     case serverBusy(String)
+    case audioGenerationFailed(String)
+    case audioDownloadFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -280,6 +447,8 @@ public enum ALICEError: LocalizedError {
         case .generationFailed(let msg): return "ALICE generation failed: \(msg)"
         case .downloadFailed(let msg): return "ALICE download failed: \(msg)"
         case .serverBusy(let msg): return "ALICE server busy: \(msg)"
+        case .audioGenerationFailed(let msg): return "ALICE audio generation failed: \(msg)"
+        case .audioDownloadFailed(let msg): return "ALICE audio download failed: \(msg)"
         }
     }
 }
@@ -469,5 +638,117 @@ private struct ALICEAnyCodable: Codable {
         case let dict as [String: Any]: try container.encode(dict.mapValues { ALICEAnyCodable($0) })
         default: try container.encodeNil()
         }
+    }
+}
+
+// MARK: - Audio Response Models
+
+public struct ALICEAudioModelsResponse: Codable, Sendable {
+    public let data: [ALICEAudioModel]
+}
+
+public struct ALICEAudioModel: Codable, Identifiable, Sendable {
+    public let id: String
+    public let name: String?
+    public let engine: String?
+    public let maxSeconds: Int?
+    public let defaultSeconds: Int?
+    public let sampleRate: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, engine, maxSeconds, defaultSeconds, sampleRate
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        engine = try container.decodeIfPresent(String.self, forKey: .engine)
+        maxSeconds = try container.decodeIfPresent(Int.self, forKey: .maxSeconds)
+        defaultSeconds = try container.decodeIfPresent(Int.self, forKey: .defaultSeconds)
+        sampleRate = try container.decodeIfPresent(Int.self, forKey: .sampleRate)
+    }
+
+    public var displayName: String {
+        name ?? id
+    }
+
+    public var type: String {
+        engine ?? "unknown"
+    }
+
+    public init(id: String, name: String? = nil, engine: String? = nil, maxSeconds: Int? = nil, defaultSeconds: Int? = nil, sampleRate: Int? = nil) {
+        self.id = id
+        self.name = name
+        self.engine = engine
+        self.maxSeconds = maxSeconds
+        self.defaultSeconds = defaultSeconds
+        self.sampleRate = sampleRate
+    }
+}
+
+public struct ALICEAudioGenerationResponse: Codable, Sendable {
+    public let url: String
+    public let model: String
+    public let durationSeconds: Double
+    public let sampleRate: Int
+    public let seed: Int?
+    public let steps: Int?
+    public let cfgScale: Float?
+    public let generationTimeSeconds: Double
+    public let sizeBytes: Int
+    public let retries: Int?
+    public let prompt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case url, model, seed, steps, prompt, retries
+        case durationSeconds = "duration_seconds"
+        case sampleRate = "sample_rate"
+        case cfgScale = "cfg_scale"
+        case generationTimeSeconds = "generation_time_seconds"
+        case sizeBytes = "size_bytes"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(String.self, forKey: .url)
+        model = try container.decode(String.self, forKey: .model)
+        durationSeconds = try container.decode(Double.self, forKey: .durationSeconds)
+        sampleRate = try container.decode(Int.self, forKey: .sampleRate)
+        seed = try container.decodeIfPresent(Int.self, forKey: .seed)
+        steps = try container.decodeIfPresent(Int.self, forKey: .steps)
+        cfgScale = try container.decodeIfPresent(Float.self, forKey: .cfgScale)
+        generationTimeSeconds = try container.decode(Double.self, forKey: .generationTimeSeconds)
+        sizeBytes = try container.decode(Int.self, forKey: .sizeBytes)
+        retries = try container.decodeIfPresent(Int.self, forKey: .retries)
+        prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
+    }
+}
+
+public struct ALICEAudioResult: @unchecked Sendable {
+    public let url: String
+    public let model: String
+    public let durationSeconds: Double
+    public let sampleRate: Int
+    public let seed: Int?
+    public let steps: Int?
+    public let guidanceScale: Float?
+    public let generationTimeSeconds: Double
+    public let sizeBytes: Int
+    public let retries: Int?
+    public let prompt: String?
+
+    public init(url: String, model: String, durationSeconds: Double, sampleRate: Int, seed: Int?, steps: Int?, guidanceScale: Float?, generationTimeSeconds: Double, sizeBytes: Int, retries: Int?, prompt: String?) {
+        self.url = url
+        self.model = model
+        self.durationSeconds = durationSeconds
+        self.sampleRate = sampleRate
+        self.seed = seed
+        self.steps = steps
+        self.guidanceScale = guidanceScale
+        self.generationTimeSeconds = generationTimeSeconds
+        self.sizeBytes = sizeBytes
+        self.retries = retries
+        self.prompt = prompt
     }
 }
