@@ -9,87 +9,58 @@ import os
 
 private let logger = Logger(subsystem: "com.sam.chat", category: "messageview")
 
-/// Get user-friendly display name for a tool from the registry Uses UniversalToolRegistry for proper metadata lookup.
+/// Maximum width ratio for message content blocks.
+/// User and assistant messages are constrained to this fraction of the
+/// chat column width so the conversation doesn't sprawl on wide windows.
+/// Metadata (timestamp, tokens) sits to the right of this block.
+private let maxMessageWidthRatio: CGFloat = 0.85
+
+/// Get user-friendly display name for a tool from the registry.
 @MainActor
 private func getToolDisplayName(_ toolName: String?, registry: UniversalToolRegistry?) -> String {
-    guard let toolName = toolName else {
-        return "Tool Operation"
-    }
-
-    /// Try registry lookup first.
+    guard let toolName = toolName else { return "Tool Operation" }
     if let registry = registry, let displayName = registry.getToolMetadata(for: toolName)?.displayName {
         return displayName
     }
-
-    /// Fallback: auto-generate from tool name.
     return UniversalTool.generateDisplayName(from: toolName)
 }
 
-/// Extract operation-specific display name from tool message content E.g., "SUCCESS: Researching: query" → "Web Search" E.g., "SUCCESS: Creating: file.md" → "Create File".
+/// Extract operation-specific display name from tool message content.
 @MainActor
 private func getOperationDisplayName(from content: String, toolName: String?, displayData: ToolDisplayData? = nil) -> String {
-    /// PREFERRED: Use structured display data if available
-    if let display = displayData {
-        return display.actionDisplayName
-    }
-
-    /// SECOND CHOICE: Use toolName if available (e.g., "file_operations" → "File Operations")
-    /// This prevents parsing success messages as titles
-    if let toolName = toolName, !toolName.isEmpty {
-        return getToolDisplayName(toolName, registry: nil)
-    }
-
-    /// FALLBACK: Extract the action verb from "SUCCESS: Action: ..." pattern (for backward compatibility).
-    /// Only use this when toolName is unavailable (legacy messages)
+    if let display = displayData { return display.actionDisplayName }
+    if let toolName = toolName, !toolName.isEmpty { return getToolDisplayName(toolName, registry: nil) }
     if content.hasPrefix("SUCCESS: ") {
         let withoutPrefix = content.dropFirst(9).trimmingCharacters(in: .whitespaces)
         if let colonIndex = withoutPrefix.firstIndex(of: ":") {
             let action = String(withoutPrefix[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-
-            /// Map common actions to display names.
             switch action.lowercased() {
-            case "researching":
-                return "Web Search"
-
-            case "creating":
-                return "Create File"
-
-            case "reading":
-                return "Read File"
-
-            case "writing", "editing":
-                return "Edit File"
-
-            case "searching":
-                return "Search"
-
-            case "fetching":
-                return "Fetch"
-
-            case "scraping":
-                return "Scrape"
-
-            case "running", "executing":
-                return "Run Command"
-
-            case "analyzing":
-                return "Analyze"
-
-            case "importing":
-                return "Import"
-
-            default:
-                /// Capitalize the action.
-                return action.prefix(1).uppercased() + action.dropFirst()
+            case "search", "searching", "scraping", "scraping:": return "Web Search"
+            case "creating", "create": return "Create File"
+            case "editing", "edit": return "Edit File"
+            case "reading", "read": return "Read File"
+            case "writing", "write": return "Write File"
+            case "running", "executing": return "Run Command"
+            case "analyzing": return "Analyze"
+            case "importing": return "Import"
+            default: return action.prefix(1).uppercased() + action.dropFirst()
             }
         }
     }
-
-    /// Last resort fallback to tool name-based display.
     return getToolDisplayName(toolName, registry: nil)
 }
 
-/// Router component that renders appropriate UI based on message type Replaces monolithic EnhancedMessageBubble with specialized components.
+/// Format metadata key for display (snake_case -> Title Case).
+@MainActor
+private func formatMetadataKey(_ key: String) -> String {
+    let words = key.split(separator: "_").map { word in
+        String(word.prefix(1).uppercased() + word.dropFirst())
+    }
+    return words.joined(separator: " ")
+}
+
+/// Router component that renders appropriate UI based on message type.
+/// No bubble wrappers — messages render directly as content + metadata.
 struct MessageView: View {
     let message: EnhancedMessage
     let enableAnimations: Bool
@@ -97,13 +68,25 @@ struct MessageView: View {
     @Binding var messageToExport: EnhancedMessage?
 
     var body: some View {
-        return Group {
+        Group {
             switch message.type {
             case .user:
-                UserMessageBubble(message: message, enableAnimations: enableAnimations, conversation: conversation, messageToExport: $messageToExport)
+                MessageRow(
+                    message: message,
+                    isFromUser: true,
+                    enableAnimations: enableAnimations,
+                    conversation: conversation,
+                    messageToExport: $messageToExport
+                )
 
             case .assistant:
-                AssistantMessageBubble(message: message, enableAnimations: enableAnimations, conversation: conversation, messageToExport: $messageToExport)
+                MessageRow(
+                    message: message,
+                    isFromUser: false,
+                    enableAnimations: enableAnimations,
+                    conversation: conversation,
+                    messageToExport: $messageToExport
+                )
 
             case .toolExecution, .subagentExecution:
                 ToolExecutionCard(message: message, enableAnimations: enableAnimations)
@@ -119,74 +102,64 @@ struct MessageView: View {
     }
 }
 
-// MARK: - User Message Bubble (Right-Aligned)
+// MARK: - Message Separator
 
-/// User (right-aligned) wrapper around the shared MessageBubble.
-/// Filter logic: strip mini-prompt context (kept in stored message
-/// for the API but never shown back to the user).
-struct UserMessageBubble: View {
-    let message: EnhancedMessage
-    let enableAnimations: Bool
-    let conversation: ConversationModel
-    @Binding var messageToExport: EnhancedMessage?
-
-    private var displayContent: String {
-        var result = message.content
-
-        /// New XML format: <userContext>...</userContext>
-        if let xmlStart = result.range(of: "\n\n<userContext>"),
-           let xmlEnd = result.range(of: "</userContext>", range: xmlStart.upperBound..<result.endIndex) {
-            result = String(result[..<xmlStart.lowerBound])
-        }
-
-        /// Legacy bracket format: [User Context: ...]
-        if let contextStart = result.range(of: "\n\n[User Context:") {
-            result = String(result[..<contextStart.lowerBound])
-        }
-
-        return result
-    }
-
+/// Fixed-height hairline divider between messages in the LazyVStack.
+/// Stays anchored in layout — does not scroll with content, so separators
+/// remain visible as stable visual anchors during scrolling and streaming.
+struct MessageSeparator: View {
     var body: some View {
-        MessageBubble(
-            message: message,
-            isFromUser: true,
-            enableAnimations: enableAnimations,
-            messageToExport: $messageToExport,
-            displayContent: displayContent
-        )
+        HStack {
+            Spacer()
+            Divider()
+                .frame(height: 1)
+                .background(Color.secondary.opacity(0.25))
+                .padding(.horizontal, 8)
+            Spacer()
+        }
+        .frame(height: 1)
+        .padding(.vertical, 6)
     }
 }
 
-// MARK: - Assistant Message Bubble (Left-Aligned)
+// MARK: - Message Row (Unified User/Assistant Layout)
 
-struct AssistantMessageBubble: View {
+/// Unified message row that handles both user (right-aligned) and assistant
+/// (left-aligned) messages with clean visual separation.
+///
+/// Layout:
+/// ```
+/// [timestamp • metrics • controls]     ← metadata gutter (right-aligned)
+///                                       ← thin divider (between messages)
+/// Content that flows naturally.         ← content block (max 85% width)
+///                                       ← thin divider (between messages)
+/// ```
+struct MessageRow: View {
     let message: EnhancedMessage
+    let isFromUser: Bool
     let enableAnimations: Bool
     let conversation: ConversationModel
     @Binding var messageToExport: EnhancedMessage?
 
-    /// ANTI-FLICKER: Track filtered content separately so streaming updates animate
-    /// smoothly without rebuilding the entire view hierarchy. When `message.content`
-    /// changes during streaming, only this @State updates.
     @State private var displayedContent: String = ""
+    @State private var showCopyConfirmation = false
+    @State private var showCopyMenu = false
 
-    private let logger = Logger(subsystem: "com.sam.chat", category: "assistantbubble")
+    // MARK: - Content Filtering
 
-    /// Strip workflow-control status markers ({"status": "continue"}, etc.)
-    /// before rendering. These are emitted by orchestration logic and should
-    /// never be displayed to the user.
+    /// Strip workflow-control status markers and session-naming markers.
     private func filterContent(_ content: String) -> String {
         var filtered = content
 
+        // Remove status JSON markers.
         let statusPatterns = [
             #"\{\s*"status"\s*:\s*"continue"\s*\}"#,
             #"\{\s*"status"\s*:\s*"complete"\s*\}"#,
-            #"\{\s*"status"\s*:\s*"stop"\s*\}"#
+            #"\{\s*"status"\s*:\s*"stop"\s*\}"#,
+            #"\s*<!--[^>]*session:[^>]*-->\s*"#
         ]
-
         for pattern in statusPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
                 let range = NSRange(filtered.startIndex..., in: filtered)
                 filtered = regex.stringByReplacingMatches(in: filtered, range: range, withTemplate: "")
             }
@@ -198,30 +171,275 @@ struct AssistantMessageBubble: View {
         return filtered
     }
 
+    /// Strip user context markers from display content.
+    private var userDisplayContent: String {
+        var result = message.content
+
+        if let xmlStart = result.range(of: "\n\n<userContext>"),
+           let xmlEnd = result.range(of: "</userContext>", range: xmlStart.upperBound..<result.endIndex) {
+            result = String(result[..<xmlStart.lowerBound])
+        }
+
+        if let contextStart = result.range(of: "\n\n[User Context:") {
+            result = String(result[..<contextStart.lowerBound])
+        }
+
+        return result
+    }
+
+    // MARK: - Content Rendering
+
+    /// During streaming: parse complete lines as markdown, render partials as plain Text.
+    /// After streaming: full MarkdownText rendering.
+    ///
+    /// Line-by-line approach: split content at the last complete line boundary.
+    /// Complete lines get parsed and rendered as markdown. The trailing partial
+    /// line (being typed) renders as plain Text. This gives incremental markdown
+    /// rendering (headings, bold, lists, code) without re-parsing the entire
+    /// content on every single-character delta — only complete lines trigger
+    /// a new AST parse.
+    @ViewBuilder
+    private var contentView: some View {
+        let effectiveContent = displayedContent.isEmpty ? message.content : displayedContent
+        let rawContent = isFromUser ? userDisplayContent : effectiveContent
+
+        if message.isStreaming {
+            // Split at the last newline — everything before is complete lines.
+            let lastNewlineIdx = rawContent.lastIndex(of: "\n")
+
+            if let splitIdx = lastNewlineIdx {
+                let completeLines = String(rawContent[..<splitIdx])
+                let partialLine = String(rawContent[splitIdx...].dropFirst()) // skip newline
+
+                VStack(alignment: isFromUser ? .trailing : .leading, spacing: 0) {
+                    if !completeLines.isEmpty {
+                        MarkdownText(completeLines)
+                            .textSelection(.enabled)
+                            .environment(\.openURL, OpenURLAction { url in
+                                #if os(macOS)
+                                NSWorkspace.shared.open(url)
+                                #else
+                                UIApplication.shared.open(url)
+                                #endif
+                                return .handled
+                            })
+                    }
+                    if !partialLine.isEmpty {
+                        Text(partialLine)
+                            .foregroundColor(.primary)
+                    }
+                }
+            } else {
+                // Single line still being typed — render as plain text.
+                Text(rawContent)
+                    .foregroundColor(.primary)
+            }
+        } else {
+            // Full markdown rendering after streaming completes.
+            MarkdownText(rawContent)
+                .textSelection(.enabled)
+                .environment(\.openURL, OpenURLAction { url in
+                    #if os(macOS)
+                    NSWorkspace.shared.open(url)
+                    #else
+                    UIApplication.shared.open(url)
+                    #endif
+                    return .handled
+                })
+        }
+    }    // MARK: - Metadata Gutter
+
+    /// Right-aligned metadata: timestamp, copy/export/print buttons, token count.
+    @ViewBuilder
+    private var metadataGutter: some View {
+        HStack(spacing: 6) {
+            Text(message.timestamp, format: .dateTime.hour().minute().second())
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            Button(action: copySource) {
+                Image(systemName: showCopyConfirmation ? "checkmark" : "doc.on.doc")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            .help("Copy source")
+            .popover(isPresented: $showCopyMenu, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Button {
+                        copySource()
+                        showCopyMenu = false
+                    } label: {
+                        Label("Copy Source", systemImage: "doc.plaintext")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+
+                    Button {
+                        copyFormatted()
+                        showCopyMenu = false
+                    } label: {
+                        Label("Copy Formatted", systemImage: "text.alignleft")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .padding(.vertical, 6)
+            }
+
+            Button(action: { messageToExport = message }) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            .help(isFromUser ? "Export" : "Export to PDF")
+
+            Button(action: printMessage) {
+                Image(systemName: "printer")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            .help("Print message")
+
+            if !isFromUser {
+                if let metrics = message.performanceMetrics {
+                    Text("• \(metrics.tokenCount) tokens • \(String(format: "%.1f", metrics.timeToFirstToken))s TTFT • \(String(format: "%.0f", metrics.tokensPerSecond)) tok/s")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                } else if let processingTime = message.processingTime {
+                    Text("• \(String(format: "%.1f", processingTime))s")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if message.isStreaming {
+                ProgressView()
+                    .scaleEffect(0.6)
+                    .tint(.primary)
+            }
+        }
+    }
+
+    // MARK: - Body
+
     var body: some View {
-        MessageBubble(
-            message: message,
-            isFromUser: false,
-            enableAnimations: enableAnimations,
-            messageToExport: $messageToExport,
-            displayContent: displayedContent
+        VStack(alignment: isFromUser ? .trailing : .leading, spacing: 4) {
+            // Content block — constrained width, aligned by message direction.
+            // User messages narrower (70%) to create visual rhythm; assistant wider (85%).
+            contentView
+                .frame(maxWidth: .infinity, alignment: isFromUser ? .trailing : .leading)
+                .layoutPriority(1)
+                .font(.callout)
+
+            // Metadata gutter — aligned with content, not the full row width.
+            // Left-aligned for assistant (matches content start), right-aligned for user.
+            metadataGutter
+                .frame(maxWidth: .infinity, alignment: isFromUser ? .trailing : .leading)
+        }
+        // Constrain inner content to max-width ratio, not the full row width.
+        // This prevents content from stretching across the entire chat column.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: isFromUser ? .trailing : .leading)
+        .padding(.leading, isFromUser ? 40 : 8)
+        .padding(.trailing, isFromUser ? 8 : 40)
+        // Visual separation: thicker background band + content-aligned border.
+        // The border creates a subtle vertical line on the "gutter side" of each
+        // message — left border for assistant, right border for user — giving a
+        // clear left/right turn structure at a glance.
+        .background(
+            ZStack(alignment: isFromUser ? .trailing : .leading) {
+                // Background band.
+                (isFromUser ? Color.accentColor.opacity(0.05) : Color.secondary.opacity(0.05))
+
+                // Content-aligned border — thin vertical line on the gutter side.
+                Rectangle()
+                    .frame(width: 2)
+                    .foregroundColor(isFromUser ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.2))
+                    .allowsHitTesting(false)
+            }
         )
+        .contextMenu {
+            contextMenuContent
+        }
         .onAppear {
-            // Initialize displayedContent when view first appears
             displayedContent = filterContent(message.content)
-            logger.info("[ASSISTANT_BUBBLE] Initial render message \(message.id) with \(message.content.count) chars, filtered=\(displayedContent.count) chars")
         }
         .onChange(of: message.content) { _, newValue in
-            // Streaming: re-filter and update @State so the change animates smoothly
             let filtered = filterContent(newValue)
             if displayedContent != filtered {
                 displayedContent = filtered
             }
         }
     }
+
+    // MARK: - Context Menu
+
+    @ViewBuilder
+    private var contextMenuContent: some View {
+        Menu("Copy") {
+            Button("Copy Source") { copySource() }
+            Button("Copy Formatted") { copyFormatted() }
+        }
+        Button("Export...") { messageToExport = message }
+        Button("Print Message...") { printMessage() }
+    }
+
+    // MARK: - Actions
+
+    private func copySource() {
+        let content = isFromUser ? userDisplayContent : (displayedContent.isEmpty ? message.content : displayedContent)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(content, forType: .string)
+        flashCopyConfirmation()
+    }
+
+    @MainActor
+    private func copyFormatted() {
+        let content = isFromUser ? userDisplayContent : (displayedContent.isEmpty ? message.content : displayedContent)
+        let parser = MarkdownASTParser()
+        let ast = parser.parse(content)
+        let converter = MarkdownASTToNSAttributedString()
+        let attributedString = converter.convertSync(ast)
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(content, forType: .string)
+
+        if let rtfData = try? attributedString.data(
+            from: NSRange(location: 0, length: attributedString.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        ) {
+            pasteboard.setData(rtfData, forType: .rtf)
+        }
+
+        flashCopyConfirmation()
+    }
+
+    private func flashCopyConfirmation() {
+        showCopyConfirmation = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            showCopyConfirmation = false
+        }
+    }
+
+    @MainActor
+    private func printMessage() {
+        let content = isFromUser ? userDisplayContent : (displayedContent.isEmpty ? message.content : displayedContent)
+        WKWebViewPrintService.printMessage(
+            markdown: content,
+            isFromUser: isFromUser,
+            title: "SAM Message"
+        )
+    }
 }
 
-// MARK: - Tool Execution Card (Full Width)
+// MARK: - Tool Execution Card (Full Width, Unchanged)
 
 struct ToolExecutionCard: View {
     let message: EnhancedMessage
@@ -231,9 +449,7 @@ struct ToolExecutionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            /// Header (clickable to expand/collapse) - compact to match "Click to expand" height.
             HStack(spacing: 8) {
-                /// Icon from MCP metadata (SF Symbol) or fallback - smaller.
                 if let iconName = message.toolIcon {
                     Image(systemName: iconName)
                         .font(.body)
@@ -244,17 +460,14 @@ struct ToolExecutionCard: View {
                         .foregroundColor(.primary)
                 }
 
-                /// Tool name - smaller font.
                 Text(getOperationDisplayName(from: message.content, toolName: message.toolName, displayData: message.toolDisplayData))
                     .font(.subheadline)
                     .foregroundColor(.primary)
 
                 Spacer()
 
-                /// Status badge (already compact).
                 statusBadge
 
-                /// Expand/collapse button.
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .foregroundColor(.secondary)
                     .font(.caption)
@@ -275,15 +488,10 @@ struct ToolExecutionCard: View {
             }
             .background(isHovering && !isExpanded ? Color.accentColor.opacity(0.05) : Color.clear)
 
-            /// Collapsed view - NO bottom section, only header is visible
-            /// User must click header to see details
-
-            /// Expanded details - show divider and content
             if isExpanded {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 12) {
-                    /// Tool metadata (result data - NEW!)
                     if let metadata = message.toolMetadata, !metadata.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Result:")
@@ -309,7 +517,6 @@ struct ToolExecutionCard: View {
                         .cornerRadius(6)
                     }
 
-                    /// Full operation details.
                     if let details = message.toolDetails, !details.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Operations:")
@@ -325,10 +532,7 @@ struct ToolExecutionCard: View {
                         }
                     }
 
-                    /// Tool output/content.
-                    /// Show SUCCESS messages as output (they contain important result info)
-                    /// Only hide "→ " progress indicators (streaming progress updates)
-                    let isProgressIndicator = message.content.hasPrefix("→ ")
+                    let isProgressIndicator = message.content.hasPrefix("-> ")
                     if !message.content.isEmpty && !isProgressIndicator {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Output:")
@@ -346,7 +550,6 @@ struct ToolExecutionCard: View {
                         }
                     }
 
-                    /// Performance metrics.
                     if let duration = message.toolDuration {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Performance:")
@@ -376,7 +579,6 @@ struct ToolExecutionCard: View {
         .padding(.horizontal)
         .padding(.vertical, 4)
         .onAppear {
-            /// Auto-expand on errors.
             if message.toolStatus == .error {
                 isExpanded = true
             }
@@ -388,7 +590,6 @@ struct ToolExecutionCard: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
-
             Text(statusText)
                 .font(.caption)
                 .foregroundColor(statusColor)
@@ -396,67 +597,33 @@ struct ToolExecutionCard: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(statusColor.opacity(0.15))
-        )
+        .background(Capsule().fill(statusColor.opacity(0.15)))
     }
 
     private var statusColor: Color {
         switch message.toolStatus {
-        case .queued:
-            return .secondary
-
-        case .running:
-            return .primary
-
-        case .success:
-            return .primary
-
-        case .error:
-            return .red
-
-        case .userInputRequired:
-            return .secondary
-
-        case .none:
-            return .secondary
+        case .queued: return .secondary
+        case .running: return .primary
+        case .success: return .primary
+        case .error: return .red
+        case .userInputRequired: return .secondary
+        case .none: return .secondary
         }
     }
 
     private var statusText: String {
         switch message.toolStatus {
-        case .queued:
-            return "Queued"
-
-        case .running:
-            return "Running"
-
-        case .success:
-            return "Complete"
-
-        case .error:
-            return "Error"
-
-        case .userInputRequired:
-            return "Waiting"
-
-        case .none:
-            return "Unknown"
+        case .queued: return "Queued"
+        case .running: return "Running"
+        case .success: return "Complete"
+        case .error: return "Error"
+        case .userInputRequired: return "Waiting"
+        case .none: return "Unknown"
         }
-    }
-
-    /// Format metadata key for display (convert snake_case to Title Case)
-    private func formatMetadataKey(_ key: String) -> String {
-        /// Convert snake_case and camelCase to Title Case
-        let words = key.split(separator: "_").map { word in
-            String(word.prefix(1).uppercased() + word.dropFirst())
-        }
-        return words.joined(separator: " ")
     }
 }
 
-// MARK: - System Status Card (Placeholder)
+// MARK: - System Status Card
 
 struct SystemStatusCard: View {
     let message: EnhancedMessage
@@ -470,10 +637,7 @@ struct SystemStatusCard: View {
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                )
+                .background(Capsule().fill(Color(NSColor.controlBackgroundColor).opacity(0.5)))
             Spacer()
         }
         .padding(.vertical, 4)
@@ -482,7 +646,6 @@ struct SystemStatusCard: View {
 
 // MARK: - Thinking Card
 
-/// Unified with ToolExecutionCard pattern for consistent persistence and rendering This ensures thinking cards persist correctly across app restarts.
 struct ThinkingCard: View {
     let message: EnhancedMessage
     let enableAnimations: Bool
@@ -491,24 +654,18 @@ struct ThinkingCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            /// Header (clickable to expand/collapse) - matches ToolExecutionCard.
             HStack(spacing: 8) {
-                /// Brain icon for thinking/reasoning.
                 Image(systemName: message.toolIcon ?? "brain.head.profile")
                     .font(.body)
                     .foregroundColor(.primary)
 
-                /// Display name - use "Reasoning" instead of raw toolName.
                 Text("Reasoning")
                     .font(.subheadline)
                     .foregroundColor(.primary)
 
                 Spacer()
-
-                /// Status badge (same pattern as ToolExecutionCard).
                 statusBadge
 
-                /// Expand/collapse button.
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .foregroundColor(.secondary)
                     .font(.caption)
@@ -531,7 +688,6 @@ struct ThinkingCard: View {
 
             Divider()
 
-            /// Collapsed view - minimal single line summary.
             if !isExpanded {
                 HStack {
                     if let duration = message.toolDuration {
@@ -554,10 +710,8 @@ struct ThinkingCard: View {
                 }
             }
 
-            /// Expanded details.
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
-                    /// Reasoning content (primary content for thinking cards).
                     let displayContent = message.reasoningContent ?? message.content
                     let cleanedContent = displayContent
                         .replacingOccurrences(of: "SUCCESS: Thinking:", with: "")
@@ -593,7 +747,6 @@ struct ThinkingCard: View {
                         }
                     }
 
-                    /// Performance metrics (if available).
                     if let duration = message.toolDuration {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Performance:")
@@ -615,10 +768,7 @@ struct ThinkingCard: View {
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(NSColor.controlBackgroundColor).opacity(0.2))
-                )
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor).opacity(0.2)))
         )
         .padding(.horizontal)
         .padding(.vertical, 4)
@@ -629,7 +779,6 @@ struct ThinkingCard: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
-
             Text(statusText)
                 .font(.caption)
                 .foregroundColor(statusColor)
@@ -637,35 +786,37 @@ struct ThinkingCard: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(statusColor.opacity(0.15))
-        )
+        .background(Capsule().fill(statusColor.opacity(0.15)))
     }
 
     private var statusColor: Color {
         switch message.toolStatus {
-        case .success:
-            return .primary
-        case .running:
-            return .primary
-        case .error:
-            return .red
-        default:
-            return .primary
+        case .success: return .primary
+        case .running: return .primary
+        case .error: return .red
+        default: return .primary
         }
     }
 
     private var statusText: String {
         switch message.toolStatus {
-        case .success:
-            return "Complete"
-        case .running:
-            return "Thinking"
-        case .error:
-            return "Error"
-        default:
-            return "Thinking"
+        case .success: return "Complete"
+        case .running: return "Thinking"
+        case .error: return "Error"
+        default: return "Thinking"
         }
+    }
+}
+
+// MARK: - Previews
+
+struct MessageView_Previews: PreviewProvider {
+    static var previews: some View {
+        VStack(spacing: 0) {
+            MessageView(message: .init(type: .user, content: "Hello world", isFromUser: true), enableAnimations: true, conversation: ConversationModel.withId(UUID(), title: "Test"), messageToExport: .constant(nil))
+            Divider().padding(.vertical, 8)
+            MessageView(message: .init(type: .assistant, content: "# Hello\n\nThis is **bold** text", isFromUser: false), enableAnimations: true, conversation: ConversationModel.withId(UUID(), title: "Test"), messageToExport: .constant(nil))
+        }
+        .padding()
     }
 }

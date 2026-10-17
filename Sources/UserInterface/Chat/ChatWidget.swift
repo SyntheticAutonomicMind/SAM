@@ -51,11 +51,6 @@ public struct ChatWidget: View {
 
     @State var cachedToolHierarchy: [UUID: [EnhancedMessage]] = [:]
 
-    /// PERFORMANCE: Cache cleaned messages to avoid regex operations on every render
-    /// Key: message.id, Value: (contentHash, cleanedMessage)
-    /// Only recompute cleanSpecialTokens when content actually changes
-    @State var cachedCleanedMessages: [UUID: (contentHash: Int, cleaned: EnhancedMessage)] = [:]
-
     @State var processingStatus: ProcessingStatus = .idle
     @State var currentToolName: String?
     @State var isSending = false
@@ -67,15 +62,7 @@ public struct ChatWidget: View {
     /// Input focus state for auto-focus on chat open.
     @FocusState var isInputFocused: Bool
 
-    /// PERFORMANCE: Streaming update throttling.
-    @State var pendingStreamingUpdate: (messageId: UUID, content: String)?
-    @State var streamingUpdateTask: Task<Void, Never>?
-    @State var lastUIUpdateTime: Date = Date()
-    @State var streamingUpdateCount: Int = 0
-
     /// Scroll system: auto-scroll to latest content during streaming
-    @State var lastScrollTime: Date = .distantPast
-    @State var pendingScrollTask: Task<Void, Never>?
     @State var lastScrolledToId: UUID?
 
     /// Scroll proxy for keyboard navigation (stored from ScrollViewReader)
@@ -1089,8 +1076,6 @@ public struct ChatWidget: View {
         /// Prevents ghost tasks from continuing and updating the wrong conversation.
         streamingTask?.cancel()
         streamingTask = nil
-        streamingUpdateTask?.cancel()
-        streamingUpdateTask = nil
 
         /// Cancel local model generation if running.
         Task {
@@ -1182,6 +1167,24 @@ public struct ChatWidget: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 self.syncWithActiveConversation()
             }
+        }
+    }
+
+    /// Refresh Copilot user info from the User API for quota display.
+    /// Non-blocking — updates cachedCopilotUserResponse state.
+    func refreshCopilotUserInfo() async {
+        do {
+            let token = try await CopilotTokenStore.shared.getCopilotToken()
+            let userResponse = try await CopilotUserAPIClient.shared.fetchUser(token: token)
+            await MainActor.run {
+                cachedCopilotUserResponse = userResponse
+            }
+            if let login = userResponse.login {
+                logger.debug("Fetched Copilot user info for: \(login)")
+            }
+        } catch {
+            // Non-fatal — fall back to header-based quota display
+            logger.debug("Could not fetch Copilot user info: \(error.localizedDescription)")
         }
     }
 
@@ -2524,50 +2527,6 @@ public struct ChatWidget: View {
         }
     }
 
-    /// PERFORMANCE OPTIMIZATION: Throttled UI updates for streaming Batches rapid streaming updates to reduce SwiftUI redraw overhead Target: ~60fps (16ms) or better, with logging for performance analysis.
-    func updateStreamingMessage(messageId: UUID, content: String) async {
-        /// Store pending update.
-        await MainActor.run {
-            pendingStreamingUpdate = (messageId, content)
-            streamingUpdateCount += 1
-        }
-
-        /// Cancel existing update task if running and await its cancellation
-        /// to prevent overlapping tasks from writing stale content.
-        if let existingTask = streamingUpdateTask {
-            existingTask.cancel()
-            /// Yield to let the cancelled task's cleanup run, preventing
-            /// a race where a new task starts before the old one finishes.
-            try? await Task.sleep(nanoseconds: 1_000_000)
-        }
-
-        /// Create throttled update task.
-        streamingUpdateTask = Task {
-            /// Throttle: Wait 16ms (60fps) between UI updates This dramatically reduces SwiftUI overhead while maintaining smooth UX.
-            try? await Task.sleep(nanoseconds: 16_000_000)
-
-            guard !Task.isCancelled else { return }
-
-            await MainActor.run {
-                guard let (id, text) = pendingStreamingUpdate else { return }
-
-                /// Strip internal markers from streaming content BEFORE displaying Use a no-trim strategy: remove only lines that are EXACT markers (e.g.
-                var cleanedText = filterInternalMarkersNoTrim(from: text)
-
-                /// FIXED: Use MessageBus for streaming updates
-                /// MessageBus.updateMessage() handles content updates and triggers ConversationModel sync
-                activeConversation?.messageBus?.updateMessage(id: id, content: cleanedText)
-
-                /// Performance tracking (no logging)
-                if streamingUpdateCount % 50 == 0 {
-                    lastUIUpdateTime = Date()
-                }
-
-                pendingStreamingUpdate = nil
-            }
-        }
-    }
-
     func processMessage(text: String) async {
         let processId = UUID().uuidString.prefix(8)
         logger.debug("🟢 PROCESS_MESSAGE_START: processId=\(processId)")
@@ -2727,7 +2686,14 @@ public struct ChatWidget: View {
                         }
                     } else if content.contains("SUCCESS:") {
                         /// Extract tool name from content like "SUCCESS: - Using memory_search...".
-                        let toolName = extractToolName(from: content) ?? "tool"
+                        let toolName: String
+                        if let range = content.range(of: "Using ", options: .caseInsensitive),
+                           let endRange = content[range.upperBound...].range(of: "...") {
+                            toolName = String(content[range.upperBound..<endRange.lowerBound])
+                                .trimmingCharacters(in: .whitespaces)
+                        } else {
+                            toolName = "tool"
+                        }
                         await MainActor.run {
                             isThinking = false
                             processingStatus = .processingTools(toolName: toolName)
@@ -2758,8 +2724,19 @@ public struct ChatWidget: View {
                        let execId = currentToolExecutionId,
                        execId == lastToolExecutionId,
                        let msgId = assistantMessageId {
-                        await MainActor.run {
-                            updateMessageMetadata(messageId: msgId, metadata: metadata, toolStatus: chunk.toolStatus)
+                        /// Update status directly via MessageBus — updateMessage preserves
+                        /// all existing fields, only applying the new status.
+                        var status: ToolStatus?
+                        if let statusStr = chunk.toolStatus {
+                            switch statusStr {
+                            case "success": status = .success
+                            case "error": status = .error
+                            case "running": status = .running
+                            default: break
+                            }
+                        }
+                        if let status {
+                            activeConversation?.messageBus?.updateMessage(id: msgId, status: status)
                         }
                         logger.debug("METADATA_UPDATED: Applied metadata to message \(msgId): \(metadata)")
                     }
@@ -2884,9 +2861,8 @@ public struct ChatWidget: View {
                 }
             }
 
-            /// PERFORMANCE: Flush any pending throttled update before finalizing.
-            streamingUpdateTask?.cancel()
-            streamingUpdateTask = nil
+            /// PERFORMANCE: No pending UI-side streaming task (updates are handled
+            /// directly by AgentOrchestrator -> MessageBus streaming API).
 
             /// STREAMING TTS: Queue any remaining accumulated text and finish
             if shouldSpeakStreaming && !sentenceAccumulator.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -3982,546 +3958,6 @@ public struct ChatWidget: View {
                 logger.error("PDF export failed: \(error)")
             }
         }
-    }
-
-    // MARK: - Special Token Filtering
-
-    /// PERFORMANCE: Get cleaned message from cache or compute if needed
-    /// Avoids running expensive regex operations (cleanSpecialTokens) on every render
-    /// Cache key: message.id, Cache validation: content.hashValue
-    func getCachedCleanedMessage(_ message: EnhancedMessage) -> EnhancedMessage {
-        let contentHash = message.content.hashValue
-
-        // Check cache - return if content hasn't changed
-        if let cached = cachedCleanedMessages[message.id], cached.contentHash == contentHash {
-            return cached.cleaned
-        }
-
-        // Content changed or not in cache - compute and store
-        let cleaned = createCleanedMessage(message)
-
-        // Update cache on main actor (state mutation)
-        // Note: This is already on MainActor since ChatWidget is @MainActor
-        cachedCleanedMessages[message.id] = (contentHash: contentHash, cleaned: cleaned)
-
-        return cleaned
-    }
-
-    func createCleanedMessage(_ message: EnhancedMessage) -> EnhancedMessage {
-        /// PRESERVE original message type instead of re-classifying
-        /// Re-classification causes thinking messages to become tool messages when content updates
-        /// Only extract metadata if missing, but NEVER change the type
-
-        /// PERFORMANCE: Removed verbose diagnostic logging (fired on every call)
-
-        /// Use original type (NEVER re-classify - causes thinking cards to vanish!)
-        let messageType = message.type
-
-        /// Preserve existing metadata, only fill in missing values
-        let toolName = message.toolName
-        let toolStatus = message.toolStatus
-        let toolIcon = message.toolIcon
-        let toolDetails = message.toolDetails
-
-        /// Apply appropriate cleaning based on message type Tool messages: Basic token cleanup only (preserve "SUCCESS: ..." content) Assistant messages: Aggressive cleanup (remove echoed tool content).
-        let cleanedContent: String
-        if messageType == .toolExecution || messageType == .thinking {
-            cleanedContent = cleanSpecialTokens(from: message.content, isToolMessage: true)
-        } else {
-            cleanedContent = cleanSpecialTokens(from: message.content, isToolMessage: false)
-        }
-
-        /// Return SAME INSTANCE if content didn't change
-        /// This preserves SwiftUI view identity and prevents message bubbles from losing state
-        /// Similar to incremental sync fix in syncWithActiveConversation
-        if cleanedContent == message.content {
-            /// No content change - return original instance to preserve SwiftUI identity
-            return message
-        }
-
-        /// Content changed - create new instance with cleaned content
-        return EnhancedMessage(
-            id: message.id,
-            type: messageType,
-            content: cleanedContent,
-            contentParts: message.contentParts,
-            isFromUser: message.isFromUser,
-            timestamp: message.timestamp,
-            toolName: toolName,
-            toolStatus: toolStatus,
-            toolDisplayData: message.toolDisplayData,
-            toolDetails: toolDetails,
-            toolDuration: message.toolDuration,
-            toolIcon: toolIcon,
-            toolCategory: message.toolCategory,
-            parentToolName: message.parentToolName,
-            toolMetadata: message.toolMetadata,
-            toolCalls: message.toolCalls,
-            toolCallId: message.toolCallId,
-            processingTime: message.processingTime,
-            reasoningContent: message.reasoningContent,
-            showReasoning: message.showReasoning,
-            performanceMetrics: message.performanceMetrics,
-            isStreaming: message.isStreaming,
-            isToolMessage: message.isToolMessage,
-            githubCopilotResponseId: message.githubCopilotResponseId,
-            isPinned: message.isPinned,
-            importance: message.importance,
-            lastModified: message.lastModified,
-            isSystemGenerated: message.isSystemGenerated
-        )
-    }
-
-    /// Extract tool metadata from message content.
-    func extractToolMetadata(from content: String) -> (String?, ToolStatus?, String?, [String]?) {
-        var toolName: String?
-        var status: ToolStatus = .running
-        var icon: String?
-        var details: [String] = []
-
-        let lowercased = content.lowercased()
-
-        /// Detect tool names from common patterns and assign SF Symbols.
-        if lowercased.contains("web_search") || lowercased.contains("searching") {
-            toolName = "web_search"
-            icon = "magnifyingglass"
-        } else if lowercased.contains("file_read") || lowercased.contains("reading file") {
-            toolName = "file_read"
-            icon = "doc.text"
-        } else if lowercased.contains("file_write") || lowercased.contains("writing file") {
-            toolName = "file_write"
-            icon = "pencil"
-        } else if lowercased.contains("memory") || lowercased.contains("remember") {
-            toolName = "memory"
-            icon = "brain.head.profile"
-        } else {
-            toolName = "tool"
-            icon = "wrench.and.screwdriver"
-        }
-
-        /// Detect status from content.
-        if content.contains("SUCCESS:") || content.contains("Complete") || content.contains("Success") {
-            status = .success
-        } else if content.contains("ERROR") || content.contains("Failed") {
-            status = .error
-        } else if content.contains("Running") || content.contains("Executing") {
-            status = .running
-        } else if content.contains("Queued") || content.contains("Pending") {
-            status = .queued
-        }
-
-        /// Extract details from common patterns Example: "SUCCESS: Researching: Orlando FL news, Florida news".
-        if let colonIndex = content.firstIndex(of: ":") {
-            let afterColon = String(content[content.index(after: colonIndex)...])
-            let items = afterColon.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            if !items.isEmpty {
-                details = items
-            }
-        }
-
-        return (toolName, status, icon, details.isEmpty ? nil : details)
-    }
-
-    /// Check if message is a system status message.
-    func isSystemStatusMessage(_ content: String) -> Bool {
-        let systemPatterns = [
-            "Model loaded",
-            "Loading model",
-            "Session restored",
-            "Configuration updated"
-        ]
-
-        return systemPatterns.contains { content.contains($0) }
-    }
-
-    /// Clean special tokens and tool XML from accumulated message content Filters tokens that may leak through due to token-by-token streaming fragmentation Applied only at message finalization to minimize false positive risk.
-    func cleanSpecialTokens(from content: String, isToolMessage: Bool = false) -> String {
-        var cleaned = content
-
-        /// Remove EOS tokens (complete and fragmented patterns).
-        cleaned = cleaned
-            .replacingOccurrences(of: "<|im_end|>", with: "", options: .literal)
-            .replacingOccurrences(of: "<|endoftext|>", with: "", options: .literal)
-            .replacingOccurrences(of: "</s>", with: "", options: .literal)
-
-        /// Remove conversation role markers (appear when model simulates multi-turn conversation).
-        cleaned = cleaned
-            .replacingOccurrences(of: "<|im_start|>user", with: "", options: .literal)
-            .replacingOccurrences(of: "<|im_start|>assistant", with: "", options: .literal)
-            .replacingOccurrences(of: "<|im_start|>system", with: "", options: .literal)
-            .replacingOccurrences(of: "<|im_start|>", with: "", options: .literal)
-
-        /// Remove tool call XML tags (tools execute via AgentOrchestrator, not shown to user).
-        cleaned = cleaned
-            .replacingOccurrences(of: "<tool_call>", with: "", options: .literal)
-            .replacingOccurrences(of: "</tool_call>", with: "", options: .literal)
-
-        /// Remove <think>...</think> blocks (and any orphaned tags).
-        /// Some providers (MiniMax M2.x) emit reasoning inline as <think> tags.
-        /// The provider-side streaming parser usually strips these, but if a tag
-        /// arrives split across a chunk boundary the parser can miss it - this
-        /// is the safety net. Pattern uses [\\s\\S] instead of . because NSRegularExpression
-        /// doesn't match newlines without the dotMatchesLineSeparators flag.
-        if let thinkBlockPattern = try? NSRegularExpression(
-            pattern: "<think>[\\s\\S]*?</think>\\n*",
-            options: []
-        ) {
-            let range = NSRange(cleaned.startIndex..., in: cleaned)
-            cleaned = thinkBlockPattern.stringByReplacingMatches(
-                in: cleaned,
-                options: [],
-                range: range,
-                withTemplate: ""
-            )
-        }
-        cleaned = cleaned.replacingOccurrences(of: "<think>", with: "", options: .literal)
-        cleaned = cleaned.replacingOccurrences(of: "</think>", with: "", options: .literal)
-
-        /// Remove fragmented special token patterns using regex Pattern: standalone angle brackets + pipes that likely form special tokens Only remove if they appear in isolation (not part of normal text like "x < 5 || y > 10").
-        if let fragmentedPattern = try? NSRegularExpression(
-            pattern: "\\s*<\\|[^>]*\\|?>\\s*",
-            options: []
-        ) {
-            let range = NSRange(cleaned.startIndex..., in: cleaned)
-            cleaned = fragmentedPattern.stringByReplacingMatches(
-                in: cleaned,
-                options: [],
-                range: range,
-                withTemplate: ""
-            )
-        }
-
-        /// Remove raw JSON tool requests (heuristic: looks like tool JSON) Pattern: {"name": "tool_name", "arguments": {...}}.
-        if let toolJSONPattern = try? NSRegularExpression(
-            pattern: "\\{\\s*\"name\"\\s*:\\s*\"[^\"]+\"\\s*,\\s*\"arguments\"\\s*:\\s*\\{[^}]*\\}\\s*\\}",
-            options: [.dotMatchesLineSeparators]
-        ) {
-            let range = NSRange(cleaned.startIndex..., in: cleaned)
-            cleaned = toolJSONPattern.stringByReplacingMatches(
-                in: cleaned,
-                options: [],
-                range: range,
-                withTemplate: ""
-            )
-        }
-
-        /// AGGRESSIVE CLEANING: Only apply to assistant messages Don't strip "SUCCESS: ..." content from tool messages - that's their actual content!.
-        if !isToolMessage {
-            /// Remove "SUCCESS: Thinking:" content that LLM echoes in response These are displayed as dedicated ThinkingCard, not inline text Pattern: "SUCCESS: Thinking: <content>" until end of paragraph or string.
-            if let thinkingPattern = try? NSRegularExpression(
-                pattern: "SUCCESS:\\s+Thinking:.*?(?=\\n\\n|$)",
-                options: [.dotMatchesLineSeparators]
-            ) {
-                let range = NSRange(cleaned.startIndex..., in: cleaned)
-                cleaned = thinkingPattern.stringByReplacingMatches(
-                    in: cleaned,
-                    options: [],
-                    range: range,
-                    withTemplate: ""
-                )
-            }
-
-            /// Remove other tool progress messages ("SUCCESS: Researching: ..." etc.) These are displayed as dedicated tool cards, not inline text.
-            if let toolProgressPattern = try? NSRegularExpression(
-                pattern: "SUCCESS:\\s+[A-Za-z][^:]+:.*?(?=\\n|$)",
-                options: []
-            ) {
-                let range = NSRange(cleaned.startIndex..., in: cleaned)
-                cleaned = toolProgressPattern.stringByReplacingMatches(
-                    in: cleaned,
-                    options: [],
-                    range: range,
-                    withTemplate: ""
-                )
-            }
-        }
-
-        /// Final cleanup: remove excessive whitespace left by filtering.
-        cleaned = cleaned.replacingOccurrences(
-            of: "\\n{3,}",
-            with: "\n\n",
-            options: .regularExpression
-        )
-
-        return cleaned
-    }
-
-    /// Remove internal marker lines without trimming surrounding whitespace/newlines.
-    func filterInternalMarkersNoTrim(from input: String) -> String {
-        /// Split by newline preserving empty lines.
-        var lines = input.components(separatedBy: CharacterSet.newlines)
-
-        /// Helper to detect standalone JSON status like {"status":"continue"}.
-        func isStatusJSON(_ s: String) -> Bool {
-            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.hasPrefix("{") && trimmed.hasSuffix("}") else { return false }
-            /// Quick check for "status" key.
-            return trimmed.contains("\"status\"")
-        }
-
-        /// Iterate and filter.
-        var outputLines: [String] = []
-        var skipIntentExtraction = false
-
-        for raw in lines {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if skipIntentExtraction {
-                /// Continue skipping until we find closing '}' line.
-                if trimmed.hasSuffix("}") {
-                    skipIntentExtraction = false
-                }
-                /// skip this line.
-                continue
-            }
-
-            if trimmed.isEmpty {
-                /// Preserve blank lines.
-                outputLines.append("")
-                continue
-            }
-
-            /// Bracket markers like [WORKFLOW_COMPLETE], [CONTINUE], etc.
-            let bracketMarkers: Set<String> = ["[WORKFLOW_COMPLETE]", "[TASK_COMPLETE]", "[CONTINUE]", "[PLANNING_COMPLETE]", "[STEP_COMPLETE]", "[PLANNING_DONE]", "[STEP_DONE]"]
-            if bracketMarkers.contains(trimmed) {
-                /// drop this line but preserve paragraph separation by emitting a blank line if previous wasn't blank.
-                if outputLines.last != "" {
-                    outputLines.append("")
-                }
-                continue
-            }
-
-            /// Detect INTENT EXTRACTION: followed by JSON block.
-            if trimmed.uppercased().hasPrefix("INTENT EXTRACTION:") {
-                /// Start skipping until we find a line that ends with '}'.
-                if !trimmed.hasSuffix("}") {
-                    skipIntentExtraction = true
-                }
-                /// drop the line.
-                if outputLines.last != "" {
-                    outputLines.append("")
-                }
-                continue
-            }
-
-            /// Detect standalone status JSON lines.
-            if isStatusJSON(trimmed) {
-                if outputLines.last != "" {
-                    outputLines.append("")
-                }
-                continue
-            }
-
-            /// Filter session naming markers (auto-naming feature)
-            if trimmed.contains("<!--session:") && trimmed.contains("-->") {
-                continue
-            }
-
-            /// Filter bare <thinking> and </thinking> tags (MiniMax M2.x and other
-            /// providers emit these as content chunks, but they are rendered via
-            /// ThinkingCard, not as inline text). This is a defense-in-depth safety
-            /// net — stripSystemReminders in AgentOrchestrator also handles this,
-            /// but uncleaned content can reach ChatWidget through other paths.
-            if trimmed == "<thinking>" || trimmed == "</thinking>" ||
-               trimmed == "<thinking/>" || (trimmed.hasPrefix("<thinking") && trimmed.hasSuffix(">")) ||
-               (trimmed.hasPrefix("</thinking") && trimmed.hasSuffix(">")) {
-                /// Replace with blank line to preserve paragraph separation.
-                if outputLines.last != "" {
-                    outputLines.append("")
-                }
-                continue
-            }
-
-            /// Default: keep the original raw line (preserve leading/trailing spaces on line).
-            outputLines.append(raw)
-        }
-
-        /// Rejoin using \n to preserve original paragraph breaks.
-        return outputLines.joined(separator: "\n")
-    }
-
-    /// Extract tool name from tool execution message Format: "SUCCESS: - Using memory_search..." → "memory_search".
-    func extractToolName(from content: String) -> String? {
-        /// Pattern: "SUCCESS: - Using [toolname]...".
-        if let range = content.range(of: "Using ", options: .caseInsensitive),
-           let endRange = content[range.upperBound...].range(of: "...") {
-            let toolName = String(content[range.upperBound..<endRange.lowerBound])
-                .trimmingCharacters(in: .whitespaces)
-            return toolName.isEmpty ? nil : toolName
-        }
-        return nil
-    }
-
-    // MARK: - UI Setup
-
-    /// Calculate dynamic width for model dropdown based on longest model name Ensures all model names are fully visible without truncation.
-    var modelDropdownWidth: CGFloat {
-        /// Calculate width needed for longest model name Rough estimate: 8 points per character + 40 points for picker chrome.
-        let longestModelName = modelListManager.availableModels.max(by: { $0.count < $1.count }) ?? ""
-        let estimatedWidth = CGFloat(longestModelName.count) * 8.0 + 40.0
-
-        /// Clamp between reasonable min/max values.
-        let minWidth: CGFloat = 180.0
-        let maxWidth: CGFloat = 400.0
-
-        return min(max(estimatedWidth, minWidth), maxWidth)
-    }
-
-    // MARK: - Message Creation & Update (Single Source of Truth)
-
-    /// REMOVED: createMessageFromChunk() function
-    /// Messages are now created by AgentOrchestrator in MessageBus, not by ChatWidget
-    /// ChatWidget is read-only observer - it displays messages, doesn't create them
-    /// 
-    /// Architecture:
-    /// - AgentOrchestrator creates messages in MessageBus BEFORE yielding chunks
-    /// - MessageBus publishes changes to ConversationModel via subscription
-    /// - ChatWidget reads from activeConversation.messages (computed property)
-    /// - SwiftUI @Published handles UI reactivity automatically
-    ///
-    /// See commits f682a847, 8943c473, 57b087e1 for AgentOrchestrator integration (Part A)
-    /// See SESSION_HANDOFF_2025-11-27_0745.md for complete architecture details
-
-    /// Update an existing message's content (preserving ALL metadata) This is the ONLY place messages should be updated.
-    func updateMessageContent(messageId: UUID, newContent: String, isComplete: Bool = false) {
-        guard messages.firstIndex(where: { $0.id == messageId }) != nil else { return }
-
-        /// Update message content and completion status via MessageBus
-        /// MessageBus.updateMessage preserves all other fields automatically
-        activeConversation?.messageBus?.updateMessage(
-            id: messageId,
-            content: newContent,
-            status: isComplete ? .success : nil  // Only update status if completing
-        )
-
-        logger.debug("MESSAGE_CONTENT_UPDATE: id=\(messageId.uuidString.prefix(8)), complete=\(isComplete), length=\(newContent.count)")
-    }
-
-    /// Update tool metadata for a message (when tool completes)
-    /// Note: toolMetadata is not currently displayed in UI, but status updates are important
-    func updateMessageMetadata(messageId: UUID, metadata: [String: String], toolStatus: String?) {
-        guard messages.firstIndex(where: { $0.id == messageId }) != nil else { return }
-
-        /// Parse tool status
-        var status: ToolStatus?
-        if let statusStr = toolStatus {
-            switch statusStr {
-            case "success": status = .success
-            case "error": status = .error
-            case "running": status = .running
-            default: break
-            }
-        }
-
-        /// Update status via MessageBus
-        /// Note: MessageBus.updateMessage doesn't support toolMetadata parameter
-        /// Metadata is not displayed in UI, so only status update is critical
-        if let status = status {
-            activeConversation?.messageBus?.updateMessage(
-                id: messageId,
-                status: status
-            )
-            logger.debug("METADATA_UPDATE: id=\(messageId.uuidString.prefix(8)), status=\(status.rawValue)")
-        } else {
-            logger.debug("METADATA_UPDATE: id=\(messageId.uuidString.prefix(8)), no status change, metadata ignored")
-        }
-    }
-
-    // MARK: - Helper Methods
-
-    /// Refresh Copilot user info from the User API for quota display
-    /// Non-blocking, updates cachedCopilotUserResponse state
-    func refreshCopilotUserInfo() async {
-        do {
-            let token = try await CopilotTokenStore.shared.getCopilotToken()
-            let userResponse = try await CopilotUserAPIClient.shared.fetchUser(token: token)
-            await MainActor.run {
-                cachedCopilotUserResponse = userResponse
-            }
-            if let login = userResponse.login {
-                logger.debug("Fetched Copilot user info for: \(login)")
-            }
-        } catch {
-            // Non-fatal - fall back to header-based quota display
-            logger.debug("Could not fetch Copilot user info: \(error.localizedDescription)")
-        }
-    }
-
-    /// Get the effective visible content of a message - strips `<think>`/`</think>`
-    /// tag remnants from the message content. Providers that emit thinking
-    /// blocks as content chunks (e.g. MiniMax sending `</thinking>` as the
-    /// first content chunk before tool calls) would otherwise leave those
-    /// tag fragments visible in the rendered bubble, producing "empty"
-    /// messages that look like a stray tag in the chat.
-    ///
-    /// The strip here is intentionally limited to literal `<think>` and
-    /// `</think>` markers. The actual reasoning text lives in
-    /// `reasoningContent` on thinking messages and is rendered via
-    /// `ThinkingCard`, not this helper.
-    func effectiveMessageContent(_ message: EnhancedMessage) -> String {
-        var stripped = message.content
-        stripped = stripped.replacingOccurrences(of: "<think>", with: "")
-        stripped = stripped.replacingOccurrences(of: "</think>", with: "")
-        return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Check if message is a tool call JSON message.
-    func isToolCallJSONMessage(_ message: EnhancedMessage) -> Bool {
-        /// Filter raw JSON from tool calls and tool results.
-        guard !message.isFromUser else { return false }
-
-        let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        /// PRIORITY CHECK: Filter any message with tool/structured data markers These indicate machine-readable data that should be in tool cards, not displayed as text.
-
-        /// Check for tool result chunk marker (from read_tool_result).
-        if trimmed.contains("[TOOL_RESULT_CHUNK]") || trimmed.contains("[TOOL_RESULT_STORED]") {
-            return true
-        }
-
-        /// Helper to check for JSON keys with or without spaces around colon Handles both compact ("key":) and pretty-printed ("key" :) formats.
-        func containsJSONKey(_ key: String) -> Bool {
-            return trimmed.contains("\"\(key)\":") || trimmed.contains("\"\(key)\" :")
-        }
-
-        /// Check if message is PURE JSON (starts with { or [) first This prevents false positives on markdown docs that CONTAIN code examples.
-        let isPureJSON = (trimmed.hasPrefix("{") && trimmed.hasSuffix("}")) ||
-                         (trimmed.hasPrefix("[") && trimmed.hasSuffix("]"))
-
-        /// Check for tool call JSON (has "name" and "arguments" keys).
-        /// Only match tool calls if they're PURE JSON
-        /// Otherwise code blocks with JSON examples get filtered
-        let isToolCall = isPureJSON && containsJSONKey("name") && containsJSONKey("arguments")
-
-        /// Check for structured data JSON (news research, web search results, etc.) CRITICAL: Only match if it's PURE JSON to avoid false positives on docs.
-        let isStructuredData = isPureJSON && (
-            containsJSONKey("type") ||
-            containsJSONKey("timeline") ||
-            containsJSONKey("news_sources") ||
-            containsJSONKey("article_count") ||
-            containsJSONKey("conducted_at") ||
-            containsJSONKey("result_count") ||
-            containsJSONKey("query")
-        )
-
-        /// Check for status/workflow control JSON (e.g., {"status":"continue"}) These are internal markers that should never be shown to users.
-        let isStatusJSON = isPureJSON && containsJSONKey("status")
-
-        /// If message has any of these markers, it's definitely tool data - filter it.
-        if isToolCall || isStructuredData || isStatusJSON {
-            return true
-        }
-
-        return false
-    }
-
-    /// Extract display message - ALWAYS returns original message.
-    /// We no longer filter thinking content - if model produces <think> tags, they are
-    /// formatted by ThinkTagFormatter and displayed to the user. The enableReasoning toggle
-    /// only controls whether /nothink instruction is sent, not whether thinking is hidden.
-    func getDisplayMessage(_ message: EnhancedMessage, enableReasoning: Bool) -> EnhancedMessage {
-        /// Always return the original message - no filtering.
-        return message
     }
 
     /// Build parent-child hierarchy map for tool messages Maps parent message ID → array of child messages.

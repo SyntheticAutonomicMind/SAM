@@ -179,12 +179,18 @@ public class ConversationMessageBus: ObservableObject {
             return
         }
 
-        /// Create updated message (preserve all metadata)
+        /// Create updated message (preserve all metadata).
+        /// Clean content at write time via precompiled regex engine —
+        /// the UI layer should never need to run cleaning at render time.
         let current = messages[index]
+        let cleanedContent = MessageCleaner.cleanSpecialTokens(
+            from: content,
+            isToolMessage: current.type == .toolExecution || current.isToolMessage
+        )
         let updated = EnhancedMessage(
             id: current.id,
             type: current.type,
-            content: content, // Only content changes
+            content: cleanedContent,
             contentParts: current.contentParts,
             isFromUser: current.isFromUser,
             timestamp: current.timestamp,
@@ -203,7 +209,7 @@ public class ConversationMessageBus: ObservableObject {
             reasoningContent: current.reasoningContent,
             showReasoning: current.showReasoning,
             performanceMetrics: current.performanceMetrics,
-            isStreaming: current.isStreaming,
+            isStreaming: true,
             isToolMessage: current.isToolMessage,
             githubCopilotResponseId: current.githubCopilotResponseId,
             isPinned: current.isPinned,
@@ -239,10 +245,20 @@ public class ConversationMessageBus: ObservableObject {
         /// Recalculate importance with final content (may have changed during streaming)
         let finalImportance = calculateMessageImportance(text: current.content, isUser: current.isFromUser)
 
+        /// Final cleaning pass on completion — ensures end-of-stream tokens
+        /// and fragmented tags that arrived at chunk boundaries are stripped
+        /// from the committed record. The streaming path already cleaned
+        /// incrementally, but the final content may have accumulated new
+        /// fragments since the last throttled write.
+        let finalContent = MessageCleaner.cleanSpecialTokens(
+            from: current.content,
+            isToolMessage: current.type == .toolExecution || current.isToolMessage
+        )
+
         let updated = EnhancedMessage(
             id: current.id,
             type: current.type,
-            content: current.content, // Preserve streamed content as-is to avoid cache invalidation
+            content: finalContent,
             contentParts: current.contentParts,
             isFromUser: current.isFromUser,
             timestamp: current.timestamp,
@@ -708,15 +724,13 @@ public class ConversationMessageBus: ObservableObject {
             logger.debug("IMMEDIATE_RENDER: Forced array reassignment for tool message id=\(message.id.uuidString.prefix(8))")
         }
 
-        /// Sync to ConversationModel for persistence
-        /// CRITICAL: User messages and tool messages sync IMMEDIATELY to prevent race conditions
-        /// Assistant messages (streaming chunks) use throttled sync for performance
-        /// FIX: User messages MUST sync immediately before AgentOrchestrator reads conversation.messages
+        /// Relay change to ConversationModel so SwiftUI views update.
+        /// For user messages and tool messages: sync immediately (critical ordering).
         if message.isToolMessage || message.isFromUser {
-            logger.debug("IMMEDIATE_SYNC: Critical message appended, syncing synchronously id=\(message.id.uuidString.prefix(8)), isUser=\(message.isFromUser), isTool=\(message.isToolMessage)")
-            conversation?.syncMessagesFromMessageBus()
+            logger.debug("IMMEDIATE_SYNC: Critical message appended, dispatching immediately id=\(message.id.uuidString.prefix(8)), isUser=\(message.isFromUser), isTool=\(message.isToolMessage)")
+            objectWillChange.send()
         } else {
-            /// Assistant streaming messages use throttled sync (performance optimization)
+            /// Assistant streaming messages use throttled sync for performance.
             notifyConversationOfChanges()
         }
     }
@@ -744,7 +758,8 @@ public class ConversationMessageBus: ObservableObject {
             ($0.lastModified ?? $0.timestamp) < ($1.lastModified ?? $1.timestamp)
         }
         rebuildCache()
-        logger.debug("LOAD_DIRECT: Loaded \(messages.count) messages without triggering subscriptions")
+        objectWillChange.send()
+        logger.debug("LOAD_DIRECT: Loaded \(messages.count) messages")
     }
 
     private func rebuildCache() {
@@ -836,39 +851,34 @@ public class ConversationMessageBus: ObservableObject {
         }
     }
 
-    /// Notify conversation to sync messages from MessageBus (with throttling for streaming)
+    /// Throttled notification of message changes (for streaming).
+    /// Relays objectWillChange so ConversationModel-bound views update.
     private func notifyConversationOfChanges() {
-        /// Throttle syncs to prevent excessive UI updates during streaming
-        /// 5ms = max 200 updates/sec, supports 50+ tps inference speed
+        /// Throttle syncs to prevent excessive UI updates during streaming.
+        /// 5ms = max 200 updates/sec, supports 50+ tps inference speed.
         let now = Date()
         if let last = lastSyncTime, now.timeIntervalSince(last) < syncThrottleInterval {
-            return // Skip this sync, too soon since last one
+            return
         }
 
         lastSyncTime = now
-
-        Task { @MainActor in
-            conversation?.syncMessagesFromMessageBus()
-        }
+        objectWillChange.send()
     }
 
-    /// DELTA SYNC: Notify conversation of specific message update
-    /// This avoids copying entire message array - just update one message
+    /// DELTA SYNC: Throttled notification of a single message update.
+    /// Avoids redundant sync since MessageBus.messages is mutated in-place
+    /// before the notification fires.
     private func notifyConversationOfMessageUpdate(id: UUID, index: Int, message: EnhancedMessage) {
-        /// CRITICAL: Throttle delta syncs during streaming to prevent SwiftUI churn
-        /// At 40+ TPS, we get 40+ delta syncs per second
-        /// SwiftUI re-renders on each objectWillChange.send()
-        /// 30 FPS (33ms) is ideal balance between responsiveness and performance
+        /// Throttle delta syncs during streaming to prevent SwiftUI churn.
+        /// At 40+ TPS, we get 40+ delta syncs per second.
+        /// 30 FPS (33ms) is ideal balance between responsiveness and performance.
         let now = Date()
         if let last = lastDeltaSyncTime, now.timeIntervalSince(last) < deltaSyncThrottleInterval {
-            return // Skip this sync, too soon since last one
+            return
         }
 
         lastDeltaSyncTime = now
-
-        Task { @MainActor in
-            conversation?.updateMessage(at: index, with: message)
-        }
+        objectWillChange.send()
     }
 
     // MARK: - Intelligent Importance Scoring

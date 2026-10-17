@@ -1267,12 +1267,17 @@ extension AgentOrchestrator {
 
                     /// Extract session naming marker during streaming (before stripping)
                     /// The marker builds up across chunks - extract title once complete
-                    if cleanedAccumulated.contains("<!--session:") && cleanedAccumulated.contains("-->") {
+                    /// NOTE: Some providers (OpenRouter) wrap session naming in HTML comments
+                    /// with extra fields like chunkId, e.g. <!-- chunkId=... session: {"title":"..."} -->
+                    /// We handle both the standard <!--session:{"title":"..."}--> format and
+                    /// the chunkId-prefixed variant.
+                    let sessionCommentPattern = #"<!--[^>]*session:[^>]*-->"#
+                    if cleanedAccumulated.range(of: sessionCommentPattern, options: .regularExpression) != nil {
                         extractAndApplySessionName(from: cleanedAccumulated, conversationId: conversationId)
 
-                        /// Strip session naming markers so they don't flash in UI
+                        /// Strip all session-naming HTML comments so they don't flash in UI.
                         cleanedAccumulated = cleanedAccumulated.replacingOccurrences(
-                            of: #"\s*<!--session:\{[^}]*\}-->\s*"#,
+                            of: sessionCommentPattern,
                             with: "",
                             options: .regularExpression
                         )

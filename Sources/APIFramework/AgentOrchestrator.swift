@@ -251,15 +251,17 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
     /// Extract session naming marker from AI response and rename the conversation
     /// Marker format: <!--session:{"title":"3-6 word summary"}-->
+    /// Some providers emit variant: <!-- chunkId=... session: {"title":"..."} -->
     /// Only acts when conversation title starts with "New Conversation"
     func extractAndApplySessionName(from rawResponse: String, conversationId: UUID) {
-        guard rawResponse.contains("<!--session:") else { return }
+        guard rawResponse.range(of: #"<!--[^>]*session:\s*\{[^}]*"title"[^}]*\}-->"#, options: .regularExpression) != nil else { return }
 
         guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }),
               conversation.title.hasPrefix("New Conversation") else { return }
 
-        /// Extract title using regex: <!--session:{"title":"..."}-->
-        let pattern = #"<!--session:\{[^}]*"title"\s*:\s*"([^"]{3,80})"[^}]*\}-->"#
+        /// Extract title from session naming marker. Handles both the standard
+        /// format (<!--session:{"title":"..."}-->) and chunkId-prefixed variants.
+        let pattern = #"<!--[^>]*session:\s*\{[^}]*"title"\s*:\s*"([^"]{3,80})"[^}]*\}-->"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
               let match = regex.firstMatch(in: rawResponse, options: [], range: NSRange(rawResponse.startIndex..., in: rawResponse)),
               let titleRange = Range(match.range(at: 1), in: rawResponse) else { return }

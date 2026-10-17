@@ -270,12 +270,27 @@ public class ConversationModel: ObservableObject, Identifiable {
     /// When messages update, we notify the manager to trigger SwiftUI re-renders
     public weak var manager: ConversationManager?
 
-    /// Subscription to MessageBus changes (relays updates to ChatWidget)
+    /// Forwards MessageBus.objectWillChange to ConversationModel's subscribers.
     private var messageBusSubscription: AnyCancellable?
 
-    /// Messages synced from MessageBus (single source of truth)
-    /// This property is automatically kept in sync with MessageBus
-    @Published public var messages: [ConfigurationSystem.EnhancedMessage] = []
+    /// Messages — forwarded from MessageBus as single source of truth.
+    /// Computed property: reads directly from MessageBus.messages,
+    /// eliminating the redundant Combine sync that caused double-write races.
+    /// Write access is only used during initialization (before MessageBus
+    /// is ready) — all subsequent writes go through MessageBus methods.
+    public var messages: [ConfigurationSystem.EnhancedMessage] {
+        get { messageBus?.messages ?? _messagesFallback }
+        set {
+            if let messageBus = self.messageBus {
+                messageBus.loadMessagesDirectly(newValue)
+            } else {
+                _messagesFallback = newValue
+            }
+        }
+    }
+
+    /// Fallback storage used only when messageBus hasn't been initialized yet.
+    private var _messagesFallback: [ConfigurationSystem.EnhancedMessage] = []
 
     @Published public var title: String = "New Conversation"
     @Published public var isProcessing = false
@@ -394,7 +409,7 @@ public class ConversationModel: ObservableObject, Identifiable {
         self.created = created
         self.title = title
         self.updated = updated
-        self.messages = messages
+        self._messagesFallback = messages
         self.settings = settings
         self.sessionId = sessionId
         self.lastGitHubCopilotResponseId = lastGitHubCopilotResponseId
@@ -637,44 +652,20 @@ public class ConversationModel: ObservableObject, Identifiable {
             conversationManager: conversationManager
         )
 
-        /// Load existing messages INTO MessageBus (for conversations loaded from disk)
-        /// IMPORTANT: Do this BEFORE setting up subscription to avoid sync loops
-        if !messages.isEmpty, let messageBus = self.messageBus {
-            /// Directly load messages into MessageBus without triggering add methods
-            /// This avoids circular subscription triggers during initialization
-            messageBus.loadMessagesDirectly(messages)
+        /// Load existing messages INTO MessageBus (for conversations loaded from disk).
+        if !_messagesFallback.isEmpty, let messageBus = self.messageBus {
+            messageBus.loadMessagesDirectly(_messagesFallback)
+            _messagesFallback.removeAll()
         }
 
-        /// Subscribe to MessageBus changes and sync messages array
-        /// This ensures ConversationModel.messages stays in sync with MessageBus
+        /// Forward MessageBus changes to ConversationModel's subscribers.
+        /// Since `messages` is now a computed property on ConversationModel that
+        /// reads directly from MessageBus, we need to relay objectWillChange so
+        /// that SwiftUI views bound to ConversationModel update when MessageBus
+        /// publishes changes.
         messageBusSubscription = messageBus?.objectWillChange
-            .sink { [weak self] _ in
-                guard let self = self, let messageBus = self.messageBus else { return }
-                /// Sync messages from MessageBus to ConversationModel
-                self.messages = messageBus.messages
-                /// @Published on messages already triggers objectWillChange - no explicit send needed
+            .sink { [weak self] in
+                self?.objectWillChange.send()
             }
-
-        /// Final sync to ensure messages array reflects MessageBus
-        if let messageBus = self.messageBus {
-            self.messages = messageBus.messages
-        }
     }
-
-    /// Sync messages from MessageBus (called by MessageBus when messages change)
-    public func syncMessagesFromMessageBus() {
-       guard let messageBus = self.messageBus else { return }
-       messages = messageBus.messages
-
-       /// @Published on messages already triggers objectWillChange - no explicit send needed
-   }
-
-   /// DELTA SYNC: Update single message without copying entire array
-   /// Used during streaming to avoid performance bottleneck
-   public func updateMessage(at index: Int, with message: EnhancedMessage) {
-       guard index >= 0 && index < messages.count else { return }
-       messages[index] = message
-
-       /// @Published on messages already triggers objectWillChange - no explicit send needed
-   }
 }

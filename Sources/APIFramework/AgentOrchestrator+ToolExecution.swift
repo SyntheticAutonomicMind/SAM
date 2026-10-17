@@ -105,8 +105,8 @@ extension AgentOrchestrator {
                 }
             }
 
-            /// Filter session naming markers
-            if line.contains("<!--session:") && line.contains("-->") {
+            /// Filter session naming markers (HTML comments with session: key)
+            if line.contains("<!--") && line.contains("-->") && line.contains("session:") {
                 continue
             }
 

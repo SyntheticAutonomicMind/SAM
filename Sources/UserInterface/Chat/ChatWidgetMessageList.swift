@@ -54,45 +54,27 @@ extension ChatWidget {
             .onChange(of: bottomVisibleItemId) { _, newId in
                 updateFollowingOutput(scrollItemId: newId)
             }
-        .onChange(of: messages.count) { _, _ in
-            guard scrollLockEnabled, isFollowingOutput, let lastMessage = messages.last else { return }
-            performThrottledScroll(proxy: proxy, to: lastMessage)
-        }
-        .onChange(of: messages.last?.content.count) { _, _ in
-            guard scrollLockEnabled, isFollowingOutput,
-                  let lastMessage = messages.last,
-                  lastMessage.isStreaming else { return }
-            performThrottledScroll(proxy: proxy, to: lastMessage)
-        }
-        .onChange(of: messages.last?.type) { _, newType in
-            guard scrollLockEnabled, isFollowingOutput,
-                  let lastMessage = messages.last,
-                  newType == .toolExecution || newType == .thinking else { return }
-            performThrottledScroll(proxy: proxy, to: lastMessage)
-        }
-        .onChange(of: messages.last?.isStreaming) { oldValue, newValue in
-            if oldValue == true && newValue == false {
-                guard scrollLockEnabled, isFollowingOutput else { return }
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(150))
-                    proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+            .onChange(of: messages) { _, newMessages in
+                cachedToolHierarchy = buildToolHierarchy(messages: newMessages)
+
+                guard scrollLockEnabled, isFollowingOutput,
+                      let lastMessage = newMessages.last else { return }
+
+                /// Single scroll point: if following output, scroll to bottom.
+                /// Replaces 4 separate onChange handlers + 150ms sleep hack.
+                /// No throttling delay — the MessageBus delta sync already
+                /// throttles to 33ms, so we just follow.
+                proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+            }
+            .onAppear {
+                scrollProxy = proxy
+                isFollowingOutput = true
+            }
+            .overlay(alignment: .bottom) {
+                if scrollLockEnabled && !isFollowingOutput {
+                    jumpToLatestPill(proxy: proxy)
                 }
             }
-        }
-        .onChange(of: messages) { _, newMessages in
-            cachedToolHierarchy = buildToolHierarchy(messages: newMessages)
-            let currentMessageIds = Set(newMessages.map { $0.id })
-            cachedCleanedMessages = cachedCleanedMessages.filter { currentMessageIds.contains($0.key) }
-        }
-        .onAppear {
-            scrollProxy = proxy
-            isFollowingOutput = true
-        }
-        .overlay(alignment: .bottom) {
-            if scrollLockEnabled && !isFollowingOutput {
-                jumpToLatestPill(proxy: proxy)
-            }
-        }
     }
 
     @ViewBuilder
@@ -208,55 +190,6 @@ extension ChatWidget {
         lastScrolledToId = targetMessage.id
     }
 
-    func performThrottledScroll(proxy: ScrollViewProxy, to message: EnhancedMessage) {
-        let now = Date()
-        let timeSinceLastScroll = now.timeIntervalSince(lastScrollTime)
-
-        /// Content is growing if the message is streaming, or is a tool/thinking card
-        let isGrowingContent = message.isStreaming ||
-            message.type == .toolExecution ||
-            message.type == .thinking
-
-        if timeSinceLastScroll >= 0.1 {
-            /// Enough time passed - scroll immediately
-            lastScrollTime = now
-            lastScrolledToId = message.id
-
-            if isGrowingContent {
-                /// Growing content: scroll to the last message's bottom edge.
-                /// This keeps the newest content visible as it streams in without
-                /// overshooting past the content into empty space.
-                proxy.scrollTo(message.id.uuidString, anchor: .bottom)
-            } else {
-                /// Static content: scroll to the top of the message so user
-                /// can read from the beginning (handles large messages well).
-                proxy.scrollTo(message.id.uuidString, anchor: .top)
-            }
-        } else {
-            /// Too soon - debounce
-            pendingScrollTask?.cancel()
-            pendingScrollTask = Task {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard let currentLast = messages.last else { return }
-                    lastScrollTime = Date()
-                    lastScrolledToId = currentLast.id
-
-                    let growing = currentLast.isStreaming ||
-                        currentLast.type == .toolExecution ||
-                        currentLast.type == .thinking
-
-                    if growing {
-                        proxy.scrollTo(currentLast.id.uuidString, anchor: .bottom)
-                    } else {
-                        proxy.scrollTo(currentLast.id.uuidString, anchor: .top)
-                    }
-                }
-            }
-        }
-    }
-
     func messagesVStack(for conversation: ConversationModel) -> some View {
         /// PERFORMANCE: Use LazyVStack to allow SwiftUI to destroy off-screen views
         /// Previous VStack kept ALL messages in memory causing massive slowdowns with many tool calls
@@ -270,7 +203,7 @@ extension ChatWidget {
                     /// These messages are kept in conversation history for context but hidden from UI
                     let visibleMessages = messages.filter { !$0.isSystemGenerated }
 
-                    ForEach(visibleMessages) { message in
+                    ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, message in
                         /// PERFORMANCE: Removed debug logging that fired on EVERY render pass
                         /// Original: logger.debug("[CHAT_RENDER_LOOP]...") - caused 4tps drop with many messages
 
@@ -310,19 +243,15 @@ extension ChatWidget {
                             /// model emits `</thinking>` as the first content chunk before tool calls)
                             /// are treated as empty rather than rendering an "empty" bubble with the
                             /// literal tag visible.
-                            let effectiveContent = effectiveMessageContent(message)
-                            let isEmpty = effectiveContent.isEmpty &&
+                                                        let isEmpty = message.content.isEmpty &&
                                           message.type != .toolExecution &&  /// ALWAYS show tool cards, even when empty
                                           (message.type != .thinking || (message.reasoningContent == nil || message.reasoningContent!.isEmpty)) &&
                                           (message.contentParts == nil || message.contentParts!.isEmpty)
 
                             /// Filter placeholder thinking messages (just "SUCCESS: Thinking..." with no actual content).
                             let isPlaceholderThinking = message.type == .thinking &&
-                                effectiveContent == "SUCCESS: Thinking..." &&
-                                (message.reasoningContent == nil || message.reasoningContent!.isEmpty)
-
-                            /// Handle messages with thinking content - extract response when reasoning disabled.
-                            let displayMessage = getDisplayMessage(message, enableReasoning: enableReasoning)
+                                message.content == "SUCCESS: Thinking..." &&
+                                (message.reasoningContent == nil || message.reasoningContent?.isEmpty == true)
 
                             /// PERFORMANCE: Removed verbose filter logging that fired on every render
                             let willRender = !isToolCallJSON && !isEmpty && !isPlaceholderThinking
@@ -337,6 +266,12 @@ extension ChatWidget {
                                 /// This prevents forced view recreation that causes scroll jumping
                                 let viewID: String = message.id.uuidString
 
+                                /// SEPARATOR: Thin divider before each rendered message (except first).
+                                /// Fixed in LazyVStack layout — does not move with content during streaming.
+                                if index > 0 {
+                                    MessageSeparator()
+                                }
+
                                 /// LAZYVSTACK FIX: Wrap in container with minimum height
                                 /// LazyVStack needs non-zero layout dimensions to properly render
                                 /// Without this, messages may appear empty until scrolled
@@ -348,14 +283,14 @@ extension ChatWidget {
                                     /// Thinking messages have isToolMessage=true but must render via MessageView → ThinkingCard
                                     if message.type == .thinking {
                                         MessageView(
-                                            message: getCachedCleanedMessage(displayMessage),
+                                            message: message,
                                             enableAnimations: enableAnimations,
                                             conversation: conversation,
                                             messageToExport: $messageToExport
                                         )
                                     } else if message.isToolMessage {
                                         ToolMessageWithChildren(
-                                            message: getCachedCleanedMessage(displayMessage),
+                                            message: message,
                                             children: toolHierarchy[message.id] ?? [],
                                             enableAnimations: enableAnimations,
                                             conversation: conversation,
@@ -372,20 +307,14 @@ extension ChatWidget {
                                     } else {
                                         /// PERFORMANCE: Use cached cleaned message to avoid regex on every render
                                         MessageView(
-                                            message: getCachedCleanedMessage(displayMessage),
+                                            message: message,
                                             enableAnimations: enableAnimations,
                                             conversation: conversation,
                                             messageToExport: $messageToExport
                                         )
                                     }
                                 }
-                                /// LAZYVSTACK RENDER FIX: Force intrinsic content height for all messages.
-                                /// Without .fixedSize, LazyVStack may defer rendering and show empty placeholders.
-                                /// Previously toggled based on isStreaming, but the transition from
-                                /// streaming -> non-streaming caused massive layout recomputation
-                                /// that cleared the visible window (scroll position lost during relayout).
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(minHeight: 24)
+                                /// No .fixedSize — LazyVStack handles intrinsic heights naturally.
                                 .id(viewID)
                             } else {
                                 /// PERFORMANCE: Removed filter logging (fired on every render)
@@ -400,9 +329,64 @@ extension ChatWidget {
                         .frame(height: 1)
                         .id("scroll-bottom-anchor")
                 }
-                .id("messages-\(enableAnimations)")
                 .padding(.horizontal)  /// Only horizontal padding, no bottom padding
                 .padding(.top)
+    }
+
+    // MARK: - Message Type Detection
+
+    /// Check if message is a tool call JSON message (raw JSON emitted by
+    /// the model instead of an actual text response).
+    ///
+    /// Uses JSONDecoder to attempt parsing the trimmed content as a known
+    /// tool-call or status shape. This eliminates false positives that the
+    /// previous `contains`-based heuristic produced on legitimate markdown
+    /// responses that happened to start with `{` and end with `}`.
+    func isToolCallJSONMessage(_ message: EnhancedMessage) -> Bool {
+        guard !message.isFromUser else { return false }
+
+        let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        /// Check for tool result chunk marker (from read_tool_result).
+        if trimmed.contains("[TOOL_RESULT_CHUNK]") || trimmed.contains("[TOOL_RESULT_STORED]") {
+            return true
+        }
+
+        /// Only attempt JSON decode if the message looks like JSON.
+        guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}") else { return false }
+
+        let decoder = JSONDecoder()
+
+        /// Tool call shape: {"name": "...", "arguments": {...}}
+        struct ToolCallJSON: Decodable {
+            let name: String
+            let arguments: [String: String]
+        }
+        if (try? decoder.decode(ToolCallJSON.self, from: Data(trimmed.utf8))) != nil {
+            return true
+        }
+
+        /// Status/workflow control JSON: {"status": "..."}
+        struct StatusJSON: Decodable {
+            let status: String
+        }
+        if (try? decoder.decode(StatusJSON.self, from: Data(trimmed.utf8))) != nil {
+            return true
+        }
+
+        /// Structured data shapes (news research, web search results, etc.)
+        struct StructuredDataJSON: Decodable {
+            let type: String?
+            let query: String?
+            let result_count: Int?
+            let article_count: Int?
+            let conducted_at: String?
+        }
+        if (try? decoder.decode(StructuredDataJSON.self, from: Data(trimmed.utf8))) != nil {
+            return true
+        }
+
+        return false
     }
 
 }
