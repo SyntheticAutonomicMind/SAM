@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
 
 import SwiftUI
+import ConfigurationSystem
 import OSLog
 
 /// SwiftUI view for rendering markdown using AST-based parser
@@ -15,8 +16,9 @@ struct MarkdownContentView: View {
     @State private var isLoading: Bool = false
     @State private var parseTask: Task<Void, Never>?
 
+    @Environment(\.fontSizeScale) private var fontSizeScale
+
     private let logger = Logger(subsystem: "com.sam.ui.MarkdownContentView", category: "UserInterface")
-    private let renderer = MarkdownViewRenderer()
 
     var body: some View {
         /// FIX: Use VStack instead of LazyVStack to ensure content renders immediately
@@ -26,7 +28,7 @@ struct MarkdownContentView: View {
         VStack(alignment: .leading, spacing: 12) {
             if let ast = cachedAST {
                 /// Render parsed AST (normal case - parsing complete)
-                renderer.render(ast)
+                MarkdownViewRenderer(fontSizeScale: fontSizeScale).render(ast)
                     .textSelection(.enabled)
             } else if isLoading {
                 /// Show loading indicator only when actively parsing

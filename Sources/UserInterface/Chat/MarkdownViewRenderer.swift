@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
 
 import SwiftUI
+import ConfigurationSystem
 import Foundation
 import Logging
 
@@ -10,6 +11,14 @@ import Logging
 @MainActor
 class MarkdownViewRenderer {
     private let logger = Logger(label: "com.sam.ui.MarkdownViewRenderer")
+
+    /// Current font size scale factor (read from Environment or AppStorage).
+    var fontSizeScale: Double = FontManager.defaultScale
+
+    /// Designated initializer.
+    public init(fontSizeScale: Double = FontManager.defaultScale) {
+        self.fontSizeScale = fontSizeScale
+    }
 
     /// Render AST node to SwiftUI view
     func render(_ node: MarkdownASTNode) -> AnyView {
@@ -81,12 +90,12 @@ class MarkdownViewRenderer {
 
     private func fontForHeading(level: Int) -> Font {
         switch level {
-        case 1: return .largeTitle
-        case 2: return .title
-        case 3: return .title2
-        case 4: return .title3
-        case 5: return .headline
-        default: return .subheadline
+        case 1: return FontManager.shared.largeTitle(fontSizeScale)
+        case 2: return FontManager.shared.title(fontSizeScale)
+        case 3: return FontManager.shared.title2(fontSizeScale)
+        case 4: return FontManager.shared.title3(fontSizeScale)
+        case 5: return FontManager.shared.headline(fontSizeScale)
+        default: return FontManager.shared.subheadline(fontSizeScale)
         }
     }
 
@@ -185,7 +194,7 @@ class MarkdownViewRenderer {
                 if let language = language, !language.isEmpty {
                     HStack {
                         Text(language.uppercased())
-                            .font(.caption)
+                            .font(FontManager.shared.caption(fontSizeScale))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -196,7 +205,7 @@ class MarkdownViewRenderer {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(code)
-                        .font(.system(.body, design: .monospaced))
+                        .font(FontManager.shared.monospacedBody(fontSizeScale))
                         .foregroundColor(.primary)
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -233,19 +242,19 @@ class MarkdownViewRenderer {
                 let numberString = "\(number)."
                 let estimatedWidth = CGFloat(numberString.count) * 9.0 + 4.0
                 Text(numberString)
-                    .font(.body)
+                    .font(FontManager.shared.body(fontSizeScale))
                     .foregroundColor(.secondary)
                     .frame(width: max(estimatedWidth, 16), alignment: .leading)
 
             case .unordered:
                 bulletImage(for: item.indentLevel)
-                    .font(.system(size: 8))
+                    .font(.system(size: 8 * CGFloat(fontSizeScale)))
                     .foregroundColor(.secondary)
                     .frame(width: 12, alignment: .center)
 
             case .task:
                 Image(systemName: item.isChecked == true ? "checkmark.square.fill" : "square")
-                    .font(.body)
+                    .font(FontManager.shared.body(fontSizeScale))
                     .foregroundColor(item.isChecked == true ? .blue : .secondary)
                     .frame(width: 16, alignment: .center)
             }
@@ -353,16 +362,16 @@ class MarkdownViewRenderer {
             options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) {
             if isBold {
-                Text(attributedString).font(.body.bold())
+                Text(attributedString).font(FontManager.shared.body(fontSizeScale).bold())
             } else {
-                Text(attributedString).font(.body)
+                Text(attributedString).font(FontManager.shared.body(fontSizeScale))
             }
         } else {
             /// Fallback to plain text if markdown parsing fails.
             if isBold {
-                Text(text).font(.body.bold())
+                Text(text).font(FontManager.shared.body(fontSizeScale).bold())
             } else {
-                Text(text).font(.body)
+                Text(text).font(FontManager.shared.body(fontSizeScale))
             }
         }
     }

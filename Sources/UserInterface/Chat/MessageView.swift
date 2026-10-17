@@ -67,6 +67,8 @@ struct MessageView: View {
     let conversation: ConversationModel
     @Binding var messageToExport: EnhancedMessage?
 
+    @Environment(\.fontSizeScale) var fontSizeScale
+
     var body: some View {
         Group {
             switch message.type {
@@ -76,6 +78,7 @@ struct MessageView: View {
                     isFromUser: true,
                     enableAnimations: enableAnimations,
                     conversation: conversation,
+                    fontSizeScale: fontSizeScale,
                     messageToExport: $messageToExport
                 )
 
@@ -85,17 +88,18 @@ struct MessageView: View {
                     isFromUser: false,
                     enableAnimations: enableAnimations,
                     conversation: conversation,
+                    fontSizeScale: fontSizeScale,
                     messageToExport: $messageToExport
                 )
 
             case .toolExecution, .subagentExecution:
-                ToolExecutionCard(message: message, enableAnimations: enableAnimations)
+                ToolExecutionCard(message: message, enableAnimations: enableAnimations, fontSizeScale: fontSizeScale)
 
             case .systemStatus:
-                SystemStatusCard(message: message, enableAnimations: enableAnimations)
+                SystemStatusCard(message: message, enableAnimations: enableAnimations, fontSizeScale: fontSizeScale)
 
             case .thinking:
-                ThinkingCard(message: message, enableAnimations: enableAnimations)
+                ThinkingCard(message: message, enableAnimations: enableAnimations, fontSizeScale: fontSizeScale)
             }
         }
         .id("\(message.id)-\(message.type.rawValue)")
@@ -139,6 +143,7 @@ struct MessageRow: View {
     let isFromUser: Bool
     let enableAnimations: Bool
     let conversation: ConversationModel
+    let fontSizeScale: Double
     @Binding var messageToExport: EnhancedMessage?
 
     @State private var displayedContent: String = ""
@@ -227,6 +232,7 @@ struct MessageRow: View {
                     if !partialLine.isEmpty {
                         Text(partialLine)
                             .foregroundColor(.primary)
+                            .font(FontManager.shared.body(fontSizeScale))
                     }
                 }
             } else {
@@ -254,12 +260,12 @@ struct MessageRow: View {
     private var metadataGutter: some View {
         HStack(spacing: 6) {
             Text(message.timestamp, format: .dateTime.hour().minute().second())
-                .font(.caption2)
+                .font(FontManager.shared.caption2(fontSizeScale))
                 .foregroundColor(.secondary)
 
             Button(action: copySource) {
                 Image(systemName: showCopyConfirmation ? "checkmark" : "doc.on.doc")
-                    .font(.caption2)
+                    .font(FontManager.shared.caption2(fontSizeScale))
             }
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
@@ -293,7 +299,7 @@ struct MessageRow: View {
 
             Button(action: { messageToExport = message }) {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.caption2)
+                    .font(FontManager.shared.caption2(fontSizeScale))
             }
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
@@ -301,7 +307,7 @@ struct MessageRow: View {
 
             Button(action: printMessage) {
                 Image(systemName: "printer")
-                    .font(.caption2)
+                    .font(FontManager.shared.caption2(fontSizeScale))
             }
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
@@ -310,11 +316,11 @@ struct MessageRow: View {
             if !isFromUser {
                 if let metrics = message.performanceMetrics {
                     Text("• \(metrics.tokenCount) tokens • \(String(format: "%.1f", metrics.timeToFirstToken))s TTFT • \(String(format: "%.0f", metrics.tokensPerSecond)) tok/s")
-                        .font(.caption2)
+                        .font(FontManager.shared.caption2(fontSizeScale))
                         .foregroundColor(.secondary)
                 } else if let processingTime = message.processingTime {
                     Text("• \(String(format: "%.1f", processingTime))s")
-                        .font(.caption2)
+                        .font(FontManager.shared.caption2(fontSizeScale))
                         .foregroundColor(.secondary)
                 }
             }
@@ -336,7 +342,7 @@ struct MessageRow: View {
             contentView
                 .frame(maxWidth: .infinity, alignment: isFromUser ? .trailing : .leading)
                 .layoutPriority(1)
-                .font(.callout)
+                .font(FontManager.shared.body(fontSizeScale))
 
             // Metadata gutter — aligned with content, not the full row width.
             // Left-aligned for assistant (matches content start), right-aligned for user.
@@ -444,6 +450,7 @@ struct MessageRow: View {
 struct ToolExecutionCard: View {
     let message: EnhancedMessage
     let enableAnimations: Bool
+    let fontSizeScale: Double
     @State private var isExpanded = false
     @State private var isHovering = false
 
@@ -452,16 +459,16 @@ struct ToolExecutionCard: View {
             HStack(spacing: 8) {
                 if let iconName = message.toolIcon {
                     Image(systemName: iconName)
-                        .font(.body)
+                        .font(FontManager.shared.body(fontSizeScale))
                         .foregroundColor(.primary)
                 } else {
                     Image(systemName: "wrench.and.screwdriver")
-                        .font(.body)
+                        .font(FontManager.shared.body(fontSizeScale))
                         .foregroundColor(.primary)
                 }
 
                 Text(getOperationDisplayName(from: message.content, toolName: message.toolName, displayData: message.toolDisplayData))
-                    .font(.subheadline)
+                    .font(FontManager.shared.subheadline(fontSizeScale))
                     .foregroundColor(.primary)
 
                 Spacer()
@@ -470,7 +477,7 @@ struct ToolExecutionCard: View {
 
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .foregroundColor(.secondary)
-                    .font(.caption)
+                    .font(FontManager.shared.caption(fontSizeScale))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -495,7 +502,7 @@ struct ToolExecutionCard: View {
                     if let metadata = message.toolMetadata, !metadata.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Result:")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
 
@@ -503,10 +510,10 @@ struct ToolExecutionCard: View {
                                 if let value = metadata[key] {
                                     HStack(alignment: .top, spacing: 4) {
                                         Text("\(formatMetadataKey(key)):")
-                                            .font(.caption)
+                                            .font(FontManager.shared.caption(fontSizeScale))
                                             .foregroundColor(.secondary)
                                         Text(value)
-                                            .font(.caption)
+                                            .font(FontManager.shared.caption(fontSizeScale))
                                             .foregroundColor(.primary)
                                     }
                                 }
@@ -520,13 +527,13 @@ struct ToolExecutionCard: View {
                     if let details = message.toolDetails, !details.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Operations:")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
 
                             ForEach(details, id: \.self) { detail in
                                 Text("• \(detail)")
-                                    .font(.caption)
+                                    .font(FontManager.shared.caption(fontSizeScale))
                                     .foregroundColor(.primary)
                             }
                         }
@@ -536,7 +543,7 @@ struct ToolExecutionCard: View {
                     if !message.content.isEmpty && !isProgressIndicator {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Output:")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
 
@@ -553,12 +560,12 @@ struct ToolExecutionCard: View {
                     if let duration = message.toolDuration {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Performance:")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
 
                             Text("Duration: \(String(format: "%.1f", duration))s")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .foregroundColor(.primary)
                         }
                     }
@@ -591,7 +598,7 @@ struct ToolExecutionCard: View {
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
             Text(statusText)
-                .font(.caption)
+                .font(FontManager.shared.caption(fontSizeScale))
                 .foregroundColor(statusColor)
                 .fontWeight(.medium)
         }
@@ -628,12 +635,13 @@ struct ToolExecutionCard: View {
 struct SystemStatusCard: View {
     let message: EnhancedMessage
     let enableAnimations: Bool
+    let fontSizeScale: Double
 
     var body: some View {
         HStack {
             Spacer()
             Text(message.content)
-                .font(.caption)
+                .font(FontManager.shared.caption(fontSizeScale))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -649,6 +657,7 @@ struct SystemStatusCard: View {
 struct ThinkingCard: View {
     let message: EnhancedMessage
     let enableAnimations: Bool
+    let fontSizeScale: Double
     @State private var isExpanded = false
     @State private var isHovering = false
 
@@ -656,11 +665,11 @@ struct ThinkingCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: message.toolIcon ?? "brain.head.profile")
-                    .font(.body)
+                    .font(FontManager.shared.body(fontSizeScale))
                     .foregroundColor(.primary)
 
                 Text("Reasoning")
-                    .font(.subheadline)
+                    .font(FontManager.shared.subheadline(fontSizeScale))
                     .foregroundColor(.primary)
 
                 Spacer()
@@ -668,7 +677,7 @@ struct ThinkingCard: View {
 
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .foregroundColor(.secondary)
-                    .font(.caption)
+                    .font(FontManager.shared.caption(fontSizeScale))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -692,11 +701,11 @@ struct ThinkingCard: View {
                 HStack {
                     if let duration = message.toolDuration {
                         Text("Completed in \(String(format: "%.1f", duration))s")
-                            .font(.caption)
+                            .font(FontManager.shared.caption(fontSizeScale))
                             .foregroundColor(.secondary)
                     } else {
                         Text("Click to expand")
-                            .font(.caption)
+                            .font(FontManager.shared.caption(fontSizeScale))
                             .foregroundColor(.secondary)
                             .italic()
                     }
@@ -721,12 +730,12 @@ struct ThinkingCard: View {
                     if !cleanedContent.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Reasoning:")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
 
                             MarkdownText(cleanedContent)
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .foregroundColor(.primary)
                                 .textSelection(.enabled)
                                 .padding(8)
@@ -736,12 +745,12 @@ struct ThinkingCard: View {
                     } else {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Status:")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
 
                             Text("No reasoning content available")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .foregroundColor(.secondary)
                                 .italic()
                         }
@@ -750,12 +759,12 @@ struct ThinkingCard: View {
                     if let duration = message.toolDuration {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Performance:")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
 
                             Text("Duration: \(String(format: "%.1f", duration))s")
-                                .font(.caption)
+                                .font(FontManager.shared.caption(fontSizeScale))
                                 .foregroundColor(.primary)
                         }
                     }
@@ -780,7 +789,7 @@ struct ThinkingCard: View {
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
             Text(statusText)
-                .font(.caption)
+                .font(FontManager.shared.caption(fontSizeScale))
                 .foregroundColor(statusColor)
                 .fontWeight(.medium)
         }

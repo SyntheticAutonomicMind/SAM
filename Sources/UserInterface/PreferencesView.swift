@@ -872,6 +872,7 @@ struct GeneralPreferencesView: View {
 
 struct AppearancePreferencesView: View {
     @AppStorage("enableAnimations") private var enableAnimations: Bool = true
+    @AppStorage("fontSizeScale") private var fontSizeScale: Double = FontManager.defaultScale
 
     var body: some View {
         ScrollView {
@@ -885,6 +886,38 @@ struct AppearancePreferencesView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                    .padding()
+                }
+
+                GroupBox("Text Size") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Font Size Scale")
+                                .frame(width: 120, alignment: .leading)
+
+                            Picker("Font Size", selection: $fontSizeScale) {
+                                ForEach(FontManager.scaleOptions, id: \.value) { option in
+                                    Text(option.label)
+                                }
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        // Live preview
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Aa")
+                                .font(.system(size: 28 * CGFloat(fontSizeScale), weight: .bold))
+                            Text("Sample conversation text — adjust the scale to preview")
+                                .font(.system(size: 17 * CGFloat(fontSizeScale)))
+                        }
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+
+                        Text("Adjusts font sizes throughout the chat interface and preferences.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                 }
             }

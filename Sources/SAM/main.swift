@@ -155,6 +155,7 @@ struct SAMRewrittenApp: App {
                 .environmentObject(endpointManager)
                 .environmentObject(sharedConversationService)
                 .environmentObject(apiServer)
+                .environment(\.fontSizeScale, UserDefaults.standard.double(forKey: FontManager.storageKey))
                 .onAppear {
                     #if DEBUG
                     logger.debug("Main window appeared")
