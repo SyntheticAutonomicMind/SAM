@@ -46,6 +46,13 @@ public final class FontManager {
 
     private init() {}
 
+    /// Resolves the font size scale from UserDefaults, falling back to defaultScale.
+    /// UserDefaults.double(forKey:) returns 0.0 for unset keys, but AppStorage
+    /// uses 1.0 as the default — this bridges the gap.
+    public static func resolvedScale(from userDefaultsValue: Double) -> Double {
+        userDefaultsValue > 0 ? userDefaultsValue : defaultScale
+    }
+
     /// Scale a point size by the given factor, clamped to a minimum readable size.
     private func scaled(_ size: CGFloat, _ scale: Double) -> CGFloat {
         let result = size * CGFloat(scale)
