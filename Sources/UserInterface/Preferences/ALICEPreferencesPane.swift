@@ -338,13 +338,27 @@ struct ALICEPreferencesPane: View {
             let models = try await provider.fetchAvailableModels()
             availableModels = models
 
-            /// Fetch audio models if available.
+    /// Fetch audio models if available.
             do {
                 let audioModelsList = try await provider.fetchAudioModels()
                 audioModels = audioModelsList
             } catch {
                 logger.debug("No audio models available: \(error.localizedDescription)")
-                audioModels = []
+
+                /// Fallback: if the server reports audio as enabled in its health check,
+                /// construct a minimal model list from the health response.
+                if let health = healthResponse, health.audioEnabled == true, let loadedModel = health.audioModelId {
+                    let fallbackModel = ALICEAudioModel(
+                        id: loadedModel,
+                        name: Self.displayName(for: loadedModel),
+                        engine: Self.engine(for: loadedModel),
+                        maxSeconds: Self.maxSeconds(for: loadedModel),
+                        sampleRate: 44100
+                    )
+                    audioModels = [fallbackModel]
+                } else {
+                    audioModels = []
+                }
             }
 
             /// Save as shared provider for the app.
@@ -367,8 +381,50 @@ struct ALICEPreferencesPane: View {
             audioModels = models
         } catch {
             logger.debug("Failed to fetch audio models: \(error.localizedDescription)")
-            audioModels = []
+
+            /// Fallback: use health response if available.
+            if let health = healthResponse, health.audioEnabled == true, let loadedModel = health.audioModelId {
+                let fallbackModel = ALICEAudioModel(
+                    id: loadedModel,
+                    name: Self.displayName(for: loadedModel),
+                    engine: Self.engine(for: loadedModel),
+                    maxSeconds: Self.maxSeconds(for: loadedModel),
+                    sampleRate: 44100
+                )
+                audioModels = [fallbackModel]
+            } else {
+                audioModels = []
+            }
         }
         isCheckingAudio = false
+    }
+
+    // MARK: - Audio Model Helpers
+
+    /// Human-readable name for known audio model IDs.
+    private static func displayName(for modelId: String) -> String {
+        switch modelId {
+        case "stable-audio-open-1.0": return "Stable Audio Open 1.0"
+        case "minimax-music-3": return "MiniMax Music 3"
+        default: return modelId
+        }
+    }
+
+    /// Engine name for known audio model IDs.
+    private static func engine(for modelId: String) -> String {
+        switch modelId {
+        case "stable-audio-open-1.0": return "stable_audio"
+        case "minimax-music-3": return "minimax_music3"
+        default: return "unknown"
+        }
+    }
+
+    /// Max generation duration for known audio model IDs.
+    private static func maxSeconds(for modelId: String) -> Int? {
+        switch modelId {
+        case "stable-audio-open-1.0": return 47
+        case "minimax-music-3": return 360
+        default: return nil
+        }
     }
 }

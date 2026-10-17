@@ -82,7 +82,7 @@ public class ALICEProvider: ObservableObject {
             }
 
             let healthResponse = try JSONDecoder().decode(ALICEHealthResponse.self, from: data)
-            logger.info("ALICE server healthy: version=\(healthResponse.version), gpu=\(healthResponse.gpuAvailable)")
+            logger.info("ALICE server healthy: version=\(healthResponse.version), gpu=\(healthResponse.gpuAvailable), audioEnabled=\(healthResponse.audioEnabled ?? false)")
 
             self.isHealthy = true
             return healthResponse
@@ -290,9 +290,9 @@ public class ALICEProvider: ObservableObject {
         }
 
         let modelsResponse = try JSONDecoder().decode(ALICEAudioModelsResponse.self, from: data)
-        logger.info("Fetched \(modelsResponse.data.count) audio models from ALICE")
+        logger.info("Fetched \(modelsResponse.models.count) audio models from ALICE")
 
-        return modelsResponse.data
+        return modelsResponse.models
     }
 
     // MARK: - Audio Generation
@@ -460,9 +460,15 @@ public struct ALICEHealthResponse: Codable {
     public let version: String
     public let gpuAvailable: Bool
     public let modelsLoaded: Int
+    public let audioEnabled: Bool?
+    public let audioModelId: String?
+    public let audioModelLoaded: Bool?
 
     enum CodingKeys: String, CodingKey {
         case status, version, gpuAvailable, modelsLoaded
+        case audioEnabled = "audioEnabled"
+        case audioModelId = "audioModelId"
+        case audioModelLoaded = "audioModelLoaded"
     }
 
     public init(from decoder: Decoder) throws {
@@ -483,6 +489,10 @@ public struct ALICEHealthResponse: Codable {
             let alt = try decoder.container(keyedBy: AltKeys.self)
             modelsLoaded = try alt.decode(Int.self, forKey: .modelsLoaded)
         }
+
+        audioEnabled = try? container.decode(Bool.self, forKey: .audioEnabled)
+        audioModelId = try? container.decode(String.self, forKey: .audioModelId)
+        audioModelLoaded = try? container.decode(Bool.self, forKey: .audioModelLoaded)
     }
 
     private enum AltKeys: String, CodingKey {
@@ -490,11 +500,14 @@ public struct ALICEHealthResponse: Codable {
         case modelsLoaded = "models_loaded"
     }
 
-    public init(status: String, version: String, gpuAvailable: Bool, modelsLoaded: Int) {
+    public init(status: String, version: String, gpuAvailable: Bool, modelsLoaded: Int, audioEnabled: Bool? = nil, audioModelId: String? = nil, audioModelLoaded: Bool? = nil) {
         self.status = status
         self.version = version
         self.gpuAvailable = gpuAvailable
         self.modelsLoaded = modelsLoaded
+        self.audioEnabled = audioEnabled
+        self.audioModelId = audioModelId
+        self.audioModelLoaded = audioModelLoaded
     }
 }
 
@@ -644,29 +657,43 @@ private struct ALICEAnyCodable: Codable {
 // MARK: - Audio Response Models
 
 public struct ALICEAudioModelsResponse: Codable, Sendable {
-    public let data: [ALICEAudioModel]
+    public let models: [ALICEAudioModel]
+    public let backend: String?
+    public let available: Bool?
 }
 
 public struct ALICEAudioModel: Codable, Identifiable, Sendable {
     public let id: String
     public let name: String?
+    public let repo: String?
+    public let description: String?
     public let engine: String?
     public let maxSeconds: Int?
     public let defaultSeconds: Int?
     public let sampleRate: Int?
+    public let supportsLyrics: Bool?
+    public let license: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, engine, maxSeconds, defaultSeconds, sampleRate
+        case id, name, repo, description, engine, license
+        case maxSeconds = "max_seconds"
+        case defaultSeconds = "default_seconds"
+        case sampleRate = "sample_rate"
+        case supportsLyrics = "supports_lyrics"
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         name = try container.decodeIfPresent(String.self, forKey: .name)
+        repo = try container.decodeIfPresent(String.self, forKey: .repo)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
         engine = try container.decodeIfPresent(String.self, forKey: .engine)
         maxSeconds = try container.decodeIfPresent(Int.self, forKey: .maxSeconds)
         defaultSeconds = try container.decodeIfPresent(Int.self, forKey: .defaultSeconds)
         sampleRate = try container.decodeIfPresent(Int.self, forKey: .sampleRate)
+        supportsLyrics = try container.decodeIfPresent(Bool.self, forKey: .supportsLyrics)
+        license = try container.decodeIfPresent(String.self, forKey: .license)
     }
 
     public var displayName: String {
@@ -677,13 +704,17 @@ public struct ALICEAudioModel: Codable, Identifiable, Sendable {
         engine ?? "unknown"
     }
 
-    public init(id: String, name: String? = nil, engine: String? = nil, maxSeconds: Int? = nil, defaultSeconds: Int? = nil, sampleRate: Int? = nil) {
+    public init(id: String, name: String? = nil, repo: String? = nil, description: String? = nil, engine: String? = nil, maxSeconds: Int? = nil, defaultSeconds: Int? = nil, sampleRate: Int? = nil, supportsLyrics: Bool? = nil, license: String? = nil) {
         self.id = id
         self.name = name
+        self.repo = repo
+        self.description = description
         self.engine = engine
         self.maxSeconds = maxSeconds
         self.defaultSeconds = defaultSeconds
         self.sampleRate = sampleRate
+        self.supportsLyrics = supportsLyrics
+        self.license = license
     }
 }
 
