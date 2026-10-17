@@ -1614,7 +1614,24 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     // callLLMStreaming (previously always nil, forcing fallback to fragile
                     // githubCopilotResponseId string search).
                     if let conv = conversationManager.conversations.first(where: { $0.id == conversationId }) {
-                        context.statefulMarkerMessageCount = conv.messages.filter { !$0.isToolMessage }.count
+                        // CRITICAL FIX: Use the SAME filter as messagesToSend in callLLM /
+                        // callLLMStreaming. The delta slice uses statefulMarkerMessageCount to
+                        // suffix-from the filtered array, so the count MUST match what
+                        // messagesToSend produces. Previously this counted ALL non-tool
+                        // messages (including assistant messages with tool_calls), but
+                        // messagesToSend excludes assistant messages with tool_calls when
+                        // hasInternalMsgs is true. The mismatch caused the slice index to
+                        // overshoot the array, returning an empty messagesToSend and
+                        // dropping the entire conversation history (including the user's
+                        // current message) from the LLM request.
+                        context.statefulMarkerMessageCount = conv.messages.filter { msg in
+                            if msg.isToolMessage { return false }
+                            if !msg.isFromUser {
+                                let hasToolCalls = msg.toolCalls != nil && !(msg.toolCalls?.isEmpty ?? true)
+                                if hasToolCalls { return false }
+                            }
+                            return true
+                        }.count
                     }
                     logger.debug("SUCCESS: Updated statefulMarker + messageCount for next iteration: \(marker.safePrefix(20))...")
                 }

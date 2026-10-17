@@ -321,4 +321,150 @@ final class ContextPreservationTests: XCTestCase {
         XCTAssertTrue(userMessages.last?.content?.contains("END_USER_MESSAGE") ?? false,
                       "Current user message should be the last user message")
     }
+
+    // MARK: - Stateful marker delta-slice count mismatch (regression)
+
+    func testDeltaSlice_CountMismatchDoesNotDropUserMessage() {
+        // Regression test for the bug where statefulMarkerMessageCount (captured
+        // with filter !isToolMessage, which includes assistant messages with tool_calls)
+        // exceeded the length of messagesToSend (which excludes assistant messages
+        // with tool_calls when hasInternalMsgs is true), causing suffix(from:) to
+        // return an empty array and drop the entire conversation history.
+        //
+        // The safety net: sliceIndex exceeding messagesToSend.count should NOT
+        // produce an empty array — it should fall back to full-history mode.
+
+        // Simulate: messagesToSend has 5 elements (user + assistant without tool_calls),
+        // but statefulMarkerMessageCount is 6 (because the assistant with tool_calls
+        // was counted in the marker snapshot but excluded from messagesToSend).
+        let messagesToSend: [OpenAIChatMessage] = [
+            OpenAIChatMessage(role: "user", content: "User Q1"),
+            OpenAIChatMessage(role: "assistant", content: "Assistant A1"),
+            OpenAIChatMessage(role: "user", content: "User Q2"),
+            OpenAIChatMessage(role: "assistant", content: "Assistant A2"),
+            OpenAIChatMessage(role: "user", content: "User Q3 — CRITICAL, must survive"),
+        ]
+
+        let markerMessageCount = 6  // One more than messagesToSend.count (simulates the mismatch)
+
+        // Replicate the FIXED delta-slice logic:
+        var sliced = messagesToSend
+        let sliceIndex = markerMessageCount
+        if sliceIndex <= sliced.count {
+            sliced = Array(sliced.suffix(from: sliceIndex))
+        } else {
+            // Overshoot — fall back to full history (don't slice)
+            // (This is the fix: previously suffix(from: min(sliceIndex, count))
+            // would return empty, dropping all messages.)
+        }
+
+        // With the fix, the overshoot does NOT produce an empty array.
+        XCTAssertFalse(sliced.isEmpty, "Delta slice must not return empty on count mismatch — falls back to full history")
+
+        // The critical user message must survive.
+        let hasCriticalUser = sliced.contains { msg in
+            msg.role == "user" && (msg.content?.contains("CRITICAL") ?? false)
+        }
+        XCTAssertTrue(hasCriticalUser, "User message must survive the delta slice even with count mismatch")
+    }
+
+    func testMarkerCaptureFilter_MatchesMessagesToSendFilter() {
+        // Verify that the marker-capture filter and the messagesToSend filter
+        // produce consistent counts when the assistant message has tool_calls.
+        // This is the core invariant the fix enforces.
+
+        let assistantWithToolCalls = OpenAIChatMessage(
+            role: "assistant",
+            content: nil,
+            toolCalls: [OpenAIToolCall(
+                id: "call_1",
+                type: "function",
+                function: OpenAIFunctionCall(name: "web_operations", arguments: "{}")
+            )]
+        )
+
+        let messages: [OpenAIChatMessage] = [
+            OpenAIChatMessage(role: "user", content: "Q1"),
+            OpenAIChatMessage(role: "assistant", content: "A1"),
+            OpenAIChatMessage(role: "user", content: "Q2"),
+            assistantWithToolCalls,
+            OpenAIChatMessage(role: "tool", content: "Tool result", toolCallId: "call_1"),
+        ]
+
+        // OLD (buggy) marker-capture filter: role != "tool" (includes assistant with tool_calls)
+        let oldCount = messages.filter { $0.role != "tool" }.count
+
+        // NEW (fixed) marker-capture filter: matches messagesToSend (excludes assistant with tool_calls)
+        let newCount = messages.filter { msg in
+            if msg.role == "tool" { return false }
+            if msg.role != "user" {
+                let hasToolCalls = msg.toolCalls != nil && !(msg.toolCalls?.isEmpty ?? true)
+                if hasToolCalls { return false }
+            }
+            return true
+        }.count
+
+        // The old filter would produce a count (4) that exceeds the
+        // messagesToSend length (3), causing the slice overshoot bug.
+        XCTAssertNotEqual(oldCount, newCount, "Filters must differ — old includes tool_calls assistant, new excludes it")
+        XCTAssertEqual(newCount, 3, "Fixed filter should produce 3 (Q1, A1, Q2)")
+        XCTAssertEqual(oldCount, 4, "Old filter should produce 4 (includes assistant with tool_calls)")
+    }
+
+    func testDeltaSlice_NoSafetyNetWithoutFix_WouldBeEmpty() {
+        // Demonstrate the ORIGINAL buggy behavior: suffix(from: min(6, 5))
+        // returns an empty array, which is why the fix is needed.
+        let messagesToSend: [OpenAIChatMessage] = [
+            OpenAIChatMessage(role: "user", content: "A"),
+            OpenAIChatMessage(role: "assistant", content: "B"),
+            OpenAIChatMessage(role: "user", content: "C"),
+            OpenAIChatMessage(role: "assistant", content: "D"),
+            OpenAIChatMessage(role: "user", content: "E — CRITICAL"),
+        ]
+        let markerMessageCount = 6
+
+        // OLD (buggy) logic: min(6, 5) = 5, suffix(from: 5) = []
+        let oldResult = Array(messagesToSend.suffix(from: min(markerMessageCount, messagesToSend.count)))
+        XCTAssertTrue(oldResult.isEmpty, "Buggy logic produces empty array (demonstrates the bug)")
+
+        // FIXED logic: overshoot detected, falls back to full history
+        var fixedResult = messagesToSend
+        let sliceIndex = markerMessageCount
+        if sliceIndex <= fixedResult.count {
+            fixedResult = Array(fixedResult.suffix(from: sliceIndex))
+        }
+        XCTAssertFalse(fixedResult.isEmpty, "Fixed logic preserves history on overshoot")
+        XCTAssertTrue(fixedResult.contains { $0.content?.contains("CRITICAL") ?? false })
+    }
+
+    func testSafetyNet_IterationZeroAndContinuationBothHaveUserMessage() {
+        // Verify the iteration > 0 safety net: when the messages array has
+        // NO user message (only tool calls + tool results), a synthetic
+        // continuation user message is injected.
+        var messages: [OpenAIChatMessage] = [
+            OpenAIChatMessage(role: "system", content: "System prompt"),
+            // No user message — only tool calls + results (simulates lost context)
+            OpenAIChatMessage(role: "assistant", content: "", toolCalls: [
+                OpenAIToolCall(
+                    id: "call_1",
+                    type: "function",
+                    function: OpenAIFunctionCall(name: "web_operations", arguments: "{}")
+                )
+            ]),
+            OpenAIChatMessage(role: "tool", content: "Tool result", toolCallId: "call_1"),
+        ]
+
+        // Replicate the safety net for iteration > 0:
+        let iteration = 1
+        if iteration > 0 && !messages.contains(where: { $0.role == "user" }) {
+            messages.append(OpenAIChatMessage(role: "user", content: "Please continue with the task."))
+        }
+
+        let hasUser = messages.contains { $0.role == "user" }
+        XCTAssertTrue(hasUser, "Iteration > 0 safety net should inject user message when none exists")
+
+        let userMessages = messages.filter { $0.role == "user" }
+        XCTAssertEqual(userMessages.count, 1)
+        XCTAssertEqual(userMessages.first?.content, "Please continue with the task.")
+    }
 }

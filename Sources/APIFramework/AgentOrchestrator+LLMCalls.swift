@@ -169,8 +169,17 @@ extension AgentOrchestrator {
             if let markerMessageCount = statefulMarkerMessageCount {
                 /// Slice to only include messages AFTER the marker count
                 let sliceIndex = markerMessageCount
-                messagesToSend = Array(messagesToSend.suffix(from: min(sliceIndex, messagesToSend.count)))
-                logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(messagesToSend.count) messages after marker (delta-only mode)")
+                // SAFETY NET: If the slice index overshoots the filtered array, we have
+                // a count mismatch (marker captured with a different filter than
+                // messagesToSend). An empty result would strip the entire conversation
+                // history — including the user's current message — from the request.
+                // Fall back to full-history mode (don't slice) instead.
+                if sliceIndex <= messagesToSend.count {
+                    messagesToSend = Array(messagesToSend.suffix(from: sliceIndex))
+                    logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(messagesToSend.count) messages after marker (delta-only mode)")
+                } else {
+                    logger.warning("STATEFUL_MARKER_SLICE_OVERSHOOT: markerMessageCount(\(sliceIndex)) > messagesToSend.count(\(messagesToSend.count)), skipping delta slice to prevent context loss")
+                }
             }
             /// FALLBACK: Search for marker in messages (timing-dependent)
             else if let markerIndex = messagesToSend.lastIndex(where: { $0.githubCopilotResponseId == marker }) {
@@ -274,6 +283,18 @@ extension AgentOrchestrator {
         let newMessageNotInHistory = messagesToSend.isEmpty ||
                                      !messagesToSend.last!.isFromUser ||
                                      messagesToSend.last!.content != message
+
+        /// SAFETY NET (iteration > 0): In continuation turns the message is
+        /// "Please continue" and the existing check is skipped. But if the
+        /// delta slice or projection dropped all conversation context, the
+        /// messages array may have NO user message at all — only tool results.
+        /// Inject a synthetic continuation user message so the model has a
+        /// frame for what the tool results are responding to.
+        if iteration > 0 && !messages.contains(where: { $0.role == "user" }) {
+            let continuation = OpenAIChatMessage(role: "user", content: "Please continue with the task.")
+            messages.append(continuation)
+            logger.warning("MISSING_USER_MESSAGE: iteration=\(iteration) — no user message in request after assembly, injected continuation prompt")
+        }
 
         /// VS CODE COPILOT PATTERN: Inject reminders RIGHT BEFORE the user message
         /// This positions them with maximum salience - the agent sees them immediately before responding
@@ -724,9 +745,14 @@ extension AgentOrchestrator {
                 /// Slice to only include messages AFTER the marker count
                 /// Example: If marker was captured at count=3, send messages from index 3 onwards
                 let sliceIndex = markerMessageCount
-                conversationMessages = Array(conversationMessages.suffix(from: min(sliceIndex, conversationMessages.count)))
-                useDeltaMode = true  /// Successfully sliced, use delta mode
-                logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(conversationMessages.count) messages after marker (delta-only mode with tool results)")
+                // SAFETY NET: Same overshoot guard as callLLM path.
+                if sliceIndex <= conversationMessages.count {
+                    conversationMessages = Array(conversationMessages.suffix(from: sliceIndex))
+                    useDeltaMode = true  /// Successfully sliced, use delta mode
+                    logger.debug("STATEFUL_MARKER_SLICING: Using message count \(markerMessageCount), sending \(conversationMessages.count) messages after marker (delta-only mode with tool results)")
+                } else {
+                    logger.warning("STATEFUL_MARKER_SLICE_OVERSHOOT: markerMessageCount(\(sliceIndex)) > conversationMessages.count(\(conversationMessages.count)), skipping delta slice to prevent context loss")
+                }
             }
             /// FALLBACK: Search for marker in messages (timing-dependent, may fail if message not persisted yet)
             else if let markerIndex = conversationMessages.lastIndex(where: { $0.githubCopilotResponseId == marker }) {
@@ -850,6 +876,18 @@ extension AgentOrchestrator {
             } else {
                 logger.debug("callLLMStreaming: Current user message found in conversation history (no duplicate needed)")
             }
+        }
+
+        /// SAFETY NET (iteration > 0): In continuation turns the message is
+        /// "Please continue" and the check above is skipped. But if the delta
+        /// slice or projection dropped all conversation context, the messages
+        /// array may have NO user message at all — only tool results. Inject a
+        /// synthetic continuation user message so the model has a frame for
+        /// what the tool results are responding to and doesn't revert to an
+        /// older task.
+        if iteration > 0 && !messages.contains(where: { $0.role == "user" }) {
+            messages.append(OpenAIChatMessage(role: "user", content: "Please continue with the task."))
+            logger.warning("MISSING_USER_MESSAGE: iteration=\(iteration) — no user message in request after assembly, injected continuation prompt")
         }
 
         /// VS CODE COPILOT PATTERN: Inject reminders at the END of messages (high salience)
