@@ -35,7 +35,7 @@ public class AppleMLXAdapter {
 
    /// Cache loaded models to avoid reloading.
    private var loadedModels: [String: any LanguageModel] = [:]
-   private var loadedTokenizers: [String: Tokenizer] = [:]
+   private var loadedTokenizers: [String: Tokenizers.Tokenizer] = [:]
     /// Maximum number of models to keep in memory (LRU eviction)
     private let maxCachedModels = 3
     /// Track model access order for LRU eviction
@@ -60,7 +60,7 @@ public class AppleMLXAdapter {
     }
 
     /// Load a model from a local directory using Apple's MLXLLM infrastructure.
-    public func loadModel(from localPath: URL) async throws -> (model: any LanguageModel, tokenizer: Tokenizer) {
+    public func loadModel(from localPath: URL) async throws -> (model: any LanguageModel, tokenizer: Tokenizers.Tokenizer) {
         let modelId = localPath.lastPathComponent
 
        /// Check cache first.
@@ -115,7 +115,7 @@ public class AppleMLXAdapter {
 
         /// Step 3: Load weights using Apple's loadWeights function.
         do {
-            try MLXLMCommon.loadWeights(
+            try await MLXLMCommon.loadWeights(
                 modelDirectory: localPath,
                 model: model,
                 perLayerQuantization: baseConfig.perLayerQuantization
@@ -127,7 +127,7 @@ public class AppleMLXAdapter {
         }
 
         /// Step 4: Load tokenizer from LOCAL files (not HuggingFace API).
-        let tokenizer: Tokenizer
+        let tokenizer: Tokenizers.Tokenizer
         do {
             /// Load tokenizer config and data from local files.
             let tokenizerConfigPath = localPath.appending(path: "tokenizer_config.json")
@@ -177,7 +177,7 @@ public class AppleMLXAdapter {
     /// Generate text using Apple's model infrastructure - returns streaming chunks CRITICAL FIX: Tracks previously generated tokens to avoid duplication Only yields NEW tokens (incremental deltas) matching remote provider behavior ARCHITECTURE FIX: Uses tokenizer.applyChatTemplate() to apply model's built-in chat_template.
     public func generateStream(
         model: any LanguageModel,
-        tokenizer: Tokenizer,
+        tokenizer: Tokenizers.Tokenizer,
         messages: [Message],
         tools: [ToolSpec]? = nil,
         cache: [KVCache]? = nil,
@@ -235,7 +235,7 @@ public class AppleMLXAdapter {
                         configuration: modelConfig,
                         model: model,
                         processor: StandInUserInputProcessor(),
-                        tokenizer: tokenizer
+                        tokenizer: TokenizerBridge(tokenizer)
                     )
 
                     /// Generate tokens using Apple's generate function with AsyncSequence **Why AsyncSequence**: Apple MLX uses modern Swift concurrency - Returns AsyncSequence<GenerateResult> (stream of tokens) - NOT callback-based API (old pattern) - Enables natural for-await-in loop for token streaming **VERIFIED**: mlx-swift-examples Chat.swift lines 101-115 uses AsyncSequence pattern CRITICAL: Use AsyncSequence pattern, NOT callback-based API.
@@ -249,7 +249,7 @@ public class AppleMLXAdapter {
                         topP: topP,
                         repetitionPenalty: repetitionPenalty,
                         repetitionContextSize: repetitionContextSize,
-                        prefillStepSize: prefillStepSize
+                        prefill: .init(stepSize: prefillStepSize, chunking: .remainder)
                     )
 
                     /// Accumulate full response for debugging.
@@ -352,6 +352,8 @@ public class AppleMLXAdapter {
                         case .toolCall:
                             /// Tool calls are handled separately via ToolCallExtractor in MLXProvider.
                             break
+                        case .rejectedToolCall:
+                            break
                         }
                     }
 
@@ -391,7 +393,7 @@ public class AppleMLXAdapter {
     /// Legacy method for non-streaming generation with chat template support Use generateStream() for proper streaming behavior.
     public func generate(
         model: any LanguageModel,
-        tokenizer: Tokenizer,
+        tokenizer: Tokenizers.Tokenizer,
         messages: [Message],
         tools: [ToolSpec]? = nil,
         maxTokens: Int = 2048,
@@ -430,7 +432,7 @@ public class AppleMLXAdapter {
             configuration: modelConfig,
             model: model,
             processor: StandInUserInputProcessor(),
-            tokenizer: tokenizer
+            tokenizer: TokenizerBridge(tokenizer)
         )
 
         /// Generate tokens using Apple's generate function CRITICAL FIX: tokens callback receives cumulative tokens, not incremental So we just need to capture the latest state, not append (which causes massive duplication).

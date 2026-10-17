@@ -397,7 +397,7 @@ public class MLXProvider: AIProvider {
 @MainActor
 public final class MLXEngine {
     private let modelPath: String
-    private nonisolated(unsafe) var cachedModel: (model: any LanguageModel, tokenizer: Tokenizer)?
+    private nonisolated(unsafe) var cachedModel: (model: any LanguageModel, tokenizer: Tokenizers.Tokenizer)?
     private nonisolated(unsafe) var cachedModelPath: String?
 
     public init(modelPath: String) {
@@ -414,7 +414,7 @@ public final class MLXEngine {
         identifier: String,
         onModelLoadingStarted: ((String, String) -> Void)?,
         onModelLoadingCompleted: ((String) -> Void)?
-    ) async throws -> (model: any LanguageModel, tokenizer: Tokenizer) {
+    ) async throws -> (model: any LanguageModel, tokenizer: Tokenizers.Tokenizer) {
         if let cached = cachedModel, cachedModelPath == modelPath {
             return cached
         }
@@ -448,7 +448,7 @@ public final class MLXEngine {
     /// logging only.
     public func buildPrompt(
         model: any LanguageModel,
-        tokenizer: Tokenizer,
+        tokenizer: Tokenizers.Tokenizer,
         messages: [OpenAIChatMessage],
         systemPrompt: String,
         tools: [OpenAITool]?,
@@ -531,7 +531,7 @@ public final class MLXEngine {
     /// the per-token chunks into events.
     public func generateStream(
         model: any LanguageModel,
-        tokenizer: Tokenizer,
+        tokenizer: Tokenizers.Tokenizer,
         messages: [Message],
         tools: [ToolSpec]?,
         cache: [KVCache]?,
@@ -565,7 +565,7 @@ public final class MLXEngine {
                         configuration: modelConfig,
                         model: model,
                         processor: StandInUserInputProcessor(),
-                        tokenizer: tokenizer
+                        tokenizer: TokenizerBridge(tokenizer)
                     )
 
                     let parameters = GenerateParameters(
@@ -578,7 +578,7 @@ public final class MLXEngine {
                         topP: topP,
                         repetitionPenalty: repetitionPenalty,
                         repetitionContextSize: repetitionContextSize,
-                        prefillStepSize: prefillStepSize
+                        prefill: .init(stepSize: prefillStepSize, chunking: .remainder)
                     )
 
                     var completionChars = 0

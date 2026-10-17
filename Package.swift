@@ -52,40 +52,41 @@ let package = Package(
     ],
     dependencies: [
         // MLX Swift for Apple Silicon AI acceleration
-        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.31.1"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.32.3"),
 
         // MLX Swift LM - LLMs and VLMs with MLX Swift (split from mlx-swift-examples)
-        // Pinned to main for Qwen3.5 support + 35% gen speed fix (CPU<->GPU sync elimination)
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", revision: "2a296f145c3129fea4290bb6e4a0a5fb458efa06"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "3.32.3"),
 
         // Transformers and tokenization support
-        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.2.0"),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.5"),
 
 
         // Additional dependencies for HTTP requests and JSON handling
-        .package(url: "https://github.com/apple/swift-http-types", from: "1.0.0"),
-        .package(url: "https://github.com/swift-server/async-http-client", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-http-types", from: "1.8.0"),
+        .package(url: "https://github.com/swift-server/async-http-client", from: "1.32.0"),
 
         // Swift Crypto for security operations
-        .package(url: "https://github.com/apple/swift-crypto", from: "3.0.0"),
+        // Note: swift-crypto 5.0+ requires Vapor 5 (currently beta).
+        // Staying on 4.x for compatibility with stable Vapor 4.x.
+        .package(url: "https://github.com/apple/swift-crypto", from: "4.5.2"),
 
         // Swift Log for structured logging
-        .package(url: "https://github.com/apple/swift-log", from: "1.0.0"),
+        .package(url: "https://github.com/apple/swift-log", from: "1.16.1"),
 
         // Vapor for HTTP server functionality
-        .package(url: "https://github.com/vapor/vapor", from: "4.99.1"),
+        .package(url: "https://github.com/vapor/vapor", from: "4.122.2"),
 
-        // SQLite for memory database storage (pinned to avoid trait incompatibility)
-        .package(url: "https://github.com/stephencelis/SQLite.swift", revision: "eb9b2ee9d9b7f941ac883b0843557469ed567af2"),
+        // SQLite for memory database storage
+        .package(url: "https://github.com/stephencelis/SQLite.swift", from: "0.16.0"),
 
         // Apple's swift-markdown for AST-based markdown parsing (PDF generation)
-        .package(url: "https://github.com/apple/swift-markdown", from: "0.4.0"),
+        .package(url: "https://github.com/apple/swift-markdown", from: "0.9.0"),
 
         // ZIPFoundation for Office document extraction (DOCX, XLSX are ZIP archives)
         .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.0"),
 
         // Sparkle for automatic updates
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0")
     ],
     targets: [
         // Binary target for llama.cpp XCFramework (built by Makefile)
