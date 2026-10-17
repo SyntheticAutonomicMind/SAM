@@ -18,7 +18,6 @@ struct SAMRewrittenApp: App {
     @StateObject private var conversationManager = ConversationManager()
     @StateObject private var endpointManager: EndpointManager
     @StateObject private var sharedConversationService: SharedConversationService
-    @StateObject private var apiServer: SAMAPIServer
 
     init() {
         /// Configure logging first thing.
@@ -36,14 +35,9 @@ struct SAMRewrittenApp: App {
         let endpointMgr = EndpointManager(conversationManager: sharedConversationManager)
         _endpointManager = StateObject(wrappedValue: endpointMgr)
 
-        /// Initialize API server with the same shared instances including SharedConversationService.
-        let apiServerInstance = SAMAPIServer(conversationManager: sharedConversationManager, endpointManager: endpointMgr, sharedConversationService: sharedService)
-        _apiServer = StateObject(wrappedValue: apiServerInstance)
-
         /// Inject dependencies after initialization to resolve circular dependencies.
         sharedConversationManager.injectAIProvider(endpointMgr)
         sharedConversationManager.injectSystemPromptManager(SystemPromptManager.shared)
-        sharedService.injectEndpointManager(endpointMgr)
 
         /// Create and inject advanced tools factory for MCP system.
         self.createAndInjectAdvancedToolsFactory(into: sharedConversationManager, endpointManager: endpointMgr)
@@ -154,27 +148,12 @@ struct SAMRewrittenApp: App {
                 .environmentObject(conversationManager)
                 .environmentObject(endpointManager)
                 .environmentObject(sharedConversationService)
-                .environmentObject(apiServer)
                 .environment(\.fontSizeScale, UserDefaults.standard.double(forKey: FontManager.storageKey))
                 .onAppear {
                     #if DEBUG
                     logger.debug("Main window appeared")
                     logger.debug("Main window: Interface loaded successfully")
                     #endif
-
-                    /// Initialize API server if enabled in preferences.
-                    if UserDefaults.standard.bool(forKey: "enableAPIServer") {
-                        Task {
-                            do {
-                                try await apiServer.startServer()
-                                #if DEBUG
-                                logger.info("API Server started successfully")
-                                #endif
-                            } catch {
-                                logger.error("Failed to start API server: \(error)")
-                            }
-                        }
-                    }
                 }
         }
         .defaultSize(width: 600, height: 800)

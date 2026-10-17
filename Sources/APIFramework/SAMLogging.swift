@@ -62,14 +62,6 @@ public struct SAMLog {
         logger.error("Failed to decode config data for key \(key): \(error)")
     }
 
-    static func apiServerStarted(port: Int, logger: Logging.Logger) {
-        logger.debug("API server started on port \(port)")
-    }
-
-    static func apiRequest(method: String, path: String, logger: Logging.Logger) {
-        logger.debug("API request: \(method) \(path)")
-    }
-
     static func chatWidgetInitialized(logger: Logging.Logger) {
         logger.debug("ChatWidget initialized, starting model loading")
     }
@@ -116,7 +108,7 @@ public struct SAMLog {
     }
 
     public static func providerConfigReload() {
-        chatLogger.debug("Reloading provider configurations (matching SAMAPIServer behavior)")
+        chatLogger.debug("Reloading provider configurations")
     }
 
     public static func endpointManagerCall() {
