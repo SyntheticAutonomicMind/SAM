@@ -1830,7 +1830,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                         /// and MessageValidator strips them on the next iteration - which is
                         /// exactly what this loop-break is supposed to prevent.
                         let duplicateOpenAIToolCalls = actualToolCalls.map { toolCall -> OpenAIToolCall in
-                            let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments, options: [])
+                            let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments, options: [.sortedKeys])
                             let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
                             return OpenAIToolCall(
                                 id: toolCall.id,
@@ -1895,11 +1895,11 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 for toolCall in actualToolCalls {
                     /// Convert arguments dictionary to string for storage.
                     let argsString: String
-                    if let jsonData = try? JSONSerialization.data(withJSONObject: toolCall.arguments),
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: toolCall.arguments, options: [.sortedKeys]),
                        let jsonString = String(data: jsonData, encoding: .utf8) {
                         argsString = jsonString
                     } else {
-                        argsString = toolCall.arguments.map { "\($0.key)=\($0.value)" }.joined(separator: ", ")
+                        argsString = toolCall.arguments.sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($0.value)" }.joined(separator: ", ")
                     }
 
                     let toolCallInfo = ToolCallInfo(
@@ -2016,7 +2016,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 /// 6a.
                 let openAIToolCalls = actualToolCalls.map { toolCall in
                     /// Convert arguments dict to JSON string.
-                    let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments, options: [])
+                    let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments, options: [.sortedKeys])
                     let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
                     return OpenAIToolCall(
@@ -2712,7 +2712,10 @@ struct ToolCall: @unchecked Sendable {
 extension AgentOrchestrator {
     static func makeSimpleToolCalls(_ toolCalls: [ToolCall]) -> [ConfigurationSystem.SimpleToolCall] {
         return toolCalls.map { toolCall in
-            let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments)
+            // Use .sortedKeys for deterministic JSON output — ensures the same
+            // arguments dictionary always serializes to identical bytes, preserving
+            // provider KV cache hits for unchanged tool calls across turns.
+            let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments, options: [.sortedKeys])
             let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
             return ConfigurationSystem.SimpleToolCall(
                 id: toolCall.id,

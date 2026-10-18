@@ -342,9 +342,8 @@ extension AgentOrchestrator {
             logger.debug("No statefulMarker available (may have been cleared by payload trimming)")
         }
 
-        /// Build base request (without tools) + inject MCP tools + apply alternation
-        /// and tool pair validation. Shared helper ensures both call paths apply the
-        /// same logic for SAMConfig, sampling params, tool injection, and alternation.
+        /// Build base request (without tools) + inject MCP tools + validate tool pairs
+        /// (ensureMessageAlternation already applied in validateAndArchiveContext)
         let baseRequest = buildBaseRequest(
             messages: messages,
             conversation: conversation,
@@ -949,9 +948,8 @@ extension AgentOrchestrator {
             logger.debug("callLLMStreaming: Including statefulMarker from previous iteration: \(marker.prefix(20))...")
         }
 
-        /// Build base request (without tools) + inject MCP tools + apply alternation
-        /// and tool pair validation. Shared helper ensures both call paths apply the
-        /// same logic for SAMConfig, sampling params, tool injection, and alternation.
+        /// Build base request (without tools) + inject MCP tools + validate tool pairs
+        /// (ensureMessageAlternation already applied in validateAndArchiveContext)
         let baseRequest = buildBaseRequest(
             messages: messages,
             conversation: conversation,

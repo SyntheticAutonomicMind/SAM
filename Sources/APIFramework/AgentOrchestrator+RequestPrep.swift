@@ -463,6 +463,12 @@ extension AgentOrchestrator {
             }
         }
 
+        let projectedMessagesForTrim = ensureMessageAlternation(projectedMessages)
+        if projectedMessagesForTrim.count != projectedMessages.count {
+            logger.debug("\(loggerPrefix): ensureMessageAlternation changed message count: \(projectedMessages.count) -> \(projectedMessagesForTrim.count)")
+        }
+        projectedMessages = projectedMessagesForTrim
+
        let truncationResult = MessageValidator.validateAndTruncateWithDropped(
            messages: projectedMessages,
            config: config
@@ -558,17 +564,22 @@ extension AgentOrchestrator {
     }
 
     /// Inject MCP tools into the base request via SharedConversationService, then
-    /// apply message alternation (Claude requires strict user/assistant alternation
-    /// with no empty messages) and validate tool message pairs as a safety net.
+    /// validate tool message pairs as a safety net.
+    ///
+    /// Note: ensureMessageAlternation is applied earlier in validateAndArchiveContext
+    /// (before MessageValidator's byte-stability fast path) to preserve cache stability.
     func finalizeRequestWithToolsAndAlternation(
         baseRequest: OpenAIChatRequest,
         loggerPrefix: String
     ) async -> OpenAIChatRequest {
         let requestWithTools = await conversationService.injectMCPToolsIntoRequest(baseRequest)
 
-        var messages = ensureMessageAlternation(requestWithTools.messages)
+        // ensureMessageAlternation was already applied in validateAndArchiveContext
+        // (before MessageValidator's byte-stability fast path), so we only need
+        // validateToolMessagePairs here as a safety net for tool injection edge cases.
+        var messages = requestWithTools.messages
         messages = MessageValidator.validateToolMessagePairs(messages)
-        logger.debug("\(loggerPrefix): Applied alternation + tool pair validation (\(messages.count) messages)")
+        logger.debug("\(loggerPrefix): Applied tool pair validation (\(messages.count) messages)")
 
         return OpenAIChatRequest(
             model: requestWithTools.model,
