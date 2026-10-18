@@ -257,6 +257,26 @@ public enum ProviderType: String, CaseIterable, Codable {
         }
     }
 
+    /// The "owned_by" string used in `ServerOpenAIModel` responses.
+    /// Derived from the provider type so `getAvailableModels` can be a
+    /// protocol-extension default instead of being copy-pasted by every provider.
+    public var modelOwner: String {
+        switch self {
+        case .openai: return "openai"
+        case .githubCopilot: return "github-copilot"
+        case .deepseek: return "deepseek"
+        case .gemini: return "google"
+        case .minimax: return "minimax"
+        case .openrouter: return "openrouter"
+        case .localLlama: return "llama"
+        case .localMLX: return "mlx"
+        case .remoteLlama: return "remote-llama"
+        case .ollamaCloud: return "ollama"
+        case .zai, .zaiCoding: return "zai"
+        case .custom: return "custom"
+        }
+    }
+
     public var defaultModels: [String] {
         switch self {
         case .openai:

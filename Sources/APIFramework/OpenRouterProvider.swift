@@ -282,45 +282,8 @@ public class OpenRouterProvider: AIProvider {
         }
     }
 
-    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
-        let models = config.models.map { modelId in
-            ServerOpenAIModel(
-                id: modelId,
-                object: "model",
-                created: Int(Date().timeIntervalSince1970),
-                ownedBy: "openrouter"
-            )
-        }
-
-        return ServerOpenAIModelsResponse(
-            object: "list",
-            data: models
-        )
-    }
-
     public func supportsModel(_ model: String) -> Bool {
         return config.models.contains(model)
-    }
-
-    public func validateConfiguration() async throws -> Bool {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            throw ProviderError.authenticationFailed("OpenRouter API key is required")
-        }
-        return true
-    }
-
-    // MARK: - Lifecycle
-
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
-
-    public func getLoadedStatus() async -> Bool {
-        return false
-    }
-
-    public func unload() async {
-        /// No-op for remote providers.
     }
 
     // MARK: - Model Capabilities Fetching

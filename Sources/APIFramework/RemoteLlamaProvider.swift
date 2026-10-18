@@ -372,18 +372,8 @@ public class RemoteLlamaProvider: AIProvider {
         return true
     }
 
-    // MARK: - Lifecycle
-
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
-
     public func getLoadedStatus() async -> Bool {
         // Remote servers are always "loaded" - they manage their own models
         return true
-    }
-
-    public func unload() async {
-        // No-op for remote providers
     }
 }

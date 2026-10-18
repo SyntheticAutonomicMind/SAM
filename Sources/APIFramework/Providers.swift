@@ -9,118 +9,12 @@ import Logging
 public class OpenAIProvider: AIProvider {
     public let identifier: String
     public let config: ProviderConfiguration
-    private let logger = Logging.Logger(label: "com.sam.provider.openai")
+    private let logger = Logger(label: "com.sam.api.openai")
 
     public init(config: ProviderConfiguration) {
         self.identifier = config.providerId
         self.config = config
         logger.debug("OpenAI Provider initialized")
-    }
-
-    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
-        /// Fallback streaming implementation for providers without native SSE support.
-        /// Simulates streaming by chunking the non-streaming response.
-        /// Real SSE streaming is implemented in providers that support it (MLX, GitHub Copilot, etc.).
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    /// Check cancellation before HTTP request.
-                    if Task.isCancelled {
-                        self.logger.debug("TASK_CANCELLED: OpenAI request cancelled before start")
-                        continuation.finish()
-                        return
-                    }
-
-                    let response = try await self.processChatCompletion(request)
-                    let chunks = self.convertToStreamChunks(response)
-
-                    for chunk in chunks {
-                        /// Check cancellation in streaming loop.
-                        if Task.isCancelled {
-                            self.logger.debug("TASK_CANCELLED: OpenAI streaming cancelled")
-                            continuation.finish()
-                            return
-                        }
-
-                        continuation.yield(chunk)
-                        /// Add small delay to simulate streaming.
-                        try await Task.sleep(nanoseconds: 50_000_000)
-                    }
-
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-
-    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else { return [] }
-
-        var chunks: [ServerOpenAIChatStreamChunk] = []
-
-        /// First chunk with role.
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(
-                index: 0,
-                delta: OpenAIChatDelta(role: "assistant", content: nil)
-            )]
-        ))
-
-        /// Preserve newlines for proper markdown rendering
-        let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
-        for line in lines {
-            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-            if trimmedLine.isEmpty {
-                /// Preserve blank line (paragraph break) for markdown rendering
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(content: "\n")
-                    )]
-                ))
-                continue
-            }
-            
-            let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-            for (index, word) in words.enumerated() {
-                let suffix = index < words.count - 1 ? " " : "\n"
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(content: word + suffix)
-                    )]
-                ))
-            }
-        }
-
-        /// Final chunk.
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(
-                index: 0,
-                delta: OpenAIChatDelta(),
-                finishReason: "stop"
-            )]
-        ))
-
-        return chunks
     }
 
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
@@ -135,81 +29,18 @@ public class OpenAIProvider: AIProvider {
             throw ProviderError.invalidConfiguration("OpenAI base URL not configured")
         }
 
-        /// Prepare OpenAI API request.
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            throw ProviderError.invalidConfiguration("Invalid OpenAI base URL: \(baseURL)")
-        }
+        // Enable cache_control for OpenAI prompt caching support.
+        // The shared builder handles model prefix stripping automatically.
+        let requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
 
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let urlRequest = try RemoteProviderHTTP.buildChatCompletionRequest(
+            baseURL: baseURL, apiKey: apiKey, requestBody: requestBody,
+            timeoutSeconds: config.timeoutSeconds
+        )
 
-        /// Strip provider prefix from model name before sending to API User-facing: "openai/gpt-4" → API expects: "gpt-4".
-        let modelForAPI = request.model.contains("/")
-            ? request.model.components(separatedBy: "/").last ?? request.model
-            : request.model
-
-        /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
-        /// Enable cache_control for OpenAI prompt caching support.
-        var requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
-
-        do {
-            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
-        } catch {
-            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
-        }
-
-        /// Set timeout (5 minutes minimum for tool-enabled requests, especially 7B models).
-        /// Even if config specifies lower timeout, enforce 300s minimum to prevent timeouts.
-        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
-        urlRequest.timeoutInterval = max(configuredTimeout, 300)
-
-        logger.debug("Sending request to OpenAI API [req:\(requestId.prefix(8))]")
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw ProviderError.networkError("Invalid response type")
-            }
-
-            logger.debug("OpenAI API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
-
-            guard 200...299 ~= httpResponse.statusCode else {
-                if let errorData = String(data: data, encoding: .utf8) {
-                    logger.error("OpenAI API error [req:\(requestId.prefix(8))]: \(errorData)")
-                }
-                throw ProviderError.networkError("OpenAI API returned status \(httpResponse.statusCode)")
-            }
-
-            /// Parse response.
-            let openaiResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
-            logger.debug("Successfully processed OpenAI response [req:\(requestId.prefix(8))]")
-
-            return openaiResponse
-
-        } catch let error as ProviderError {
-            throw error
-        } catch {
-            logger.error("OpenAI API request failed [req:\(requestId.prefix(8))]: \(error)")
-            throw ProviderError.networkError("Network error: \(error.localizedDescription)")
-        }
-    }
-
-    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
-        let models = config.models.map { modelId in
-            ServerOpenAIModel(
-                id: modelId,
-                object: "model",
-                created: Int(Date().timeIntervalSince1970),
-                ownedBy: "openai"
-            )
-        }
-
-        return ServerOpenAIModelsResponse(
-            object: "list",
-            data: models
+        return try await RemoteProviderHTTP.executeChatCompletion(
+            urlRequest: urlRequest, providerName: "OpenAI",
+            requestId: requestId, logger: logger
         )
     }
 
@@ -217,28 +48,8 @@ public class OpenAIProvider: AIProvider {
         return config.models.contains(model) || model.hasPrefix("gpt-")
     }
 
-    public func validateConfiguration() async throws -> Bool {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            throw ProviderError.authenticationFailed("OpenAI API key is required")
-        }
-
-        /// FUTURE FEATURE: Real API validation Currently: Basic check (non-empty key) Future: Make test API call to validate key actually works Reason not implemented: Validation adds latency to preferences UI Alternative: Validation happens on first API call (error shows invalid key).
-        return true
-    }
-
-    // MARK: - Lifecycle
-
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
-
-    public func getLoadedStatus() async -> Bool {
-        return false
-    }
-
     // MARK: - Model Capabilities Fetching
 
-    /// Fetch model capabilities from OpenAI /v1/models API Returns dictionary of modelId -> max_tokens (context size).
     public func fetchModelCapabilities() async throws -> [String: Int] {
         logger.debug("Fetching model capabilities from OpenAI /v1/models API")
 
@@ -250,14 +61,9 @@ public class OpenAIProvider: AIProvider {
             throw ProviderError.invalidConfiguration("OpenAI base URL not configured")
         }
 
-        guard let url = URL(string: "\(baseURL)/models") else {
-            throw ProviderError.invalidConfiguration("Invalid OpenAI models URL")
-        }
-
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "GET"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let urlRequest = try RemoteProviderHTTP.buildGetRequest(
+            urlString: "\(baseURL)/models", apiKey: apiKey
+        )
 
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
 
@@ -271,18 +77,15 @@ public class OpenAIProvider: AIProvider {
             throw ProviderError.networkError("OpenAI /models API returned status \(httpResponse.statusCode)")
         }
 
-        /// Parse response.
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let models = json["data"] as? [[String: Any]] else {
             throw ProviderError.responseNormalizationFailed("Failed to parse OpenAI /models response")
         }
 
-        /// Build capabilities dictionary.
         var capabilities: [String: Int] = [:]
         for model in models {
             guard let id = model["id"] as? String else { continue }
 
-            /// OpenAI doesn't always include max_tokens in /models response We'll use known values or defaults based on model name.
             let contextSize: Int
             let idLower = id.lowercased()
 
@@ -307,11 +110,8 @@ public class OpenAIProvider: AIProvider {
         logger.debug("Successfully fetched \(capabilities.count) OpenAI model capabilities")
         return capabilities
     }
-
-    public func unload() async {
-        /// No-op for remote providers.
-    }
 }
+
 
 // MARK: - REMOVED: Anthropic Provider
 // Anthropic no longer allows direct API access from third-party harnesses.
@@ -325,7 +125,7 @@ public class OpenAIProvider: AIProvider {
 public class GitHubCopilotProvider: AIProvider, ObservableObject {
     public let identifier: String
     public var config: ProviderConfiguration
-    private let logger = Logging.Logger(label: "com.sam.provider.github")
+    private let logger = Logger(label: "com.sam.api.githubCopilot")
 
     /// Cache for model capabilities (context sizes) - static to survive provider recreations
     private static var modelCapabilitiesCache: [String: Int]?

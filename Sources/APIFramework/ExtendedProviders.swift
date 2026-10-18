@@ -4,6 +4,16 @@
 import Foundation
 import ConfigurationSystem
 import Logging
+// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
+
+import Foundation
+import Logging
+
+/// DeepSeek API provider.
+/// Uses protocol-extension defaults for: loadModel, getLoadedStatus, unload,
+/// getAvailableModels, validateConfiguration, processStreamingChatCompletion.
+/// Uses OpenAIStreamConverter for fallback chunk conversion.
 @MainActor
 public class DeepSeekProvider: AIProvider {
     public let identifier: String
@@ -14,160 +24,6 @@ public class DeepSeekProvider: AIProvider {
         self.identifier = config.providerId
         self.config = config
         logger.debug("DeepSeek Provider initialized")
-    }
-
-    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    /// Check cancellation before HTTP request.
-                    if Task.isCancelled {
-                        self.logger.debug("TASK_CANCELLED: DeepSeek request cancelled before start")
-                        continuation.finish()
-                        return
-                    }
-
-                    let response = try await self.processChatCompletion(request)
-                    let chunks = self.convertToStreamChunks(response)
-
-                    for chunk in chunks {
-                        /// Check cancellation in streaming loop.
-                        if Task.isCancelled {
-                            self.logger.debug("TASK_CANCELLED: DeepSeek streaming cancelled")
-                            continuation.finish()
-                            return
-                        }
-
-                        continuation.yield(chunk)
-                        try await Task.sleep(nanoseconds: 50_000_000)
-                    }
-
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-
-    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else {
-            logger.debug("convertToStreamChunks: No choices in response, returning empty")
-            return []
-        }
-        var chunks: [ServerOpenAIChatStreamChunk] = []
-
-        // Get content and reasoning content from the message
-        var mainContent = choice.message.content ?? ""
-        let reasoningContent = choice.message.reasoningContent
-
-        logger.debug("convertToStreamChunks: content=\(mainContent.prefix(100))..., reasoningContent=\(reasoningContent?.prefix(100) ?? "nil")")
-
-        // Process reasoning content through ThinkTagFormatter like LlamaProvider does
-        var formatter = ThinkTagFormatter(hideThinking: false)
-
-        // If reasoning content exists and content is empty, use reasoning as thinking tool message
-        // This handles llama.cpp servers that put content in reasoning_content field
-        if let reasoning = reasoningContent, !reasoning.isEmpty {
-            // Format reasoning through ThinkTagFormatter
-            let (formattedReasoning, _) = formatter.processChunk(reasoning)
-            let flushedReasoning = formatter.flushBuffer()
-            let fullReasoning = formattedReasoning + flushedReasoning
-
-            if !fullReasoning.isEmpty {
-                // Yield reasoning as a thinking tool message to trigger thinking card UI
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: nil))],
-                    isToolMessage: true,
-                    toolName: "thinking",
-                    toolDetails: [fullReasoning]
-                ))
-            }
-
-            // If there's also main content, keep it for later (after thinking)
-            if mainContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // If content was empty and we had reasoning, the thinking IS the response
-                // Don't add empty content, the thinking was the response
-            }
-        }
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
-        ))
-
-        // Handle tool calls if present
-        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
-            for toolCall in toolCalls {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(
-                            content: nil,
-                            toolCalls: [
-                                OpenAIToolCall(
-                                    id: toolCall.id,
-                                    type: "function",
-                                    function: OpenAIFunctionCall(
-                                        name: toolCall.function.name,
-                                        arguments: toolCall.function.arguments
-                                    )
-                                )
-                            ]
-                        )
-                    )]
-                ))
-            }
-
-            // Final chunk with finish_reason="tool_calls"
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
-            ))
-        } else {
-            // Preserve newlines for proper markdown rendering
-            let lines = mainContent.components(separatedBy: .newlines)
-            for line in lines {
-                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                guard !trimmedLine.isEmpty else { continue }
-
-                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                for (index, word) in words.enumerated() {
-                    let suffix = index < words.count - 1 ? " " : "\n"
-                    chunks.append(ServerOpenAIChatStreamChunk(
-                        id: response.id,
-                        object: "chat.completion.chunk",
-                        created: response.created,
-                        model: response.model,
-                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
-                    ))
-                }
-            }
-
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-            ))
-        }
-
-        return chunks
     }
 
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
@@ -182,75 +38,17 @@ public class DeepSeekProvider: AIProvider {
             throw ProviderError.invalidConfiguration("DeepSeek base URL not configured")
         }
 
-        /// DeepSeek uses OpenAI-compatible API format.
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            throw ProviderError.invalidConfiguration("Invalid DeepSeek base URL: \(baseURL)")
-        }
+        // buildOpenAICompatibleRequestBody strips provider prefix automatically.
+        let requestBody = request.buildOpenAICompatibleRequestBody()
 
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let urlRequest = try RemoteProviderHTTP.buildChatCompletionRequest(
+            baseURL: baseURL, apiKey: apiKey, requestBody: requestBody,
+            timeoutSeconds: config.timeoutSeconds
+        )
 
-        /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
-        /// Enable cache_control for DeepSeek prompt caching support.
-        let requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
-
-        do {
-            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
-        } catch {
-            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
-        }
-
-        /// Set timeout (5 minutes minimum for tool-enabled requests).
-        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
-        urlRequest.timeoutInterval = max(configuredTimeout, 300)
-
-        logger.debug("Sending request to DeepSeek API [req:\(requestId.prefix(8))]")
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw ProviderError.networkError("Invalid response type")
-            }
-
-            logger.debug("DeepSeek API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
-
-            guard 200...299 ~= httpResponse.statusCode else {
-                if let errorData = String(data: data, encoding: .utf8) {
-                    logger.error("DeepSeek API error [req:\(requestId.prefix(8))]: \(errorData)")
-                }
-                throw ProviderError.networkError("DeepSeek API returned status \(httpResponse.statusCode)")
-            }
-
-            /// Parse response.
-            let deepseekResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
-            logger.debug("Successfully processed DeepSeek response [req:\(requestId.prefix(8))]")
-
-            return deepseekResponse
-
-        } catch let error as ProviderError {
-            throw error
-        } catch {
-            logger.error("DeepSeek API request failed [req:\(requestId.prefix(8))]: \(error)")
-            throw ProviderError.networkError("Network error: \(error.localizedDescription)")
-        }
-    }
-
-    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
-        let models = config.models.map { modelId in
-            ServerOpenAIModel(
-                id: modelId,
-                object: "model",
-                created: Int(Date().timeIntervalSince1970),
-                ownedBy: "deepseek"
-            )
-        }
-
-        return ServerOpenAIModelsResponse(
-            object: "list",
-            data: models
+        return try await RemoteProviderHTTP.executeChatCompletion(
+            urlRequest: urlRequest, providerName: "DeepSeek",
+            requestId: requestId, logger: logger
         )
     }
 
@@ -258,29 +56,56 @@ public class DeepSeekProvider: AIProvider {
         return config.models.contains(model) || model.hasPrefix("deepseek-")
     }
 
-    public func validateConfiguration() async throws -> Bool {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            throw ProviderError.authenticationFailed("DeepSeek API key is required")
+    public func fetchModelCapabilities() async throws -> [String: Int] {
+        logger.debug("Fetching DeepSeek model capabilities from /v1/models API")
+
+        guard let apiKey = config.apiKey else {
+            throw ProviderError.authenticationFailed("DeepSeek API key not configured")
         }
 
-        /// FUTURE FEATURE: Real API validation Currently: Basic check (non-empty key) Future: Make test API call to validate key actually works Reason not implemented: Validation adds latency to preferences UI Alternative: Validation happens on first API call (error shows invalid key).
-        return true
-    }
+        guard let baseURL = config.baseURL ?? ProviderType.deepseek.defaultBaseURL else {
+            throw ProviderError.invalidConfiguration("DeepSeek base URL not configured")
+        }
 
-    // MARK: - Lifecycle
+        let urlRequest = try RemoteProviderHTTP.buildGetRequest(
+            urlString: "\(baseURL)/models", apiKey: apiKey
+        )
 
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
 
-    public func getLoadedStatus() async -> Bool {
-        return false
-    }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ProviderError.networkError("Invalid response type")
+        }
 
-    public func unload() async {
-        /// No-op for remote providers.
+        guard httpResponse.statusCode == 200 else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw ProviderError.networkError("DeepSeek /models API returned status \(httpResponse.statusCode): \(errorText.prefix(200))")
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = json["data"] as? [[String: Any]] else {
+            throw ProviderError.responseNormalizationFailed("Failed to parse DeepSeek /models response")
+        }
+
+        var capabilities: [String: Int] = [:]
+        for model in models {
+            guard let id = model["id"] as? String else { continue }
+            // DeepSeek doesn't expose context length in /v1/models; use known defaults.
+            let contextSize: Int
+            if id.contains("deepseek-chat") || id.contains("deepseek-coder") {
+                contextSize = 128000
+            } else {
+                contextSize = 8192
+            }
+            capabilities[id] = contextSize
+            logger.debug("DeepSeek model '\(id)': \(contextSize) tokens")
+        }
+
+        logger.debug("Successfully fetched \(capabilities.count) DeepSeek model capabilities")
+        return capabilities
     }
 }
+
 
 // MARK: - MiniMax Provider
 
@@ -822,125 +647,7 @@ public class MiniMaxProvider: AIProvider {
     }
 
     /// Fallback: Convert non-streaming response to chunks (used for error recovery).
-    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else {
-            logger.debug("convertToStreamChunks: No choices in response, returning empty")
-            return []
-        }
-        var chunks: [ServerOpenAIChatStreamChunk] = []
-
-        // Get content and reasoning content from the message
-        var mainContent = choice.message.content ?? ""
-        let reasoningContent = choice.message.reasoningContent
-
-        logger.debug("convertToStreamChunks: content=\(mainContent.prefix(100))..., reasoningContent=\(reasoningContent?.prefix(100) ?? "nil")")
-
-        // Process reasoning content through ThinkTagFormatter like LlamaProvider does
-        var formatter = ThinkTagFormatter(hideThinking: false)
-
-        // If reasoning content exists and content is empty, use reasoning as thinking tool message
-        // This handles llama.cpp servers that put content in reasoning_content field
-        if let reasoning = reasoningContent, !reasoning.isEmpty {
-            // Format reasoning through ThinkTagFormatter
-            let (formattedReasoning, _) = formatter.processChunk(reasoning)
-            let flushedReasoning = formatter.flushBuffer()
-            let fullReasoning = formattedReasoning + flushedReasoning
-
-            if !fullReasoning.isEmpty {
-                // Yield reasoning as a thinking tool message to trigger thinking card UI
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: nil))],
-                    isToolMessage: true,
-                    toolName: "thinking",
-                    toolDetails: [fullReasoning]
-                ))
-            }
-
-            // If there's also main content, keep it for later (after thinking)
-            if mainContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // If content was empty and we had reasoning, the thinking IS the response
-                // Don't add empty content, the thinking was the response
-            }
-        }
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
-        ))
-
-        // Handle tool calls if present
-        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
-            for toolCall in toolCalls {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(
-                            content: nil,
-                            toolCalls: [
-                                OpenAIToolCall(
-                                    id: toolCall.id,
-                                    type: "function",
-                                    function: OpenAIFunctionCall(
-                                        name: toolCall.function.name,
-                                        arguments: toolCall.function.arguments
-                                    )
-                                )
-                            ]
-                        )
-                    )]
-                ))
-            }
-
-            // Final chunk with finish_reason="tool_calls"
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
-            ))
-        } else {
-            // Preserve newlines for proper markdown rendering
-            let lines = mainContent.components(separatedBy: .newlines)
-            for line in lines {
-                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                guard !trimmedLine.isEmpty else { continue }
-
-                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                for (index, word) in words.enumerated() {
-                    let suffix = index < words.count - 1 ? " " : "\n"
-                    chunks.append(ServerOpenAIChatStreamChunk(
-                        id: response.id,
-                        object: "chat.completion.chunk",
-                        created: response.created,
-                        model: response.model,
-                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
-                    ))
-                }
-            }
-
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-            ))
-        }
-
-        return chunks
-    }
+    
 
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
         let requestId = UUID().uuidString
@@ -1104,33 +811,13 @@ public class MiniMaxProvider: AIProvider {
         }
     }
 
-    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
-        let models = config.models.map { modelId in
-            ServerOpenAIModel(
-                id: modelId,
-                object: "model",
-                created: Int(Date().timeIntervalSince1970),
-                ownedBy: "minimax"
-            )
-        }
-
-        return ServerOpenAIModelsResponse(
-            object: "list",
-            data: models
-        )
-    }
+    
 
     public func supportsModel(_ model: String) -> Bool {
         return config.models.contains(model) || model.hasPrefix("MiniMax-")
     }
 
-    public func validateConfiguration() async throws -> Bool {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            throw ProviderError.authenticationFailed("MiniMax API key is required")
-        }
-
-        return true
-    }
+    
 
     // MARK: - Message Transformation
 
@@ -1239,17 +926,11 @@ public class MiniMaxProvider: AIProvider {
 
     // MARK: - Lifecycle
 
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
+    
 
-    public func getLoadedStatus() async -> Bool {
-        return false
-    }
+    
 
-    public func unload() async {
-        /// No-op for remote providers.
-    }
+    
 }
 
 // MARK: - Supporting Types
@@ -1275,166 +956,12 @@ public struct ModelStatus {
 public class CustomProvider: AIProvider {
     public let identifier: String
     public let config: ProviderConfiguration
-    private let logger = Logger(label: "com.sam.api.customprovider")
+    private let logger = Logger(label: "com.sam.api.custom")
 
     public init(config: ProviderConfiguration) {
         self.identifier = config.providerId
         self.config = config
         logger.debug("Custom Provider initialized for \(config.providerId)")
-    }
-
-    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    /// Check cancellation before HTTP request.
-                    if Task.isCancelled {
-                        self.logger.debug("TASK_CANCELLED: Custom provider request cancelled before start")
-                        continuation.finish()
-                        return
-                    }
-
-                    let response = try await self.processChatCompletion(request)
-                    let chunks = self.convertToStreamChunks(response)
-
-                    for chunk in chunks {
-                        /// Check cancellation in streaming loop.
-                        if Task.isCancelled {
-                            self.logger.debug("TASK_CANCELLED: Custom provider streaming cancelled")
-                            continuation.finish()
-                            return
-                        }
-
-                        continuation.yield(chunk)
-                        try await Task.sleep(nanoseconds: 50_000_000)
-                    }
-
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-
-    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else {
-            logger.debug("convertToStreamChunks: No choices in response, returning empty")
-            return []
-        }
-        var chunks: [ServerOpenAIChatStreamChunk] = []
-
-        // Get content and reasoning content from the message
-        var mainContent = choice.message.content ?? ""
-        let reasoningContent = choice.message.reasoningContent
-
-        logger.debug("convertToStreamChunks: content=\(mainContent.prefix(100))..., reasoningContent=\(reasoningContent?.prefix(100) ?? "nil")")
-
-        // Process reasoning content through ThinkTagFormatter like LlamaProvider does
-        var formatter = ThinkTagFormatter(hideThinking: false)
-
-        // If reasoning content exists and content is empty, use reasoning as thinking tool message
-        // This handles llama.cpp servers that put content in reasoning_content field
-        if let reasoning = reasoningContent, !reasoning.isEmpty {
-            // Format reasoning through ThinkTagFormatter
-            let (formattedReasoning, _) = formatter.processChunk(reasoning)
-            let flushedReasoning = formatter.flushBuffer()
-            let fullReasoning = formattedReasoning + flushedReasoning
-
-            if !fullReasoning.isEmpty {
-                // Yield reasoning as a thinking tool message to trigger thinking card UI
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: nil))],
-                    isToolMessage: true,
-                    toolName: "thinking",
-                    toolDetails: [fullReasoning]
-                ))
-            }
-
-            // If there's also main content, keep it for later (after thinking)
-            if mainContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // If content was empty and we had reasoning, the thinking IS the response
-                // Don't add empty content, the thinking was the response
-            }
-        }
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
-        ))
-
-        // Handle tool calls if present
-        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
-            for toolCall in toolCalls {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(
-                            content: nil,
-                            toolCalls: [
-                                OpenAIToolCall(
-                                    id: toolCall.id,
-                                    type: "function",
-                                    function: OpenAIFunctionCall(
-                                        name: toolCall.function.name,
-                                        arguments: toolCall.function.arguments
-                                    )
-                                )
-                            ]
-                        )
-                    )]
-                ))
-            }
-
-            // Final chunk with finish_reason="tool_calls"
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
-            ))
-        } else {
-            // Preserve newlines for proper markdown rendering
-            let lines = mainContent.components(separatedBy: .newlines)
-            for line in lines {
-                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                guard !trimmedLine.isEmpty else { continue }
-
-                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                for (index, word) in words.enumerated() {
-                    let suffix = index < words.count - 1 ? " " : "\n"
-                    chunks.append(ServerOpenAIChatStreamChunk(
-                        id: response.id,
-                        object: "chat.completion.chunk",
-                        created: response.created,
-                        model: response.model,
-                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
-                    ))
-                }
-            }
-
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-            ))
-        }
-
-        return chunks
     }
 
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
@@ -1445,153 +972,21 @@ public class CustomProvider: AIProvider {
             throw ProviderError.invalidConfiguration("Custom provider base URL not configured")
         }
 
-        /// Custom providers assumed to be OpenAI-compatible (most common pattern).
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            throw ProviderError.invalidConfiguration("Invalid custom provider base URL: \(baseURL)")
-        }
+        // buildOpenAICompatibleRequestBody handles provider prefix stripping,
+        // message serialization (with tool_calls and tool_call_id), and cache_control.
+        let requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
 
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let urlRequest = try RemoteProviderHTTP.buildChatCompletionRequest(
+            baseURL: baseURL,
+            apiKey: config.apiKey,
+            requestBody: requestBody,
+            customHeaders: config.customHeaders,
+            timeoutSeconds: config.timeoutSeconds
+        )
 
-        /// Add authentication if API key provided.
-        if let apiKey = config.apiKey {
-            urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        }
-
-        /// Add any custom headers.
-        if let customHeaders = config.customHeaders {
-            for (key, value) in customHeaders {
-                urlRequest.setValue(value, forHTTPHeaderField: key)
-            }
-        }
-
-        /// Create request body (OpenAI-compatible format).
-        var requestBody: [String: Any] = [
-            "model": request.model,
-            "messages": request.messages.map { message -> [String: Any] in
-                var msgDict: [String: Any] = [
-                    "role": message.role,
-                    "content": message.content ?? ""
-                ]
-
-                // Include tool_calls if present (assistant messages with tool calls)
-                if let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                    msgDict["tool_calls"] = toolCalls.map { tc -> [String: Any] in
-                        return [
-                            "id": tc.id,
-                            "type": "function",
-                            "function": [
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments ?? "{}"
-                            ]
-                        ]
-                    }
-                }
-
-                // Include tool_call_id for tool result messages
-                if let toolCallId = message.toolCallId {
-                    msgDict["tool_call_id"] = toolCallId
-                }
-
-                return msgDict
-            },
-            "max_tokens": request.maxTokens ?? config.maxTokens ?? 2048,
-            "temperature": request.temperature ?? config.temperature ?? 0.7,
-            "stream": false
-        ]
-
-        // Include tools if provided (required for llama.cpp servers to generate tool calls)
-        if let tools = request.tools, !tools.isEmpty {
-            requestBody["tools"] = tools.map { tool -> [String: Any] in
-                let parameters: Any
-                if let parametersData = tool.function.parametersJson.data(using: .utf8),
-                   let parsedParameters = try? JSONSerialization.jsonObject(with: parametersData) {
-                    parameters = parsedParameters
-                } else {
-                    parameters = [:]
-                }
-
-                return [
-                    "type": tool.type,
-                    "function": [
-                        "name": tool.function.name,
-                        "description": tool.function.description,
-                        "parameters": parameters
-                    ]
-                ]
-            }
-            logger.debug("CustomProvider: Including \(tools.count) tools in request")
-        }
-
-        do {
-            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
-        } catch {
-            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
-        }
-
-        /// Set timeout (5 minutes minimum for tool-enabled requests, especially 7B models).
-        /// Even if config specifies lower timeout, enforce 300s minimum to prevent timeouts.
-        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
-        urlRequest.timeoutInterval = max(configuredTimeout, 300)
-
-        logger.debug("Sending request to custom provider '\(self.identifier)' [req:\(requestId.prefix(8))]")
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw ProviderError.networkError("Invalid response type")
-            }
-
-            logger.debug("Custom provider '\(self.identifier)' response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
-
-            guard 200...299 ~= httpResponse.statusCode else {
-                /// Try to parse error response to get detailed error message.
-                var errorMessage = "Custom provider returned status \(httpResponse.statusCode)"
-                if let errorData = String(data: data, encoding: .utf8) {
-                    logger.error("Custom provider '\(self.identifier)' error [req:\(requestId.prefix(8))]: \(errorData)")
-
-                    /// Try to extract error message from JSON response.
-                    if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let error = errorJson["error"] as? [String: Any],
-                       let message = error["message"] as? String {
-                        errorMessage = "Custom provider error: \(message)"
-                    } else {
-                        /// Include raw error data if JSON parsing fails.
-                        errorMessage = "Custom provider returned status \(httpResponse.statusCode): \(errorData.prefix(200))"
-                    }
-                }
-                throw ProviderError.networkError(errorMessage)
-            }
-
-            /// Parse response (assuming OpenAI-compatible format).
-            let customResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
-            logger.debug("Successfully processed custom provider '\(self.identifier)' response [req:\(requestId.prefix(8))]")
-
-            return customResponse
-
-        } catch let error as ProviderError {
-            throw error
-        } catch {
-            logger.error("Custom provider '\(self.identifier)' request failed [req:\(requestId.prefix(8))]: \(error)")
-            throw ProviderError.networkError("Network error: \(error.localizedDescription)")
-        }
-    }
-
-    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
-        let models = config.models.map { modelId in
-            ServerOpenAIModel(
-                id: modelId,
-                object: "model",
-                created: Int(Date().timeIntervalSince1970),
-                ownedBy: identifier
-            )
-        }
-
-        return ServerOpenAIModelsResponse(
-            object: "list",
-            data: models
+        return try await RemoteProviderHTTP.executeChatCompletion(
+            urlRequest: urlRequest, providerName: "Custom",
+            requestId: requestId, logger: logger
         )
     }
 
@@ -1610,11 +1005,8 @@ public class CustomProvider: AIProvider {
             }
         }
 
-        /// Future feature: Custom validation logic based on provider configuration.
         return true
     }
-
-    // MARK: - Model Capabilities Fetching
 
     /// Fetch model list from custom provider's /v1/models endpoint.
     /// Supports both OpenAI-compatible format and llama.cpp format.
@@ -1704,17 +1096,11 @@ public class CustomProvider: AIProvider {
 
     // MARK: - Lifecycle
 
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
+    
 
-    public func getLoadedStatus() async -> Bool {
-        return false
-    }
+    
 
-    public func unload() async {
-        /// No-op for remote providers.
-    }
+    
 }
 
 // MARK: - Google Gemini Provider
@@ -1724,7 +1110,7 @@ public class CustomProvider: AIProvider {
 public class GeminiProvider: AIProvider {
     public let identifier: String
     public let config: ProviderConfiguration
-    private let logger = Logger(label: "com.sam.provider.gemini")
+    private let logger = Logger(label: "com.sam.api.gemini")
     
     /// Cache for model capabilities to avoid repeated API calls
     private static var modelCapabilitiesCache: [String: Bool] = [:]
@@ -1852,105 +1238,18 @@ public class GeminiProvider: AIProvider {
         return capabilities
     }
 
-    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    if Task.isCancelled {
-                        self.logger.debug("TASK_CANCELLED: Gemini request cancelled before start")
-                        continuation.finish()
-                        return
-                    }
+    
 
-                    let response = try await self.processChatCompletion(request)
-                    let chunks = self.convertToStreamChunks(response)
+    
 
-                    for chunk in chunks {
-                        if Task.isCancelled {
-                            self.logger.debug("TASK_CANCELLED: Gemini streaming cancelled")
-                            continuation.finish()
-                            return
-                        }
-
-                        continuation.yield(chunk)
-                        try await Task.sleep(nanoseconds: 50_000_000)
-                    }
-
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
+        public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
+        return try await processChatCompletion(request, retryCount: 0)
     }
 
-    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else { return [] }
-        var chunks: [ServerOpenAIChatStreamChunk] = []
+    /// Maximum retry attempts for rate-limited requests before giving up.
+    private let maxGeminiRetries = 5
 
-        /// Start with role chunk
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
-        ))
-
-        /// Stream tool calls if present
-        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
-            for toolCall in toolCalls {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(toolCalls: [toolCall])
-                    )]
-                ))
-            }
-        }
-
-        /// Stream text content - preserve newlines for markdown
-        if let content = choice.message.content, !content.isEmpty {
-            let lines = content.components(separatedBy: .newlines)
-            for line in lines {
-                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                guard !trimmedLine.isEmpty else { continue }
-                
-                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                for (index, word) in words.enumerated() {
-                    let suffix = index < words.count - 1 ? " " : "\n"
-                    chunks.append(ServerOpenAIChatStreamChunk(
-                        id: response.id,
-                        object: "chat.completion.chunk",
-                        created: response.created,
-                        model: response.model,
-                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
-                    ))
-                }
-            }
-        }
-
-        /// Final chunk with finish reason
-        /// CRITICAL: Set correct finish reason based on whether tool calls are present
-        /// This determines whether AgentOrchestrator will execute tools or stop
-        let finishReason = (choice.message.toolCalls != nil && !choice.message.toolCalls!.isEmpty) ? "tool_calls" : "stop"
-        
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: finishReason)]
-        ))
-
-        return chunks
-    }
-
-    public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
+    private func processChatCompletion(_ request: OpenAIChatRequest, retryCount: Int) async throws -> ServerOpenAIChatResponse {
         let requestId = UUID().uuidString
         logger.debug("Processing chat completion via Gemini API [req:\(requestId.prefix(8))]")
 
@@ -1963,7 +1262,7 @@ public class GeminiProvider: AIProvider {
         }
 
         /// Strip provider prefix from model name before sending to API
-        /// User-facing: "gemini/gemini-2.0-flash-exp" → API expects: "gemini-2.0-flash-exp"
+        /// User-facing: "gemini/gemini-2.0-flash-exp" -> API expects: "gemini-2.0-flash-exp"
         let modelForAPI = request.model.contains("/")
             ? request.model.components(separatedBy: "/").last ?? request.model
             : request.model
@@ -1992,44 +1291,33 @@ public class GeminiProvider: AIProvider {
 
         /// Add generation configuration
         var generationConfig: [String: Any] = [:]
-        
         if let temperature = request.temperature ?? config.temperature {
             generationConfig["temperature"] = temperature
         }
-        
         if let maxTokens = request.maxTokens ?? config.maxTokens {
             generationConfig["maxOutputTokens"] = max(maxTokens, 2048)
         } else {
             generationConfig["maxOutputTokens"] = 2048
         }
-
         if !generationConfig.isEmpty {
             requestBody["generationConfig"] = generationConfig
         }
 
         /// Add tools support if present and model supports it
-        /// Query the API to check if the model supports function calling
         if let tools = request.tools, !tools.isEmpty {
-            /// Check if model supports function calling (async query with caching)
             let modelSupportsTools = await modelSupportsFunctionCalling(modelForAPI)
-            
             if modelSupportsTools {
-                /// Convert OpenAI tool format to Gemini function declarations
                 let geminiTools: [[String: Any]] = tools.map { tool in
                     var functionDeclaration: [String: Any] = [
                         "name": tool.function.name,
                         "description": tool.function.description
                     ]
-
-                    /// Parse parameters JSON string to dictionary
                     if let parametersData = tool.function.parametersJson.data(using: .utf8),
                        let parameters = try? JSONSerialization.jsonObject(with: parametersData) as? [String: Any] {
                         functionDeclaration["parameters"] = parameters
                     }
-
                     return ["functionDeclarations": [functionDeclaration]]
                 }
-
                 requestBody["tools"] = geminiTools
                 logger.debug("Added \(tools.count) tools to Gemini request [req:\(requestId.prefix(8))]")
             } else {
@@ -2067,101 +1355,83 @@ public class GeminiProvider: AIProvider {
             logger.debug("Gemini API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
 
             guard 200...299 ~= httpResponse.statusCode else {
-                var errorMessage = "Gemini API returned status \(httpResponse.statusCode)"
-                
-                if let errorData = String(data: data, encoding: .utf8) {
-                    logger.error("Gemini API error [req:\(requestId.prefix(8))]: \(errorData)")
-                    
-                    /// Check if this is a rate limit error (429)
-                    if httpResponse.statusCode == 429 {
-                        /// Parse retry delay from error response
-                        if let retryDelay = parseRetryDelay(from: errorData) {
-                            logger.info("Rate limit hit - retrying in \(retryDelay) seconds [req:\(requestId.prefix(8))]")
-                            
-                            /// Notify UI of rate limit
-                            await MainActor.run {
-                                NotificationCenter.default.post(
-                                    name: .providerRateLimitHit,
-                                    object: nil,
-                                    userInfo: [
-                                        "retryAfterSeconds": retryDelay,
-                                        "providerName": "Gemini"
-                                    ]
-                                )
-                            }
-                            
-                            /// Wait for the specified duration
-                            try await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
-                            
-                            /// Notify UI that retry is starting
-                            await MainActor.run {
-                                NotificationCenter.default.post(name: .providerRateLimitRetrying, object: nil)
-                            }
-                            
-                            /// Retry the request
-                            logger.info("Retrying request after rate limit delay [req:\(requestId.prefix(8))]")
-                            return try await processChatCompletion(request)
-                        } else {
-                            /// No retry timing available - use default backoff
-                            logger.warning("Rate limit hit but no retry timing found - using 60s default [req:\(requestId.prefix(8))]")
-                            
-                            /// Notify UI of rate limit with default delay
-                            await MainActor.run {
-                                NotificationCenter.default.post(
-                                    name: .providerRateLimitHit,
-                                    object: nil,
-                                    userInfo: [
-                                        "retryAfterSeconds": 60.0,
-                                        "providerName": "Gemini"
-                                    ]
-                                )
-                            }
-                            
-                            try await Task.sleep(nanoseconds: 60_000_000_000)  /// 60 seconds
-                            
-                            /// Notify UI that retry is starting
-                            await MainActor.run {
-                                NotificationCenter.default.post(name: .providerRateLimitRetrying, object: nil)
-                            }
-                            
-                            return try await processChatCompletion(request)
-                        }
+                let errorData = String(data: data, encoding: .utf8) ?? "Unknown error"
+                logger.error("Gemini API error [req:\(requestId.prefix(8))]: \(errorData.prefix(200))")
+
+                /// Bounded retry for rate limit (429) — was previously an unbounded
+                /// recursive call that could stack-overflow under persistent rate limiting.
+                if httpResponse.statusCode == 429 {
+                    if retryCount >= maxGeminiRetries {
+                        throw ProviderError.rateLimitExceeded("Gemini rate limit exceeded after \(maxGeminiRetries) retries")
                     }
-                    
-                    /// Check if this is a function calling not supported error
-                    if httpResponse.statusCode == 400 && errorData.contains("Function calling is not enabled") {
-                        /// Cache that this model doesn't support function calling
-                        Self.modelCapabilitiesCache[modelForAPI] = false
-                        logger.warning("Model \(modelForAPI) doesn't support function calling - cached for future requests")
-                        
-                        /// Retry without tools if this was a tool-enabled request
-                        if request.tools != nil && !request.tools!.isEmpty {
-                            logger.info("Retrying request without tools [req:\(requestId.prefix(8))]")
-                            /// Create new request without tools
-                            let requestWithoutTools = OpenAIChatRequest(
-                                model: request.model,
-                                messages: request.messages,
-                                temperature: request.temperature,
-                                topP: request.topP,
-                                repetitionPenalty: request.repetitionPenalty,
-                                maxTokens: request.maxTokens,
-                                stream: request.stream,
-                                tools: nil,  /// Remove tools
-                                samConfig: request.samConfig,
-                                contextId: request.contextId,
-                                enableMemory: request.enableMemory,
-                                sessionId: request.sessionId,
-                                conversationId: request.conversationId,
-                                statefulMarker: request.statefulMarker,
-                                iterationNumber: request.iterationNumber
-                            )
-                            return try await processChatCompletion(requestWithoutTools)
-                        }
+
+                    let retryDelay: Double
+                    if let parsedDelay = parseRetryDelay(from: errorData) {
+                        retryDelay = parsedDelay
+                    } else {
+                        logger.warning("Rate limit hit but no retry timing found - using 60s default [req:\(requestId.prefix(8))]")
+                        retryDelay = 60
                     }
-                    
-                    errorMessage = errorData
+
+                    logger.info("Rate limit hit - retrying in \(retryDelay)s (attempt \(retryCount + 1)/\(maxGeminiRetries)) [req:\(requestId.prefix(8))]")
+
+                    await MainActor.run {
+                        NotificationCenter.default.post(
+                            name: .providerRateLimitHit,
+                            object: nil,
+                            userInfo: [
+                                "retryAfterSeconds": retryDelay,
+                                "providerName": "Gemini"
+                            ]
+                        )
+                    }
+
+                    try await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+
+                    await MainActor.run {
+                        NotificationCenter.default.post(name: .providerRateLimitRetrying, object: nil)
+                    }
+
+                    /// Bounded retry: increment counter, re-enter method.
+                    return try await processChatCompletion(request, retryCount: retryCount + 1)
                 }
-                throw ProviderError.networkError(errorMessage)
+
+                /// Bounded retry for function calling not supported (400) — was previously
+                /// an unbounded recursive call.
+                if httpResponse.statusCode == 400 && errorData.contains("Function calling is not enabled") {
+                    /// Cache that this model doesn't support function calling
+                    Self.modelCapabilitiesCache[modelForAPI] = false
+                    logger.warning("Model \(modelForAPI) does not support function calling - cached for future requests")
+
+                    /// Retry without tools if this was a tool-enabled request
+                    if request.tools != nil && !request.tools!.isEmpty {
+                        logger.info("Retrying request without tools [req:\(requestId.prefix(8))]")
+                        let requestWithoutTools = OpenAIChatRequest(
+                            model: request.model,
+                            messages: request.messages,
+                            temperature: request.temperature,
+                            topP: request.topP,
+                            repetitionPenalty: request.repetitionPenalty,
+                            maxTokens: request.maxTokens,
+                            stream: request.stream,
+                            tools: nil,
+                            samConfig: request.samConfig,
+                            contextId: request.contextId,
+                            enableMemory: request.enableMemory,
+                            sessionId: request.sessionId,
+                            conversationId: request.conversationId,
+                            statefulMarker: request.statefulMarker,
+                            iterationNumber: request.iterationNumber
+                        )
+                        /// Bounded retry: only retry once (retryCount is checked to prevent loops
+                        /// if the no-tools retry also somehow returns this error).
+                        if retryCount < maxGeminiRetries {
+                            return try await processChatCompletion(requestWithoutTools, retryCount: retryCount + 1)
+                        }
+                    }
+                }
+
+                throw ProviderError.networkError("Gemini API returned status \(httpResponse.statusCode): \(errorData.prefix(500))")
             }
 
             /// Parse Gemini response and convert to OpenAI format
@@ -2226,7 +1496,6 @@ public class GeminiProvider: AIProvider {
             /// Extract finish reason
             let finishReason: String
             if let finishReasonRaw = candidate["finishReason"] as? String {
-                /// Map Gemini finish reasons to OpenAI format
                 switch finishReasonRaw {
                 case "STOP": finishReason = "stop"
                 case "MAX_TOKENS": finishReason = "length"
@@ -2268,33 +1537,14 @@ public class GeminiProvider: AIProvider {
         }
     }
 
-    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
-        let models = config.models.map { modelId in
-            ServerOpenAIModel(
-                id: modelId,
-                object: "model",
-                created: Int(Date().timeIntervalSince1970),
-                ownedBy: "google"
-            )
-        }
 
-        return ServerOpenAIModelsResponse(
-            object: "list",
-            data: models
-        )
-    }
+    
 
     public func supportsModel(_ model: String) -> Bool {
         return config.models.contains(model) || model.hasPrefix("gemini-")
     }
 
-    public func validateConfiguration() async throws -> Bool {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            throw ProviderError.authenticationFailed("Gemini API key is required")
-        }
-
-        return true
-    }
+    
     
     /// Parse retry delay from Gemini error response
     /// Checks both the error message ("Please retry in X.Xs") and RetryInfo details
@@ -2339,142 +1589,35 @@ public class GeminiProvider: AIProvider {
 
     // MARK: - Lifecycle
 
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
+    
 
-    public func getLoadedStatus() async -> Bool {
-        return false
-    }
+    
 
-    public func unload() async {
-        /// No-op for remote providers.
-    }
+    
 }
 
 // MARK: - Ollama Cloud Provider
 
 /// Ollama Cloud provider for cloud-hosted Ollama models.
+// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
+
+import Foundation
+import Logging
+
+/// Ollama Cloud provider for cloud-hosted Ollama models.
+/// Uses protocol-extension defaults for: loadModel, getLoadedStatus, unload,
+/// getAvailableModels, validateConfiguration, processStreamingChatCompletion.
 @MainActor
 public class OllamaCloudProvider: AIProvider {
     public let identifier: String
     public let config: ProviderConfiguration
-    private let logger = Logger(label: "com.sam.api.ollamaCloud")
+    private let logger = Logger(label: "com.sam.api.ollamacloud")
 
     public init(config: ProviderConfiguration) {
         self.identifier = config.providerId
         self.config = config
         logger.debug("Ollama Cloud Provider initialized")
-    }
-
-    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    if Task.isCancelled {
-                        self.logger.debug("TASK_CANCELLED: Ollama Cloud request cancelled before start")
-                        continuation.finish()
-                        return
-                    }
-
-                    let response = try await self.processChatCompletion(request)
-                    let chunks = self.convertToStreamChunks(response)
-
-                    for chunk in chunks {
-                        if Task.isCancelled {
-                            self.logger.debug("TASK_CANCELLED: Ollama Cloud streaming cancelled")
-                            continuation.finish()
-                            return
-                        }
-
-                        continuation.yield(chunk)
-                        try await Task.sleep(nanoseconds: 50_000_000)
-                    }
-
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-
-    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else { return [] }
-        var chunks: [ServerOpenAIChatStreamChunk] = []
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
-        ))
-
-        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
-            for toolCall in toolCalls {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(
-                            content: nil,
-                            toolCalls: [
-                                OpenAIToolCall(
-                                    id: toolCall.id,
-                                    type: "function",
-                                    function: OpenAIFunctionCall(
-                                        name: toolCall.function.name,
-                                        arguments: toolCall.function.arguments
-                                    )
-                                )
-                            ]
-                        )
-                    )]
-                ))
-            }
-
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
-            ))
-        } else {
-            // Preserve newlines for proper markdown rendering
-            // Split by lines, then split words, rejoin with newlines
-            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
-            for line in lines {
-                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                guard !trimmedLine.isEmpty else { continue }
-                
-                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                for (index, word) in words.enumerated() {
-                    let suffix = index < words.count - 1 ? " " : "\n"
-                    chunks.append(ServerOpenAIChatStreamChunk(
-                        id: response.id,
-                        object: "chat.completion.chunk",
-                        created: response.created,
-                        model: response.model,
-                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
-                    ))
-                }
-            }
-
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-            ))
-        }
-
-        return chunks
     }
 
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
@@ -2489,114 +1632,47 @@ public class OllamaCloudProvider: AIProvider {
             throw ProviderError.invalidConfiguration("Ollama Cloud base URL not configured")
         }
 
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            throw ProviderError.invalidConfiguration("Invalid Ollama Cloud base URL: \(baseURL)")
-        }
+        let modelForAPI = RemoteProviderHTTP.stripProviderPrefix(from: request.model)
+        let requestBody = request.buildOpenAICompatibleRequestBody(
+            modelOverride: modelForAPI, cacheControl: true
+        )
 
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let urlRequest = try RemoteProviderHTTP.buildChatCompletionRequest(
+            baseURL: baseURL, apiKey: apiKey, requestBody: requestBody,
+            timeoutSeconds: config.timeoutSeconds
+        )
 
-        let modelForAPI = request.model.contains("/")
-            ? request.model.components(separatedBy: "/").last ?? request.model
-            : request.model
-
-        /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
-        /// Enable cache_control for Z.AI prompt caching support.
-        let requestBody = request.buildOpenAICompatibleRequestBody(modelOverride: modelForAPI, cacheControl: true)
-
-        do {
-            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
-        } catch {
-            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
-        }
-
-        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
-        urlRequest.timeoutInterval = max(configuredTimeout, 300)
-
-        logger.debug("Sending request to Ollama Cloud API [req:\(requestId.prefix(8))]")
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw ProviderError.networkError("Invalid response type")
-            }
-
-            logger.debug("Ollama Cloud API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
-
-            guard 200...299 ~= httpResponse.statusCode else {
-                if let errorData = String(data: data, encoding: .utf8) {
-                    logger.error("Ollama Cloud API error [req:\(requestId.prefix(8))]: \(errorData)")
-                }
-                throw ProviderError.networkError("Ollama Cloud API returned status \(httpResponse.statusCode)")
-            }
-
-            let openAIResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
-            logger.debug("Successfully processed Ollama Cloud response [req:\(requestId.prefix(8))]")
-
-            return openAIResponse
-
-        } catch let error as ProviderError {
-            throw error
-        } catch {
-            logger.error("Ollama Cloud API request failed [req:\(requestId.prefix(8))]: \(error)")
-            throw ProviderError.networkError("Network error: \(error.localizedDescription)")
-        }
-    }
-
-    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
-        let models = config.models.map { modelId in
-            ServerOpenAIModel(
-                id: modelId,
-                object: "model",
-                created: Int(Date().timeIntervalSince1970),
-                ownedBy: "ollama"
-            )
-        }
-
-        return ServerOpenAIModelsResponse(
-            object: "list",
-            data: models
+        return try await RemoteProviderHTTP.executeChatCompletion(
+            urlRequest: urlRequest, providerName: "Ollama Cloud",
+            requestId: requestId, logger: logger
         )
     }
 
     public func supportsModel(_ model: String) -> Bool {
         return config.models.contains(model) || model.contains("ollama")
     }
-
-    public func validateConfiguration() async throws -> Bool {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            throw ProviderError.authenticationFailed("Ollama Cloud API key is required")
-        }
-
-        return true
-    }
-
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
-
-    public func getLoadedStatus() async -> Bool {
-        return false
-    }
-
-    public func unload() async {
-        // No-op for remote providers.
-    }
 }
+
 
 // MARK: - Z.AI Provider
 
 /// Z.AI provider with rate limit handling and thinking parameter support.
+// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
+
+import Foundation
+import Logging
+
+/// Z.AI provider with thinking parameter support and Z.AI-specific rate limit handling.
+/// Uses protocol-extension defaults for: loadModel, getLoadedStatus, unload,
+/// getAvailableModels, validateConfiguration, processStreamingChatCompletion.
 @MainActor
 public class ZAIProvider: AIProvider {
     public let identifier: String
     public let config: ProviderConfiguration
     private let logger = Logger(label: "com.sam.api.zai")
 
-    /// Whether this is the coding variant
+    /// Whether this is the coding variant (uses the coding-specific API endpoint).
     private let isCodingPlan: Bool
 
     public init(config: ProviderConfiguration) {
@@ -2604,116 +1680,6 @@ public class ZAIProvider: AIProvider {
         self.config = config
         self.isCodingPlan = config.providerType == .zaiCoding
         logger.debug("Z.AI Provider initialized (coding: \(isCodingPlan))")
-    }
-
-    public func processStreamingChatCompletion(_ request: OpenAIChatRequest) async throws -> AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error> {
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    if Task.isCancelled {
-                        self.logger.debug("TASK_CANCELLED: Z.AI request cancelled before start")
-                        continuation.finish()
-                        return
-                    }
-
-                    let response = try await self.processChatCompletion(request)
-                    let chunks = self.convertToStreamChunks(response)
-
-                    for chunk in chunks {
-                        if Task.isCancelled {
-                            self.logger.debug("TASK_CANCELLED: Z.AI streaming cancelled")
-                            continuation.finish()
-                            return
-                        }
-
-                        continuation.yield(chunk)
-                        try await Task.sleep(nanoseconds: 50_000_000)
-                    }
-
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-
-    private func convertToStreamChunks(_ response: ServerOpenAIChatResponse) -> [ServerOpenAIChatStreamChunk] {
-        guard let choice = response.choices.first else { return [] }
-        var chunks: [ServerOpenAIChatStreamChunk] = []
-
-        chunks.append(ServerOpenAIChatStreamChunk(
-            id: response.id,
-            object: "chat.completion.chunk",
-            created: response.created,
-            model: response.model,
-            choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(role: "assistant", content: nil))]
-        ))
-
-        if let toolCalls = choice.message.toolCalls, !toolCalls.isEmpty {
-            for toolCall in toolCalls {
-                chunks.append(ServerOpenAIChatStreamChunk(
-                    id: response.id,
-                    object: "chat.completion.chunk",
-                    created: response.created,
-                    model: response.model,
-                    choices: [OpenAIChatStreamChoice(
-                        index: 0,
-                        delta: OpenAIChatDelta(
-                            content: nil,
-                            toolCalls: [
-                                OpenAIToolCall(
-                                    id: toolCall.id,
-                                    type: "function",
-                                    function: OpenAIFunctionCall(
-                                        name: toolCall.function.name,
-                                        arguments: toolCall.function.arguments
-                                    )
-                                )
-                            ]
-                        )
-                    )]
-                ))
-            }
-
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "tool_calls")]
-            ))
-        } else {
-            // Preserve newlines for proper markdown rendering
-            // Split by lines, then split words, rejoin with newlines
-            let lines = (choice.message.content ?? "").components(separatedBy: .newlines)
-            for line in lines {
-                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-                guard !trimmedLine.isEmpty else { continue }
-                
-                let words = trimmedLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                for (index, word) in words.enumerated() {
-                    let suffix = index < words.count - 1 ? " " : "\n"
-                    chunks.append(ServerOpenAIChatStreamChunk(
-                        id: response.id,
-                        object: "chat.completion.chunk",
-                        created: response.created,
-                        model: response.model,
-                        choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(content: word + suffix))]
-                    ))
-                }
-            }
-
-            chunks.append(ServerOpenAIChatStreamChunk(
-                id: response.id,
-                object: "chat.completion.chunk",
-                created: response.created,
-                model: response.model,
-                choices: [OpenAIChatStreamChoice(index: 0, delta: OpenAIChatDelta(), finishReason: "stop")]
-            ))
-        }
-
-        return chunks
     }
 
     public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
@@ -2728,32 +1694,17 @@ public class ZAIProvider: AIProvider {
             throw ProviderError.invalidConfiguration("Z.AI base URL not configured")
         }
 
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            throw ProviderError.invalidConfiguration("Invalid Z.AI base URL: \(baseURL)")
-        }
+        let modelForAPI = RemoteProviderHTTP.stripProviderPrefix(from: request.model)
 
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let modelForAPI = request.model.contains("/")
-            ? request.model.components(separatedBy: "/").last ?? request.model
-            : request.model
-
-        /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
-        /// Z.AI uses max_completion_tokens (not max_tokens) and has specific sampling defaults.
-        /// Enable cache_control for Z.AI prompt caching support.
+        // Z.AI uses OpenAI-compatible format with thinking support and max_completion_tokens.
         var requestBody = request.buildOpenAICompatibleRequestBody(
             modelOverride: modelForAPI,
             temperatureOverride: request.temperature ?? config.temperature ?? 1.0,
-            extraFields: [
-                "top_p": 0.95
-            ],
+            extraFields: ["top_p": 0.95],
             cacheControl: true
         )
 
-        // Z.AI uses max_completion_tokens instead of max_tokens
+        // Z.AI uses max_completion_tokens instead of max_tokens.
         requestBody.removeValue(forKey: "max_tokens")
         if let maxTokens = request.maxTokens ?? config.maxTokens {
             requestBody["max_completion_tokens"] = max(maxTokens, 2048)
@@ -2761,8 +1712,7 @@ public class ZAIProvider: AIProvider {
             requestBody["max_completion_tokens"] = 4096
         }
 
-        // Enable thinking parameter for chain-of-thought (Z.AI specific)
-        // Use SAMConfig.thinking if provided, otherwise default to enabled
+        // Enable thinking parameter for chain-of-thought.
         if let thinkingConfig = request.samConfig?.thinking {
             var thinkingDict: [String: Any] = [:]
             thinkingDict["type"] = thinkingConfig.mode ?? "enabled"
@@ -2774,17 +1724,22 @@ public class ZAIProvider: AIProvider {
             requestBody["thinking"] = ["type": "enabled"]
         }
 
-        do {
-            urlRequest.httpBody = try deterministicJSONData(from: requestBody)
-        } catch {
-            throw ProviderError.networkError("Failed to serialize request: \(error.localizedDescription)")
-        }
+        let urlRequest = try RemoteProviderHTTP.buildChatCompletionRequest(
+            baseURL: baseURL, apiKey: apiKey, requestBody: requestBody,
+            timeoutSeconds: config.timeoutSeconds
+        )
 
-        let configuredTimeout = TimeInterval(config.timeoutSeconds ?? 300)
-        urlRequest.timeoutInterval = max(configuredTimeout, 300)
+        return try await executeZAIRequest(
+            urlRequest: urlRequest, requestId: requestId, providerName: "Z.AI"
+        )
+    }
 
-        logger.debug("Sending request to Z.AI API [req:\(requestId.prefix(8))]")
-
+    /// Execute request with Z.AI-specific error handling (rate limit codes, quota limits).
+    private func executeZAIRequest(
+        urlRequest: URLRequest,
+        requestId: String,
+        providerName: String
+    ) async throws -> ServerOpenAIChatResponse {
         do {
             let (data, response) = try await URLSession.shared.data(for: urlRequest)
 
@@ -2792,13 +1747,12 @@ public class ZAIProvider: AIProvider {
                 throw ProviderError.networkError("Invalid response type")
             }
 
-            logger.debug("Z.AI API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
+            logger.debug("\(providerName) API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
 
-            // Handle error responses
             guard 200...299 ~= httpResponse.statusCode else {
                 if let errorData = String(data: data, encoding: .utf8) {
-                    logger.error("Z.AI API error [req:\(requestId.prefix(8))]: \(errorData)")
-                    // Check for Z.AI specific rate limit codes
+                    logger.error("\(providerName) API error [req:\(requestId.prefix(8))]: \(errorData)")
+                    // Z.AI-specific rate limit codes.
                     if errorData.contains("1302") || errorData.contains("1303") || errorData.contains("1305") {
                         throw ProviderError.rateLimitExceeded("Z.AI rate limit exceeded")
                     }
@@ -2806,62 +1760,29 @@ public class ZAIProvider: AIProvider {
                         throw ProviderError.quotaExceeded("Z.AI usage limit exceeded")
                     }
                 }
-                throw ProviderError.networkError("Z.AI API returned status \(httpResponse.statusCode)")
+                let (message, errorType) = RemoteProviderHTTP.extractError(
+                    from: data, status: httpResponse.statusCode, providerName: providerName
+                )
+                throw errorType(message)
             }
 
             let openAIResponse = try JSONDecoder().decode(ServerOpenAIChatResponse.self, from: data)
-            logger.debug("Successfully processed Z.AI response [req:\(requestId.prefix(8))]")
-
+            logger.debug("Successfully processed \(providerName) response [req:\(requestId.prefix(8))]")
             return openAIResponse
 
         } catch let error as ProviderError {
             throw error
         } catch {
-            logger.error("Z.AI API request failed [req:\(requestId.prefix(8))]: \(error)")
+            logger.error("\(providerName) API request failed [req:\(requestId.prefix(8))]: \(error)")
             throw ProviderError.networkError("Network error: \(error.localizedDescription)")
         }
-    }
-
-    public func getAvailableModels() async throws -> ServerOpenAIModelsResponse {
-        let models = config.models.map { modelId in
-            ServerOpenAIModel(
-                id: modelId,
-                object: "model",
-                created: Int(Date().timeIntervalSince1970),
-                ownedBy: "zai"
-            )
-        }
-
-        return ServerOpenAIModelsResponse(
-            object: "list",
-            data: models
-        )
     }
 
     public func supportsModel(_ model: String) -> Bool {
         return config.models.contains(model) || model.lowercased().contains("glm")
     }
-
-    public func validateConfiguration() async throws -> Bool {
-        guard let apiKey = config.apiKey, !apiKey.isEmpty else {
-            throw ProviderError.authenticationFailed("Z.AI API key is required")
-        }
-
-        return true
-    }
-
-    public func loadModel() async throws -> ModelCapabilities {
-        throw ProviderError.invalidRequest("loadModel() not supported for remote providers")
-    }
-
-    public func getLoadedStatus() async -> Bool {
-        return false
-    }
-
-    public func unload() async {
-        // No-op for remote providers.
-    }
 }
+
 
 // MARK: - Helper Methods
 
