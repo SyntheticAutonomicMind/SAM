@@ -44,7 +44,7 @@ public class MusicGenerationTool: ConsolidatedMCP, @unchecked Sendable {
                 required: false
             ),
             "cfg_scale": MCPToolParameter(
-                type: .string,
+                type: .number,
                 description: "Guidance scale as number (default: 7.0; ignored by MiniMax Music 3)",
                 required: false
             ),
@@ -145,7 +145,14 @@ public class MusicGenerationTool: ConsolidatedMCP, @unchecked Sendable {
         let model = parameters["model"] as? String
         let seconds = parameters["seconds"] as? Int
         let steps = parameters["steps"] as? Int
-        let guidanceScale = (parameters["cfg_scale"] as? NSNumber)?.floatValue
+        let guidanceScale: Float?
+        if let num = parameters["cfg_scale"] as? NSNumber {
+            guidanceScale = num.floatValue
+        } else if let str = parameters["cfg_scale"] as? String, let f = Float(str) {
+            guidanceScale = f
+        } else {
+            guidanceScale = nil
+        }
         let seed = parameters["seed"] as? Int
         let isInstrumental = parameters["is_instrumental"] as? Bool
 

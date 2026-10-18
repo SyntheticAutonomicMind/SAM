@@ -60,21 +60,11 @@ let package = Package(
         // Transformers and tokenization support
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.5"),
 
-
-        // Additional dependencies for HTTP requests and JSON handling
-        .package(url: "https://github.com/apple/swift-http-types", from: "1.8.0"),
-        .package(url: "https://github.com/swift-server/async-http-client", from: "1.32.0"),
-
         // Swift Crypto for security operations
-        // Note: swift-crypto 5.0+ requires Vapor 5 (currently beta).
-        // Staying on 4.x for compatibility with stable Vapor 4.x.
         .package(url: "https://github.com/apple/swift-crypto", from: "4.5.2"),
 
         // Swift Log for structured logging
         .package(url: "https://github.com/apple/swift-log", from: "1.16.1"),
-
-        // Vapor for HTTP server functionality
-        .package(url: "https://github.com/vapor/vapor", from: "4.122.2"),
 
         // SQLite for memory database storage
         .package(url: "https://github.com/stephencelis/SQLite.swift", from: "0.16.0"),
@@ -135,8 +125,6 @@ let package = Package(
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Transformers", package: "swift-transformers"),
-                .product(name: "AsyncHTTPClient", package: "async-http-client"),
-                .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Crypto", package: "swift-crypto"),
                 "ConfigurationSystem"
@@ -181,18 +169,18 @@ let package = Package(
             path: "Sources/ConfigurationSystem"
         ),
 
-        // API Framework for OpenAI-compatible server
+        // API Framework for provider integration and orchestration
         .target(
             name: "APIFramework",
             dependencies: [
                 "llama",
-                .product(name: "Vapor", package: "vapor"),
                 "ConversationEngine",
                 "ConfigurationSystem",
                 "MLXIntegration",
                 "SharedData",
                 "SecurityFramework",
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],
             path: "Sources/APIFramework"

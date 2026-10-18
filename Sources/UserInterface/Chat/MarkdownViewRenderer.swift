@@ -305,51 +305,56 @@ class MarkdownViewRenderer {
     @ViewBuilder
     private func renderTable(headers: [String], alignments: [MarkdownASTNode.TableAlignment], rows: [[String]]) -> some View {
         ScrollView(.horizontal, showsIndicators: true) {
-        Grid(alignment: .leading, horizontalSpacing: 1, verticalSpacing: 1) {
-            // Header row
-            GridRow {
-                ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
-                    self.renderTableCellContent(header, isBold: true)
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: self.alignmentForTable(index: index, alignments: alignments))
-                        .background(Color.secondary.opacity(0.15))
-                        .overlay(
-                            Rectangle()
-                                .stroke(Color.secondary.opacity(0.3), lineWidth: 0.5)
-                        )
-                }
-            }
-
-            // Data rows
-            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+            /// Constrain total table width to prevent layout cycles.
+            /// Using maxWidth: .infinity inside a horizontal ScrollView causes
+            /// the Grid cells to expand infinitely, creating a recursive layout
+            /// cycle (cell width depends on ScrollView width, which depends on
+            /// cell width). Constraining to a reasonable max width breaks the cycle.
+            Grid(alignment: .leading, horizontalSpacing: 1, verticalSpacing: 1) {
+                // Header row
                 GridRow {
-                    ForEach(Array(row.enumerated()), id: \.offset) { cellIndex, cell in
-                        self.renderTableCellContent(cell, isBold: false)
+                    ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
+                        self.renderTableCellContent(header, isBold: true)
                             .foregroundColor(.primary)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: self.alignmentForTable(index: cellIndex, alignments: alignments))
-                            .background(
-                                rowIndex % 2 == 0
-                                ? Color.clear
-                                : Color.secondary.opacity(0.05)
-                            )
+                            .padding(.vertical, 10)
+                            .frame(minWidth: 60, alignment: self.alignmentForTable(index: index, alignments: alignments))
+                            .background(Color.secondary.opacity(0.15))
                             .overlay(
                                 Rectangle()
-                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 0.5)
                             )
                     }
                 }
+
+                // Data rows
+                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { cellIndex, cell in
+                            self.renderTableCellContent(cell, isBold: false)
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .frame(minWidth: 60, alignment: self.alignmentForTable(index: cellIndex, alignments: alignments))
+                                .background(
+                                    rowIndex % 2 == 0
+                                    ? Color.clear
+                                    : Color.secondary.opacity(0.05)
+                                )
+                                .overlay(
+                                    Rectangle()
+                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                                )
+                        }
+                    }
+                }
             }
-        }
-        .background(Color.primary.opacity(0.02))
-        .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
-        )
+            .background(Color.primary.opacity(0.02))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
+            )
         } // ScrollView(.horizontal)
         .padding(.vertical, 4)
     }

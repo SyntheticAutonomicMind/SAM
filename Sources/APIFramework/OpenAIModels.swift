@@ -2,12 +2,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
 
 import Foundation
-import Vapor
+
 import ConfigurationSystem
 
 // MARK: - OpenAI API Request/Response Models
 
-public struct OpenAITool: Content {
+public struct OpenAITool: Codable, Sendable {
     public let type: String
     public let function: OpenAIFunction
 
@@ -18,7 +18,7 @@ public struct OpenAITool: Content {
 }
 
 /// OpenAI function definition.
-public struct OpenAIFunction: Content {
+public struct OpenAIFunction: Codable, Sendable {
     public let name: String
     public let description: String
     public let parametersJson: String
@@ -133,7 +133,7 @@ public struct AnyCodable: Codable {
 }
 
 /// OpenAI-compatible chat completion request.
-public struct OpenAIChatRequest: Content {
+public struct OpenAIChatRequest: Codable, Sendable {
     public let model: String
     public let messages: [OpenAIChatMessage]
     public let temperature: Double?
@@ -215,7 +215,7 @@ public struct OpenAIChatRequest: Content {
 }
 
 /// SAM-specific configuration extensions.
-public struct SAMConfig: Content {
+public struct SAMConfig: Codable, Sendable {
     public let sharedMemoryEnabled: Bool?
     public let mcpToolsEnabled: Bool?
     public let memoryCollectionId: String?
@@ -263,7 +263,7 @@ public struct SAMConfig: Content {
 /// Thinking effort level for models that support reasoning effort control.
 /// Determines how much compute the model devotes to reasoning before responding.
 /// Higher effort = better reasoning quality but slower response time.
-public enum ThinkingEffort: String, Content, Sendable, CaseIterable {
+public enum ThinkingEffort: String, Codable, Sendable, CaseIterable {
     case low = "low"
     case medium = "medium"
     case high = "high"
@@ -292,7 +292,7 @@ public enum ThinkingEffort: String, Content, Sendable, CaseIterable {
 /// - DeepSeek: enable_reasoning (boolean)
 /// - Responses API: reasoning.effort, reasoning.summary
 /// - MiniMax: thinking.type = "enabled"/"adaptive"/"disabled"
-public struct ThinkingConfig: Content, Sendable {
+public struct ThinkingConfig: Codable, Sendable {
     /// Thinking mode: "enabled" (always think), "adaptive" (model decides), "disabled" (no thinking)
     public let mode: String?
     /// Token budget for thinking (Anthropic-specific). nil = use model default.
@@ -319,7 +319,7 @@ public struct ThinkingConfig: Content, Sendable {
 
 /// Cache control annotation for prompt caching (Anthropic, OpenRouter, etc.)
 /// Placed on content blocks or messages to indicate caching breakpoints.
-public struct CacheControl: Content, Sendable {
+public struct CacheControl: Codable, Sendable {
     public let type: String  // "ephemeral" for Anthropic-style caching
 
     public init(type: String = "ephemeral") {
@@ -334,7 +334,7 @@ public struct CacheControl: Content, Sendable {
 /// A content block within a message. Supports text, tool results, tool use,
 /// and thinking blocks for providers that use structured content arrays
 /// (Anthropic, Responses API, etc.)
-public struct ContentBlock: Content, Sendable {
+public struct ContentBlock: Codable, Sendable {
     public let type: String  // "text", "tool_result", "tool_use", "thinking", "redacted_thinking"
     public let text: String?
     public let toolUseId: String?  // For tool_result and tool_use
@@ -374,7 +374,7 @@ public enum ServerOpenAIRole: String, Codable {
 }
 
 /// OpenAI chat message DESIGN NOTE: Content is optional to support OpenAI tool calling where assistant messages may contain only tool_calls without text content.
-public struct OpenAIChatMessage: Content, Sendable {
+public struct OpenAIChatMessage: Codable, Sendable {
     public let id: String?  // Message ID for stateful marker tracking
     public let role: String
     public let content: String?
@@ -453,7 +453,7 @@ public struct OpenAIChatMessage: Content, Sendable {
 }
 
 /// OpenAI tool call structure.
-public struct OpenAIToolCall: Content, Sendable {
+public struct OpenAIToolCall: Codable, Sendable {
     public let id: String
     public let type: String
     public let function: OpenAIFunctionCall
@@ -497,7 +497,7 @@ public struct OpenAIToolCall: Content, Sendable {
 }
 
 /// OpenAI function call structure.
-public struct OpenAIFunctionCall: Content, Sendable {
+public struct OpenAIFunctionCall: Codable, Sendable {
     public let name: String
     public let arguments: String
 
@@ -538,7 +538,7 @@ public struct OpenAIFunctionCall: Content, Sendable {
 }
 
 /// OpenAI-compatible chat completion response.
-public struct ServerOpenAIChatResponse: Content, Sendable {
+public struct ServerOpenAIChatResponse: Codable, Sendable {
     public let id: String
     public let object: String
     public let created: Int
@@ -579,7 +579,7 @@ public struct ServerOpenAIChatResponse: Content, Sendable {
 
 /// OpenAI chat choice.
 /// Content filter result for a specific category
-public struct ContentFilterCategoryResult: Content, Sendable {
+public struct ContentFilterCategoryResult: Codable, Sendable {
     public let filtered: Bool
     public let severity: String?
 
@@ -590,7 +590,7 @@ public struct ContentFilterCategoryResult: Content, Sendable {
 }
 
 /// Content filter results from API response
-public struct ContentFilterResults: Content, Sendable {
+public struct ContentFilterResults: Codable, Sendable {
     public let violence: ContentFilterCategoryResult?
     public let hate: ContentFilterCategoryResult?
     public let sexual: ContentFilterCategoryResult?
@@ -629,7 +629,7 @@ public struct ContentFilterResults: Content, Sendable {
     }
 }
 
-public struct OpenAIChatChoice: Content, Sendable {
+public struct OpenAIChatChoice: Codable, Sendable {
     public let index: Int
     public let message: OpenAIChatMessage
     public let finishReason: String
@@ -650,7 +650,7 @@ public struct OpenAIChatChoice: Content, Sendable {
 }
 
 /// OpenAI usage statistics.
-public struct ServerOpenAIUsage: Content, Sendable {
+public struct ServerOpenAIUsage: Codable, Sendable {
     public let promptTokens: Int
     public let completionTokens: Int
     public let totalTokens: Int
@@ -672,7 +672,7 @@ public struct ServerOpenAIUsage: Content, Sendable {
 
 /// SAM-specific metadata extension for API responses.
 /// Provides additional context beyond standard OpenAI format.
-public struct SAMResponseMetadata: Content, Sendable {
+public struct SAMResponseMetadata: Codable, Sendable {
     /// Provider information
     public let provider: SAMProviderInfo
 
@@ -712,7 +712,7 @@ public struct SAMResponseMetadata: Content, Sendable {
 }
 
 /// Information about the provider that fulfilled the request.
-public struct SAMProviderInfo: Content, Sendable {
+public struct SAMProviderInfo: Codable, Sendable {
     /// Provider type (openai, github_copilot, mlx, gguf, custom)
     public let type: String
 
@@ -740,7 +740,7 @@ public struct SAMProviderInfo: Content, Sendable {
 }
 
 /// Model capability and sizing information.
-public struct SAMModelInfo: Content, Sendable {
+public struct SAMModelInfo: Codable, Sendable {
     /// Maximum context window size (tokens)
     public let contextWindow: Int
 
@@ -786,7 +786,7 @@ public struct SAMModelInfo: Content, Sendable {
 }
 
 /// Workflow execution information for autonomous requests.
-public struct SAMWorkflowInfo: Content, Sendable {
+public struct SAMWorkflowInfo: Codable, Sendable {
     /// Number of iterations executed
     public let iterations: Int
 
@@ -838,7 +838,7 @@ public struct SAMWorkflowInfo: Content, Sendable {
 }
 
 /// Cost estimation for the request.
-public struct SAMCostEstimate: Content, Sendable {
+public struct SAMCostEstimate: Codable, Sendable {
     /// Estimated cost in USD (when pricing data available)
     public let estimatedCostUsd: Double?
 
@@ -878,7 +878,7 @@ public struct SAMCostEstimate: Content, Sendable {
 }
 
 /// OpenAI models list response.
-public struct ServerOpenAIModelsResponse: Content {
+public struct ServerOpenAIModelsResponse: Codable, Sendable {
     public let object: String
     public let data: [ServerOpenAIModel]
 
@@ -889,7 +889,7 @@ public struct ServerOpenAIModelsResponse: Content {
 }
 
 /// OpenAI model information.
-public struct ServerOpenAIModel: Content {
+public struct ServerOpenAIModel: Codable, Sendable {
     public let id: String
     public let object: String
     public let created: Int
@@ -977,7 +977,7 @@ public struct ServerOpenAIModel: Content {
 // MARK: - Streaming Response Models
 
 /// OpenAI-compatible streaming chat completion chunk.
-public struct ServerOpenAIChatStreamChunk: Content, Sendable {
+public struct ServerOpenAIChatStreamChunk: Codable, Sendable {
     public let id: String
     public let object: String
     public let created: Int
@@ -1039,7 +1039,7 @@ public struct ServerOpenAIChatStreamChunk: Content, Sendable {
 }
 
 /// OpenAI streaming chat choice.
-public struct OpenAIChatStreamChoice: Content, Sendable {
+public struct OpenAIChatStreamChoice: Codable, Sendable {
     public let index: Int
     public let delta: OpenAIChatDelta
     public let finishReason: String?
@@ -1060,7 +1060,7 @@ public struct OpenAIChatStreamChoice: Content, Sendable {
 }
 
 /// OpenAI streaming message delta.
-public struct OpenAIChatDelta: Content, Sendable {
+public struct OpenAIChatDelta: Codable, Sendable {
     public let role: String?
     public let content: String?
     public let toolCalls: [OpenAIToolCall]?
@@ -1084,7 +1084,7 @@ public struct OpenAIChatDelta: Content, Sendable {
 // MARK: - MCP Debug Response Types
 
 /// MCP tools list response for debugging.
-public struct MCPToolsResponse: Content {
+public struct MCPToolsResponse: Codable, Sendable {
     public let tools: [MCPToolInfo]
     public let count: Int
     public let initialized: Bool
@@ -1097,7 +1097,7 @@ public struct MCPToolsResponse: Content {
 }
 
 /// MCP tool information.
-public struct MCPToolInfo: Content {
+public struct MCPToolInfo: Codable, Sendable {
     public let name: String
     public let description: String
     public let parameterCount: Int
@@ -1110,7 +1110,7 @@ public struct MCPToolInfo: Content {
 }
 
 /// MCP execution response for debugging.
-public struct MCPExecutionResponse: Content {
+public struct MCPExecutionResponse: Codable, Sendable {
     public let success: Bool
     public let toolName: String
     public let output: String
@@ -1127,7 +1127,7 @@ public struct MCPExecutionResponse: Content {
 }
 
 /// MCP execution request (simplified for testing).
-public struct MCPExecutionRequest: Content {
+public struct MCPExecutionRequest: Codable, Sendable {
     public let toolName: String
     public let parametersJson: String
     /// Optional: Conversation ID to use for scoped execution

@@ -15,7 +15,7 @@
           "id": "font-size-preference",
           "icon": "textformat.size",
           "title": "Adjustable Font Size",
-          "description": "A new Appearance preference lets you scale chat message text to Small, Small Medium, Medium (default), Medium Large, Large, or Extra Large. Changes take effect immediately — no restart needed. This also fixes a bug where the font size could be zero on first launch, making text invisible."
+          "description": "A new Appearance preference lets you scale chat message text to Smaller, Default, Larger, or Largest. Changes take effect immediately — no restart needed. This also fixes a bug where the font size could be zero on first launch, making text invisible."
         },
         {
           "id": "alice-music",
@@ -44,18 +44,6 @@
           "icon": "arrow.down.doc.overflow",
           "title": "Messages Appear with Scroll Lock Enabled",
           "description": "When scroll lock was turned on, opening or switching to a conversation could leave the chat area blank until you manually scrolled. The scroll-to-bottom logic has been simplified and no longer conflicts with the rendering pipeline."
-        },
-        {
-          "id": "font-size-reactivity",
-          "icon": "paintbrush",
-          "title": "Font Size Updates Take Effect Immediately",
-          "description": "Changing the font size in Appearance preferences now updates the open chat window instantly instead of requiring you to restart SAM or switch conversations."
-        },
-        {
-          "id": "alice-audio-models",
-          "icon": "speaker.wave.2.fill",
-          "title": "ALICE Audio Models Show Correctly",
-          "description": "The ALICE configuration pane in Preferences incorrectly reported that no audio models were available on your ALICE server, even when they were configured and working. This has been fixed so you can see and select your available audio generation models."
         }
       ]
     },

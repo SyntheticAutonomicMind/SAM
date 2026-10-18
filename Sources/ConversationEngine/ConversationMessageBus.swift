@@ -868,7 +868,7 @@ public class ConversationMessageBus: ObservableObject {
     /// DELTA SYNC: Throttled notification of a single message update.
     /// Avoids redundant sync since MessageBus.messages is mutated in-place
     /// before the notification fires.
-    private func notifyConversationOfMessageUpdate(id: UUID, index: Int, message: EnhancedMessage) {
+    private func notifyConversationOfMessageUpdate(id _: UUID, index _: Int, message _: EnhancedMessage) {
         /// Throttle delta syncs during streaming to prevent SwiftUI churn.
         /// At 40+ TPS, we get 40+ delta syncs per second.
         /// 30 FPS (33ms) is ideal balance between responsiveness and performance.

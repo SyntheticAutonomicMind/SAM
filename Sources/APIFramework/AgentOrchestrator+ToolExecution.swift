@@ -85,38 +85,6 @@ extension AgentOrchestrator {
 
     // MARK: - Properties
 
-    /// Filters internal markers from response text before displaying to user.
-    func filterInternalMarkersNoTrim(from text: String) -> String {
-        /// Match JSON status markers on their own lines
-        let jsonLinePattern = try? NSRegularExpression(
-            pattern: #"^\s*\{\s*"status"\s*:\s*"(stop|continue|complete)"\s*\}\s*$"#,
-            options: [.caseInsensitive]
-        )
-
-        var outputLines: [String] = []
-        let lines = text.components(separatedBy: .newlines)
-        for line in lines {
-            /// Filter JSON status markers
-            if let regex = jsonLinePattern {
-                let nsLine = line as NSString
-                let range = NSRange(location: 0, length: nsLine.length)
-                if regex.firstMatch(in: line, options: [], range: range) != nil {
-                    continue
-                }
-            }
-
-            /// Filter session naming markers (HTML comments with session: key)
-            if line.contains("<!--") && line.contains("-->") && line.contains("session:") {
-                continue
-            }
-
-            outputLines.append(line)
-        }
-
-        /// Reconstruct preserving newline separators.
-        return outputLines.joined(separator: "\n")
-    }
-
     struct ToolStreamingContext {
         let continuation: AsyncThrowingStream<ServerOpenAIChatStreamChunk, Error>.Continuation
         let requestId: String

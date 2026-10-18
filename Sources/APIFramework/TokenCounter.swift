@@ -396,7 +396,7 @@ public actor TokenCounter {
     // MARK: - Model Capabilities Resolution (ported from CLIO TokenEstimator)
 
     /// Get max output tokens for a model by family.
-    /// Ported from SAMAPIServer.getMaxOutputTokens + CLIO Defaults.pm.
+    /// Ported from CLIO Defaults.pm (maxOutputTokens logic).
     /// Marked nonisolated: pure function, no actor-isolated state accessed.
     nonisolated public func getMaxOutputTokens(_ model: String) -> Int {
         let modelLower = model.lowercased()

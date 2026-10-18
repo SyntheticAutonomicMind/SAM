@@ -190,15 +190,13 @@ extension ChatWidget {
     }
 
     func messagesVStack(for conversation: ConversationModel) -> some View {
-        /// Use VStack (not LazyVStack) for chat messages.
-        /// LazyVStack + ScrollView + scrollPosition(id:) + ScrollViewReader
-        /// causes view recycling issues: when auto-scrolling to bottom on
-        /// conversation switch, LazyVStack destroys views above the viewport
-        /// and recreates them, causing messages to "appear then disappear"
-        /// as the scroll position settles.
-        /// VStack renders all messages eagerly — for typical chat conversations
-        /// (50-200 messages) this is fine and avoids all recycling issues.
-        VStack(spacing: 12) {
+        /// PERFORMANCE: Use LazyVStack to allow SwiftUI to destroy off-screen views
+        /// With 100+ messages, a regular VStack forces SwiftUI to layout all
+        /// messages eagerly, which triggers recursive layout cycles in
+        /// StackLayout/NSAttributedString that hang the main thread.
+        /// LazyVSet only renders messages in (or near) the viewport, keeping
+        /// layout cost O(visible) instead of O(total).
+        LazyVStack(spacing: 12) {
                     /// PERFORMANCE FIX: Use cached tool hierarchy instead of rebuilding on every render
                     /// buildToolHierarchy() is now called only when messages change, not on every view update
                     let toolHierarchy = cachedToolHierarchy
@@ -385,6 +383,34 @@ extension ChatWidget {
             let result_count: Int?
             let article_count: Int?
             let conducted_at: String?
+
+            // swift-format:off
+            enum CodingKeys: String, CodingKey {
+                case type, query, result_count, article_count, conducted_at
+            }
+            // swift-format:on
+
+            /// Require at least one known field to be present.
+            /// Without this, JSONDecoder ignores unknown keys and all fields
+            /// are optional, so ANY JSON object would decode successfully —
+            /// causing legitimate assistant JSON responses (e.g.
+            /// {"summary": "Done"}) to be falsely classified as tool-call
+            /// JSON and filtered from the chat.
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                type = try container.decodeIfPresent(String.self, forKey: .type)
+                query = try container.decodeIfPresent(String.self, forKey: .query)
+                result_count = try container.decodeIfPresent(Int.self, forKey: .result_count)
+                article_count = try container.decodeIfPresent(Int.self, forKey: .article_count)
+                conducted_at = try container.decodeIfPresent(String.self, forKey: .conducted_at)
+
+                if type == nil && query == nil && result_count == nil
+                    && article_count == nil && conducted_at == nil {
+                    throw DecodingError.dataCorrupted(
+                        .init(codingPath: [], debugDescription: "No known structured data fields present")
+                    )
+                }
+            }
         }
         if (try? decoder.decode(StructuredDataJSON.self, from: Data(trimmed.utf8))) != nil {
             return true

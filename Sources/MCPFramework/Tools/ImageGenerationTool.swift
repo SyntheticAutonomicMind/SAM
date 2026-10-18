@@ -120,7 +120,7 @@ public class ImageGenerationTool: ConsolidatedMCP, @unchecked Sendable {
                 required: false
             ),
             "guidance_scale": MCPToolParameter(
-                type: .string,
+                type: .number,
                 description: "Classifier-free guidance scale as number (default: 7.5)",
                 required: false
             ),
@@ -225,7 +225,14 @@ public class ImageGenerationTool: ConsolidatedMCP, @unchecked Sendable {
 
         let model = parameters["model"] as? String
         let steps = parameters["steps"] as? Int ?? 25
-        let guidanceScale = (parameters["guidance_scale"] as? NSNumber)?.floatValue ?? 7.5
+        let guidanceScale: Float
+        if let num = parameters["guidance_scale"] as? NSNumber {
+            guidanceScale = num.floatValue
+        } else if let str = parameters["guidance_scale"] as? String, let f = Float(str) {
+            guidanceScale = f
+        } else {
+            guidanceScale = 7.5
+        }
         let scheduler = parameters["scheduler"] as? String ?? "ddim"
         let seed = parameters["seed"] as? Int
         let negativePrompt = parameters["negative_prompt"] as? String

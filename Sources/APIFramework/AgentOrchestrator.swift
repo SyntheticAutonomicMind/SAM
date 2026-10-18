@@ -661,7 +661,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         toolName: String? = nil
     ) async -> Bool {
     /// Filter internal markers (preserve formatting/newlines) and store the clean response.
-    context.lastResponse = deduplicateParagraphs(in: filterInternalMarkersNoTrim(from: rawResponse))
+    context.lastResponse = deduplicateParagraphs(in: MessageCleaner.filterInternalMarkersNoTrim(from: rawResponse))
         context.currentRoundLLMResponse = context.lastResponse
         if let fr = finishReason { context.lastFinishReason = fr }
 

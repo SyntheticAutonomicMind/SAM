@@ -365,7 +365,7 @@ public enum ContextBudget {
 
     /// Per-model-family max output token defaults.
     /// Used when the model config doesn't specify max_output_tokens.
-    /// Ported from SAMAPIServer.getMaxOutputTokens.
+    /// Ported from CLIO Defaults.pm (maxOutputTokens logic).
     public static func defaultMaxOutputTokens(for model: String) -> Int? {
         let modelLower = model.lowercased()
 

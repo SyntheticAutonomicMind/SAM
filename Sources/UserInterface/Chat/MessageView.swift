@@ -9,12 +9,6 @@ import os
 
 private let logger = Logger(subsystem: "com.sam.chat", category: "messageview")
 
-/// Maximum width ratio for message content blocks.
-/// User and assistant messages are constrained to this fraction of the
-/// chat column width so the conversation doesn't sprawl on wide windows.
-/// Metadata (timestamp, tokens) sits to the right of this block.
-private let maxMessageWidthRatio: CGFloat = 0.85
-
 /// Get user-friendly display name for a tool from the registry.
 @MainActor
 private func getToolDisplayName(_ toolName: String?, registry: UniversalToolRegistry?) -> String {

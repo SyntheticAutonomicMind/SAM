@@ -334,7 +334,7 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         // Conversation ID if provided
         // NOTE: Conversation ID is now injected by the orchestrator into dynamic context
         // for KV cache optimization (system prompt stays static). Only include here
-        // for SAMAPIServer which doesn't go through the orchestrator's dynamic context path.
+        // for callers that bypass the orchestrator's dynamic context path.
         if let convId = conversationId {
             context += "**Conversation ID:** \(convId.uuidString)\n"
         }

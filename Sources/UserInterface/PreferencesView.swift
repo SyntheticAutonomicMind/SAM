@@ -897,12 +897,14 @@ struct AppearancePreferencesView: View {
                         }
                         .pickerStyle(.segmented)
 
-                        // Live preview
+                        // Live preview (uses resolvedScale to guard against
+                        // corrupted UserDefaults value of 0.0)
+                        let resolvedScale = FontManager.resolvedScale(from: fontSizeScale)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Aa")
-                                .font(.system(size: 28 * CGFloat(fontSizeScale), weight: .bold))
+                                .font(.system(size: 28 * CGFloat(resolvedScale), weight: .bold))
                             Text("Sample conversation text — adjust the scale to preview")
-                                .font(.system(size: 17 * CGFloat(fontSizeScale)))
+                                .font(.system(size: 17 * CGFloat(resolvedScale)))
                         }
                         .foregroundColor(.secondary)
                         .padding(.top, 4)
@@ -913,6 +915,13 @@ struct AppearancePreferencesView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
+                    .onAppear {
+                        // Guard against corrupted UserDefaults value (e.g. 0.0
+                        // from a migration issue). Reset to default if invalid.
+                        if fontSizeScale <= 0 {
+                            fontSizeScale = FontManager.defaultScale
+                        }
+                    }
                 }
             }
             .padding()
