@@ -1,6 +1,65 @@
 {
   "releases": [
     {
+      "version": "20261018.1",
+      "release_date": "October 18, 2026",
+      "introduction": "This release brings the biggest chat rendering overhaul yet, along with a new font size preference, ALICE music generation, and dozens of reliability fixes. Long conversations now open instantly without needing to scroll before content appears, the chat text is easier to read with adjustable sizing, and ALICE can compose music. Plus a major refactor that removes the built-in API server and switches everything to streaming-only for a faster, simpler experience.",
+      "highlights": [
+        {
+          "id": "chat-paint-fix",
+          "icon": "bubble.left.and.right.fill",
+          "title": "Long Conversations Open Instantly",
+          "description": "Opening a conversation with a hundred or more messages sometimes showed a blank chat area until you scrolled. The chat rendering was rebuilt from the ground up with a native markdown streaming pipeline, so messages now appear immediately on conversation switch — no scrolling needed. This also fixes a related bug where messages could vanish and reappear while the model was actively thinking."
+        },
+        {
+          "id": "font-size-preference",
+          "icon": "textformat.size",
+          "title": "Adjustable Font Size",
+          "description": "A new Appearance preference lets you scale chat message text to Small, Small Medium, Medium (default), Medium Large, Large, or Extra Large. Changes take effect immediately — no restart needed. This also fixes a bug where the font size could be zero on first launch, making text invisible."
+        },
+        {
+          "id": "alice-music",
+          "icon": "music.note.house.fill",
+          "title": "ALICE Music Generation",
+          "description": "ALICE now includes a Musical Composer personality and can generate music and audio through your configured providers. The ALICE configuration pane in Preferences now correctly shows available audio models. You'll find a new Music Generation tool in the tools panel alongside the existing image generation tool."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "bubble-free-output",
+          "icon": "sparkles",
+          "title": "Rewritten Chat Rendering Engine",
+          "description": "The chat output view has been completely rebuilt. Message bubbles now render with native SwiftUI markdown that streams tokens as they arrive, without the HTML-to-text conversion overhead. Tool results display as cleaner cards with proper parent-child hierarchy, and thinking blocks are more reliable."
+        },
+        {
+          "id": "streaming-only",
+          "icon": "waveform.path.orbytecode",
+          "title": "Streaming-Only Architecture",
+          "description": "The built-in local API server and all non-streaming conversation code have been removed. Every response now streams token-by-token, which reduces latency and lets you read along as SAM types. This also simplifies the codebase significantly."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "scroll-lock-paint",
+          "icon": "arrow.down.doc.overflow",
+          "title": "Messages Appear with Scroll Lock Enabled",
+          "description": "When scroll lock was turned on, opening or switching to a conversation could leave the chat area blank until you manually scrolled. The scroll-to-bottom logic has been simplified and no longer conflicts with the rendering pipeline."
+        },
+        {
+          "id": "font-size-reactivity",
+          "icon": "paintbrush",
+          "title": "Font Size Updates Take Effect Immediately",
+          "description": "Changing the font size in Appearance preferences now updates the open chat window instantly instead of requiring you to restart SAM or switch conversations."
+        },
+        {
+          "id": "alice-audio-models",
+          "icon": "speaker.wave.2.fill",
+          "title": "ALICE Audio Models Show Correctly",
+          "description": "The ALICE configuration pane in Preferences incorrectly reported that no audio models were available on your ALICE server, even when they were configured and working. This has been fixed so you can see and select your available audio generation models."
+        }
+      ]
+    },
+    {
       "version": "20261016.1",
       "release_date": "October 16, 2026",
       "introduction": "Fixes a bug where long conversations using local models (llama.cpp, MLX, SAM server) could break when context trimming kicked in. The compressed summary that SAM generates when context gets full was being sent as a system message in the middle of the conversation, which local model chat formats reject — now it's folded into the user's message where local models expect it.",
