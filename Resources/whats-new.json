@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "20261019.1",
+      "release_date": "October 19, 2026",
+ "introduction": "This release improves token caching for cloud models like OpenRouter, meaning your conversations with long contexts now reuse cached responses much more effectively. You'll see faster responses and lower costs on providers that support prompt caching. Behind the scenes, the provider integration code has been significantly simplified, which also makes it easier to add new providers in the future.",
+      "highlights": [
+        {
+          "id": "better-prompt-caching",
+          "icon": "internaldrive",
+          "title": "Dramatically Better Token Caching",
+          "description": "When using cloud models (like OpenRouter or GitHub Copilot), SAM now reuses cached prompt tokens far more often across conversation turns. Previously only the system prompt was being cached — now the full conversation context stays cached turn-to-turn, cutting down on repeated input tokens and reducing response latency. This is especially noticeable in long, multi-turn conversations with lots of back-and-forth."
+        },
+        {
+          "id": "location-stability",
+          "icon": "location.fill",
+          "title": "Stable Location Context",
+          "description": "Your current location is now rounded and refreshed once per minute instead of changing on every request. This keeps the system prompt prefix stable across turns so location-based tools (like weather) get consistent coordinates without disrupting the model's context cache."
+        }
+      ],
+      "improvements": [
+        {
+          "id": "provider-refactor",
+          "icon": "sparkles",
+          "title": "Simplified Provider System",
+          "description": "The code that talks to cloud AI providers has been refactored to remove thousands of lines of duplicated logic. All OpenAI-compatible providers (OpenRouter, DeepSeek, MiniMax, Z.AI, and custom providers) now share the same request and streaming infrastructure. This fixes several streaming reliability issues and makes it easier to add new providers in the future."
+        }
+      ]
+    },
+    {
       "version": "20261018.1",
       "release_date": "October 18, 2026",
       "introduction": "This release brings the biggest chat rendering overhaul yet, along with a new font size preference, ALICE music generation, and dozens of reliability fixes. Long conversations now open instantly without needing to scroll before content appears, the chat text is easier to read with adjustable sizing, and ALICE can compose music. Plus a major refactor that removes the built-in API server and switches everything to streaming-only for a faster, simpler experience.",
