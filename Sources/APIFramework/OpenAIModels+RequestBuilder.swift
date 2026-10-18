@@ -50,7 +50,9 @@ extension OpenAIChatRequest {
     ///   - temperatureOverride: Override temperature. Uses request/config values if nil.
     ///   - streamEnabled: Whether to enable streaming. Default false.
     ///   - extraFields: Additional fields to merge into the request body (e.g., ZAI's "thinking").
-    ///   - cacheControl: Whether to add cache_control annotations for prompt caching.
+    ///   - cacheControl: Whether to add cache_control annotation on the first system
+    ///     message for prompt caching. Only the system message is annotated (not the
+    ///     last user/assistant message) to preserve cache stability turn-to-turn.
     ///   - thinking: Thinking/reasoning configuration for extended thinking models.
     /// - Returns: Dictionary ready for JSONSerialization.
     public func buildOpenAICompatibleRequestBody(
@@ -111,20 +113,13 @@ extension OpenAIChatRequest {
                     ]
                 ]
 
-                // Add cache_control on the last tool definition for prompt caching
-                if cacheControl {
-                    toolDict["cache_control"] = ["type": "ephemeral"]
-                }
+                // Note: cache_control is intentionally NOT added to tool definitions.
+                // Adding it only to the last tool causes non-deterministic placement
+                // (if tool order changes, the annotation moves, breaking cache).
+                // The system-prompt cache_control breakpoint is sufficient for
+                // prompt caching on Anthropic/OpenRouter.
 
                 return toolDict
-            }
-
-            // Mark only the last tool with cache_control (Anthropic pattern)
-            if cacheControl && serializedTools.count > 1 {
-                // Remove cache_control from all but the last tool
-                for i in 0..<(serializedTools.count - 1) {
-                    serializedTools[i].removeValue(forKey: "cache_control")
-                }
             }
 
             requestBody["tools"] = serializedTools
@@ -176,11 +171,17 @@ extension OpenAIChatRequest {
             return true
         }
 
-        // Find indices for cache_control placement:
+        // Find index for cache_control placement:
         // - System prompt (first system message) gets cache_control
-        // - Last user or assistant message gets cache_control
+        // NOTE: We deliberately do NOT place cache_control on the last user/assistant
+        // message. That message changes every turn (it's the new user input or the
+        // latest assistant response), so the cache_control annotation would move
+        // between messages. The message that previously held cache_control would
+        // lose the key, changing its JSON bytes and breaking the provider's prefix
+        // match. This was the root cause of the 4k-only cache hit rate (only the
+        // system prompt was cached). Keeping cache_control on the first system
+        // message only provides a stable breakpoint that doesn't shift turn-to-turn.
         let firstSystemIndex = filteredMessages.firstIndex(where: { $0.role == "system" })
-        let lastUserAssistantIndex = filteredMessages.lastIndex(where: { $0.role == "user" || $0.role == "assistant" })
 
         return filteredMessages.enumerated().map { (index, message) in
             // Build with deterministic key ordering for cacheability
@@ -225,8 +226,10 @@ extension OpenAIChatRequest {
 
             // Add cache_control annotation for prompt caching
             if cacheControl {
-                let shouldCache = (index == firstSystemIndex) || (index == lastUserAssistantIndex)
-                if shouldCache {
+                // Only add cache_control to the first system message.
+                // The last-user/assistant message was previously also annotated,
+                // but that broke cache stability (see comment above).
+                if index == firstSystemIndex {
                     messageDict["cache_control"] = ["type": "ephemeral"]
                 }
             }
