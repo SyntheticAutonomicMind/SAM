@@ -61,9 +61,13 @@ extension ChatWidget {
 
                 /// Single scroll point: if following output, scroll to bottom.
                 /// Replaces 4 separate onChange handlers + 150ms sleep hack.
-                /// No throttling delay — the MessageBus delta sync already
-                /// throttles to 33ms, so we just follow.
-                proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+                /// Delay is needed because LazyVStack hasn't laid out its content
+                /// yet when the messages array changes — scrolling to an anchor
+                /// that hasn't been rendered causes the viewport to be mispositioned
+                /// and messages fail to paint until the user scrolls manually.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    proxy.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+                }
             }
             .onAppear {
                 scrollProxy = proxy
@@ -88,7 +92,11 @@ extension ChatWidget {
         }
         .onReceive(NotificationCenter.default.publisher(for: .scrollToBottom)) { _ in
             withAnimation(.easeOut(duration: 0.3)) {
-                proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+                if let lastMessage = messages.last {
+                    proxy.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+                } else {
+                    proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+                }
             }
             isFollowingOutput = true
         }
@@ -114,13 +122,17 @@ extension ChatWidget {
     }
 
     /// "Jump to latest" pill shown when the user has scrolled away from the
-    /// bottom. Clicking it scrolls to the bottom anchor and re-enables
+    /// bottom. Clicking it scrolls to the last message and re-enables
     /// follow-output so auto-scroll resumes for new content.
     @ViewBuilder
     func jumpToLatestPill(proxy: ScrollViewProxy) -> some View {
         Button {
             withAnimation(.easeOut(duration: 0.2)) {
-                proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+                if let lastMessage = messages.last {
+                    proxy.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
+                } else {
+                    proxy.scrollTo("scroll-bottom-anchor", anchor: .bottom)
+                }
             }
             /// Set immediately rather than waiting for the .scrollPosition
             /// binding to update, so subsequent streaming updates are
