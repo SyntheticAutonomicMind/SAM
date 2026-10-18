@@ -7,6 +7,7 @@ import Sparkle
 import ConversationEngine
 import APIFramework
 import ConfigurationSystem
+import SecurityFramework
 import Logging
 
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
@@ -38,9 +39,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         Task { @MainActor in
             try? await CopilotTokenStore.shared.loadTokens()
         }
-        
-        /// Initialize API token for secure API access
-        initializeAPIToken()
 
         /// Initialize Sparkle updater with delegate for logging.
         /// Note: Even in DEBUG, we set startingUpdater=true so manual checks work.
@@ -210,37 +208,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     // MARK: - API Token Management
     
     /// Initialize or retrieve API token for secure API access.
-    /// 
-    /// This method ensures that a secure random token exists in UserDefaults for API authentication.
-    /// The token is generated on first launch and persists across app restarts.
-    private func initializeAPIToken() {
-        let tokenKey = "samAPIToken"
-        
-        // Check if token already exists
-        if let existingToken = UserDefaults.standard.string(forKey: tokenKey), !existingToken.isEmpty {
-            logger.info("API token already exists in UserDefaults")
-            return
-        }
-        
-        // Generate new secure token
-        let token = generateSecureToken()
-        
-        // Store in UserDefaults
-        UserDefaults.standard.set(token, forKey: tokenKey)
-        UserDefaults.standard.synchronize()
-        logger.info("Generated and stored new API token in UserDefaults")
-    }
-    
-    /// Generate a secure random token for API authentication.
-    ///
-    /// The token format is two UUIDs concatenated with a hyphen, providing
-    /// sufficient entropy for secure API access control.
-    ///
-    /// - Returns: A secure random token string
-    private func generateSecureToken() -> String {
-        return "\(UUID().uuidString)-\(UUID().uuidString)"
-    }
-    
     /// Update Sparkle feed URL based on development updates preference
     private func updateFeedURL() {
         let developmentEnabled = UserDefaults.standard.bool(forKey: "developmentUpdatesEnabled")

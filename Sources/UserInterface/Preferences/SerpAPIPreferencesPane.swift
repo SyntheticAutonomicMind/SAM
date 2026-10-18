@@ -2,11 +2,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 Andrew Wyatt (Fewtarius)
 
 import SwiftUI
+import SecurityFramework
 
 /// Preferences pane for SerpAPI configuration.
 struct SerpAPIPreferencesPane: View {
     @AppStorage("serpAPIEnabled") private var isEnabled: Bool = false
-    @AppStorage("serpAPIKey") private var apiKey: String = ""
+    @State private var apiKey: String = ""
 
     @State private var accountInfo: SerpAPIService.AccountInfo?
     @State private var isLoadingAccountInfo = false
@@ -61,7 +62,11 @@ struct SerpAPIPreferencesPane: View {
                             if showingAPIKeyField {
                                 SecureField("Enter your SerpAPI key", text: $apiKey)
                                     .textFieldStyle(.roundedBorder)
-                                    .onChange(of: apiKey) { _, _ in
+                                    .onChange(of: apiKey) { _, newValue in
+                                        /// Save to CredentialStore (Keychain).
+                                        Task {
+                                            try? await CredentialStore.shared.setSerpAPIKey(newValue.isEmpty ? nil : newValue)
+                                        }
                                         /// Refresh account info when key changes.
                                         Task {
                                             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -149,8 +154,10 @@ struct SerpAPIPreferencesPane: View {
         .formStyle(.grouped)
         .frame(maxWidth: 600)
         .onAppear {
-            if isEnabled && !apiKey.isEmpty {
-                Task {
+            /// Load API key from CredentialStore (Keychain).
+            Task {
+                apiKey = await CredentialStore.shared.serpAPIKey() ?? ""
+                if isEnabled && !apiKey.isEmpty {
                     await loadAccountInfo()
                 }
             }

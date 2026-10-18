@@ -3,6 +3,7 @@
 
 import Foundation
 import Logging
+import SecurityFramework
 
 // MARK: - Notification Names
 
@@ -33,17 +34,22 @@ public class ALICEProvider: ObservableObject {
     }
 
     /// Initialize shared instance from user defaults at app startup.
+    /// API key is fetched from CredentialStore (Keychain) for security.
     public static func initializeFromDefaults() {
         guard let baseURL = UserDefaults.standard.string(forKey: "alice_base_url"),
               !baseURL.isEmpty else {
             return
         }
 
-        let apiKey = UserDefaults.standard.string(forKey: "alice_api_key")
-        let provider = ALICEProvider(baseURL: baseURL, apiKey: apiKey?.isEmpty == true ? nil : apiKey)
-        shared = provider
-
         Task {
+            /// Wait for credential store to be ready, then fetch the API key.
+            await CredentialStore.shared.waitUntilReady()
+            let apiKey = await CredentialStore.shared.aliceAPIKey()
+            let provider = ALICEProvider(baseURL: baseURL, apiKey: apiKey?.isEmpty == true ? nil : apiKey)
+            await MainActor.run {
+                ALICEProvider.shared = provider
+            }
+
             do {
                 _ = try await provider.checkHealth()
                 _ = try await provider.fetchAvailableModels()

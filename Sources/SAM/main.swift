@@ -7,6 +7,7 @@ import APIFramework
 import ConversationEngine
 import MCPFramework
 import ConfigurationSystem
+import SecurityFramework
 import Logging
 import AppKit
 
@@ -19,6 +20,8 @@ struct SAMRewrittenApp: App {
     @AppStorage("fontSizeScale") private var fontSizeScale: Double = FontManager.defaultScale
 
     /// StateObjects for dependency management.
+    @StateObject private var credentialStore = CredentialStore.shared
+    @State private var isBootComplete = false
     @StateObject private var conversationManager = ConversationManager()
     @StateObject private var endpointManager: EndpointManager
     @StateObject private var sharedConversationService: SharedConversationService
@@ -36,6 +39,7 @@ struct SAMRewrittenApp: App {
         _sharedConversationService = StateObject(wrappedValue: sharedService)
 
         /// Initialize EndpointManager with the shared ConversationManager.
+        /// Provider setup is deferred to `initialize()` until CredentialStore is ready.
         let endpointMgr = EndpointManager(conversationManager: sharedConversationManager)
         _endpointManager = StateObject(wrappedValue: endpointMgr)
 
@@ -150,19 +154,56 @@ struct SAMRewrittenApp: App {
         #endif
     }
 
-        var body: some Scene {
+    var body: some Scene {
         WindowGroup("Synthetic Autonomic Mind") {
-            MainWindowView()
-                .environmentObject(conversationManager)
-                .environmentObject(endpointManager)
-                .environmentObject(sharedConversationService)
-                .environment(\.fontSizeScale, FontManager.resolvedScale(from: fontSizeScale))
-                .onAppear {
+            if isBootComplete {
+                MainWindowView()
+                    .environmentObject(conversationManager)
+                    .environmentObject(endpointManager)
+                    .environmentObject(sharedConversationService)
+                    .environmentObject(credentialStore)
+                    .environment(\.fontSizeScale, FontManager.resolvedScale(from: fontSizeScale))
+                    .onAppear {
+                        #if DEBUG
+                        logger.debug("Main window appeared")
+                        logger.debug("Main window: Interface loaded successfully")
+                        #endif
+                    }
+            } else {
+                /// Blocking loading screen — prevents UI from appearing until all
+                /// secrets are migrated to Keychain and providers are set up.
+                VStack(spacing: 16) {
+                    if credentialStore.isMigrating {
+                        ProgressView("Migrating secrets to Keychain...")
+                    } else if !credentialStore.isReady {
+                        ProgressView("Initializing security...")
+                    } else {
+                        ProgressView("Setting up AI providers...")
+                    }
+                    Text(credentialStore.migratedCount > 0
+                        ? "Migrated \(credentialStore.migratedCount) credentials"
+                        : "")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+                .frame(minWidth: 400, minHeight: 200)
+                .task {
+                    /// Phase 1: Migrate all UserDefaults secrets to Keychain.
+                    await credentialStore.initialize()
+
+                    /// Phase 2: Set up providers (fetches API keys from CredentialStore).
+                    await endpointManager.initialize()
+
+                    /// Phase 3: All ready — show the main interface.
+                    await MainActor.run {
+                        isBootComplete = true
+                    }
+
                     #if DEBUG
-                    logger.debug("Main window appeared")
-                    logger.debug("Main window: Interface loaded successfully")
+                    logger.debug("SAM boot complete — CredentialStore ready, EndpointManager initialized")
                     #endif
                 }
+            }
         }
         .defaultSize(width: 600, height: 800)
         .windowStyle(.titleBar)
