@@ -3,12 +3,13 @@
 
 import SwiftUI
 import APIFramework
+import SecurityFramework
 import Logging
 
 /// Preferences pane for ALICE image generation server connection.
 struct ALICEPreferencesPane: View {
     @AppStorage("alice_base_url") private var baseURL: String = ""
-    @AppStorage("alice_api_key") private var apiKey: String = ""
+    @State private var apiKey: String = ""
 
     @State private var healthStatus: HealthStatus = .unknown
     @State private var healthResponse: ALICEHealthResponse?
@@ -96,6 +97,9 @@ struct ALICEPreferencesPane: View {
                                 if !apiKey.isEmpty {
                                     Button("Clear") {
                                         apiKey = ""
+                                        Task {
+                                            try? await CredentialStore.shared.setAliceAPIKey(nil)
+                                        }
                                     }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
@@ -262,8 +266,10 @@ struct ALICEPreferencesPane: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            if !baseURL.isEmpty {
-                Task {
+            /// Load API key from CredentialStore (Keychain).
+            Task {
+                apiKey = await CredentialStore.shared.aliceAPIKey() ?? ""
+                if !baseURL.isEmpty {
                     await testConnection()
                 }
             }
@@ -321,6 +327,9 @@ struct ALICEPreferencesPane: View {
         errorMessage = nil
         healthResponse = nil
         availableModels = []
+
+        /// Save API key to CredentialStore (Keychain) before testing.
+        try? await CredentialStore.shared.setAliceAPIKey(apiKey.isEmpty ? nil : apiKey)
 
         guard !baseURL.isEmpty else {
             healthStatus = .unknown

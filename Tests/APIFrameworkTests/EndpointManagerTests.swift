@@ -5,6 +5,7 @@ import XCTest
 @testable import APIFramework
 @testable import ConversationEngine
 @testable import ConfigurationSystem
+@testable import SecurityFramework
 
 @MainActor
 final class EndpointManagerTests: XCTestCase {
@@ -127,7 +128,10 @@ final class EndpointManagerTests: XCTestCase {
     
     // MARK: - Configuration Tests
     
-    func testProviderConfigurationUpdate() throws {
+    func testProviderConfigurationUpdate() async throws {
+        /// Ensure CredentialStore is ready for the test.
+        await CredentialStore.shared.initialize()
+
         let config = ProviderConfiguration(
             providerId: "test-openai",
             providerType: .openai,
@@ -137,16 +141,21 @@ final class EndpointManagerTests: XCTestCase {
             models: ["gpt-3.5-turbo", "gpt-4"]
         )
         
-        endpointManager.updateProviderConfiguration(config, for: "test-openai")
+        await endpointManager.updateProviderConfiguration(config, for: "test-openai")
         
-        /// Configuration should be saved to UserDefaults.
+        /// Configuration should be saved to UserDefaults (without API key).
         let key = "provider_config_test-openai"
         let savedData = UserDefaults.standard.data(forKey: key)
         XCTAssertNotNil(savedData)
         
         let savedConfig = try? JSONDecoder().decode(ProviderConfiguration.self, from: savedData!)
         XCTAssertEqual(savedConfig?.providerId, "test-openai")
-        XCTAssertEqual(savedConfig?.apiKey, "test-key")
+        /// API key should NOT be in UserDefaults — it's stored in Keychain via CredentialStore.
+        XCTAssertNil(savedConfig?.apiKey)
+        
+        /// API key should be retrievable from CredentialStore.
+        let storedKey = await CredentialStore.shared.providerAPIKey(for: "test-openai")
+        XCTAssertEqual(storedKey, "test-key")
     }
 }
 

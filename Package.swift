@@ -142,6 +142,7 @@ let package = Package(
                 "SharedData",
                 "MCPFramework",
                 "VoiceFramework",
+                "SecurityFramework",
                 .product(name: "Markdown", package: "swift-markdown"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ],

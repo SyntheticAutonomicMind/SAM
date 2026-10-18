@@ -6,6 +6,7 @@ import ConversationEngine
 import ConfigurationSystem
 import MCPFramework
 import Logging
+import SecurityFramework
 extension Notification.Name {
     /// Posted when providers/endpoints are reloaded and available models may have changed.
     public static let endpointManagerDidReloadProviders = Notification.Name("com.sam.endpointmanager.providersReloaded")
@@ -69,10 +70,9 @@ public class EndpointManager: ObservableObject {
 
     public init(conversationManager: ConversationManager) {
         self.conversationManager = conversationManager
-        setupProviders()
         loadProviderConfigurations()
         logger.debug("DEBUG: loadProviderConfigurations completed")
-        logger.debug("EndpointManager initialized with \(self.providers.count) providers")
+        logger.debug("EndpointManager initialized (providers will be set up after credential store is ready)")
 
         /// Prefetch GitHub Copilot model metadata so it's available when user opens model picker
         prefetchGitHubCopilotMetadata()
@@ -86,11 +86,17 @@ public class EndpointManager: ObservableObject {
             Task { @MainActor in
                 guard let self = self else { return }
                 self.logger.info("Hot reload: Local models changed, reloading provider configurations")
-                self.reloadProviderConfigurations()
+                await self.reloadProviderConfigurations()
             }
         }
-        
+    }
 
+    /// Asynchronously initialize the endpoint manager — sets up provider instances
+    /// after the credential store is ready. Must be called after CredentialStore
+    /// has completed its migration so that API keys are available in Keychain.
+    public func initialize() async {
+        await setupProviders()
+        logger.debug("EndpointManager fully initialized with \(self.providers.count) providers")
     }
 
     // MARK: - Public Interface
@@ -771,11 +777,11 @@ public class EndpointManager: ObservableObject {
     }
 
     /// Update provider configuration and reload if necessary.
-    public func updateProviderConfiguration(_ config: ProviderConfiguration, for providerId: String) {
+    public func updateProviderConfiguration(_ config: ProviderConfiguration, for providerId: String) async {
         logger.debug("Updating configuration for provider: \(providerId)")
 
         providerConfigs[providerId] = config
-        saveProviderConfiguration(config, for: providerId)
+        await saveProviderConfiguration(config, for: providerId)
 
         /// Recreate provider with new configuration.
         if let providerType = getProviderType(for: providerId) {
@@ -786,8 +792,11 @@ public class EndpointManager: ObservableObject {
 
     // MARK: - Provider Management
 
-    private func setupProviders() {
+    private func setupProviders() async {
         logger.debug("Setting up AI providers")
+
+        /// Ensure CredentialStore is ready before fetching API keys.
+        await CredentialStore.shared.waitUntilReady()
 
         /// Use shared local model manager instance.
         localModelManager = LocalModelManager.shared
@@ -805,6 +814,12 @@ public class EndpointManager: ObservableObject {
 
             /// Load saved configuration or create default.
             var config = loadProviderConfiguration(for: providerId) ?? createDefaultConfiguration(for: providerType)
+
+            /// Fetch API key from CredentialStore (Keychain).
+            /// After credential migration, apiKey is no longer stored in UserDefaults JSON.
+            if config.apiKey == nil {
+                config.apiKey = await CredentialStore.shared.providerAPIKey(for: providerId)
+            }
 
             /// For local llama, populate models from LocalModelManager.
             if providerType == .localLlama, let modelManager = localModelManager {
@@ -935,13 +950,18 @@ public class EndpointManager: ObservableObject {
 
                 // Try to load configuration for this custom ID
                 if let config = loadProviderConfiguration(for: savedProviderId) {
-                    let requiresKey = config.providerType.requiresApiKey
-                    let hasAuth = config.apiKey != nil ||
-                        (config.providerType == .githubCopilot && CopilotTokenStore.shared.isSignedIn)
+                    // Fetch API key from CredentialStore (Keychain) if not in config
+                    var enrichedConfig = config
+                    if enrichedConfig.apiKey == nil {
+                        enrichedConfig.apiKey = await CredentialStore.shared.providerAPIKey(for: savedProviderId)
+                    }
+                    let requiresKey = enrichedConfig.providerType.requiresApiKey
+                    let hasAuth = enrichedConfig.apiKey != nil ||
+                        (enrichedConfig.providerType == .githubCopilot && CopilotTokenStore.shared.isSignedIn)
                     if !requiresKey || hasAuth {
-                        providers[savedProviderId] = createProvider(type: config.providerType, config: config)
-                        providerConfigs[savedProviderId] = config
-                        logger.debug("Loaded saved provider \(savedProviderId) with \(config.models.count) models")
+                        providers[savedProviderId] = createProvider(type: enrichedConfig.providerType, config: enrichedConfig)
+                        providerConfigs[savedProviderId] = enrichedConfig
+                        logger.debug("Loaded saved provider \(savedProviderId) with \(enrichedConfig.models.count) models")
                     } else {
                         logger.debug("Saved provider \(savedProviderId) not loaded - requires API key")
                     }
@@ -1403,12 +1423,22 @@ public class EndpointManager: ObservableObject {
         return config
     }
 
-    private func saveProviderConfiguration(_ config: ProviderConfiguration, for providerId: String) {
+    private func saveProviderConfiguration(_ config: ProviderConfiguration, for providerId: String) async {
         let key = "provider_config_\(providerId)"
 
-        if let data = try? JSONEncoder().encode(config) {
+        /// Save API key to Keychain via CredentialStore.
+        if let apiKey = config.apiKey, !apiKey.isEmpty {
+            try? await CredentialStore.shared.setProviderAPIKey(apiKey, for: providerId)
+        } else {
+            try? await CredentialStore.shared.deleteProviderAPIKey(for: providerId)
+        }
+
+        /// Save config to UserDefaults WITHOUT the API key (secrets must not live in plaintext).
+        var configWithoutKey = config
+        configWithoutKey.apiKey = nil
+        if let data = try? JSONEncoder().encode(configWithoutKey) {
             UserDefaults.standard.set(data, forKey: key)
-            logger.debug("Saved configuration for provider \(providerId)")
+            logger.debug("Saved configuration for provider \(providerId) (apiKey stored in Keychain)")
         } else {
             logger.error("Failed to encode configuration for provider \(providerId)")
         }
@@ -1435,7 +1465,7 @@ public class EndpointManager: ObservableObject {
     }
 
     /// Reload provider configurations from UserDefaults Call this when provider configurations are updated from the preferences CRITICAL PATTERN: This method ensures consistency between API server and UI components.
-    public func reloadProviderConfigurations() {
+    public func reloadProviderConfigurations() async {
         logger.debug("Reloading provider configurations...")
 
         /// No longer manually scanning for models here - the file system watcher in LocalModelManager handles this automatically.
@@ -1472,6 +1502,11 @@ public class EndpointManager: ObservableObject {
             guard var finalConfig = config else {
                 logger.debug("Skipping provider \(providerId) - no saved configuration found")
                 continue
+            }
+
+            /// Fetch API key from CredentialStore (Keychain) if not in config.
+            if finalConfig.apiKey == nil {
+                finalConfig.apiKey = await CredentialStore.shared.providerAPIKey(for: providerId)
             }
 
             /// For local llama, populate models from LocalModelManager.
@@ -1590,8 +1625,13 @@ public class EndpointManager: ObservableObject {
 
                 /// Try to load configuration for this custom ID.
                 if let config = loadProviderConfiguration(for: savedProviderId) {
-                    providers[savedProviderId] = createProvider(type: config.providerType, config: config)
-                    providerConfigs[savedProviderId] = config
+                    // Fetch API key from CredentialStore (Keychain) if not in config
+                    var enrichedConfig = config
+                    if enrichedConfig.apiKey == nil {
+                        enrichedConfig.apiKey = await CredentialStore.shared.providerAPIKey(for: savedProviderId)
+                    }
+                    providers[savedProviderId] = createProvider(type: enrichedConfig.providerType, config: enrichedConfig)
+                    providerConfigs[savedProviderId] = enrichedConfig
                     logger.debug("Recreated custom provider \(savedProviderId) with updated configuration")
                 }
             }

@@ -3,6 +3,7 @@
 
 import Foundation
 import Logging
+import SecurityFramework
 
 // MARK: - Data Models (defined first for proper type references)
 
@@ -252,14 +253,14 @@ public class SerpAPIService {
         return UserDefaults.standard.bool(forKey: "serpAPIEnabled")
     }
 
-    /// Get configured API key.
-    private func getAPIKey() -> String? {
-        return UserDefaults.standard.string(forKey: "serpAPIKey")
+    /// Get configured API key from CredentialStore (Keychain).
+    public func getAPIKey() async -> String? {
+        return await CredentialStore.shared.serpAPIKey()
     }
 
     /// Check account information and usage limits.
     public func getAccountInfo() async throws -> AccountInfo {
-        guard let apiKey = getAPIKey(), !apiKey.isEmpty else {
+        guard let apiKey = await getAPIKey(), !apiKey.isEmpty else {
             throw SerpAPIError.missingAPIKey
         }
 
@@ -328,7 +329,7 @@ public class SerpAPIService {
             throw SerpAPIError.serviceDisabled
         }
 
-        guard let apiKey = getAPIKey(), !apiKey.isEmpty else {
+        guard let apiKey = await getAPIKey(), !apiKey.isEmpty else {
             throw SerpAPIError.missingAPIKey
         }
 

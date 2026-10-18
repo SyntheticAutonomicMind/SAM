@@ -5,6 +5,7 @@ import SwiftUI
 import APIFramework
 import ConfigurationSystem
 import Logging
+import SecurityFramework
 
 /// Enhanced endpoint management view for configuring AI endpoints in preferences Adapted from SAM 1.0's excellent design.
 struct EndpointManagementView: View {
@@ -32,14 +33,18 @@ struct EndpointManagementView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            loadProviders()
+            Task { @MainActor in
+                await loadProvidersWithKeys()
+            }
         }
         .sheet(isPresented: $showingAddEndpoint) {
             ProviderConfigurationSheet(
                 provider: nil,
                 onSave: { provider in
-                    saveProvider(provider)
-                    showingAddEndpoint = false
+                    Task {
+                        await saveProvider(provider)
+                        showingAddEndpoint = false
+                    }
                 },
                 onCancel: {
                     showingAddEndpoint = false
@@ -50,8 +55,10 @@ struct EndpointManagementView: View {
             ProviderConfigurationSheet(
                 provider: provider,
                 onSave: { updatedProvider in
-                    saveProvider(updatedProvider)
-                    editingProvider = nil
+                    Task {
+                        await saveProvider(updatedProvider)
+                        editingProvider = nil
+                    }
                 },
                 onCancel: {
                     editingProvider = nil
@@ -62,8 +69,10 @@ struct EndpointManagementView: View {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 if let provider = providerToDelete {
-                    deleteProvider(provider)
-                    providerToDelete = nil
+                    Task {
+                        await deleteProvider(provider)
+                        providerToDelete = nil
+                    }
                 }
             }
         } message: {
@@ -165,7 +174,8 @@ struct EndpointManagementView: View {
 
     // MARK: - Provider Management
 
-    private func loadProviders() {
+    /// Load providers and enrich with API keys from CredentialStore (Keychain).
+    private func loadProvidersWithKeys() async {
         providers = []
 
         /// Load saved provider IDs first.
@@ -173,7 +183,9 @@ struct EndpointManagementView: View {
 
         for providerId in savedProviderIds {
             if let config = loadProviderConfiguration(for: providerId) {
-                providers.append(config)
+                var enriched = config
+                enriched.apiKey = await CredentialStore.shared.providerAPIKey(for: providerId)
+                providers.append(enriched)
             }
         }
 
@@ -181,17 +193,29 @@ struct EndpointManagementView: View {
         for providerType in ProviderType.allCases {
             let defaultId = providerType.defaultIdentifier
             if !savedProviderIds.contains(defaultId), let config = loadProviderConfiguration(for: defaultId) {
-                providers.append(config)
+                var enriched = config
+                enriched.apiKey = await CredentialStore.shared.providerAPIKey(for: defaultId)
+                providers.append(enriched)
             }
         }
 
         providers.sort { $0.providerType.displayName < $1.providerType.displayName }
     }
 
-    private func saveProvider(_ provider: ProviderConfiguration) {
+    private func saveProvider(_ provider: ProviderConfiguration) async {
         let key = "provider_config_\(provider.providerId)"
 
-        if let data = try? JSONEncoder().encode(provider) {
+        // Save API key to Keychain via CredentialStore (secrets must not live in UserDefaults).
+        if let apiKey = provider.apiKey, !apiKey.isEmpty {
+            try? await CredentialStore.shared.setProviderAPIKey(apiKey, for: provider.providerId)
+        } else {
+            try? await CredentialStore.shared.deleteProviderAPIKey(for: provider.providerId)
+        }
+
+        // Save config to UserDefaults WITHOUT the API key.
+        var configWithoutKey = provider
+        configWithoutKey.apiKey = nil
+        if let data = try? JSONEncoder().encode(configWithoutKey) {
             UserDefaults.standard.set(data, forKey: key)
             UserDefaults.standard.synchronize()
 
@@ -215,7 +239,7 @@ struct EndpointManagementView: View {
             saveProviderDefaults(for: provider.providerType, from: provider)
 
             /// Notify EndpointManager to reload configurations.
-            endpointManager.reloadProviderConfigurations()
+            await endpointManager.reloadProviderConfigurations()
         }
     }
 
@@ -234,18 +258,23 @@ struct EndpointManagementView: View {
         if let index = providers.firstIndex(where: { $0.providerId == providerId }) {
             var provider = providers[index]
             provider.isEnabled = isEnabled
-            saveProvider(provider)
+            Task {
+                await saveProvider(provider)
+            }
         }
     }
 
-    private func deleteProvider(_ provider: ProviderConfiguration) {
+    private func deleteProvider(_ provider: ProviderConfiguration) async {
         let key = "provider_config_\(provider.providerId)"
         UserDefaults.standard.removeObject(forKey: key)
+
+        // Also remove API key from Keychain.
+        try? await CredentialStore.shared.deleteProviderAPIKey(for: provider.providerId)
 
         providers.removeAll { $0.providerId == provider.providerId }
 
         /// Notify EndpointManager to reload configurations.
-        endpointManager.reloadProviderConfigurations()
+        await endpointManager.reloadProviderConfigurations()
     }
 
     /// Get help text for API key field based on provider type.
