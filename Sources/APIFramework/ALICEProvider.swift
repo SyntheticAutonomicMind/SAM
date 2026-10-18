@@ -14,7 +14,7 @@ extension Notification.Name {
 /// Connects to a remote ALICE server for GPU-accelerated Stable Diffusion image generation.
 @MainActor
 public class ALICEProvider: ObservableObject {
-    private let logger = Logger(label: "com.sam.provider.alice")
+    private let logger = Logger(label: "com.sam.api.alice")
 
     /// Shared instance, populated when connection is tested in Settings.
     nonisolated(unsafe) public static var shared: ALICEProvider?
@@ -51,7 +51,7 @@ public class ALICEProvider: ObservableObject {
                     NotificationCenter.default.post(name: .aliceModelsLoaded, object: nil)
                 }
             } catch {
-                Logger(label: "com.sam.provider.alice").warning("Failed to initialize ALICE from defaults: \(error.localizedDescription)")
+                Logger(label: "com.sam.api.alice").warning("Failed to initialize ALICE from defaults: \(error.localizedDescription)")
             }
         }
     }
