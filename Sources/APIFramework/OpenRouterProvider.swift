@@ -62,6 +62,20 @@ public class OpenRouterProvider: AIProvider {
         // a consistent workflow identity that survives message variations.
         if let sessionId = request.sessionId {
             requestBody["session_id"] = sessionId
+            logger.debug("CACHE_DIAG: OpenRouter session_id included: \(sessionId.prefix(8))...")
+        } else {
+            logger.warning("CACHE_DIAG: No session_id in request — OpenRouter will derive cache key from message content, breaking cache affinity across turns")
+        }
+
+        // Log message structure for cache diagnostics
+        if let messages = requestBody["messages"] as? [[String: Any]] {
+            for (i, msg) in messages.enumerated() {
+                let role = msg["role"] as? String ?? "?"
+                let hasCacheCtrl = msg["cache_control"] != nil
+                let contentLen = (msg["content"] as? String)?.count ?? 0
+                let toolCalls = msg["tool_calls"] as? [[String: Any]]
+                logger.debug("CACHE_DIAG: msg[\(i)] role=\(role) cache_control=\(hasCacheCtrl) contentLen=\(contentLen) toolCalls=\(toolCalls?.count ?? 0)")
+            }
         }
 
         do {
