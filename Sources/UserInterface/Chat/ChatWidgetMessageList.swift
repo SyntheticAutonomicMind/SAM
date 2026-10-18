@@ -41,7 +41,6 @@ extension ChatWidget {
         ScrollView {
             if let activeConv = activeConversation {
                 messagesVStack(for: activeConv)
-                    .id(activeConv.id)
             }
         }
     }
