@@ -72,12 +72,11 @@ run_swift_tests() {
         echo -e "${GREEN} Swift test output available at /tmp/swift_test_output.log${NC}"
     fi
     
-    # Parse results — find the top-level "All tests" suite summary line.
-    # swift test prints: "Test Suite 'All tests' passed." followed by
-    # the line " Executed N tests, with M failures ...".
-    # Take the FIRST match (the top-level suite), not the last.
-    local result_line=$(grep "^Test Suite 'All tests'" /tmp/swift_test_output.log | head -1 || true)
-    local executed_line=$(grep -A1 "^Test Suite 'All tests'" /tmp/swift_test_output.log | head -2 | tail -1 || true)
+    # Parse results — swift test prints multiple "Test Suite 'All tests'"
+    # summaries (one per test bundle). The final one has the grand total.
+    # The last "Executed N tests" line is the overall summary.
+    local result_line=$(grep "^Test Suite 'All tests' \(passed\|failed\)" /tmp/swift_test_output.log | tail -1 || true)
+    local executed_line=$(grep "Executed [0-9]* tests" /tmp/swift_test_output.log | tail -1 || true)
     if echo "$result_line" | grep -q "passed"; then
         SWIFT_TESTS_PASSED=$(echo "$executed_line" | grep -oE "Executed [0-9]+" | grep -oE "[0-9]+" || echo "0")
         SWIFT_TESTS_FAILED=0
