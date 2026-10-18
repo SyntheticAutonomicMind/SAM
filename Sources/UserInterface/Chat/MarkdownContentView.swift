@@ -30,21 +30,17 @@ struct MarkdownContentView: View {
                 /// Render parsed AST (normal case - parsing complete)
                 MarkdownViewRenderer(fontSizeScale: fontSizeScale).render(ast)
                     .textSelection(.enabled)
-            } else if isLoading {
-                /// Show loading indicator only when actively parsing
-                HStack {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                    Text("Parsing content...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
             } else {
-                /// FALLBACK: Show raw text if AST not available yet
-                /// This ensures content is ALWAYS visible, even before parsing
+                /// Immediate fallback — show raw text content without any
+                /// loading indicator. This ensures content is ALWAYS visible
+                /// immediately when the view renders, before the async AST
+                /// parsing completes. For conversations with 100+ messages,
+                /// showing ProgressView or nothing until parsing completes
+                /// causes the "doesn't paint until I scroll" bug because the
+                /// ScrollView layout is computed before views have content.
                 Text(content)
                     .textSelection(.enabled)
+                    .font(FontManager.shared.body(fontSizeScale))
             }
         }
         .task(id: content) {
