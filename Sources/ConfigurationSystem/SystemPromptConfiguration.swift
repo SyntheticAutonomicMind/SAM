@@ -282,6 +282,43 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
         return result
     }
 
+    // MARK: - Cached Coordinate Formatting
+
+    /// Cached coordinate string, refreshed per-minute to avoid GPS jitter
+    /// churning the KV cache between API calls within the same turn.
+    private nonisolated(unsafe) static var _cachedCoordinatesString: String?
+    private nonisolated(unsafe) static var _cachedCoordinatesMinute: Int?
+
+    /// Returns the current effective coordinates as a truncated string, cached per-minute.
+    /// Coordinates are truncated to 4 decimal places (~11m accuracy) — sufficient for
+    /// weather tools and location-based services, and avoids exposing GPS jitter
+    /// like `28.532356192794875` in the context.
+    @MainActor
+    internal static func getEffectiveCoordinatesString() -> String? {
+        let now = Date()
+        let calendar = Calendar.current
+        let currentMinute = calendar.component(.minute, from: now)
+
+        if _cachedCoordinatesString != nil && _cachedCoordinatesMinute == currentMinute {
+            return _cachedCoordinatesString
+        }
+
+        let coords = LocationManager.shared.getEffectiveCoordinates()
+        let result: String?
+        if let coords = coords {
+            // Truncate to 4 decimal places (~11m accuracy for weather tools).
+            let lat = (coords.latitude * 10000).rounded(.toNearestOrEven) / 10000
+            let lon = (coords.longitude * 10000).rounded(.toNearestOrEven) / 10000
+            result = "\(lat), \(lon)"
+        } else {
+            result = nil
+        }
+
+        _cachedCoordinatesString = result
+        _cachedCoordinatesMinute = currentMinute
+        return result
+    }
+
     /// Build the userContext block for prepending to user messages.
     /// Contains all dynamic per-message content: date/time, location, coordinates, user info, conversation ID.
     /// Moved from system prompt to enable KV cache prefix reuse.
@@ -293,6 +330,7 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
     ///   - location: User's location string (optional, e.g., "Austin, TX")
     ///   - latitude: User's latitude (optional, for weather tools)
     ///   - longitude: User's longitude (optional, for weather tools)
+    @MainActor
     public static func buildUserContextBlock(
         conversationId: UUID? = nil,
         userName: String? = nil,
@@ -326,9 +364,22 @@ public struct SystemPromptConfiguration: Codable, Identifiable, Hashable, Sendab
             context += "**Location:** \(loc)\n"
         }
 
-        // Coordinates if provided (for weather/tools)
+        // Coordinates (for weather/tools).
+        // Truncate to 4 decimal places (~11m accuracy) to avoid GPS jitter noise.
+        // Use explicit lat/lon if provided, otherwise fall back to cached
+        // per-minute coordinates from LocationManager.
+        // Cached coordinates keep the context byte-stable across API calls
+        // within the same turn (matching CLIO's 60s cache TTL).
+        let coordinateString: String?
         if let lat = latitude, let lon = longitude {
-            context += "**Coordinates:** \(lat), \(lon)\n"
+            let latTruncated = (lat * 10000).rounded(.toNearestOrEven) / 10000
+            let lonTruncated = (lon * 10000).rounded(.toNearestOrEven) / 10000
+            coordinateString = "\(latTruncated), \(lonTruncated)"
+        } else {
+            coordinateString = getEffectiveCoordinatesString()
+        }
+        if let coordinates = coordinateString {
+            context += "**Coordinates:** \(coordinates)\n"
         }
 
         // Conversation ID if provided
