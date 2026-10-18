@@ -93,6 +93,17 @@ extension OpenAIChatRequest {
             requestBody["user"] = user
         }
 
+        /// OpenRouter uses a top-level `session_id` field for sticky routing
+        /// and prompt-cache affinity. Without it, OpenRouter derives the
+        /// conversation identity by hashing the first system + first non-system
+        // message, which changes between turns when dynamic context is injected
+        // into the user message — causing cache affinity loss. Sending session_id
+        // explicitly provides a stable workflow identity that survives message
+        // variations, trimming, and projection shifts (ported from CLIO).
+        if let sessionId = sessionId {
+            requestBody["session_id"] = sessionId
+        }
+
         // Add tools if present
         if let tools = tools, !tools.isEmpty {
             var serializedTools = tools.map { tool in
@@ -159,8 +170,10 @@ extension OpenAIChatRequest {
     /// Serializes messages into the OpenAI-compatible format, preserving tool_calls and tool_call_id.
     /// Filters out tool result preview messages (UI-only with [TOOL_RESULT_STORED]/[TOOL_RESULT_PREVIEW] markers).
     ///
-    /// - Parameter cacheControl: When true, adds cache_control annotations on the system prompt
-    ///   and last user/assistant message for prompt caching (Anthropic, OpenRouter).
+    /// - Parameter cacheControl: When true, adds cache_control annotation on the first
+    ///   system message for prompt caching (Anthropic, OpenRouter). Only the system
+    ///   message is annotated — not the last user/assistant message — to preserve
+    ///   cache stability across turns.
     /// - Returns: Array of message dictionaries with deterministic key ordering.
     public func serializeMessages(cacheControl: Bool = false) -> [[String: Any]] {
         let filteredMessages = messages.filter { message in
