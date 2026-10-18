@@ -42,25 +42,29 @@ extension ChatWidget {
             if let activeConv = activeConversation {
                 messagesVStack(for: activeConv)
             }
+
+            /// Invisible anchor at the very bottom — used for scroll-to-bottom.
+            Color.clear
+                .frame(height: 1)
+                .id("scroll-bottom-anchor")
         }
     }
 
     @ViewBuilder
     func applyScrollTrackingModifiers<Content: View>(_ content: Content, proxy: ScrollViewProxy) -> some View {
         content
-            .scrollPosition(id: $bottomVisibleItemId, anchor: .bottom)
             .background(Color.clear)
-            .onChange(of: bottomVisibleItemId) { _, newId in
-                updateFollowingOutput(scrollItemId: newId)
-            }
             .onChange(of: messages) { _, newMessages in
                 cachedToolHierarchy = buildToolHierarchy(messages: newMessages)
 
                 guard scrollLockEnabled, isFollowingOutput,
                       let lastMessage = newMessages.last else { return }
 
-                /// Single scroll point: if following output, scroll to bottom.
-                /// Delay to allow VStack layout to complete before scrolling.
+                /// Skip auto-scroll during conversation switch.
+                /// handleConversationSwitch schedules its own delayed scroll.
+                guard !isSwitchingConversation else { return }
+
+                /// Auto-scroll to bottom for new streaming messages.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     proxy.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
                 }
@@ -102,18 +106,6 @@ extension ChatWidget {
         }
         .onReceive(NotificationCenter.default.publisher(for: .pageDown)) { _ in
             pageScroll(proxy: proxy, direction: .down)
-        }
-    }
-
-    /// Update isFollowingOutput based on the item currently visible at the
-    /// bottom anchor. nil means the binding hasn't been populated yet
-    /// (e.g. on first appear before layout settles); keep the existing
-    /// state in that case so we don't flicker the pill.
-    func updateFollowingOutput(scrollItemId: String?) {
-        guard let scrollItemId = scrollItemId else { return }
-        let atBottom = (scrollItemId == "scroll-bottom-anchor")
-        if atBottom != isFollowingOutput {
-            isFollowingOutput = atBottom
         }
     }
 

@@ -80,10 +80,10 @@ public struct ChatWidget: View {
     /// the toggle can stay enabled while follow is temporarily paused.
     @State var isFollowingOutput: Bool = true
 
-    /// Item currently visible at the bottom of the scroll viewport, tracked
-    /// via `.scrollPosition(id:anchor:.bottom)`. When this matches the
-    /// "scroll-bottom-anchor" sentinel, the user is at the bottom.
-    @State var bottomVisibleItemId: String?
+    /// Flag set during conversation switches to prevent onChange(of: messages)
+    /// from firing auto-scrolls that conflict with handleConversationSwitch's
+    /// own delayed scroll.
+    @State var isSwitchingConversation: Bool = false
 
     /// User collaboration state.
     @State var isAwaitingUserInput = false
@@ -1016,6 +1016,13 @@ public struct ChatWidget: View {
     /// Handles conversation switch logic. Extracted from mainChatView to reduce
     /// SwiftUI type-checker load in the massive view body.
     func handleConversationSwitch(_ newID: UUID?) {
+        /// Mark that we're switching conversations to prevent onChange(of: messages)
+        /// auto-scrolls from conflicting with the delayed scroll below.
+        isSwitchingConversation = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isSwitchingConversation = false
+        }
+
         /// FEATURE: Save draft message from previous conversation before switching
         if let prevId = previousConversationId,
            let prevConversation = conversationManager.conversations.first(where: { $0.id == prevId }) {
