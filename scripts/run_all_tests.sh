@@ -68,13 +68,16 @@ run_swift_tests() {
     if [ "$VERBOSE" = true ]; then
         swift test 2>&1 | tee /tmp/swift_test_output.log
     else
-        swift test 2>&1 | tee /tmp/swift_test_output.log | grep -E "^Test|passed|failed|Executed"
+        swift test 2>&1 | tee /tmp/swift_test_output.log | tail -n +1 > /dev/null
+        echo -e "${GREEN} Swift test output available at /tmp/swift_test_output.log${NC}"
     fi
     
-    # Parse results - find the "Executed N tests" line following the suite passed line
-    local result_line=$(grep "^Test Suite 'SAMPackageTests.xctest'" /tmp/swift_test_output.log | tail -1 || true)
-    # The "Executed N tests" line comes right after the suite passed/failed line
-    local executed_line=$(grep -A1 "^Test Suite 'SAMPackageTests.xctest'" /tmp/swift_test_output.log | tail -1 || true)
+    # Parse results — find the top-level "All tests" suite summary line.
+    # swift test prints: "Test Suite 'All tests' passed." followed by
+    # the line " Executed N tests, with M failures ...".
+    # Take the FIRST match (the top-level suite), not the last.
+    local result_line=$(grep "^Test Suite 'All tests'" /tmp/swift_test_output.log | head -1 || true)
+    local executed_line=$(grep -A1 "^Test Suite 'All tests'" /tmp/swift_test_output.log | head -2 | tail -1 || true)
     if echo "$result_line" | grep -q "passed"; then
         SWIFT_TESTS_PASSED=$(echo "$executed_line" | grep -oE "Executed [0-9]+" | grep -oE "[0-9]+" || echo "0")
         SWIFT_TESTS_FAILED=0
@@ -170,12 +173,22 @@ print_summary() {
     # Use bash arithmetic instead of bc (which may not be installed on CI runners)
     if [ "$total_failed" -eq 0 ]; then
         local denom=$((total - E2E_TESTS_SKIPPED))
-        local pass_rate=$(( denom > 0 ? (total_passed * 100) / denom : 100 ))
+        local pass_rate
+        if [ "$denom" -gt 0 ]; then
+            pass_rate=$(( (total_passed * 100) / denom ))
+        else
+            pass_rate=100
+        fi
         echo -e "${GREEN}${BOLD} ALL TESTS PASSED! Pass Rate: ${pass_rate}%${NC}"
         return 0
     else
         local denom=$((total - E2E_TESTS_SKIPPED))
-        local pass_rate=$(( denom > 0 ? (total_passed * 100) / denom : 0 ))
+        local pass_rate
+        if [ "$denom" -gt 0 ]; then
+            pass_rate=$(( (total_passed * 100) / denom ))
+        else
+            pass_rate=0
+        fi
         echo -e "${RED}${BOLD} SOME TESTS FAILED. Pass Rate: ${pass_rate}%${NC}"
         return 1
     fi
