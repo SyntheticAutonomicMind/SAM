@@ -76,8 +76,20 @@ jobs:
       
       - name: Download Metal Toolchain
         run: |
-          echo "Downloading Metal Toolchain for Xcode ${{ env.XCODE_VERSION }}..."
-          sudo xcodebuild -downloadComponent MetalToolchain || echo "Metal Toolchain already installed or download failed"
+          echo "Ensuring Metal Toolchain is available for Xcode ${{ env.XCODE_VERSION }}..."
+          TOOLCHAIN_DIR="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
+          cat > /tmp/test.metal << 'EOF'
+          #include <metal_stdlib>
+          using namespace metal;
+          kernel void test() {}
+          EOF
+          if "$TOOLCHAIN_DIR/usr/bin/metal" -c /tmp/test.metal -o /dev/null 2>&1; then
+            echo "Metal compilation test passed!"
+          else
+            echo "Metal Toolchaint missing. Downloading..."
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          rm -f /tmp/test.metal
       
       - name: Increment development version
         run: |

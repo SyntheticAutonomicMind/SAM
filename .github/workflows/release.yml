@@ -47,103 +47,63 @@ jobs:
 
           TOOLCHAIN_DIR="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
 
-          echo "Checking for Metal Toolchain standard library..."
-          if [ -d "$TOOLCHAIN_DIR/usr/lib/metal" ]; then
-            echo "Metal standard library already present"
-          else
-            echo "Metal standard library missing. Downloading Metal Toolchain..."
-            # Record DMG paths before download
-            BEFORE=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" 2>/dev/null | sort)
-
-            sudo xcodebuild -downloadComponent MetalToolchain
-
-            # Find the DMG that was just downloaded (new since our before snapshot)
-            AFTER=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" 2>/dev/null | sort)
-            METAL_DMG=$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -1)
-            if [ -z "$METAL_DMG" ]; then
-              # No new DMG found, use the most recent one
-              METAL_DMG=$(find /System/Library/AssetsV2/com_apple_MobileAsset_MetalToolchain* -name "0*.dmg" -newermt "5 minutes ago" 2>/dev/null | head -1)
-            fi
-
-            if [ -n "$METAL_DMG" ] && [ -f "$METAL_DMG" ]; then
-              echo "Installing Metal Toolchain from: $METAL_DMG"
-              # Mount the DMG and find the metal standard library
-              MOUNT_INFO=$(hdiutil attach "$METAL_DMG" -nobrowse -quiet 2>&1)
-              MOUNT_PATH=$(echo "$MOUNT_INFO" | tail -1 | awk '{print $1}')
-              if [ -z "$MOUNT_PATH" ]; then
-                MOUNT_PATH="/Volumes/*Metal*"
-              fi
-              echo "Mounted at: $MOUNT_PATH"
-
-              # Look for usr/lib/metal in the mounted volume
-              MNT=$(echo $MOUNT_PATH | sed 's/\*//')
-              if [ -d "$MNT/usr/lib/metal" ]; then
-                echo "Found metal standard library in DMG, copying..."
-                sudo cp -R "$MNT/usr/" "$TOOLCHAIN_DIR/usr/"
-                hdiutil detach "$MNT" -quiet 2>/dev/null || true
-                echo "Metal Toolchain installed."
-              else
-                echo "Metal standard library not found in DMG. Contents:"
-                ls -la "$MNT" 2>/dev/null || echo "Mount path not accessible"
-                hdiutil detach "$MNT" -quiet 2>/dev/null || true
-              fi
-            else
-              echo "No Metal Toolchain DMG found to install"
-            fi
-
-            # Verify installation
-            if [ -d "$TOOLCHAIN_DIR/usr/lib/metal" ]; then
-              echo "Metal standard library now present."
-            else
-              echo "WARNING: Metal standard library still not installed."
-              echo "Contents of $TOOLCHAIN_DIR/usr/lib:"
-              ls -la "$TOOLCHAIN_DIR/usr/lib" 2>/dev/null || echo "Directory not found"
-            fi
-          fi
-
-      - name: Verify Metal Toolchain
-        run: |
-          echo "Verifying Metal Toolchain availability..."
-          if ! xcrun --find metal; then
-            echo "ERROR: 'metal' compiler not found in toolchain"
-            exit 1
-          fi
-          echo "Metal compiler found: $(xcrun --find metal)"
           echo "Testing Metal compilation via default toolchain..."
           cat > /tmp/test.metal << 'EOF'
           #include <metal_stdlib>
           using namespace metal;
           kernel void test() {}
           EOF
-          DEFAULT_METAL="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal"
+          DEFAULT_METAL="$TOOLCHAIN_DIR/usr/bin/metal"
           if "$DEFAULT_METAL" -c /tmp/test.metal -o /dev/null 2>&1; then
-            echo "Metal compilation test passed!"
+            echo "Default toolchain Metal compilation test passed!"
+            rm -f /tmp/test.metal
           else
             echo "Default toolchain metal proxy cannot find Metal Toolchain."
-            echo "Installing wrapper script to delegate to cryptex-mounted Metal Toolchain..."
+            echo "Downloading Metal Toolchain component..."
+            xcodebuild -downloadComponent MetalToolchain
 
-            # Find the real Metal Toolchain metal binary via xcrun
-            REAL_METAL=$(xcrun -sdk macosx --find metal 2>/dev/null || xcrun -toolchain Metal --find metal 2>/dev/null)
-            if [ -z "$REAL_METAL" ] || [ ! -x "$REAL_METAL" ]; then
+            # Find a working Metal binary from installed toolchains.
+            REAL_METAL=""
+            for candidate in \
+              "/Library/Developer/Toolchains/Metal.xctoolchain/usr/bin/metal" \
+              "$(xcrun -toolchain Metal --find metal 2>/dev/null)" \
+              "$(xcrun -sdk macosx --find metal 2>/dev/null)"; do
+              if [ -n "$candidate" ] && [ -x "$candidate" ] && "$candidate" -c /tmp/test.metal -o /dev/null 2>&1; then
+                REAL_METAL="$candidate"
+                echo "Found working Metal Toolchain: $REAL_METAL"
+                break
+              fi
+            done
+
+            if [ -z "$REAL_METAL" ]; then
               echo "ERROR: Could not find a working Metal Toolchain metal binary"
               exit 1
             fi
-            echo "Found real Metal Toolchain metal binary: $REAL_METAL"
 
-            # Back up the proxy and replace with a wrapper
-            sudo cp "$DEFAULT_METAL" "${DEFAULT_METAL}.proxy.backup"
-            printf '#!/bin/bash\nexec "%s" "$@"\n' "$REAL_METAL" | sudo tee "$DEFAULT_METAL" > /dev/null
-            sudo chmod +x "$DEFAULT_METAL"
+            # Install wrapper at default toolchain location; retry without sudo
+            # on macOS 26+ with read-only system volume.
+            BACKUP="${DEFAULT_METAL}.proxy.backup"
+            if sudo cp "$DEFAULT_METAL" "$BACKUP" 2>/dev/null; then
+              printf '#!/bin/bash\nexec "%s" "$@"\n' "$REAL_METAL" | sudo tee "$DEFAULT_METAL" > /dev/null
+              sudo chmod +x "$DEFAULT_METAL"
+            elif cp "$DEFAULT_METAL" "$BACKUP" 2>/dev/null; then
+              printf '#!/bin/bash\nexec "%s" "$@"\n' "$REAL_METAL" | tee "$DEFAULT_METAL" > /dev/null
+              chmod +x "$DEFAULT_METAL"
+            else
+              echo "Cannot write to Xcode toolchain dir; using PATH fallback"
+              export PATH="$(dirname "$REAL_METAL"):$PATH"
+            fi
 
-            # Re-test
             if "$DEFAULT_METAL" -c /tmp/test.metal -o /dev/null 2>&1; then
               echo "Metal compilation test passed with wrapper!"
+            elif command -v metal >/dev/null 2>&1 && metal -c /tmp/test.metal -o /dev/null 2>&1; then
+              echo "Metal compilation test passed via PATH!"
             else
-              echo "ERROR: Metal compilation still failing after wrapper install"
+              echo "ERROR: Metal compilation still failing after all attempts"
               exit 1
             fi
+            rm -f /tmp/test.metal
           fi
-          rm -f /tmp/test.metal
       
       - name: Extract version from tag
         id: version
