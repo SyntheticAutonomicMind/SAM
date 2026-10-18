@@ -51,7 +51,18 @@ public class OpenRouterProvider: AIProvider {
 
         // Build request using shared builder with deterministic serialization and cache_control
         // This ensures reasoning effort, thinking config, and tools are properly included
-        let requestBody = request.buildOpenAICompatibleRequestBody(streamEnabled: true, cacheControl: true)
+        var requestBody = request.buildOpenAICompatibleRequestBody(streamEnabled: true, cacheControl: true)
+
+        // Add OpenRouter session_id for sticky prompt-cache affinity.
+        // CLIO pattern: OpenRouter uses top-level `session_id` for sticky routing
+        // and prompt-cache affinity. Without it, OpenRouter derives the conversation
+        // identity by hashing the first system + first non-system message, which
+        // changes between turns when dynamic context is injected into the user
+        // message — causing cache affinity loss. The stable session UUID provides
+        // a consistent workflow identity that survives message variations.
+        if let sessionId = request.sessionId {
+            requestBody["session_id"] = sessionId
+        }
 
         do {
             urlRequest.httpBody = try deterministicJSONData(from: requestBody)
@@ -194,7 +205,12 @@ public class OpenRouterProvider: AIProvider {
 
         /// Create request body using shared builder (includes tools, tool_calls, tool_call_id).
         /// Enable cache_control for OpenRouter prompt caching support.
-        let requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
+        var requestBody = request.buildOpenAICompatibleRequestBody(cacheControl: true)
+
+        // Add OpenRouter session_id for sticky prompt-cache affinity (same as streaming path).
+        if let sessionId = request.sessionId {
+            requestBody["session_id"] = sessionId
+        }
 
         do {
             urlRequest.httpBody = try deterministicJSONData(from: requestBody)

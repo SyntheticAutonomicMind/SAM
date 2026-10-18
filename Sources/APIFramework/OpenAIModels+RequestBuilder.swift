@@ -93,17 +93,6 @@ extension OpenAIChatRequest {
             requestBody["user"] = user
         }
 
-        /// OpenRouter uses a top-level `session_id` field for sticky routing
-        /// and prompt-cache affinity. Without it, OpenRouter derives the
-        /// conversation identity by hashing the first system + first non-system
-        // message, which changes between turns when dynamic context is injected
-        // into the user message — causing cache affinity loss. Sending session_id
-        // explicitly provides a stable workflow identity that survives message
-        // variations, trimming, and projection shifts (ported from CLIO).
-        if let sessionId = sessionId {
-            requestBody["session_id"] = sessionId
-        }
-
         // Add tools if present
         if let tools = tools, !tools.isEmpty {
             var serializedTools = tools.map { tool in
