@@ -13,7 +13,7 @@ on:
     # Allow manual triggering
 
 env:
-  XCODE_VERSION: '26.2'
+  XCODE_VERSION: '27.1'
   MACOS_VERSION: '14.0'
 
 permissions:
