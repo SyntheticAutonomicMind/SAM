@@ -60,11 +60,7 @@ extension ChatWidget {
                       let lastMessage = newMessages.last else { return }
 
                 /// Single scroll point: if following output, scroll to bottom.
-                /// Replaces 4 separate onChange handlers + 150ms sleep hack.
-                /// Delay is needed because LazyVStack hasn't laid out its content
-                /// yet when the messages array changes — scrolling to an anchor
-                /// that hasn't been rendered causes the viewport to be mispositioned
-                /// and messages fail to paint until the user scrolls manually.
+                /// Delay to allow VStack layout to complete before scrolling.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     proxy.scrollTo(lastMessage.id.uuidString, anchor: .bottom)
                 }
@@ -202,10 +198,15 @@ extension ChatWidget {
     }
 
     func messagesVStack(for conversation: ConversationModel) -> some View {
-        /// PERFORMANCE: Use LazyVStack to allow SwiftUI to destroy off-screen views
-        /// Previous VStack kept ALL messages in memory causing massive slowdowns with many tool calls
-        /// LazyVStack + stable scroll anchor prevents scroll jumping while enabling view recycling
-        LazyVStack(spacing: 12) {
+        /// Use VStack (not LazyVStack) for chat messages.
+        /// LazyVStack + ScrollView + scrollPosition(id:) + ScrollViewReader
+        /// causes view recycling issues: when auto-scrolling to bottom on
+        /// conversation switch, LazyVStack destroys views above the viewport
+        /// and recreates them, causing messages to "appear then disappear"
+        /// as the scroll position settles.
+        /// VStack renders all messages eagerly — for typical chat conversations
+        /// (50-200 messages) this is fine and avoids all recycling issues.
+        VStack(spacing: 12) {
                     /// PERFORMANCE FIX: Use cached tool hierarchy instead of rebuilding on every render
                     /// buildToolHierarchy() is now called only when messages change, not on every view update
                     let toolHierarchy = cachedToolHierarchy
