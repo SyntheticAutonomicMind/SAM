@@ -317,6 +317,9 @@ extension ChatWidget {
                                     }
                                 }
                                 /// No .fixedSize — LazyVStack handles intrinsic heights naturally.
+                                /// Restore minimum height for collapsed cards (thinking, tools)
+                                /// to prevent them rendering with near-zero height in LazyVStack.
+                                .frame(minHeight: 28)
                                 .id(viewID)
                             } else {
                                 /// PERFORMANCE: Removed filter logging (fired on every render)
