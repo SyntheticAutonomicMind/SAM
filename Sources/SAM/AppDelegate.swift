@@ -4,6 +4,7 @@
 import AppKit
 import Foundation
 import Sparkle
+import UserInterface
 import ConversationEngine
 import APIFramework
 import ConfigurationSystem
@@ -108,19 +109,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// Restores the main window after it has been closed.
     ///
     /// Because `applicationShouldTerminateAfterLastWindowClosed` returns `false`,
-    /// SAM keeps running (and stays in the Dock) when its window is closed. Without
-    /// this handler there is no way to bring the window back short of relaunching.
+    /// SAM keeps running (and stays in the Dock) when its window is closed.
     ///
-    /// This fires when the user clicks the SAM icon in the Dock, or Cmd+Tabs to
-    /// SAM, while the main window is closed. Returning `true` lets the SwiftUI
-    /// `App` re-create its `WindowGroup` scene, which re-shows `MainWindowView`.
-    /// The window's saved size/position is restored by the existing frame
-    /// persistence in `configureWindowPersistence`.
+    /// On macOS 13+ (and especially 15.6), simply returning `true` here is no
+    /// longer sufficient to re-create the SwiftUI `WindowGroup` scene once its
+    /// sole window has been closed. We therefore delegate to
+    /// `SAMMainWindowManager`, which maintains an explicit `NSWindow`
+    /// reference and recreates it via an `NSHostingController(MainWindowView())`
+    /// when no main window is visible.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         logger.info("Reopen requested — hasVisibleWindows: \(hasVisibleWindows)")
-        if !hasVisibleWindows {
-            sender.activate(ignoringOtherApps: true)
-        }
+        SAMMainWindowManager.shared.restoreMainWindow()
         return true
     }
 
@@ -150,12 +149,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         return menu
     }
 
-    /// Restores the main window. Selecting "New Window" from the Dock menu
-    /// activates the app with no open windows, which routes through
-    /// `applicationShouldHandleReopen` to re-create the main window.
+    /// Restores (or creates) the main window from the Dock menu.
     @objc private func dockNewWindow() {
         logger.debug("Dock menu: New Window selected")
-        NSApp.activate(ignoringOtherApps: true)
+        SAMMainWindowManager.shared.restoreMainWindow()
     }
 
     /// Creates a new conversation from the Dock menu.
@@ -198,6 +195,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             guard let window = notification.object as? NSWindow else { return }
             self?.configureWindowPersistence(window)
         }
+
     }
 
     private func configureWindowPersistence(_ window: NSWindow) {

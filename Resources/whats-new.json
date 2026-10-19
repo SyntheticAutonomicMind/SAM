@@ -3,7 +3,7 @@
     {
       "version": "20261019.1",
       "release_date": "October 19, 2026",
- "introduction": "This release improves token caching for cloud models like OpenRouter, meaning your conversations with long contexts now reuse cached responses much more effectively. You'll see faster responses and lower costs on providers that support prompt caching. Behind the scenes, the provider integration code has been significantly simplified, which also makes it easier to add new providers in the future.",
+ "introduction": "This release improves token caching for cloud models like OpenRouter, meaning your conversations with long contexts now reuse cached responses much more effectively. You'll see faster responses and lower costs on providers that support prompt caching. Behind the scenes, the provider integration code has been significantly simplified, which also makes it easier to add new providers in the future. It also fixes an issue where closing SAM's window left you with no way to bring it back without relaunching.",
       "highlights": [
         {
           "id": "better-prompt-caching",
@@ -24,6 +24,20 @@
           "icon": "sparkles",
           "title": "Simplified Provider System",
           "description": "The code that talks to cloud AI providers has been refactored to remove thousands of lines of duplicated logic. All OpenAI-compatible providers (OpenRouter, DeepSeek, MiniMax, Z.AI, and custom providers) now share the same request and streaming infrastructure. This fixes several streaming reliability issues and makes it easier to add new providers in the future."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "restore-closed-window",
+          "icon": "doc.richtext.lessthan",
+          "title": "Closed Window Can Be Restored",
+          "description": "If you closed SAM's main window (with the red close button), there was no way to bring it back without quitting and relaunching SAM — clicking the Dock icon or Cmd+Tabbing back did nothing. SAM now remembers that it's still running and restores the window when you ask for it back, whether by clicking the Dock icon, Cmd+Tabbing, or choosing 'New Window' from the Dock menu. The window's size and position are remembered too."
+        },
+        {
+          "id": "window-click-jump",
+          "icon": "arrow.up.and.down.and.arrow.left.and.right",
+          "title": "Window No Longer Jumps When Clicked",
+          "description": "Clicking anywhere in SAM's main window could suddenly move it to a different spot on the screen. SAM was reapplying an old saved window position every time the window gained focus from a click. Window position is still remembered between launches, but it now stays put when you click."
         }
       ]
     },
