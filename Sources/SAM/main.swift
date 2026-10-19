@@ -54,11 +54,25 @@ struct SAMRewrittenApp: App {
         BuildConfiguration.logBuildMode()
 
         /// BUG #3: Inject ConversationManager into AppDelegate for cleanup on termination.
-        /// This is done in next run loop to ensure AppDelegate is fully initialized.
-        DispatchQueue.main.async { [weak appDelegate] in
-            appDelegate?.conversationManager = sharedConversationManager
-            appDelegate?.endpointManager = endpointMgr
+        /// This is done in next runloop to ensure AppDelegate is fully initialized.
+        /// The appDelegate is bound to a local so the escaping closure does not
+        /// capture `self` (the App struct) from its initializer.
+        let delegate = appDelegate
+        DispatchQueue.main.async { [weak delegate] in
+            delegate?.conversationManager = sharedConversationManager
+            delegate?.endpointManager = endpointMgr
         }
+
+        /// Inject dependencies into the main-window restorer so it can
+        /// recreate the main window (hosting MainWindowView) on reopen.
+        /// Done synchronously (off the escaping closure) to keep this call
+        /// out of the struct initializer's closure-capture analysis.
+        SAMMainWindowManager.shared.inject(
+            conversationManager: sharedConversationManager,
+            endpointManager: endpointMgr,
+            sharedConversationService: sharedService,
+            credentialStore: credentialStore
+        )
 
         /// Debug logging only in debug builds.
         #if DEBUG
