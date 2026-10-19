@@ -188,7 +188,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     // MARK: - Window Frame Persistence
 
     private func setupWindowFramePersistence() {
-        /// Observe window did become main to restore and persist frame.
+        /// Observe window did become main so we can attach the autosave name
+        /// (once per window), letting AppKit restore/persist its frame.
         windowFrameObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeMainNotification,
             object: nil,
@@ -224,42 +225,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // MARK: - this window as configured
         configuredWindows.insert(windowID)
 
-        /// Set autosave name for automatic frame persistence This tells macOS to save/restore window frame automatically.
+        /// Set autosave name so AppKit remembers and restores the main window's
+        /// frame across launches automatically.
         window.setFrameAutosaveName("SAMMainWindow")
 
-        /// Restore saved frame if available (ONLY on first configuration).
-        if let frameString = UserDefaults.standard.string(forKey: "SAMMainWindowFrame"),
-           !frameString.isEmpty {
-            let frame = NSRectFromString(frameString)
-            if frame != .zero {
-                window.setFrame(frame, display: true, animate: false)
-            }
-        }
-
-        /// Save frame whenever it changes (only for this specific window).
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.didResizeNotification,
-            object: window,
-            queue: .main
-        ) { notification in
-            guard let window = notification.object as? NSWindow else { return }
-            /// Double-check this is still the main window.
-            guard window.frameAutosaveName == "SAMMainWindow" else { return }
-            let frameString = NSStringFromRect(window.frame)
-            UserDefaults.standard.set(frameString, forKey: "SAMMainWindowFrame")
-        }
-
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.didMoveNotification,
-            object: window,
-            queue: .main
-        ) { notification in
-            guard let window = notification.object as? NSWindow else { return }
-            /// Double-check this is still the main window.
-            guard window.frameAutosaveName == "SAMMainWindow" else { return }
-            let frameString = NSStringFromRect(window.frame)
-            UserDefaults.standard.set(frameString, forKey: "SAMMainWindowFrame")
-        }
+        /// We intentionally do NOT manually restore a saved frame here. The
+        /// previous implementation stored the frame in "SAMMainWindowFrame"
+        /// (UserDefaults) and re-applied it from a `didBecomeMain` observer —
+        /// which fires when the window is clicked — causing the window to jump
+        /// to an older saved location on every click. AppKit's
+        /// `setFrameAutosaveName` above already persists and restores the frame
+        /// reliably and only does so once (at window creation), so it is now the
+        /// sole source of truth for window position.
     }
 
     deinit {
