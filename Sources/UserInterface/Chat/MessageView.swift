@@ -355,12 +355,12 @@ struct MessageRow: View {
         .background(
             ZStack(alignment: isFromUser ? .trailing : .leading) {
                 // Background band.
-                (isFromUser ? Color.accentColor.opacity(0.05) : Color.secondary.opacity(0.05))
+                (isFromUser ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.12))
 
                 // Content-aligned border — thin vertical line on the gutter side.
                 Rectangle()
                     .frame(width: 2)
-                    .foregroundColor(isFromUser ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.2))
+                    .foregroundColor(isFromUser ? Color.accentColor.opacity(0.30) : Color.secondary.opacity(0.30))
                     .allowsHitTesting(false)
             }
         )
@@ -571,10 +571,10 @@ struct ToolExecutionCard: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(NSColor.controlBackgroundColor).opacity(0.2))
+                        .fill(Color(NSColor.controlBackgroundColor).opacity(0.35))
                 )
         )
         .padding(.horizontal)
@@ -770,8 +770,8 @@ struct ThinkingCard: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor).opacity(0.2)))
+                .stroke(Color.secondary.opacity(0.4), lineWidth: 1)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor).opacity(0.35)))
         )
         .padding(.horizontal)
         .padding(.vertical, 4)
