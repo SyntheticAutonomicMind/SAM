@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "version": "20261020.1",
+      "release_date": "October 20, 2026",
+      "introduction": "A pair of quality-of-life fixes for the chat interface. Reasoning (thinking) cards are now properly visible again after the recent rendering rewrite, and the contrast between your messages and SAM's responses has been increased so it's easier to follow who said what when scrolling through a conversation.",
+      "highlights": [
+        {
+          "id": "visible-reasoning-cards",
+          "icon": "brain.head.profile",
+          "title": "Reasoning Cards Are Visible Again",
+          "description": "After the chat rendering rewrite, thinking cards sometimes rendered with near-zero height or blended invisibly into the background, making it look like nothing was happening while SAM was reasoning. These cards now have a proper minimum height and clearer background contrast so they're easy to spot and expand."
+        },
+        {
+          "id": "better-message-contrast",
+          "icon": "bubble.left.and.right.fill",
+          "title": "Clearer Message Contrast",
+          "description": "The background bands behind your messages and SAM's responses are now more pronounced, with a clearer divider between turns. This makes it much easier to follow the conversation flow when scrolling through long chats."
+        }
+      ]
+    },
+    {
       "version": "20261019.1",
       "release_date": "October 19, 2026",
  "introduction": "This release improves token caching for cloud models like OpenRouter, meaning your conversations with long contexts now reuse cached responses much more effectively. You'll see faster responses and lower costs on providers that support prompt caching. Behind the scenes, the provider integration code has been significantly simplified, which also makes it easier to add new providers in the future. It also fixes an issue where closing SAM's window left you with no way to bring it back without relaunching.",
