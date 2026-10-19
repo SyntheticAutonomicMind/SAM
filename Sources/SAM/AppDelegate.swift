@@ -8,6 +8,7 @@ import ConversationEngine
 import APIFramework
 import ConfigurationSystem
 import SecurityFramework
+import MCPFramework
 import Logging
 
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
@@ -100,6 +101,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         return true
+    }
+
+    // MARK: - Window Restoration
+
+    /// Restores the main window after it has been closed.
+    ///
+    /// Because `applicationShouldTerminateAfterLastWindowClosed` returns `false`,
+    /// SAM keeps running (and stays in the Dock) when its window is closed. Without
+    /// this handler there is no way to bring the window back short of relaunching.
+    ///
+    /// This fires when the user clicks the SAM icon in the Dock, or Cmd+Tabs to
+    /// SAM, while the main window is closed. Returning `true` lets the SwiftUI
+    /// `App` re-create its `WindowGroup` scene, which re-shows `MainWindowView`.
+    /// The window's saved size/position is restored by the existing frame
+    /// persistence in `configureWindowPersistence`.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        logger.info("Reopen requested — hasVisibleWindows: \(hasVisibleWindows)")
+        if !hasVisibleWindows {
+            sender.activate(ignoringOtherApps: true)
+        }
+        return true
+    }
+
+    // MARK: - Dock Menu
+
+    /// Builds the Dock (right-click) menu so users can restore the main window
+    /// after closing it, without quitting and relaunching SAM.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu(title: "SAM")
+
+        let newWindow = NSMenuItem(title: "New Window", action: #selector(dockNewWindow), keyEquivalent: "")
+        newWindow.target = self
+        menu.addItem(newWindow)
+
+        menu.addItem(.separator())
+
+        let newConversation = NSMenuItem(title: "New Conversation", action: #selector(dockNewConversation), keyEquivalent: "")
+        newConversation.target = self
+        menu.addItem(newConversation)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: "Quit", action: #selector(NSApp.terminate), keyEquivalent: "q")
+        quit.target = nil
+        menu.addItem(quit)
+
+        return menu
+    }
+
+    /// Restores the main window. Selecting "New Window" from the Dock menu
+    /// activates the app with no open windows, which routes through
+    /// `applicationShouldHandleReopen` to re-create the main window.
+    @objc private func dockNewWindow() {
+        logger.debug("Dock menu: New Window selected")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Creates a new conversation from the Dock menu.
+    @objc private func dockNewConversation() {
+        logger.debug("Dock menu: New Conversation selected")
+        NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .newConversation, object: nil)
     }
 
     // MARK: - Bug #3: App Termination Cleanup
