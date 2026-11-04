@@ -1052,6 +1052,8 @@ extension AgentOrchestrator {
         var chunkCount = 0
         var authRetryAttempts = 0
         let maxAuthRetries = 2
+        /// One retry is allowed when the provider refuses the request shape.
+        var strictShapeRetryAttempted = false
 
         /// Auth recovery retry loop: if the stream throws authRecoverable (401 token refresh),
         /// create a new stream and restart. This only fires before any content chunks are yielded.
@@ -1323,6 +1325,17 @@ extension AgentOrchestrator {
             authRetryAttempts += 1
             logger.info("AUTH_RETRY: Stream threw authRecoverable before any chunks, retrying (\(authRetryAttempts)/\(maxAuthRetries))")
             streamingResponse = try await endpointManager.processStreamingChatCompletion(finalRequest)
+            continue authRetryLoop
+        } catch let error as ProviderError where error.isInvalidRequest && chunkCount == 0 && !strictShapeRetryAttempted {
+            /// The provider refused the request shape rather than the request
+            /// itself — strict OpenAI-compatible providers (MiniMax, Moonshot)
+            /// reject a tool result that is not immediately preceded by the
+            /// assistant message whose tool_calls it answers. Rebuild the
+            /// request in the most conservative shape and try once more.
+            strictShapeRetryAttempted = true
+            logger.warning("STRICT_SHAPE_RETRY: Provider rejected request shape - rebuilding conservatively and retrying once: \(error.localizedDescription)")
+            let strictRequest = requestWithStrictToolShape(finalRequest)
+            streamingResponse = try await endpointManager.processStreamingChatCompletion(strictRequest)
             continue authRetryLoop
         } catch {
             logger.debug("AUTH_RETRY_DEBUG: Stream threw non-recoverable error: \(error), type=\(type(of: error))")

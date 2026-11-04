@@ -257,4 +257,31 @@ public enum ProviderError: LocalizedError {
         if case .authRecoverable = self { return true }
         return false
     }
+
+    /// Whether this error is a malformed request the provider refused to process.
+    /// Retrying the same request unchanged just burns quota.
+    public var isInvalidRequest: Bool {
+        if case .invalidRequest = self { return true }
+        return false
+    }
+
+    /// Classify an HTTP failure into the matching case.
+    ///
+    /// 429 is a rate limit and is retryable, other 4xx are malformed requests
+    /// (retrying them unchanged just burns quota), and 5xx plus transport
+    /// failures are transient network problems. The provider's response body is
+    /// carried along so the actual reason stays visible instead of being
+    /// flattened into "status 400".
+    public static func fromHTTPStatus(_ statusCode: Int, body: String, provider: String) -> ProviderError {
+        let detail = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = detail.isEmpty ? "" : ": \(detail.prefix(300))"
+        switch statusCode {
+        case 429:
+            return .rateLimitExceeded("\(provider) rate limited (status \(statusCode))\(suffix)")
+        case 400...499:
+            return .invalidRequest("\(provider) rejected the request (status \(statusCode))\(suffix)")
+        default:
+            return .networkError("\(provider) returned status \(statusCode)\(suffix)")
+        }
+    }
 }
