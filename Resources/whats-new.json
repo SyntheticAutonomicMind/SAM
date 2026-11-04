@@ -1,6 +1,39 @@
 {
   "releases": [
     {
+      "version": "20261104.1",
+      "release_date": "November 4, 2026",
+      "introduction": "A fix for conversations that ended right after a tool call, with the tool output on screen but no written answer. SAM was packaging tool results in a way that some AI providers reject outright, so the follow-up request that asked for a summary never went through. SAM now keeps each tool result next to the tool call that asked for it, and tells you in the conversation when a run stopped and why.",
+      "highlights": [
+        {
+          "id": "tool-results-reach-the-model",
+          "icon": "arrow.triangle.merge",
+          "title": "Tool Results Now Reach the Model",
+          "description": "Some conversations ended right after SAM ran a tool, with the tool output on screen but no written answer. The problem was in how SAM packaged the conversation for the next request: tool results were moved to the end of the message list, which separated them from the tool call that asked for them. Some providers are strict about that pairing and reject the request outright, and SAM would give up instead of recovering. SAM now keeps each tool result next to the tool call it belongs to."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "tool-only-replies-reach-the-model",
+          "icon": "arrow.triangle.branch",
+          "title": "Tool-Only Replies Are No Longer Dropped",
+          "description": "When a model called a tool without saying anything alongside it, the request SAM sent for the next step left out both the tool call and its result, so the model never saw what its tools had returned and had no way to build an answer from them. Those messages are now included."
+        },
+        {
+          "id": "system-prompt-stays-put",
+          "icon": "lock.shield.fill",
+          "title": "The System Prompt Stays Where It Belongs",
+          "description": "SAM's main instructions were occasionally being shifted into the middle of a conversation because they mention a tag that also appears in compressed history. This also meant the stable prefix used for prompt caching was never reused. The instructions now always sit at the front, which improves caching and lowers cost on providers that support it."
+        },
+        {
+          "id": "explains-why-a-run-stopped",
+          "icon": "exclamationmark.bubble.fill",
+          "title": "SAM Explains Why a Run Stopped",
+          "description": "When a request fails after tools have already run, SAM would simply end the response with the tool output and no explanation, which looked like the work had finished. SAM now adds a note to the conversation explaining that it was cut short, what went wrong, and that the results it did retrieve are still there to summarize."
+        }
+      ]
+    },
+    {
       "version": "20261020.1",
       "release_date": "October 20, 2026",
       "introduction": "A pair of quality-of-life fixes for the chat interface. Reasoning (thinking) cards are now properly visible again after the recent rendering rewrite, and the contrast between your messages and SAM's responses has been increased so it's easier to follow who said what when scrolling through a conversation.",

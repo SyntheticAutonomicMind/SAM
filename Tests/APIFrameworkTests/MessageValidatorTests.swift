@@ -855,11 +855,13 @@ final class MessageValidatorTests: XCTestCase {
         XCTAssertEqual(collab?.first?.response, "Several gaps, but most are minor.")
     }
 
-    // MARK: - Deinterleave Tool Results Tests
+    // MARK: - Tool Result Adjacency Tests
 
-    func testValidateAndTruncateWithDropped_DeinterleavesToolResultsToEnd() {
-        // Tool results should be moved to the END (after all regular dialog)
-        // if they appear before the last user message.
+    func testValidateAndTruncateWithDropped_KeepsToolResultsAdjacentToAssistant() {
+        // A tool result must stay in the block that answers its assistant
+        // message. Deinterleaving it to the end of the array is what made
+        // MiniMax reject the request with "tool call result does not follow
+        // tool call (2013)".
         let systemMsg = OpenAIChatMessage(role: "system", content: "You are a helpful assistant")
         let userMsg = OpenAIChatMessage(role: "user", content: "Search for cats")
         let assistantMsg = OpenAIChatMessage(
@@ -881,18 +883,21 @@ final class MessageValidatorTests: XCTestCase {
             messages: messages, config: config
         )
 
-        // After normalizeSummaryToEnd: [systemMsg, userMsg, assistantMsg, userMsg2, toolResult]
-        // Tool result should be moved to END, after all dialog including userMsg2
-        let nonSystemMessages = result.messages.filter { $0.role != "system" }
-        // Find the index of userMsg2
-        let userMsg2Index = nonSystemMessages.firstIndex { $0.content == "Now search for dogs" }
-        XCTAssertNotNil(userMsg2Index, "userMsg2 should be in the result")
+        let assistantIndex = result.messages.firstIndex { $0.role == "assistant" && $0.toolCalls != nil }
+        let toolResultIndex = result.messages.firstIndex { $0.role == "tool" }
+        let userMsg2Index = result.messages.firstIndex { $0.content == "Now search for dogs" }
 
-        // Find the index of the tool result
-        let toolResultIndex = nonSystemMessages.firstIndex { $0.role == "tool" }
+        XCTAssertNotNil(assistantIndex)
+        XCTAssertNotNil(toolResultIndex)
+        XCTAssertNotNil(userMsg2Index)
+
+        if let assistantIdx = assistantIndex, let toolIdx = toolResultIndex {
+            XCTAssertEqual(toolIdx, assistantIdx + 1,
+                           "Tool result must immediately follow the assistant that requested it")
+        }
         if let toolIdx = toolResultIndex, let userIdx = userMsg2Index {
-            XCTAssertGreaterThan(toolIdx, userIdx,
-                                 "Tool result should be after userMsg2 (deinterleaved to END)")
+            XCTAssertLessThan(toolIdx, userIdx,
+                              "Tool result must stay inside the assistant's tool block")
         }
     }
 

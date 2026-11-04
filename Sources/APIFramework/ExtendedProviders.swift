@@ -262,7 +262,7 @@ public class MiniMaxProvider: AIProvider {
                             if errorBody.count > 2000 { break }
                         }
                         self.logger.error("MiniMax streaming HTTP error [req:\(requestId.prefix(8))]: \(httpResponse.statusCode) - \(errorBody.prefix(500))")
-                        continuation.finish(throwing: ProviderError.networkError("MiniMax API returned status \(httpResponse.statusCode)"))
+                        continuation.finish(throwing: ProviderError.fromHTTPStatus(httpResponse.statusCode, body: errorBody, provider: "MiniMax"))
                         return
                     }
 
@@ -787,10 +787,9 @@ public class MiniMaxProvider: AIProvider {
             logger.debug("MiniMax API response [req:\(requestId.prefix(8))]: \(httpResponse.statusCode)")
 
             guard 200...299 ~= httpResponse.statusCode else {
-                if let errorData = String(data: data, encoding: .utf8) {
-                    logger.error("MiniMax API error [req:\(requestId.prefix(8))]: \(errorData)")
-                }
-                throw ProviderError.networkError("MiniMax API returned status \(httpResponse.statusCode)")
+                let errorData = String(data: data, encoding: .utf8) ?? ""
+                logger.error("MiniMax API error [req:\(requestId.prefix(8))]: \(errorData)")
+                throw ProviderError.fromHTTPStatus(httpResponse.statusCode, body: errorData, provider: "MiniMax")
             }
 
             /// Parse response.
@@ -826,7 +825,9 @@ public class MiniMaxProvider: AIProvider {
     /// - Tool results: {"role": "tool", "content": [{"name": "...", "type": "text", "text": "..."}]}
     /// - Assistant with tool_calls: {"role": "assistant", "tool_calls": [...], "content": ""}
     /// See: https://platform.minimax.io/docs/guides/text-function-call
-    private func buildMiniMaxMessages(from messages: [OpenAIChatMessage], requestId: String) -> [[String: Any]] {
+    ///
+    /// Internal rather than private so the ordering rules can be covered by tests.
+    func buildMiniMaxMessages(from messages: [OpenAIChatMessage], requestId: String) -> [[String: Any]] {
         // First pass: collect tool_call_id -> function_name mappings from assistant messages
         var toolCallIdToFunctionName: [String: String] = [:]
         for message in messages {
@@ -867,7 +868,14 @@ public class MiniMaxProvider: AIProvider {
         }
 
         // Process remaining non-system messages
-        for message in nonSystemMessages {
+        //
+        // MiniMax requires each tool result to immediately follow the assistant
+        // message whose tool_calls it answers. A dialog message between the two
+        // is rejected with "invalid params, tool call result does not follow
+        // tool call (2013)". Enforce the adjacency here so the shape is correct
+        // regardless of how the message array was assembled upstream.
+        let orderedNonSystemMessages = MessageValidator.enforceToolResultAdjacency(nonSystemMessages)
+        for message in orderedNonSystemMessages {
             if message.role == "tool" {
                 // MiniMax tool message format: content is an array of {name, type, text} objects
                 var toolContent: [[String: Any]] = []

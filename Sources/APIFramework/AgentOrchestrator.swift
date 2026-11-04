@@ -917,6 +917,39 @@ public class AgentOrchestrator: ObservableObject, IterationController {
 
     // MARK: - Helper Methods
 
+    /// Tell the user that the run was cut short by a provider error.
+    ///
+    /// A workflow that fails after tools have run returns partial results. The
+    /// tool output is in the transcript but nothing explains why there is no
+    /// summary, which reads as the agent having finished rather than stopped.
+    /// Only fires when tools actually ran — a failure before any tool call has
+    /// no partial work worth explaining.
+    private func appendWorkflowFailureNotice(
+        conversationId: UUID,
+        error: Error,
+        toolsRan: Bool
+    ) {
+        guard toolsRan else { return }
+        guard let conversation = conversationManager.conversations.first(where: { $0.id == conversationId }) else { return }
+
+        let notice = """
+        The run stopped before I could write the summary — the provider rejected my follow-up request.
+
+        \(error.localizedDescription)
+
+        The tool results above were retrieved successfully. Ask me to summarize them, or send the request again.
+        """
+
+        conversation.messageBus?.addAssistantMessage(
+            id: UUID(),
+            content: notice,
+            timestamp: Date(),
+            toolCalls: nil
+        )
+        conversationManager.saveConversations()
+        logger.info("WORKFLOW_FAILURE_NOTICE: Added failure notice to conversation")
+    }
+
     /// Complete the current iteration and capture WorkflowRound This is the SINGLE endpoint for iteration completion in the entire AgentOrchestrator.
     private func completeIteration(
         context: inout WorkflowExecutionContext,
@@ -2195,6 +2228,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 } else {
                     /// Later iteration failed - return partial results.
                     logger.warning("WARNING: Returning partial results after error")
+                    /// Say why the run stopped. Without this the transcript just
+                    /// ends after the tool output and it looks like the work
+                    /// finished rather than being cut short.
+                    self.appendWorkflowFailureNotice(
+                        conversationId: conversationId,
+                        error: enhancedError,
+                        toolsRan: context.toolsExecutedInWorkflow
+                    )
                     break
                 }
             }

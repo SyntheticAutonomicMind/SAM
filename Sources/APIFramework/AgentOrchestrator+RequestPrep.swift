@@ -563,6 +563,75 @@ extension AgentOrchestrator {
         )
     }
 
+    /// Rebuild a request in the most conservative OpenAI-compatible shape.
+    ///
+    /// Strict providers (MiniMax, Moonshot) reject a request whose tool results
+    /// are not immediately preceded by the assistant message that requested
+    /// them, and reject tool calls whose arguments are not valid JSON. This
+    /// shape keeps every tool result adjacent to its assistant, replaces
+    /// unparsable arguments with an empty object, and drops the argument echo
+    /// that some providers duplicate into the assistant content.
+    func requestWithStrictToolShape(_ request: OpenAIChatRequest) -> OpenAIChatRequest {
+        var messages = MessageValidator.enforceToolResultAdjacency(request.messages)
+
+        messages = messages.map { message in
+            guard message.role == "assistant",
+                  let toolCalls = message.toolCalls,
+                  !toolCalls.isEmpty else { return message }
+
+            let sanitizedCalls: [OpenAIToolCall] = toolCalls.map { toolCall in
+                let arguments = toolCall.function.arguments
+                let isParsable = (try? JSONSerialization.jsonObject(
+                    with: Data(arguments.utf8),
+                    options: [.fragmentsAllowed]
+                )) != nil
+                return OpenAIToolCall(
+                    id: toolCall.id,
+                    type: toolCall.type,
+                    function: OpenAIFunctionCall(
+                        name: toolCall.function.name,
+                        arguments: isParsable ? arguments : "{}"
+                    ),
+                    index: toolCall.index
+                )
+            }
+
+            /// Some providers echo the tool call arguments into the assistant
+            /// content. That text is the argument payload rather than a reply,
+            /// so drop it when it is a JSON object.
+            let content = message.content ?? ""
+            let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isArgumentEcho = trimmedContent.hasPrefix("{") && (try? JSONSerialization.jsonObject(
+                with: Data(trimmedContent.utf8),
+                options: [.fragmentsAllowed]
+            )) != nil
+
+            return OpenAIChatMessage(
+                id: message.id,
+                role: message.role,
+                content: isArgumentEcho ? "" : content,
+                toolCalls: sanitizedCalls,
+                toolCallId: message.toolCallId,
+                reasoningContent: message.reasoningContent
+            )
+        }
+
+        return OpenAIChatRequest(
+            model: request.model,
+            messages: messages,
+            temperature: request.temperature,
+            topP: request.topP,
+            repetitionPenalty: request.repetitionPenalty,
+            maxTokens: request.maxTokens,
+            stream: request.stream,
+            tools: request.tools,
+            samConfig: request.samConfig,
+            sessionId: request.sessionId,
+            statefulMarker: request.statefulMarker,
+            iterationNumber: request.iterationNumber
+        )
+    }
+
     /// Inject MCP tools into the base request via SharedConversationService, then
     /// validate tool message pairs as a safety net.
     ///
@@ -579,6 +648,11 @@ extension AgentOrchestrator {
         // validateToolMessagePairs here as a safety net for tool injection edge cases.
         var messages = requestWithTools.messages
         messages = MessageValidator.validateToolMessagePairs(messages)
+        // Final gate before the request goes on the wire: guarantee each tool
+        // result immediately follows the assistant message whose tool_calls it
+        // answers. Strict OpenAI-compatible providers (MiniMax, Moonshot) reject
+        // the request outright otherwise.
+        messages = MessageValidator.enforceToolResultAdjacency(messages)
         logger.debug("\(loggerPrefix): Applied tool pair validation (\(messages.count) messages)")
 
         return OpenAIChatRequest(
