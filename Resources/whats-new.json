@@ -1,8 +1,8 @@
 {
   "releases": [
     {
-      "version": "20261105.1",
-      "release_date": "November 5, 2026",
+      "version": "20261106.1",
+      "release_date": "November 6, 2026",
       "introduction": "A follow-up to yesterday's tool-calling fix that goes one layer deeper. SAM was packaging a tool's raw output as if it were SAM's own last message when building the follow-up request, so the model read a garbled conversation and could not produce the answer - on some providers the request was rejected, on others the model simply never replied. Tool results and SAM's replies now stay strictly separated.",
       "highlights": [
         {
