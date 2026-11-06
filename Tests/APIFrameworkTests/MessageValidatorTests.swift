@@ -383,9 +383,9 @@ final class MessageValidatorTests: XCTestCase {
     }
 
     func testValidateAndTruncate_WithinBudget_SummaryNotAtEnd_Normalizes() {
-        // A thread_summary that is NOT at the end triggers normalizeSummaryToEnd.
-        // For cloud providers (default isLocalInference=false), the summary is
-        // inserted before the last user message (per CLIO), NOT appended at END.
+        // A standalone thread_summary system message triggers
+        // normalizeSummaryToEnd, which folds it into the last user message
+        // (CLIO parity - folded for ALL providers).
         let systemMsg = OpenAIChatMessage(role: "system", content: "You are helpful.")
         let summary = OpenAIChatMessage(role: "system", content: "<thread_summary>\n\nPrevious work summary.\n\n</thread_summary>")
         let userMsg = OpenAIChatMessage(role: "user", content: "New question")
@@ -395,28 +395,29 @@ final class MessageValidatorTests: XCTestCase {
         let config = TrimConfig(caps: ContextCapabilities(contextWindow: 100_000), tokenRatio: 4.0)
         let result = MessageValidator.validateAndTruncateWithDropped(messages: messages, config: config)
 
-        // Summary should be moved before the last user message (CLIO behavior)
-        XCTAssertEqual(result.messages.count, 4)
-        // The order should be: systemMsg, summary, userMsg, assistantMsg
-        // (summary inserted before userMsg, deinterleaved dialog has userMsg last)
-        let userMsgIndex = result.messages.firstIndex { $0.content == "New question" }
-        XCTAssertNotNil(userMsgIndex)
-        // Check summary is right before userMsg
-        if let ui = userMsgIndex {
-            let beforeUser = result.messages[ui - 1]
-            XCTAssertTrue(beforeUser.content?.contains("<thread_summary>") ?? false,
-                         "Summary should be inserted before the last user message")
+        // No standalone summary system message survives.
+        let summarySystemMsgs = result.messages.filter { msg in
+            msg.role == "system" && (msg.content?.contains("<thread_summary>") ?? false)
         }
+        XCTAssertEqual(summarySystemMsgs.count, 0)
+
+        // The summary is folded into the last user message, preserving the
+        // user's own text after it.
+        let foldedUser = result.messages.last { $0.role == "user" }
+        XCTAssertNotNil(foldedUser)
+        XCTAssertTrue(foldedUser?.content?.hasPrefix("<thread_summary>") ?? false,
+                      "summary folded ahead of the user's text")
+        XCTAssertTrue(foldedUser?.content?.contains("New question") ?? false,
+                      "original user content preserved")
     }
 
-    // MARK: - Local Inference Summary Folding Tests
+    // MARK: - Summary Folding Tests (all providers, CLIO parity)
 
-    func testValidateAndTruncateWithDropped_LocalInference_FoldsSummaryIntoUserMessage() {
-        // When isLocalInference is true, the thread_summary must be folded into the
-        // last user message — NOT appended as a system message — because local
-        // inference providers (llama.cpp, SAM, LM Studio) use Jinja chat templates
-        // (e.g. Qwen3) that reject mid-conversation role=system with
-        // "System message must be at the beginning" errors.
+    func testValidateAndTruncateWithDropped_FoldsSummaryIntoUserMessage() {
+        // The thread_summary must be folded into the last user message - NOT
+        // emitted as a separate system message. The folded summary lives in
+        // the final message, keeping the provider's cache-stable prefix
+        // through [system prompt, recent turns].
         let systemMsg = OpenAIChatMessage(role: "system", content: "You are a helpful assistant")
         let userMsg = OpenAIChatMessage(role: "user", content: "Do the task")
 
@@ -428,7 +429,7 @@ final class MessageValidatorTests: XCTestCase {
         let messages = [systemMsg, filler, filler2, userMsg]
 
         let caps = ContextCapabilities(contextWindow: 10_000, maxOutputTokens: 2_000)
-        let config = TrimConfig(caps: caps, tokenRatio: 4.0, isLocalInference: true)
+        let config = TrimConfig(caps: caps, tokenRatio: 4.0)
 
         let result = MessageValidator.validateAndTruncateWithDropped(
             messages: messages, config: config
@@ -439,7 +440,7 @@ final class MessageValidatorTests: XCTestCase {
             msg.role == "system" && (msg.content?.contains("<thread_summary>") ?? false)
         }
         XCTAssertEqual(summarySystemMsgs.count, 0,
-                       "Local inference should NOT produce a thread_summary system message")
+                       "No standalone thread_summary system message may be emitted")
 
         // The summary content should be folded into the last user message
         let userMsgFolded = result.messages.last { $0.role == "user" }
@@ -450,41 +451,10 @@ final class MessageValidatorTests: XCTestCase {
                       "Original user message content should be preserved after folded summary")
     }
 
-    func testValidateAndTruncateWithDropped_CloudInference_InsertsSummaryAsSystemBeforeUser() {
-        // When isLocalInference is false (cloud providers), the thread_summary
-        // should be appended as a system message at the END (canonical behavior).
-        let systemMsg = OpenAIChatMessage(role: "system", content: "You are a helpful assistant")
-        let userMsg = OpenAIChatMessage(role: "user", content: "Do the task")
-
-        let bigContent = String(repeating: "y", count: 20_000)
-        let filler = OpenAIChatMessage(role: "assistant", content: bigContent)
-        let filler2 = OpenAIChatMessage(role: "user", content: bigContent)
-
-        let messages = [systemMsg, filler, filler2, userMsg]
-
-        let caps = ContextCapabilities(contextWindow: 10_000, maxOutputTokens: 2_000)
-        let config = TrimConfig(caps: caps, tokenRatio: 4.0, isLocalInference: false)
-
-        let result = MessageValidator.validateAndTruncateWithDropped(
-            messages: messages, config: config
-        )
-
-        // Summary should be a system message, inserted before the last user message
-        let lastUserIndex = result.messages.lastIndex { $0.role == "user" }
-        XCTAssertNotNil(lastUserIndex)
-        if let lui = lastUserIndex {
-            XCTAssertGreaterThan(lui, 0)
-            let beforeLastUser = result.messages[lui - 1]
-            XCTAssertTrue(beforeLastUser.content?.contains("<thread_summary>") ?? false,
-                         "Cloud inference should insert summary as system message before last user message")
-            XCTAssertEqual(beforeLastUser.role, "system")
-        }
-    }
-
-    func testValidateAndTruncate_WithinBudget_LocalInference_FoldsSummaryDuringNormalization() {
+    func testValidateAndTruncate_WithinBudget_FoldsSummaryDuringNormalization() {
         // When messages are within budget but the summary is still a system
         // message (e.g. migration from old behavior), normalizeSummaryToEnd
-        // should fold it into the last user message for local inference.
+        // folds it into the last user message.
         let systemMsg = OpenAIChatMessage(role: "system", content: "You are helpful.")
         let summary = OpenAIChatMessage(
             role: "system",
@@ -496,8 +466,7 @@ final class MessageValidatorTests: XCTestCase {
 
         let config = TrimConfig(
             caps: ContextCapabilities(contextWindow: 100_000),
-            tokenRatio: 4.0,
-            isLocalInference: true
+            tokenRatio: 4.0
         )
         let result = MessageValidator.validateAndTruncateWithDropped(
             messages: messages, config: config
@@ -508,7 +477,7 @@ final class MessageValidatorTests: XCTestCase {
             msg.role == "system" && (msg.content?.contains("<thread_summary>") ?? false)
         }
         XCTAssertEqual(summarySystemMsgs.count, 0,
-                       "Local inference normalization should fold summary into user message, not keep as system")
+                       "Normalization should fold summary into user message, not keep as system")
 
         // The summary content should be in the last user message
         let userMsgs = result.messages.filter { $0.role == "user" }
@@ -516,12 +485,12 @@ final class MessageValidatorTests: XCTestCase {
                       "thread_summary should be folded into a user message")
     }
 
-    func testValidateAndTruncate_WithinBudget_LocalInference_ByteStableFastPath_NoSummarySystemMsg() {
+    func testValidateAndTruncate_WithinBudget_ByteStableFastPath_FoldedSummaryUnchanged() {
         // When messages are within budget, clean (no orphans/dupes), and the
-        // summary is ALREADY folded into the user message (no summary system
-        // message), the byte-stable fast path should still work for local inference.
+        // summary is ALREADY folded into the user message, the byte-stable
+        // fast path should return the original references unchanged.
         let systemMsg = OpenAIChatMessage(role: "system", content: "You are helpful.")
-        // Summary is folded into the user message (from a previous local-inference turn)
+        // Summary is folded into the user message (from a previous turn)
         let foldedUserMsg = OpenAIChatMessage(
             role: "user",
             content: "<thread_summary>\n\nPrevious work.\n\n</thread_summary>\n\nNew question"
@@ -531,8 +500,7 @@ final class MessageValidatorTests: XCTestCase {
 
         let config = TrimConfig(
             caps: ContextCapabilities(contextWindow: 100_000),
-            tokenRatio: 4.0,
-            isLocalInference: true
+            tokenRatio: 4.0
         )
         let result = MessageValidator.validateAndTruncateWithDropped(
             messages: messages, config: config
@@ -545,8 +513,9 @@ final class MessageValidatorTests: XCTestCase {
                        "Folded user message should be preserved unchanged")
     }
 
-    func testNormalizeSummaryToEnd_LocalInference_FoldsSummary() {
-        // Direct test of normalizeSummaryToEnd with isLocalInference: true.
+    func testNormalizeSummaryToEnd_FoldsSummary() {
+        // Direct test of normalizeSummaryToEnd: the summary folds into the
+        // last user message for all providers.
         let userMsg = OpenAIChatMessage(role: "user", content: "Hello")
         let summary = OpenAIChatMessage(
             role: "system",
@@ -554,17 +523,14 @@ final class MessageValidatorTests: XCTestCase {
         )
         let messages = [userMsg, summary]
 
-        let result = MessageValidator.normalizeSummaryToEnd(
-            messages: messages,
-            isLocalInference: true
-        )
+        let result = MessageValidator.normalizeSummaryToEnd(messages: messages)
 
         // No system message with <thread_summary> should remain
         let summaryMsgs = result.filter { msg in
             msg.role == "system" && (msg.content?.contains("<thread_summary>") ?? false)
         }
         XCTAssertEqual(summaryMsgs.count, 0,
-                       "normalizeSummaryToEnd should fold summary into user message for local inference")
+                       "normalizeSummaryToEnd should fold summary into user message")
 
         // The summary content should be in the user message
         let userResult = result.first { $0.role == "user" }
@@ -575,9 +541,8 @@ final class MessageValidatorTests: XCTestCase {
                       "Original user content should be preserved")
     }
 
-    func testNormalizeSummaryToEnd_CloudInference_InsertsBeforeLastUser() {
-        // Cloud inference should insert the summary before the last user message
-        // (matching CLIO), not at END.
+    func testNormalizeSummaryToEnd_FoldsRegardlessOfPosition() {
+        // The fold applies no matter where the summary sits in the array.
         let userMsg = OpenAIChatMessage(role: "user", content: "Hello")
         let summary = OpenAIChatMessage(
             role: "system",
@@ -585,18 +550,15 @@ final class MessageValidatorTests: XCTestCase {
         )
         let messages = [summary, userMsg]  // summary before userMsg
 
-        let result = MessageValidator.normalizeSummaryToEnd(
-            messages: messages,
-            isLocalInference: false
-        )
+        let result = MessageValidator.normalizeSummaryToEnd(messages: messages)
 
-        // Result: [summary, userMsg] — summary inserted before last user message
-        XCTAssertEqual(result.count, 2)
+        // Result: [userMsg with folded summary]
+        XCTAssertEqual(result.count, 1)
         let lastMsg = result.last!
         XCTAssertEqual(lastMsg.role, "user")
         XCTAssertTrue(lastMsg.content?.contains("Hello") ?? false)
-        let beforeLast = result[result.count - 2]
-        XCTAssertTrue(beforeLast.content?.contains("<thread_summary>") ?? false)
+        XCTAssertTrue(lastMsg.content?.hasPrefix("<thread_summary>") ?? false,
+                      "summary folded ahead of the user's own text")
     }
 
     func testBytesToCharsRatio_NeedsValidation_DetectsDuplicates() {
@@ -672,11 +634,12 @@ final class MessageValidatorTests: XCTestCase {
         XCTAssertEqual(configWithoutOverride.effectiveBudget, 105_408)
     }
 
-    // MARK: - Summary at END Tests
+    // MARK: - Summary Folding Tests (trim path)
 
     func testValidateAndTruncateWithDropped_SummaryAtEnd() {
-        // When a previous summary exists, it should be placed before the last
-        // user message (CLIO behavior), not at the END of the output.
+        // When a previous summary exists, it is folded into the last user
+        // message (CLIO parity - all providers), never left as a standalone
+        // mid-array system message.
         let systemMsg = OpenAIChatMessage(role: "system", content: "SYSTEM INSTRUCTIONS")
         let summaryMsg = OpenAIChatMessage(role: "system", content: "<thread_summary>\n\nSummary of old conversation\n\n</thread_summary>")
         let userMsg1 = OpenAIChatMessage(role: "user", content: "First request")
@@ -695,15 +658,19 @@ final class MessageValidatorTests: XCTestCase {
             config: config
         )
 
-        // The summary should be before the last user message, not at the beginning
-        let lastUserIndex = result.messages.lastIndex { $0.role == "user" }
-        XCTAssertNotNil(lastUserIndex)
-        if let lui = lastUserIndex {
-            XCTAssertGreaterThan(lui, 0, "Last user message should not be first")
-            let beforeLastUser = result.messages[lui - 1]
-            XCTAssertTrue(beforeLastUser.content?.contains("<thread_summary>") ?? false,
-                          "Summary should be before the last user message")
+        // No standalone summary system message survives
+        let summarySystemMsgs = result.messages.filter { msg in
+            msg.role == "system" && (msg.content?.contains("<thread_summary>") ?? false)
         }
+        XCTAssertEqual(summarySystemMsgs.count, 0)
+
+        // The summary is folded into the last user message
+        let lastUser = result.messages.last { $0.role == "user" }
+        XCTAssertNotNil(lastUser)
+        XCTAssertTrue(lastUser?.content?.hasPrefix("<thread_summary>") ?? false,
+                      "Summary folded ahead of the user's text")
+        XCTAssertTrue(lastUser?.content?.contains("Second request") ?? false,
+                      "User's own text preserved after the fold")
 
         XCTAssertEqual(result.messages[0].role, "system", "System message should be at the beginning")
     }
@@ -733,14 +700,11 @@ final class MessageValidatorTests: XCTestCase {
 
         // Should have been trimmed
         XCTAssertTrue(result.wasTrimmed, "Result should have been trimmed: wasTrimmed=\(result.wasTrimmed), droppedCount=\(result.droppedMessages.count)")
-        // The summary should contain a thread_summary, placed before the last user message
-        let lastUserIndex = result.messages.lastIndex { $0.role == "user" }
-        XCTAssertNotNil(lastUserIndex)
-        if let lui = lastUserIndex {
-            let beforeLastUser = result.messages[lui - 1]
-            XCTAssertTrue(beforeLastUser.content?.contains("<thread_summary>") ?? false,
-                          "Summary should be before the last user message (cloud behavior)")
-        }
+        // The regenerated summary is folded into the last user message
+        let lastUser = result.messages.last { $0.role == "user" }
+        XCTAssertNotNil(lastUser)
+        XCTAssertTrue(lastUser?.content?.hasPrefix("<thread_summary>") ?? false,
+                      "Regenerated summary folded into the last user message")
     }
 
     // MARK: - CSSS Slot Scaling Tests

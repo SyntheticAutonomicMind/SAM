@@ -104,6 +104,24 @@ final class ContextAuditTests: XCTestCase {
         XCTAssertLessThanOrEqual(summaries.count, 1, "single-artifact invariant")
     }
 
+    /// Folded summaries inside user messages carry state forward too - the
+    /// fold is the CLIO-parity carrier after the single-artifact change.
+    func testExtractPreviousSummaryContent_FindsFoldedSummariesInUserMessages() {
+        let messages = [
+            OpenAIChatMessage(role: "system", content: "main prompt"),
+            OpenAIChatMessage(
+                role: "user",
+                content: "<thread_summary>\nfolded prior state\n</thread_summary>\n\nthe user's actual question"
+            ),
+            OpenAIChatMessage(role: "assistant", content: "answer")
+        ]
+
+        let previous = MessageValidator.extractPreviousSummaryContent(from: messages)
+        XCTAssertTrue(previous.contains("folded prior state"), "folded summary extracted")
+        XCTAssertFalse(previous.contains("the user's actual question"), "user's own text excluded")
+        XCTAssertFalse(previous.contains("main prompt"), "non-summary system content excluded")
+    }
+
     // MARK: - Single-artifact helper
 
     func testRemoveExistingThreadSummaries_StripsArtifactsAndPreservesUserInput() {
