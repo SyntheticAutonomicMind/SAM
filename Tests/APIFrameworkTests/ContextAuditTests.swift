@@ -122,6 +122,34 @@ final class ContextAuditTests: XCTestCase {
         XCTAssertFalse(previous.contains("main prompt"), "non-summary system content excluded")
     }
 
+    /// Second-cycle trim: the pinned user carries a stale fold from the
+    /// previous cycle. The fold is stripped from the kept copy, changing its
+    /// content hash - the pinned unit must NOT be archived as dropped, and
+    /// the output must carry exactly one fold.
+    func testTrimPath_SecondCycle_StaleFoldNotArchivedAsDropped() {
+        let messages = [
+            OpenAIChatMessage(role: "system", content: "System"),
+            OpenAIChatMessage(role: "user", content: String(repeating: "a", count: 8_000)),
+            OpenAIChatMessage(role: "assistant", content: String(repeating: "b", count: 8_000)),
+            OpenAIChatMessage(
+                role: "user",
+                content: "<thread_summary>\nprevious cycle state\n</thread_summary>\n\nthe current ask"
+            )
+        ]
+        let caps = ContextCapabilities(contextWindow: 4_000, maxOutputTokens: 100)
+        let config = TrimConfig(caps: caps, tokenRatio: 4.0)
+
+        let result = MessageValidator.validateAndTruncateWithDropped(messages: messages, config: config)
+
+        XCTAssertFalse(result.droppedMessages.contains { $0.content?.contains("the current ask") ?? false },
+                       "the pinned user's message must not be archived as dropped")
+        let foldedUser = result.messages.last { $0.role == "user" }
+        XCTAssertNotNil(foldedUser)
+        XCTAssertTrue(foldedUser?.content?.contains("the current ask") ?? false, "user text preserved")
+        XCTAssertEqual(foldedUser?.content?.components(separatedBy: "<thread_summary>").count, 3,
+                       "exactly one fold (open tag, body, close tag)")
+    }
+
     // MARK: - Single-artifact helper
 
     func testRemoveExistingThreadSummaries_StripsArtifactsAndPreservesUserInput() {

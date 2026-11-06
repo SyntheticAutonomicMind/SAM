@@ -286,6 +286,13 @@ public struct MessageValidator {
         for i in startIdx..<units.count {
             let unit = units[i]
             if unit.isOrphanToolResult { continue }
+            // The pinned last user turn is kept by construction (its tokens
+            // are reserved up front). Skip it here: the summary fold is
+            // stripped from the kept copy, so its content hash no longer
+            // matches the input - without this skip the user's own message
+            // would be archived as dropped and its text would leak into the
+            // regenerated summary.
+            if let pinnedIdx = lastUserUnitIdx, i == pinnedIdx { continue }
             for msg in unit.messages {
                 if !keptMessageIds.contains(messageIdentity(msg)) {
                     // Skip system messages - they go into summary, not dropped
