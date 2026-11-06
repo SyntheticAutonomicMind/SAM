@@ -154,6 +154,8 @@ build-debug: llamacpp
 	@echo "SUCCESS: App bundle created with embedded Info.plist, app icon, and frameworks"
 	@echo "�Debug executable: .build/Build/Products/Debug/SAM"
 	@echo "App bundle: .build/Build/Products/Debug/SAM.app"
+	@echo "Signing local build (Developer ID when available)..."
+	@./scripts/sign-local.sh $(APP_BUNDLE_DEBUG)
 
 # Build release version
 build-release: llamacpp
@@ -207,6 +209,8 @@ build-release: llamacpp
 	@echo "Fixing framework rpath in executable..."
 	@install_name_tool -add_rpath @executable_path/../Frameworks .build/Build/Products/Release/SAM.app/Contents/MacOS/SAM 2>/dev/null || true
 	@echo "SUCCESS: App bundle created with embedded Info.plist, app icon, and frameworks"
+	@echo "Signing local build (Developer ID when available)..."
+	@./scripts/sign-local.sh $(APP_BUNDLE_RELEASE)
 	@echo "SUCCESS: Release build complete"
 	@echo "Release executable: .build/Build/Products/Release/SAM"
 	@echo "App bundle: .build/Build/Products/Release/SAM.app"
