@@ -316,6 +316,9 @@ struct EndpointManagementView: View {
         case .zaiCoding:
             return "Get your API key from api.z.ai/coding"
 
+        case .cheaperInference:
+            return "Get your API key from cheaperinference.com"
+
         case .custom:
             return "Enter the API key for your custom provider"
         }
@@ -462,6 +465,7 @@ struct ProviderRowView: View {
         case .ollamaCloud: return "cloud"
         case .zai: return "z.circle"
         case .zaiCoding: return "z.circle"
+        case .cheaperInference: return "c.circle"
         case .custom: return "gear"
         }
     }
@@ -877,6 +881,9 @@ struct ProviderConfigurationSheet: View {
         case .zaiCoding:
             return "Get your API key from api.z.ai - Z.AI coding models with thinking support"
 
+        case .cheaperInference:
+            return "Get your API key from cheaperinference.com - OpenAI-compatible gateway to models from several labs"
+
         case .custom:
             return "Enter the API key provided by your custom endpoint"
         }
@@ -932,7 +939,7 @@ struct ProviderConfigurationSheet: View {
         /// Add authentication if required.
         if providerType.requiresApiKey && !apiKey.isEmpty {
             switch providerType {
-            case .openai, .deepseek, .minimax, .custom:
+            case .openai, .deepseek, .minimax, .cheaperInference, .custom:
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
             case .openrouter:

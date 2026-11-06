@@ -24,6 +24,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 | **Ollama Cloud** | Pay-per-token | Varies | Cloud | Cloud-hosted Ollama models |
 | **Z.AI (Chat)** | Pay-per-token | Fast | Cloud | GLM models, Chinese/English bilingual |
 | **Z.AI (Coding)** | Pay-per-token | Fast | Cloud | GLM coding models |
+| **Cheaper Inference** | Pay-per-token | Varies | Cloud | Access models from several labs with one API key |
 | **MLX (Local)** | Free | Varies | Full privacy | Offline use, sensitive data, Apple Silicon |
 | **llama.cpp (Local)** | Free | Fast | Full privacy | High-performance local, Apple Silicon |
 | **Remote llama.cpp** | Free | Varies | Self-hosted | Self-hosted inference servers |
@@ -215,6 +216,21 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 - Specialized for code generation and analysis
 - Supports chain-of-thought reasoning for complex coding tasks
 - Large context windows
+
+---
+
+### Cheaper Inference
+
+**What you get:** An OpenAI-compatible LLM gateway. One API key gives access to models from several labs.
+
+**Setup:**
+1. Create an account at [cheaperinference.com](https://cheaperinference.com)
+2. Create an API key
+3. In SAM Settings > AI Providers, add Cheaper Inference
+4. Paste your API key
+5. Select a model from the list, or fetch the live list from the provider
+
+**Models:** Bare model IDs, for example `gpt-5.4-mini`, `claude-sonnet-5`, `deepseek-v4-flash`. See the [docs](https://cheaperinference.com/docs) for the full list.
 
 ---
 

@@ -1129,6 +1129,17 @@ public class EndpointManager: ObservableObject {
                 temperature: 1.0
             )
 
+        case .cheaperInference:
+            return ProviderConfiguration(
+                providerId: "cheaper-inference",
+                providerType: .cheaperInference,
+                isEnabled: false,
+                baseURL: "https://api.cheaperinference.com/v1",
+                models: ProviderType.cheaperInference.defaultModels,
+                maxTokens: ProviderType.cheaperInference.defaultMaxOutputTokens,
+                temperature: ProviderType.cheaperInference.defaultTemperature
+            )
+
         case .custom:
             return ProviderConfiguration(
                 providerId: "custom",
@@ -1187,6 +1198,9 @@ public class EndpointManager: ObservableObject {
 
         case .zaiCoding:
             return ZAIProvider(config: config)
+
+        case .cheaperInference:
+            return CheaperInferenceProvider(config: config)
 
         case .custom:
             return CustomProvider(config: config)
