@@ -660,9 +660,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         isToolOutput: Bool = false,
         toolName: String? = nil
     ) async -> Bool {
-    /// Filter internal markers (preserve formatting/newlines) and store the clean response.
-    context.lastResponse = deduplicateParagraphs(in: MessageCleaner.filterInternalMarkersNoTrim(from: rawResponse))
-        context.currentRoundLLMResponse = context.lastResponse
+        /// Tool outputs are tracked in currentRoundToolResults and must never
+        /// overwrite the LLM response state. Overwriting it made the next
+        /// request's assistant message carry the tool's raw output as its
+        /// content, which strict providers then reject or misread.
+        if !isToolOutput {
+            context.lastResponse = deduplicateParagraphs(in: MessageCleaner.filterInternalMarkersNoTrim(from: rawResponse))
+            context.currentRoundLLMResponse = context.lastResponse
+        }
         if let fr = finishReason { context.lastFinishReason = fr }
 
         /// Extract session naming marker from response and rename conversation

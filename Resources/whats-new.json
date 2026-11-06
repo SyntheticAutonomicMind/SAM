@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "20261105.1",
+      "release_date": "November 5, 2026",
+      "introduction": "A follow-up to yesterday's tool-calling fix that goes one layer deeper. SAM was packaging a tool's raw output as if it were SAM's own last message when building the follow-up request, so the model read a garbled conversation and could not produce the answer - on some providers the request was rejected, on others the model simply never replied. Tool results and SAM's replies now stay strictly separated.",
+      "highlights": [
+        {
+          "id": "tool-output-stays-out-of-the-reply",
+          "icon": "text.bubble",
+          "title": "Tool Output No Longer Poses As SAM's Reply",
+          "description": "When a tool ran - a web search, a file read, a shell command - its raw output was written into the slot where SAM's own reply goes in the next request. The model then read a conversation in which it appeared to have said the tool's entire output out loud, and could not work out what to do next: replies stopped coming, or the same tools ran again and again. The model's replies and tool results now travel in their own lanes, so tool workflows produce the answer they were always supposed to end with."
+        }
+      ],
+      "bugfixes": [
+        {
+          "id": "no-phantom-final-answer",
+          "icon": "checkmark.seal",
+          "title": "No Phantom Final Answer",
+          "description": "When a run ended without SAM writing a response - cancellation, hitting the iteration limit - the last tool's raw output could be inserted into the conversation as if SAM had said it. Nothing is added now unless the model actually wrote it."
+        }
+      ]
+    },
+    {
       "version": "20261104.1",
       "release_date": "November 4, 2026",
       "introduction": "A fix for conversations that ended right after a tool call, with the tool output on screen but no written answer. SAM was packaging tool results in a way that some AI providers reject outright, so the follow-up request that asked for a summary never went through. SAM now keeps each tool result next to the tool call that asked for it, and tells you in the conversation when a run stopped and why.",
