@@ -279,6 +279,7 @@ final class ProviderConfigurationTests: XCTestCase {
         XCTAssertEqual(ProviderType.minimax.defaultBaseURL, "https://api.minimax.io/v1")
         XCTAssertEqual(ProviderType.openrouter.defaultBaseURL, "https://openrouter.ai/api/v1")
         XCTAssertEqual(ProviderType.githubCopilot.defaultBaseURL, "https://api.githubcopilot.com")
+        XCTAssertEqual(ProviderType.cheaperInference.defaultBaseURL, "https://api.cheaperinference.com/v1")
 
         // These providers have no default URL — user must configure
         XCTAssertNil(ProviderType.localLlama.defaultBaseURL)

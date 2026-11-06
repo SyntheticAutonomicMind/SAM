@@ -192,6 +192,7 @@ public enum ProviderType: String, CaseIterable, Codable {
     case ollamaCloud = "ollama-cloud"
     case zai = "zai"
     case zaiCoding = "zai-coding"
+    case cheaperInference = "cheaper-inference"
     case custom = "custom"
 
     public var displayName: String {
@@ -208,6 +209,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .ollamaCloud: return "Ollama Cloud"
         case .zai: return "Z.AI (Chat)"
         case .zaiCoding: return "Z.AI (Coding)"
+        case .cheaperInference: return "Cheaper Inference"
         case .custom: return "Custom"
         }
     }
@@ -231,6 +233,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .ollamaCloud: return "ollama_cloud"
         case .zai: return "zai"
         case .zaiCoding: return "zai_coding"
+        case .cheaperInference: return "cheaper_inference"
         case .custom: return "custom"
         }
     }
@@ -238,7 +241,7 @@ public enum ProviderType: String, CaseIterable, Codable {
     public var requiresApiKey: Bool {
         switch self {
         case .localLlama, .localMLX: return false
-        case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter, .ollamaCloud, .zai, .zaiCoding, .remoteLlama, .custom: return true
+        case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter, .ollamaCloud, .zai, .zaiCoding, .cheaperInference, .remoteLlama, .custom: return true
         }
     }
 
@@ -253,6 +256,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .ollamaCloud: return "https://ollama.com/v1"
         case .zai: return "https://api.z.ai/api/paas/v4"
         case .zaiCoding: return "https://api.z.ai/api/coding/paas/v4"
+        case .cheaperInference: return "https://api.cheaperinference.com/v1"
         case .localLlama, .localMLX, .remoteLlama, .custom: return nil
         }
     }
@@ -273,6 +277,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .remoteLlama: return "remote-llama"
         case .ollamaCloud: return "ollama"
         case .zai, .zaiCoding: return "zai"
+        case .cheaperInference: return "cheaper-inference"
         case .custom: return "custom"
         }
     }
@@ -308,6 +313,8 @@ public enum ProviderType: String, CaseIterable, Codable {
             return ["glm-5.1", "glm-4.9"]
         case .zaiCoding:
             return ["glm-5.1", "glm-4.9"]
+        case .cheaperInference:
+            return ["gpt-5.4-mini", "gpt-5.4", "claude-sonnet-5", "deepseek-v4-flash", "glm-5.3"]
         case .custom:
             return []
         }
@@ -331,6 +338,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .ollamaCloud: return 8192
         case .zai: return 8192
         case .zaiCoding: return 8192
+        case .cheaperInference: return 8192  // Varies by model, reasonable default
         case .custom: return 4096      // Conservative default for unknown providers
         }
     }
@@ -350,6 +358,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .ollamaCloud: return 0.7
         case .zai: return 1.0            // Z.AI recommended temp
         case .zaiCoding: return 1.0
+        case .cheaperInference: return 0.7
         case .custom: return 0.7
         }
     }
@@ -362,6 +371,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter: return 30
         case .ollamaCloud: return 60
         case .zai, .zaiCoding: return 30
+        case .cheaperInference: return 60
         case .custom: return 30
         }
     }
@@ -374,6 +384,7 @@ public enum ProviderType: String, CaseIterable, Codable {
         case .openai, .githubCopilot, .deepseek, .gemini, .minimax, .openrouter: return 2
         case .ollamaCloud: return 3
         case .zai, .zaiCoding: return 2
+        case .cheaperInference: return 3
         case .custom: return 2
         }
     }
@@ -408,6 +419,8 @@ public enum ProviderType: String, CaseIterable, Codable {
             return "z.circle.fill"
         case .zaiCoding:
             return "z.circle.fill"
+        case .cheaperInference:
+            return "c.circle.fill"
         case .custom:
             return "network"
         }
@@ -445,6 +458,8 @@ public enum ProviderType: String, CaseIterable, Codable {
             return .yellow
         case .zaiCoding:
             return .yellow
+        case .cheaperInference:
+            return .pink
 
         case .custom:
             return .secondary
