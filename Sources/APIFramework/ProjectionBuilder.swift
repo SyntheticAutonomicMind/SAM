@@ -352,6 +352,10 @@ public struct ProjectionBuilder {
         }
 
         // Compress dropped turns into a thread_summary.
+        // previousSummary: only genuine <thread_summary> artifacts carry
+        // cross-cycle state. Joining ALL system message content here fed the
+        // 42KB main prompt into parsePreviousSummary, which could carry garbage
+        // sections into regenerated summaries.
         var compressedSummary: OpenAIChatMessage? = nil
         if !droppedTurnMessages.isEmpty {
             // Group dropped messages into units for compressDropped.
@@ -359,7 +363,10 @@ public struct ProjectionBuilder {
             compressedSummary = MessageValidator.compressDropped(
                 droppedUnits,
                 lastUserUnit: nil,
-                previousSummary: systemMessages.compactMap { $0.content }.joined(separator: "\n"),
+                previousSummary: systemMessages
+                    .filter { MessageValidator.isThreadSummaryMessage($0) }
+                    .compactMap { $0.content }
+                    .joined(separator: "\n\n"),
                 droppedMessagesContainFirstRequest: true
             )
         }

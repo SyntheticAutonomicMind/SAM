@@ -133,8 +133,8 @@ public struct MessageValidator {
         logger.debug("Context: grouped \(messages.count) messages into \(units.count) units")
 
         // Extract preserved elements (system, last user, summary, leading system msgs)
-        let (systemMsgs, lastUserUnit, startIdx, summaryUnit, summaryTokens,
-             preservedUserContexts, preservedGeneralSystem) = extractPreservedUnits(units, tokenRatio: tokenRatio)
+        let (systemMsgs, lastUserUnit, lastUserUnitIdx, startIdx, summaryUnit, summaryTokens,
+             previousSummaryContent, preservedUserContexts, preservedGeneralSystem) = extractPreservedUnits(units, tokenRatio: tokenRatio)
 
         let systemTokens = estimateTokens(systemMsgs, tokenRatio: tokenRatio)
 
@@ -164,9 +164,26 @@ public struct MessageValidator {
         // Deinterleave: dialog at front (LCP-critical), tool_results deferred to END.
         var conversation: [OpenAIChatMessage] = []
         var deferredToolResults: [OpenAIChatMessage] = []
-        var currentTokens = systemTokens + summaryTokens
+
+        // Reserve pinned content (leading systems, summary slot, and the last
+        // user turn) up front, CLIO-style. The walk then only competes for the
+        // remaining budget, so the current task anchor can never be crowded out
+        // by older content and re-injected over budget.
+        // CLIO parity: _role_based_tail_walk reserves pinned_total from the
+        // walk budget and bails out to return-as-is when pinned alone exceeds it.
+        let lastUserUnitTokens = lastUserUnit?.tokens ?? 0
+        let pinnedTokens = systemTokens + summaryTokens + lastUserUnitTokens
+        if pinnedTokens > effectiveBudget {
+            logger.warning("Context: pinned content (\(pinnedTokens) tokens) alone exceeds budget (\(effectiveBudget)) - returning messages normalized but untrimmed")
+            let normalized = validateToolMessagePairs(messages)
+            let result = normalizeSummaryToEnd(messages: normalized)
+            return TruncationResult(messages: result, droppedMessages: [])
+        }
+
+        var currentTokens = pinnedTokens
         var includedToolIds = Set<String>()
         var droppedUnitStartIndices: Set<Int> = []  // Unit indices that were dropped
+        var keptUnitIdxSet: Set<Int> = []           // Unit indices the walk kept
 
         let remaining = Array(units[startIdx..<units.count])
 
@@ -181,27 +198,46 @@ public struct MessageValidator {
             /// were present and budget truncation was needed).
             let unitIdx = units.count - 1 - idx
 
+            // The last user turn is pinned: its tokens are already reserved,
+            // so it does not compete here. It is spliced back in at its own
+            // chronological position during the rebuild below.
+            if let pinnedIdx = lastUserUnitIdx, unitIdx == pinnedIdx {
+                continue
+            }
+
             if unit.isOrphanToolResult {
                 continue
             }
 
             // Deinterleave: separate dialog (assistant/user) from tool_results within the unit.
-            // Dialog stays at front; tool_results are deferred to END.
-            let (unitDialog, unitToolResults, unitDialogTokens) = deinterleaveUnit(unit, tokenRatio: tokenRatio)
+            // Dialog competes for budget; tool_results are handled in the rebuild below.
+            let (unitDialog, _, unitDialogTokens) = deinterleaveUnit(unit, tokenRatio: tokenRatio)
 
             // Always keep dialog if budget allows. Tool_results deferred to second pass.
             if !unitDialog.isEmpty && currentTokens + unitDialogTokens <= effectiveBudget {
-                conversation.insert(contentsOf: unitDialog, at: 0)
+                keptUnitIdxSet.insert(unitIdx)
                 currentTokens += unitDialogTokens
                 includedToolIds.formUnion(unit.toolCallIds)
             } else if !unitDialog.isEmpty {
                 // Dialog alone exceeds budget - drop entire unit (rare)
                 droppedUnitStartIndices.insert(unitIdx)
             }
+        }
 
-            // Defer tool_results without consuming budget
+        // Rebuild the kept dialog in ascending order, splicing the pinned last
+        // user turn at its own chronological position so an assistant reply
+        // that comes after it stays after it.
+        for unitIdx in startIdx..<units.count {
+            if let pinnedIdx = lastUserUnitIdx, unitIdx == pinnedIdx,
+               let pinnedUnit = lastUserUnit {
+                conversation.append(contentsOf: pinnedUnit.messages)
+            }
+            guard keptUnitIdxSet.contains(unitIdx) else { continue }
+            let unit = units[unitIdx]
+            let (unitDialog, unitToolResults, _) = deinterleaveUnit(unit, tokenRatio: tokenRatio)
+            conversation.append(contentsOf: unitDialog)
             if !unitToolResults.isEmpty {
-                deferredToolResults.insert(contentsOf: unitToolResults, at: 0)
+                deferredToolResults.append(contentsOf: unitToolResults)
             }
         }
 
@@ -303,14 +339,17 @@ public struct MessageValidator {
             }
         }
 
+        // Wire the previousSummary through: the newest summary is the slot that
+        // gets regenerated, and any OLDER summary artifacts feed their content
+        // in so their state is carried forward instead of silently lost.
+        // (CLIO parity: single-artifact invariant with previous_summary carryover.)
         // Compress dropped into thread_summary (placed at END)
         var summaryToUse: OpenAIChatMessage?
         if !droppedMessages.isEmpty {
-            let previousSummary = summaryUnit?.messages.first?.content ?? ""
             summaryToUse = compressDropped(
                 droppedUnitMessages(droppedMessages),
                 lastUserUnit: lastUserUnit,
-                previousSummary: previousSummary,
+                previousSummary: previousSummaryContent,
                 droppedMessagesContainFirstRequest: summaryUnit == nil
             )
         } else if let existing = summaryUnit?.messages.first {
@@ -336,6 +375,11 @@ public struct MessageValidator {
         // double-injection needed.
         _ = preservedGeneralSystem
         truncated.append(contentsOf: finalMessages)
+        // Single-artifact invariant: strip any surviving summary artifacts
+        // (e.g. mid-array summaries from a reload) before injecting the
+        // regenerated one. The new summary already carries their state via
+        // previousSummary.
+        truncated = removeExistingThreadSummaries(truncated)
         if let summary = summaryToUse {
             if config.isLocalInference {
                 // For local-inference providers (llama.cpp, SAM, LM Studio), fold
@@ -377,6 +421,14 @@ public struct MessageValidator {
         let finalTokens = estimateTokens(truncated, tokenRatio: tokenRatio)
         logger.info("Context: trimmed \(messages.count) -> \(truncated.count) messages, \(finalTokens) tokens (budget: \(effectiveBudget))")
 
+        // Post-trim budget verification (CLIO parity). The walk has bail-out
+        // paths that can return more than the budget when pinned content is
+        // oversized. Surfacing the overshoot keeps the failure visible instead
+        // of silently relying on a provider 400 to trigger the reactive trims.
+        if finalTokens > effectiveBudget {
+            logger.warning("Context: post-trim verification FAILED: result has \(finalTokens) tokens but budget is \(effectiveBudget) (overshoot \(finalTokens - effectiveBudget)). Pinned content exceeds budget; provider will likely reject.")
+        }
+
         return TruncationResult(messages: truncated, droppedMessages: droppedMessages)
     }
 
@@ -395,6 +447,46 @@ public struct MessageValidator {
         guard message.role == "system" else { return false }
         guard let content = message.content else { return false }
         return content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<thread_summary>")
+    }
+
+    /// Enforce the single compaction-artifact invariant (CLIO parity:
+    /// `remove_existing_thread_summaries`). Removes standalone
+    /// `<thread_summary>` system messages and strips folded
+    /// `<thread_summary>...</thread_summary>` blocks out of user message
+    /// content, preserving the user's own input. A regenerated summary
+    /// already carries prior state via previousSummary, so old artifacts
+    /// are redundant and their presence accumulates summary A -> B -> C
+    /// across trim cycles.
+    ///
+    /// Only call this BEFORE injecting a new summary - a fresh fold in the
+    /// last user message is a legitimate artifact and would be stripped too.
+    public static func removeExistingThreadSummaries(_ messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
+        var result: [OpenAIChatMessage] = []
+        result.reserveCapacity(messages.count)
+        for msg in messages {
+            if isThreadSummaryMessage(msg) {
+                continue
+            }
+            if msg.role == "user", let content = msg.content, content.contains("<thread_summary>") {
+                var cleaned = content
+                while let startRange = cleaned.range(of: "<thread_summary>"),
+                      let endRange = cleaned.range(of: "</thread_summary>", range: startRange.upperBound..<cleaned.endIndex) {
+                    cleaned.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+                }
+                cleaned = cleaned
+                    .replacingOccurrences(of: "<thread_summary>", with: "")
+                    .replacingOccurrences(of: "</thread_summary>", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                result.append(OpenAIChatMessage(
+                    id: msg.id, role: msg.role, content: cleaned,
+                    toolCalls: msg.toolCalls, toolCallId: msg.toolCallId,
+                    reasoningContent: msg.reasoningContent
+                ))
+                continue
+            }
+            result.append(msg)
+        }
+        return result
     }
 
     /// Normalize message structure: move any existing `<thread_summary>` system
@@ -585,6 +677,7 @@ public struct MessageValidator {
         var tcIdToIdx: [String: Int] = [:]
         var trIdToIdx: [String: Int] = [:]
         var idCount: [String: Int] = [:]
+        var trIdCount: [String: Int] = [:]
 
         for (i, msg) in messages.enumerated() {
             if msg.role == "assistant", let toolCalls = msg.toolCalls {
@@ -599,6 +692,7 @@ public struct MessageValidator {
             }
             if msg.role == "tool", let toolCallId = msg.toolCallId {
                 trIdToIdx[toolCallId] = i
+                trIdCount[toolCallId, default: 0] += 1
             }
         }
 
@@ -609,6 +703,13 @@ public struct MessageValidator {
         // Orphaned tool_results (no matching call)
         for trId in trIdToIdx.keys {
             if tcIdToIdx[trId] == nil { return true }
+        }
+        // Duplicate tool_results (same tool_call_id answered more than once) —
+        // providers reject a repeated result id just like a repeated call id.
+        // (CLIO parity: detected in the passthrough scan and keep-first in
+        // validate_tool_message_pairs.)
+        for (_, count) in trIdCount where count > 1 {
+            return true
         }
         return false
     }
@@ -944,16 +1045,17 @@ public struct MessageValidator {
     public static func extractPreservedUnits(_ units: [MessageUnit], tokenRatio: Double? = nil) -> (
         systemMessages: [OpenAIChatMessage],
         lastUserUnit: MessageUnit?,
+        lastUserUnitIdx: Int?,
         startIdx: Int,
         summaryUnit: MessageUnit?,
         summaryTokens: Int,
+        previousSummaryContent: String,
         preservedUserContexts: [MessageUnit],
         preservedGeneralSystem: [MessageUnit]
     ) {
         var systemMessages: [OpenAIChatMessage] = []
         var startIdx = 0
-        var summaryUnit: MessageUnit?
-        var summaryTokens = 0
+        var summaryUnits: [MessageUnit] = []
         var preservedUserContexts: [MessageUnit] = []
         var preservedGeneralSystem: [MessageUnit] = []
 
@@ -965,10 +1067,13 @@ public struct MessageValidator {
 
             let content = firstMsg.content ?? ""
 
-            // Existing thread_summary (CSSS slot - will be regenerated/updated)
+            // Existing thread_summary artifacts (CSSS slot - regenerated/updated).
+            // ALL of them are collected: the newest becomes the summary slot,
+            // and the older ones feed previousSummary so their state is carried
+            // into the regenerated summary instead of being silently lost.
+            // (CLIO parity: single-artifact invariant with carryover.)
             if isThreadSummaryMessage(firstMsg) {
-                summaryUnit = units[startIdx]
-                summaryTokens = units[startIdx].tokens
+                summaryUnits.append(units[startIdx])
                 startIdx += 1
                 continue
             }
@@ -993,9 +1098,11 @@ public struct MessageValidator {
 
         // Find the most recent user unit
         var lastUserUnit: MessageUnit?
-        for unit in units.reversed() {
+        var lastUserUnitIdx: Int? = nil
+        for (idx, unit) in units.reversed().enumerated() {
             if unit.messages.first?.role == "user" {
                 lastUserUnit = unit
+                lastUserUnitIdx = units.count - 1 - idx
                 break
             }
         }
@@ -1004,8 +1111,16 @@ public struct MessageValidator {
             logger.debug("Context: found most recent user message (tokens=\(lastUser.tokens))")
         }
 
-        return (systemMessages, lastUserUnit, startIdx, summaryUnit, summaryTokens,
-                preservedUserContexts, preservedGeneralSystem)
+        // The newest summary unit is the slot that gets regenerated; older
+        // artifacts only contribute their content to previousSummary.
+        let summaryUnit = summaryUnits.last
+        let summaryTokens = summaryUnit?.tokens ?? 0
+        let previousSummaryContent = summaryUnits
+            .compactMap { $0.messages.first?.content }
+            .joined(separator: "\n\n")
+
+        return (systemMessages, lastUserUnit, lastUserUnitIdx, startIdx, summaryUnit, summaryTokens,
+                previousSummaryContent, preservedUserContexts, preservedGeneralSystem)
     }
 
     /// Helper to extract unit messages into a flat array for compressDropped.
@@ -1095,8 +1210,23 @@ public struct MessageValidator {
             }
         }
 
+        // Duplicate tool RESULT ids: the same tool_call_id answered more than
+        // once. Providers reject a repeated result id just like a repeated
+        // call id. First occurrence wins, later ones removed.
+        // (CLIO parity: validate_tool_message_pairs' duplicate_tr_ids pass.)
+        var seenTrIds = Set<String>()
+        var duplicateTrIndices = Set<Int>()
+        for (i, msg) in messages.enumerated() {
+            if msg.role == "tool", let toolCallId = msg.toolCallId {
+                if !seenTrIds.insert(toolCallId).inserted {
+                    duplicateTrIndices.insert(i)
+                    logger.debug("Context: duplicate tool_result id \(toolCallId) at index \(i) - keeping first occurrence")
+                }
+            }
+        }
+
         // If no issues whatsoever (no orphans, no dupes, no misordered), return unchanged
-        if orphanedTcIds.isEmpty && orphanedResultIndices.isEmpty && duplicateTcIds.isEmpty {
+        if orphanedTcIds.isEmpty && orphanedResultIndices.isEmpty && duplicateTcIds.isEmpty && duplicateTrIndices.isEmpty {
             return messages
         }
 
@@ -1107,6 +1237,10 @@ public struct MessageValidator {
         for (i, msg) in messages.enumerated() {
             if orphanedResultIndices.contains(i) {
                 logger.debug("Context: removing orphaned/misordered tool_result at index \(i)")
+                continue
+            }
+            if duplicateTrIndices.contains(i) {
+                logger.debug("Context: removing duplicate tool_result at index \(i)")
                 continue
             }
 
