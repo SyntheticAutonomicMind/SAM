@@ -3,13 +3,19 @@
     {
       "version": "20261106.1",
       "release_date": "November 6, 2026",
-      "introduction": "A follow-up to yesterday's tool-calling fix that goes one layer deeper. SAM was packaging a tool's raw output as if it were SAM's own last message when building the follow-up request, so the model read a garbled conversation and could not produce the answer - on some providers the request was rejected, on others the model simply never replied. Tool results and SAM's replies now stay strictly separated.",
+      "introduction": "A follow-up to yesterday's tool-calling fix that goes one layer deeper. SAM was packaging a tool's raw output as if it were SAM's own last message when building the follow-up request, so the model read a garbled conversation and could not produce the answer - on some providers the request was rejected, on others the model simply never replied. The context management system was also rebuilt against CLIO's reference implementation: summaries now ride inside your latest message, long conversations carry their history forward properly, and several request shapes that strict providers reject are fixed at the source. Tool results and SAM's replies now stay strictly separated.",
       "highlights": [
         {
           "id": "tool-output-stays-out-of-the-reply",
           "icon": "text.bubble",
           "title": "Tool Output No Longer Poses As SAM's Reply",
           "description": "When a tool ran - a web search, a file read, a shell command - its raw output was written into the slot where SAM's own reply goes in the next request. The model then read a conversation in which it appeared to have said the tool's entire output out loud, and could not work out what to do next: replies stopped coming, or the same tools ran again and again. The model's replies and tool results now travel in their own lanes, so tool workflows produce the answer they were always supposed to end with."
+        },
+        {
+          "id": "long-conversations-keep-their-thread",
+          "icon": "sparkles.rectangle.stack",
+          "title": "Long Conversations Keep Their Thread",
+          "description": "When a conversation outgrows the model's context, SAM compresses older turns into a running summary. That summary used to travel as its own instruction block in the middle of every request - on some providers that re-wrote the most expensive part of the prompt on every trim, and each compression cycle could lose the previous summary's state. The summary now rides inside your latest message: earlier work carries forward across compressions, and providers that cache prompts (MiniMax, OpenRouter) hit that cache instead of paying full price on every turn."
         }
       ],
       "bugfixes": [
@@ -36,6 +42,18 @@
           "icon": "brain.head.profile",
           "title": "Reasoning Survives Restarts",
           "description": "MiniMax M3 expects to see its own prior reasoning when you continue a conversation. After restarting SAM or reopening a conversation, that reasoning was dropped and the model effectively started cold. Persisted reasoning now round-trips back to the model."
+        },
+        {
+          "id": "duplicate-tool-results-rejected",
+          "icon": "rectangle.stack.badge.minus",
+          "title": "Repeated Tool Results No Longer Break Requests",
+          "description": "Some conversations failed with a provider rejection because the same tool result was included twice under the same call ID - a shape strict providers refuse outright. SAM now keeps the first result and drops the duplicate, so the request stays valid."
+        },
+        {
+          "id": "current-request-always-survives",
+          "icon": "pin.fill",
+          "title": "Your Latest Message Always Survives Compression",
+          "description": "When SAM compressed a conversation whose newest message was very large, that message could fall out of the request or push it over the provider's limit. The latest message is now reserved before compression starts, and an over-budget result is caught and reported instead of silently shipped."
         }
       ]
     },
