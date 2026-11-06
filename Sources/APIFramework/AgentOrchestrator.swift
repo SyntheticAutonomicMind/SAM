@@ -660,14 +660,16 @@ public class AgentOrchestrator: ObservableObject, IterationController {
         isToolOutput: Bool = false,
         toolName: String? = nil
     ) async -> Bool {
-        /// Tool outputs are tracked in currentRoundToolResults and must never
-        /// overwrite the LLM response state. Overwriting it made the next
-        /// request's assistant message carry the tool's raw output as its
-        /// content, which strict providers then reject or misread.
-        if !isToolOutput {
-            context.lastResponse = deduplicateParagraphs(in: MessageCleaner.filterInternalMarkersNoTrim(from: rawResponse))
-            context.currentRoundLLMResponse = context.lastResponse
+        if isToolOutput {
+            /// Tool results are data, not control flow. They are tracked in
+            /// currentRoundToolResults and must never overwrite the LLM
+            /// response state, rename the conversation, or act on workflow
+            /// markers - a tool result that happens to contain a literal
+            /// session comment or stop JSON is content, not a signal.
+            return false
         }
+        context.lastResponse = deduplicateParagraphs(in: MessageCleaner.filterInternalMarkersNoTrim(from: rawResponse))
+        context.currentRoundLLMResponse = context.lastResponse
         if let fr = finishReason { context.lastFinishReason = fr }
 
         /// Extract session naming marker from response and rename conversation
@@ -1848,6 +1850,14 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 // MARK: - Duplicate tool call detection
                 // Generate normalized fingerprints for this batch of tool calls.
                 // Normalizes JSON (sorted keys, rounded floats) so re-ordered arguments match.
+                // Renormalize ids up front: if this batch reuses ids already present
+                // in the internal context, every internalMessages append below maps
+                // them to fresh ids so MessageValidator's first-occurrence-wins
+                // dedup cannot strip the newer results or the loop-break directive.
+                let contextIdMap = Self.freshToolCallIds(
+                    for: actualToolCalls.map { $0.id },
+                    in: context.internalMessages
+                )
                 let currentSignatures = Set(actualToolCalls.map { toolCall -> String in
                     "\(toolCall.name):\(Self.normalizeArguments(toolCall.arguments))"
                 })
@@ -1871,7 +1881,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             let argsData = try? JSONSerialization.data(withJSONObject: toolCall.arguments, options: [.sortedKeys])
                             let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
                             return OpenAIToolCall(
-                                id: toolCall.id,
+                                id: contextIdMap[toolCall.id] ?? toolCall.id,
                                 type: "function",
                                 function: OpenAIFunctionCall(name: toolCall.name, arguments: argsString)
                             )
@@ -1889,7 +1899,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                             let toolResultMessage = OpenAIChatMessage(
                                 role: "tool",
                                 content: cachedMessage,
-                                toolCallId: toolCall.id
+                                toolCallId: contextIdMap[toolCall.id] ?? toolCall.id
                             )
                             context.internalMessages.append(toolResultMessage)
                         }
@@ -1951,16 +1961,13 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                 }
 
                 /// Capture tool results.
-                    var toolEmittedPlanningHandled = false
-
                     for execution in executionResults {
                     context.currentRoundToolResults[execution.toolCallId] = execution.result
 
-                    /// Centralized marker handling for tool outputs.
-                    if await processMarkerEvent(context: &context, conversationId: conversationId, rawResponse: execution.result, finishReason: nil, requestId: nil, isToolOutput: true, toolName: execution.toolName) {
-                        toolEmittedPlanningHandled = true
-                        break
-                    }
+                    /// Tool outputs are data. processMarkerEvent ignores them
+                    /// (isToolOutput), so this call has no side effects; tool
+                    /// results never drive session naming or marker handling.
+                    _ = await processMarkerEvent(context: &context, conversationId: conversationId, rawResponse: execution.result, finishReason: nil, requestId: nil, isToolOutput: true, toolName: execution.toolName)
 
                     /// Update success status using actual execution.success field (from MCPToolResult) CRITICAL FIX: Don't rely on "ERROR:" string matching, use the success field!.
                     if let index = context.currentRoundToolCalls.firstIndex(where: { $0.id == execution.toolCallId }) {
@@ -2058,7 +2065,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     let argsString = argsData.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
                     return OpenAIToolCall(
-                        id: toolCall.id,
+                        id: contextIdMap[toolCall.id] ?? toolCall.id,
                         type: "function",
                         function: OpenAIFunctionCall(name: toolCall.name, arguments: argsString)
                     )
@@ -2089,7 +2096,7 @@ public class AgentOrchestrator: ObservableObject, IterationController {
                     context.internalMessages.append(OpenAIChatMessage(
                         role: "tool",
                         content: processedContent,
-                        toolCallId: execution.toolCallId
+                        toolCallId: contextIdMap[execution.toolCallId] ?? execution.toolCallId
                     ))
                 }
 
@@ -2713,10 +2720,24 @@ func convertEnhancedToAPIMessage(_ message: ConfigurationSystem.EnhancedMessage)
         }
         // Content may be empty when assistant only makes tool calls
         let messageContent = content.isEmpty ? nil : content
-        return OpenAIChatMessage(role: role, content: messageContent, toolCalls: openAIToolCalls)
+        // Reasoning round-trip: providers like MiniMax M3 expect their prior
+        // reasoning to come back on later turns. Persisted conversations split
+        // it into a separate field, so carry it through here or it is lost.
+        return OpenAIChatMessage(
+            id: nil,
+            role: role,
+            content: messageContent,
+            toolCalls: openAIToolCalls,
+            reasoningContent: message.reasoningContent
+        )
     }
 
-    return OpenAIChatMessage(role: role, content: content)
+    return OpenAIChatMessage(
+        id: nil,
+        role: role,
+        content: content,
+        reasoningContent: message.reasoningContent
+    )
 }
 
 // MARK: - Supporting Types
@@ -2746,6 +2767,44 @@ struct ToolCall: @unchecked Sendable {
     let id: String
     let name: String
     let arguments: [String: Any]
+}
+
+// MARK: - Tool Call ID Renormalization
+
+extension AgentOrchestrator {
+    /// Map tool_call ids that already exist in the internal context to fresh ids.
+    ///
+    /// Providers occasionally reuse tool_call ids across iterations when the
+    /// model repeats an identical call. MessageValidator keeps only the first
+    /// occurrence of each id, so a repeated id silently drops the newer result
+    /// from the request - and with it any synthetic directive that references
+    /// it. Colliding ids get a fresh replacement; the caller must apply the same
+    /// mapping to the assistant tool_calls and the matching results so each pair
+    /// stays adjacent and consistent. UI and billing records keep the original
+    /// ids, and large-result preview markers inside the content also reference
+    /// the original id, so read_tool_result keeps resolving the persisted files.
+    static func freshToolCallIds(for ids: [String], in messages: [OpenAIChatMessage]) -> [String: String] {
+        let existingIds = Set(messages.flatMap { message -> [String] in
+            var ids: [String] = []
+            if message.role == "assistant", let toolCalls = message.toolCalls {
+                ids.append(contentsOf: toolCalls.map { $0.id })
+            }
+            if message.role == "tool", let toolCallId = message.toolCallId {
+                ids.append(toolCallId)
+            }
+            return ids
+        })
+
+        var map: [String: String] = [:]
+        for id in ids where existingIds.contains(id) {
+            let fresh = "call_" + UUID().uuidString
+                .replacingOccurrences(of: "-", with: "")
+                .lowercased()
+                .prefix(24)
+            map[id] = String(fresh)
+        }
+        return map
+    }
 }
 
 /// Convert internal ToolCall (with [String: Any] arguments) to SimpleToolCall

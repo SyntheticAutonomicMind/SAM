@@ -901,9 +901,21 @@ public class MiniMaxProvider: AIProvider {
 
                 logger.debug("MiniMax tool message: tool_call_id=\(message.toolCallId ?? "nil"), name=\(funcName), content_len=\(message.content?.count ?? 0)")
             } else {
+                // MiniMax M3 models reason inside the content stream and
+                // expect their prior reasoning back on later turns. Persisted
+                // conversations split reasoning into a separate field, so
+                // wrap it back into think tags here or the model loses its
+                // own reasoning across reloads.
+                let effectiveContent: String
+                if let reasoning = message.reasoningContent, !reasoning.isEmpty {
+                    effectiveContent = "\n\n\(message.content ?? "")"
+                } else {
+                    effectiveContent = message.content ?? ""
+                }
+
                 var msgDict: [String: Any] = [
                     "role": message.role,
-                    "content": message.content ?? ""
+                    "content": effectiveContent
                 ]
 
                 // Handle tool_calls for assistant messages
@@ -920,7 +932,7 @@ public class MiniMaxProvider: AIProvider {
                     }
                     // Preserve content for assistant messages with tool_calls.
                     // MiniMax needs thinking content in round-trips.
-                    if (message.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if effectiveContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         msgDict["content"] = ""
                     }
                 }

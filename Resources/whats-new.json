@@ -18,6 +18,24 @@
           "icon": "checkmark.seal",
           "title": "No Phantom Final Answer",
           "description": "When a run ended without SAM writing a response - cancellation, hitting the iteration limit - the last tool's raw output could be inserted into the conversation as if SAM had said it. Nothing is added now unless the model actually wrote it."
+        },
+        {
+          "id": "tool-results-are-not-instructions",
+          "icon": "arrowshape.turn.up.right",
+          "title": "Tool Results Are No Longer Treated As Instructions",
+          "description": "SAM scanned tool output for hidden control signals. A web page or file that happened to contain a session marker could silently rename your conversation, and one containing a particular status snippet could stop a workflow dead right after the tools ran. Tool results are data now - SAM only takes instructions from its own model."
+        },
+        {
+          "id": "repeated-tools-still-stop",
+          "icon": "arrow.triangle.repeat",
+          "title": "Repeated Tool Calls Still Get Stopped",
+          "description": "SAM's safety net for models that repeat the same tool call over and over relied on call IDs staying unique. Models that reuse IDs slipped past the net and could loop for hundreds of rounds. Colliding IDs are now remapped, so the stop directive always reaches the model."
+        },
+        {
+          "id": "reasoning-survives-restarts",
+          "icon": "brain.head.profile",
+          "title": "Reasoning Survives Restarts",
+          "description": "MiniMax M3 expects to see its own prior reasoning when you continue a conversation. After restarting SAM or reopening a conversation, that reasoning was dropped and the model effectively started cold. Persisted reasoning now round-trips back to the model."
         }
       ]
     },
