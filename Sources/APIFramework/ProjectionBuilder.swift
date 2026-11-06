@@ -9,12 +9,12 @@ import Crypto
 /// Ported from CLIO's ContextBuilder.pm: splits conversation history into
 /// turns, selects the most recent N turns (scaled by session length), compresses
 /// older turns into a thread_summary, and collapses repeated cross-turn tool
-/// calls. This is the "anchor + recent-N + compressed tail" structure that
-/// SAM was missing before the YaRM alignment audit.
+/// calls. This is the "anchor + recent-N + compressed tail" structure.
 ///
-/// Unlike CLIO (which injects the compressed tail as prose in the dynamic
-/// userContext), SAM produces a thread_summary system message — consistent
-/// with MessageValidator's existing CSSS design.
+/// The compressed summary is folded into the last user message by the caller
+/// (RequestPrep) for ALL providers - CLIO parity. The folded summary lives in
+/// the final message, keeping the provider's cache-stable prefix through
+/// [system prompt, recent turns].
 public struct ProjectionBuilder {
     private static let logger = Logger(label: "com.sam.ProjectionBuilder")
 
@@ -352,21 +352,22 @@ public struct ProjectionBuilder {
         }
 
         // Compress dropped turns into a thread_summary.
-        // previousSummary: only genuine <thread_summary> artifacts carry
-        // cross-cycle state. Joining ALL system message content here fed the
-        // 42KB main prompt into parsePreviousSummary, which could carry garbage
-        // sections into regenerated summaries.
+        // previousSummary: only genuine compaction artifacts carry cross-cycle
+        // state - standalone system summaries and folded blocks inside user
+        // messages. Joining ALL system content here fed the 42KB main prompt
+        // into parsePreviousSummary, carrying garbage sections into
+        // regenerated summaries.
         var compressedSummary: OpenAIChatMessage? = nil
         if !droppedTurnMessages.isEmpty {
             // Group dropped messages into units for compressDropped.
             let droppedUnits = groupDroppedForCompression(droppedTurnMessages)
+            let previousSummary = MessageValidator.extractPreviousSummaryContent(
+                from: systemMessages + dedupedRecent.flatMap { $0 }
+            )
             compressedSummary = MessageValidator.compressDropped(
                 droppedUnits,
                 lastUserUnit: nil,
-                previousSummary: systemMessages
-                    .filter { MessageValidator.isThreadSummaryMessage($0) }
-                    .compactMap { $0.content }
-                    .joined(separator: "\n\n"),
+                previousSummary: previousSummary,
                 droppedMessagesContainFirstRequest: true
             )
         }

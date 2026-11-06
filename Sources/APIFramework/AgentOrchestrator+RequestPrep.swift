@@ -387,8 +387,7 @@ extension AgentOrchestrator {
             tools: nil,
             toolTokens: 0,
             tokenRatio: tokenRatio,
-            trimThreshold: driftThreshold,
-            isLocalInference: endpointManager.isLocalModel(model)
+            trimThreshold: driftThreshold
         )
 
         logger.debug("\(loggerPrefix): Budget = \(config.effectiveBudget) tokens (ctx=\(caps.contextWindow), maxOut=\(caps.maxOutputTokens), ratio=\(tokenRatio))")
@@ -428,10 +427,6 @@ extension AgentOrchestrator {
             tokenRatio: tokenRatio
         )
        var projectedMessages = projection.messages
-       if let summary = projection.compressedSummary {
-           projectedMessages.append(summary)
-           logger.debug("\(loggerPrefix): Projection compressed \(messages.count - projection.messages.count) messages into thread_summary")
-       }
 
         // ALWAYS append the current user message as the last message.
         // selectTurns returns it separately (currentTurn) so it's never compressed
@@ -442,24 +437,30 @@ extension AgentOrchestrator {
             projectedMessages.append(contentsOf: currentTurn)
         }
 
-        // For local-inference providers (llama.cpp, SAM, LM Studio), the projection's
-        // compressed_summary must be folded into the last user message, NOT emitted
-        // as a separate system message. Local inference uses Jinja chat templates
-        // (e.g. Qwen3) that reject mid-conversation role=system messages with
-        // "System message must be at the beginning" exceptions. Cloud providers
-        // (OpenAI, OpenRouter, etc.) handle system messages anywhere, so for them
-        // the summary stays as a system message appended above.
-        let isLocalInference = endpointManager.isLocalModel(model)
-        if isLocalInference, let summary = projection.compressedSummary {
-            // Fold summary content into the last user message (prepend).
-            // The last user message is currentTurn, which was just appended.
+        // Fold the projection's compressed summary into the last user message
+        // for ALL providers (CLIO parity). The folded summary lives in the
+        // final message of the array, so the cache-stable prefix extends
+        // through [system prompt, recent turns] and every byte that changes
+        // between turns is in the last message. A standalone summary system
+        // message instead stops the provider prefix cache at its position -
+        // and on MiniMax, buildMiniMaxMessages consolidates system messages
+        // into the front prompt, rewriting the most cache-critical bytes on
+        // every trim cycle. Local-inference providers additionally reject
+        // mid-conversation role=system outright (Jinja chat templates).
+        if let summary = projection.compressedSummary {
+            // Single-artifact invariant: the regenerated summary carries prior
+            // state, so any surviving summary artifacts are redundant.
+            projectedMessages = MessageValidator.removeExistingThreadSummaries(projectedMessages)
             if let lastUserIdx = projectedMessages.lastIndex(where: { $0.role == "user" }) {
                 let existing = projectedMessages[lastUserIdx].content ?? ""
                 projectedMessages[lastUserIdx] = OpenAIChatMessage(
                     role: "user",
                     content: (summary.content ?? "") + "\n\n" + existing
                 )
-                logger.debug("\(loggerPrefix): Folded projection summary into user message (local inference)")
+                logger.debug("\(loggerPrefix): Folded projection summary into last user message")
+            } else {
+                projectedMessages.append(summary)
+                logger.debug("\(loggerPrefix): No user message for projection summary - appended as system message")
             }
         }
 

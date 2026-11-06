@@ -82,11 +82,14 @@ public struct MessageValidator {
     ///
     /// Ported from CLIO's `validate_and_truncate` with all bug fixes:
     /// - Budget from `compute_prompt_budget` (not 50% of context)
-    /// - Summary at END (not position 1 after system)
-    /// - Deinterleave tool_results to END with orphan guard
+    /// - thread_summary folded into the last user message (all providers,
+    ///   CLIO parity - keeps the cache-stable prefix through recent turns)
+    /// - Tool results stay adjacent to their assistant (strict-provider
+    ///   contract), never deinterleaved to the array end
     /// - Preserve ALL leading system messages (context_files, etc.)
-    /// - CSSS slot management (min 8K floor, max 12K ceiling, proactive growth)
+    /// - CSSS slot management (bounded floor/ceiling, proactive growth)
     /// - Unit-based dropped-message identification (not content fingerprinting)
+    /// - Pinned-token reservation and post-trim budget verification
     public static func validateAndTruncateWithDropped(
         messages: [OpenAIChatMessage],
         config: TrimConfig
@@ -107,21 +110,19 @@ public struct MessageValidator {
             // CLIO's _validate_or_passthrough scans for orphans/dupes and returns
             // the original array ref unchanged when the array is already clean, so
             // provider KV caches stay warm for messages that haven't changed. We
-            // do the same: if the array is already structurally normalized (summary
-            // at end, tool results deinterleaved) and has no orphan/dupe issues,
-            // return the original message references without re-serialization.
+            // do the same: if the array is already structurally normalized (no
+            // standalone summary, adjacent tool results) and has no orphan/dupe
+            // issues, return the original message references without
+            // re-serialization.
             logger.debug("Context: within budget (\(estimatedTokens)/\(effectiveBudget)), normalizing structure only")
-            if !needsValidation(messages) && alreadyNormalized(messages, isLocalInference: config.isLocalInference) {
+            if !needsValidation(messages) && alreadyNormalized(messages) {
                 logger.debug("Context: byte-stable fast path — no orphans/dupes, already normalized, returning original refs")
                 return TruncationResult(messages: messages, droppedMessages: [])
             }
             // Structural normalization needed: run validation + summary folding.
             logger.debug("Context: within budget but structural normalization needed")
             let normalized = validateToolMessagePairs(messages)
-            let result = normalizeSummaryToEnd(
-                messages: normalized,
-                isLocalInference: config.isLocalInference
-            )
+            let result = normalizeSummaryToEnd(messages: normalized)
             return TruncationResult(messages: result, droppedMessages: [])
         }
 
@@ -381,41 +382,7 @@ public struct MessageValidator {
         // previousSummary.
         truncated = removeExistingThreadSummaries(truncated)
         if let summary = summaryToUse {
-            if config.isLocalInference {
-                // For local-inference providers (llama.cpp, SAM, LM Studio), fold
-                // the thread_summary INTO the last user message instead of emitting
-                // a separate system message. Jinja chat templates (e.g. Qwen3)
-                // require system messages only at position 0; a mid-conversation
-                // role=system triggers "System message must be at the beginning"
-                // exceptions. The <thread_summary> tags are self-identifying —
-                // same regexes the trim paths use to find/seed extraction buckets.
-                let summaryContent = summary.content ?? ""
-                if let lastUserIdx = truncated.lastIndex(where: { $0.role == "user" }) {
-                    let existingContent = truncated[lastUserIdx].content ?? ""
-                    truncated[lastUserIdx] = OpenAIChatMessage(
-                        role: "user",
-                        content: summaryContent + "\n\n" + existingContent
-                    )
-                    logger.info("Context: folded thread_summary into user message for local inference (\(droppedMessages.count) proactively-dropped messages)")
-                } else {
-                    // No user message found — fall back to system message
-                    // (rare edge case — local inference with no user msg is
-                    // already invalid for the API, so this is best-effort).
-                    truncated.append(summary)
-                    logger.warning("Context: local inference but no user message found — keeping summary as system message")
-                }
-            } else {
-                // Cloud providers handle mid-conversation system messages correctly.
-                // Insert before the last user message — the summary is context about
-                // prior turns, so it should precede the user's current request.
-                // (CLIO inserts the compressed summary before the last user message too.)
-                let lastUserIdx = truncated.lastIndex(where: { $0.role == "user" })
-                if let idx = lastUserIdx {
-                    truncated.insert(summary, at: summaryInsertionIndex(in: truncated, at: idx))
-                } else {
-                    truncated.append(summary)
-                }
-            }
+            foldSummary(summary, into: &truncated)
         }
 
         let finalTokens = estimateTokens(truncated, tokenRatio: tokenRatio)
@@ -447,6 +414,33 @@ public struct MessageValidator {
         guard message.role == "system" else { return false }
         guard let content = message.content else { return false }
         return content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<thread_summary>")
+    }
+
+    /// Extract prior summary content for carryover (CLIO parity:
+    /// `_extract_thread_summary_from_messages`). Scans the full array for
+    /// standalone `<thread_summary>` system messages AND folded
+    /// `<thread_summary>` blocks inside user messages, returning their
+    /// inner content joined. The trim path strips stale folds before
+    /// folding a regenerated summary, so this extraction is what carries
+    /// summary state across trim cycles.
+    public static func extractPreviousSummaryContent(from messages: [OpenAIChatMessage]) -> String {
+        var parts: [String] = []
+        for msg in messages {
+            if isThreadSummaryMessage(msg) {
+                if let content = msg.content { parts.append(content) }
+                continue
+            }
+            guard msg.role == "user",
+                  let content = msg.content,
+                  content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<thread_summary>"),
+                  let startRange = content.range(of: "<thread_summary>"),
+                  let endRange = content.range(of: "</thread_summary>", range: startRange.upperBound..<content.endIndex)
+            else { continue }
+            let inner = String(content[startRange.upperBound..<endRange.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !inner.isEmpty { parts.append(inner) }
+        }
+        return parts.joined(separator: "\n\n")
     }
 
     /// Enforce the single compaction-artifact invariant (CLIO parity:
@@ -489,26 +483,30 @@ public struct MessageValidator {
         return result
     }
 
-    /// Normalize message structure: move any existing `<thread_summary>` system
-    /// message so it sits immediately before the last user message.
-    /// Runs even when no trimming occurs.
+    /// Normalize message structure: fold any existing `<thread_summary>`
+    /// system message into the last user message. Runs even when no trimming
+    /// occurs.
     ///
-    /// Tool results are left exactly where they are. They must stay adjacent to
-    /// the assistant message whose `tool_calls` they answer: strict
-    /// OpenAI-compatible providers (MiniMax, Moonshot) reject a request where a
-    /// dialog message separates an assistant's tool calls from their results
-    /// with "invalid params, tool call result does not follow tool call (2013)".
-    /// Deinterleaving results to the end of the array is an Anthropic-native
-    /// layout that does not apply to the OpenAI-format messages SAM sends.
+    /// The summary is folded for ALL providers (CLIO parity). The folded
+    /// summary lives inside the last message of the array, so the cache-stable
+    /// prefix extends through [system prompt, recent turns] and every byte
+    /// that changes between turns sits in the final message. A standalone
+    /// mid-array summary system message instead stops the provider prefix
+    /// cache at its position - and on MiniMax, buildMiniMaxMessages
+    /// consolidates system messages into the front prompt, rewriting the most
+    /// cache-critical bytes on every trim cycle. Local-inference providers
+    /// additionally reject mid-conversation role=system messages outright
+    /// (Jinja chat templates).
     ///
-    /// When `isLocalInference` is true, the thread_summary is folded into the
-    /// last user message instead of being appended as a system message, because
-    /// local-inference providers (llama.cpp, SAM, LM Studio) use Jinja chat
-    /// templates that reject mid-conversation role=system messages.
-    public static func normalizeSummaryToEnd(
-        messages: [OpenAIChatMessage],
-        isLocalInference: Bool = false
-    ) -> [OpenAIChatMessage] {
+    /// Tool results are left exactly where they are. They must stay adjacent
+    /// to the assistant message whose `tool_calls` they answer: strict
+    /// OpenAI-compatible providers (MiniMax, Moonshot) reject a request where
+    /// a dialog message separates an assistant's tool calls from their
+    /// results with "invalid params, tool call result does not follow tool
+    /// call (2013)". Deinterleaving results to the end of the array is an
+    /// Anthropic-native layout that does not apply to the OpenAI-format
+    /// messages SAM sends.
+    public static func normalizeSummaryToEnd(messages: [OpenAIChatMessage]) -> [OpenAIChatMessage] {
         var summaryMsg: OpenAIChatMessage?
         var remainder: [OpenAIChatMessage] = []
 
@@ -522,36 +520,11 @@ public struct MessageValidator {
 
         var result = remainder
         if let summary = summaryMsg {
-            if isLocalInference {
-                // Fold the thread_summary content into the last user message.
-                // Local inference providers (Jinja chat templates) reject
-                // mid-conversation role=system messages, so the summary
-                // must live inside a user message. The <thread_summary> tags
-                // are self-identifying — same regexes work on both sides.
-                let summaryContent = summary.content ?? ""
-                if let lastUserIdx = result.lastIndex(where: { $0.role == "user" }) {
-                    let existing = result[lastUserIdx].content ?? ""
-                    result[lastUserIdx] = OpenAIChatMessage(
-                        role: "user",
-                        content: summaryContent + "\n\n" + existing
-                    )
-                    logger.debug("Context: folded thread_summary into user message (local inference normalization)")
-                } else {
-                    // No user message — keep as fallback system message.
-                    result.append(summary)
-                }
-            } else {
-                // Cloud providers handle mid-conversation system messages correctly.
-                // Insert the summary BEFORE the last user message — this is the user's
-                // current task context, so it should precede their latest input.
-                let lastUserIdx = result.lastIndex(where: { $0.role == "user" })
-                if let idx = lastUserIdx {
-                    result.insert(summary, at: summaryInsertionIndex(in: result, at: idx))
-                } else {
-                    // No user message — append at end as fallback.
-                    result.append(summary)
-                }
-            }
+            // Fold into the last user message. When multiple summary artifacts
+            // exist the newest wins; callers about to regenerate a summary
+            // should run removeExistingThreadSummaries first so older
+            // artifacts do not silently vanish here.
+            foldSummary(summary, into: &result)
         }
 
         // Guarantee the tool contract even if the caller handed us an array
@@ -560,25 +533,23 @@ public struct MessageValidator {
         return result
     }
 
-    /// Pick the index at which a summary system message can be inserted without
-    /// splitting a tool block.
-    ///
-    /// A tool block is an assistant message carrying `tool_calls` followed by
-    /// the tool messages that answer them. Inserting anything between the
-    /// assistant and its results breaks the tool_call/tool_result contract.
-    private static func summaryInsertionIndex(in messages: [OpenAIChatMessage], at index: Int) -> Int {
-        var insertAt = index
-        guard insertAt > 0, insertAt < messages.count else { return insertAt }
-        let previous = messages[insertAt - 1]
-        let next = messages[insertAt]
-        guard previous.role == "assistant",
-              !(previous.toolCalls?.isEmpty ?? true),
-              next.role == "tool" else { return insertAt }
-        // Move past the whole tool block so the summary lands after the results.
-        while insertAt < messages.count && messages[insertAt].role == "tool" {
-            insertAt += 1
+    /// Fold a summary message's content into the last user message, falling
+    /// back to appending it as a system message when no user message exists
+    /// (an array without any user message is already invalid for the API -
+    /// this is best effort).
+    private static func foldSummary(_ summary: OpenAIChatMessage, into result: inout [OpenAIChatMessage]) {
+        let summaryContent = summary.content ?? ""
+        if let lastUserIdx = result.lastIndex(where: { $0.role == "user" }) {
+            let existing = result[lastUserIdx].content ?? ""
+            result[lastUserIdx] = OpenAIChatMessage(
+                role: "user",
+                content: summaryContent + "\n\n" + existing
+            )
+            logger.debug("Context: folded thread_summary into last user message")
+        } else {
+            result.append(summary)
+            logger.warning("Context: no user message found - keeping summary as system message fallback")
         }
-        return insertAt
     }
 
     // MARK: - Tool Result Adjacency
@@ -718,60 +689,34 @@ public struct MessageValidator {
     /// Used by the byte-stability fast path to skip normalizeSummaryToEnd
     /// when the array is already in the correct layout.
     ///
-    /// For cloud providers: summary is "normalized" when it sits right before
-    ///   the last user message (or at END if no user message).
-    /// For local inference: summary is "normalized" when it has been folded
-    ///   into a user message (no standalone thread_summary system message).
+    /// Normalized means: no standalone `<thread_summary>` system message
+    /// (summaries are folded into the last user message for ALL providers),
+    /// and tool results sit inside the block that answers their assistant.
     private static func alreadyNormalized(
-        _ messages: [OpenAIChatMessage],
-        isLocalInference: Bool = false
+        _ messages: [OpenAIChatMessage]
     ) -> Bool {
-        var summaryIndex: Int?
-        var lastUserIndex: Int?
         var hasToolResults = false
 
-        for (i, msg) in messages.enumerated() {
+        for msg in messages {
+            // A standalone summary system message is never normalized - it
+            // must be folded into the last user message. The fold puts the
+            // summary in the final message, keeping the cache-stable prefix
+            // through everything before it.
             if isThreadSummaryMessage(msg) {
-                summaryIndex = i
-            } else if msg.role == "tool" {
+                return false
+            }
+            if msg.role == "tool" {
                 hasToolResults = true
-            } else if msg.role == "user" {
-                lastUserIndex = i
             }
         }
 
-        // For local inference: no standalone summary system message should exist
-        // (it's been folded into the user message). If there IS one, not normalized.
-        if isLocalInference, summaryIndex != nil {
-            return false
-        }
-
-        // No summary and no tool results — trivially normalized
-        if summaryIndex == nil && !hasToolResults { return true }
-
-        if let summaryIdx = summaryIndex {
-            if isLocalInference {
-                // Already handled above — if we reach here, summaryIndex is nil
-                return true
-            }
-            // Cloud: summary must be immediately before the last user message
-            // (or at END if there's no user message after it).
-            if let lastUserIdx = lastUserIndex {
-                if summaryIdx != lastUserIdx - 1 {
-                    return false
-                }
-            } else {
-                // No user message — summary must be at end
-                if summaryIdx != messages.count - 1 {
-                    return false
-                }
-            }
-        }
+        // No tool results and no standalone summary — trivially normalized.
+        if !hasToolResults { return true }
 
         // Tool results must sit inside the block that answers their assistant
         // message. A result separated from its assistant by a dialog message is
         // rejected by strict providers (MiniMax, Moonshot).
-        if hasToolResults && !hasToolResultAdjacency(messages) {
+        if !hasToolResultAdjacency(messages) {
             return false
         }
 
@@ -1112,12 +1057,28 @@ public struct MessageValidator {
         }
 
         // The newest summary unit is the slot that gets regenerated; older
-        // artifacts only contribute their content to previousSummary.
+        // artifacts only contribute their content to previousSummary. Folded
+        // summaries inside user messages (the CLIO-parity carrier) are
+        // extracted too, so carryover survives the fold.
         let summaryUnit = summaryUnits.last
         let summaryTokens = summaryUnit?.tokens ?? 0
-        let previousSummaryContent = summaryUnits
-            .compactMap { $0.messages.first?.content }
-            .joined(separator: "\n\n")
+        var summaryContents = summaryUnits.compactMap { $0.messages.first?.content }
+        // Folded summaries: scan every unit for user messages carrying a
+        // folded <thread_summary> block (the newest fold lives in the pinned
+        // last user message; older folds only exist from prior sessions).
+        for unit in units {
+            for msg in unit.messages where msg.role == "user" {
+                guard let content = msg.content,
+                      content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<thread_summary>"),
+                      let startRange = content.range(of: "<thread_summary>"),
+                      let endRange = content.range(of: "</thread_summary>", range: startRange.upperBound..<content.endIndex)
+                else { continue }
+                let inner = String(content[startRange.upperBound..<endRange.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !inner.isEmpty { summaryContents.append(inner) }
+            }
+        }
+        let previousSummaryContent = summaryContents.joined(separator: "\n\n")
 
         return (systemMessages, lastUserUnit, lastUserUnitIdx, startIdx, summaryUnit, summaryTokens,
                 previousSummaryContent, preservedUserContexts, preservedGeneralSystem)
