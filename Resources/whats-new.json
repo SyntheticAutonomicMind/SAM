@@ -3,57 +3,57 @@
     {
       "version": "20261106.1",
       "release_date": "November 6, 2026",
-      "introduction": "A follow-up to yesterday's tool-calling fix that goes one layer deeper. SAM was packaging a tool's raw output as if it were SAM's own last message when building the follow-up request, so the model read a garbled conversation and could not produce the answer - on some providers the request was rejected, on others the model simply never replied. The context management system was also rebuilt against CLIO's reference implementation: summaries now ride inside your latest message, long conversations carry their history forward properly, and several request shapes that strict providers reject are fixed at the source. Tool results and SAM's replies now stay strictly separated.",
+      "introduction": "This release fixes the conversations that use tools - the ones that stopped at the tool output with no answer - and rebuilds how SAM manages long conversations. History carries forward properly, your latest message always survives compression, and providers that cache prompts now actually get cache hits. If SAM stalled mid-task, forgot earlier work, or seemed to run the same thing over and over, this release is for that.",
       "highlights": [
         {
-          "id": "tool-output-stays-out-of-the-reply",
+          "id": "tool-work-finishes-with-an-answer",
           "icon": "text.bubble",
-          "title": "Tool Output No Longer Poses As SAM's Reply",
-          "description": "When a tool ran - a web search, a file read, a shell command - its raw output was written into the slot where SAM's own reply goes in the next request. The model then read a conversation in which it appeared to have said the tool's entire output out loud, and could not work out what to do next: replies stopped coming, or the same tools ran again and again. The model's replies and tool results now travel in their own lanes, so tool workflows produce the answer they were always supposed to end with."
+          "title": "Tool Work Finishes With An Answer",
+          "description": "Conversations that use tools - web search, file reads, shell commands - could stop right after the tool ran: the results appeared on screen but no answer ever followed. The model was reading a garbled conversation in which its own last message was the tool's raw output. Replies and tool results now stay in their own places, so tool workflows end the way they should: with SAM's summary of what it found."
         },
         {
           "id": "long-conversations-keep-their-thread",
           "icon": "sparkles.rectangle.stack",
           "title": "Long Conversations Keep Their Thread",
-          "description": "When a conversation outgrows the model's context, SAM compresses older turns into a running summary. That summary used to travel as its own instruction block in the middle of every request - on some providers that re-wrote the most expensive part of the prompt on every trim, and each compression cycle could lose the previous summary's state. The summary now rides inside your latest message: earlier work carries forward across compressions, and providers that cache prompts (MiniMax, OpenRouter) hit that cache instead of paying full price on every turn."
+          "description": "When a conversation outgrows the model's context, SAM compresses older turns into a running summary. That summary used to sit in the middle of every request, where it could wipe out the provider's prompt cache on every compression and even lose the previous summary's state. It now rides inside your latest message: earlier work carries forward across compressions, and providers that cache prompts deliver the cache hits they promise - lower cost and faster responses on long sessions."
         }
       ],
       "bugfixes": [
         {
-          "id": "no-phantom-final-answer",
+          "id": "cancelled-runs-no-longer-invent-a-reply",
           "icon": "checkmark.seal",
-          "title": "No Phantom Final Answer",
-          "description": "When a run ended without SAM writing a response - cancellation, hitting the iteration limit - the last tool's raw output could be inserted into the conversation as if SAM had said it. Nothing is added now unless the model actually wrote it."
+          "title": "Cancelled Runs No Longer Invent A Reply",
+          "description": "When a run was cancelled or hit its limit, the last tool's raw output could land in the conversation as if SAM had written it. SAM's words are now only ever SAM's words."
         },
         {
           "id": "tool-results-are-not-instructions",
           "icon": "arrowshape.turn.up.right",
           "title": "Tool Results Are No Longer Treated As Instructions",
-          "description": "SAM scanned tool output for hidden control signals. A web page or file that happened to contain a session marker could silently rename your conversation, and one containing a particular status snippet could stop a workflow dead right after the tools ran. Tool results are data now - SAM only takes instructions from its own model."
+          "description": "A web page or file containing a particular snippet could silently rename your conversation, or stop a workflow dead right after the tools ran. Tool results are data now - only SAM's model gives instructions."
         },
         {
-          "id": "repeated-tools-still-stop",
+          "id": "runaway-tool-loops-stop-reliably",
           "icon": "arrow.triangle.repeat",
-          "title": "Repeated Tool Calls Still Get Stopped",
-          "description": "SAM's safety net for models that repeat the same tool call over and over relied on call IDs staying unique. Models that reuse IDs slipped past the net and could loop for hundreds of rounds. Colliding IDs are now remapped, so the stop directive always reaches the model."
+          "title": "Runaway Tool Loops Stop Reliably",
+          "description": "Some models repeat the same tool call over and over. SAM's loop stopper depended on identifiers that models sometimes reuse, which let a loop run for hundreds of rounds. The stop signal now always reaches the model."
         },
         {
           "id": "reasoning-survives-restarts",
           "icon": "brain.head.profile",
           "title": "Reasoning Survives Restarts",
-          "description": "MiniMax M3 expects to see its own prior reasoning when you continue a conversation. After restarting SAM or reopening a conversation, that reasoning was dropped and the model effectively started cold. Persisted reasoning now round-trips back to the model."
+          "description": "MiniMax M3 expects to see its own prior reasoning when you continue a conversation. Reopening a conversation dropped that reasoning and the model started cold. Persisted reasoning now travels back to the model."
         },
         {
-          "id": "duplicate-tool-results-rejected",
+          "id": "duplicate-tool-results-are-removed",
           "icon": "rectangle.stack.badge.minus",
-          "title": "Repeated Tool Results No Longer Break Requests",
-          "description": "Some conversations failed with a provider rejection because the same tool result was included twice under the same call ID - a shape strict providers refuse outright. SAM now keeps the first result and drops the duplicate, so the request stays valid."
+          "title": "Duplicate Tool Results Are Removed",
+          "description": "When the same tool result was included twice under one call, strict providers rejected the entire request. Duplicates are now dropped, so the request stays valid."
         },
         {
-          "id": "current-request-always-survives",
+          "id": "your-latest-message-always-survives",
           "icon": "pin.fill",
           "title": "Your Latest Message Always Survives Compression",
-          "description": "When SAM compressed a conversation whose newest message was very large, that message could fall out of the request or push it over the provider's limit. The latest message is now reserved before compression starts, and an over-budget result is caught and reported instead of silently shipped."
+          "description": "When the newest message in a conversation was very large, compression could push the request over the provider's limit or leave your message out entirely. Your latest message is now reserved before compression starts, and an over-budget result is caught and reported instead of silently shipped."
         }
       ]
     },
