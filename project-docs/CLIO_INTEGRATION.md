@@ -1,5 +1,7 @@
 # CLIO Integration with SAM API - Proxy Mode Usage
 
+> **NOTE:** This document describes planned functionality that is not yet implemented. SAM does not currently include a local HTTP API server. This document is retained as a specification for future implementation.
+
 ## Overview
 
 SAM now supports **per-request proxy mode** for external tools like CLIO (Command Line Intelligence Orchestrator). This allows CLIO to use SAM as a pure LLM proxy without SAM's tools, prompts, or session management.

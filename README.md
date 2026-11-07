@@ -105,7 +105,6 @@ Choose how SAM talks to you - friendly, professional, creative, or create your o
 | Provider | What You Get |
 |----------|--------------|
 | **OpenAI** | Leading frontier models with strong reasoning and coding |
-| **Anthropic** | Claude models available via GitHub Copilot and OpenRouter |
 | **GitHub Copilot** | Multiple model families via Copilot subscription |
 | **DeepSeek** | Budget-friendly models with strong coding support |
 | **Google Gemini** | State-of-the-art multimodal models with large context |
@@ -208,4 +207,4 @@ SAM is part of [Synthetic Autonomic Mind](https://github.com/SyntheticAutonomicM
 
 Created by Andrew Wyatt (Fewtarius) · [syntheticautonomicmind.org](https://www.syntheticautonomicmind.org) · [github.com/SyntheticAutonomicMind/SAM](https://github.com/SyntheticAutonomicMind/SAM)
 
-Built with open source: [Vapor](https://vapor.codes) · [MLX](https://github.com/ml-explore/mlx-swift) · [llama.cpp](https://github.com/ggerganov/llama.cpp) · [Sparkle](https://sparkle-project.org)
+Built with open source: [MLX](https://github.com/ml-explore/mlx-swift) · [llama.cpp](https://github.com/ggerganov/llama.cpp) · [Sparkle](https://sparkle-project.org)

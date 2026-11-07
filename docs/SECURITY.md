@@ -38,7 +38,7 @@ SAM collects no usage data. There are no analytics, no crash reporters, no phone
 
 ### What Cloud Providers See
 
-When you use a cloud AI provider (OpenAI, Anthropic, GitHub Copilot, DeepSeek, Google Gemini, MiniMax, OpenRouter):
+When you use a cloud AI provider (OpenAI, GitHub Copilot, DeepSeek, Google Gemini, MiniMax, OpenRouter):
 
 - **Sent:** Your message, relevant conversation context, system prompt, and tool call results
 - **Not sent:** Other conversations, imported documents (only relevant chunks), local files (unless part of active context), your settings, or any other data

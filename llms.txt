@@ -2,7 +2,7 @@
 
 > Native macOS AI assistant with privacy-first design, autonomous tool use, and multi-provider support.
 
-SAM is a native macOS application built with Swift 6.0 and SwiftUI. It runs on macOS 14.0+ and supports Apple Silicon and Intel Macs. SAM connects to cloud AI providers (OpenAI, Anthropic, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter) and local models (MLX on Apple Silicon, llama.cpp on any Mac) to provide conversational AI with real tool capabilities.
+SAM is a native macOS application built with Swift 6.0 and SwiftUI. It runs on macOS 14.0+ and supports Apple Silicon and Intel Macs. SAM connects to cloud AI providers (OpenAI, GitHub Copilot, Google Gemini, DeepSeek, MiniMax, OpenRouter) and local models (MLX and llama.cpp on Apple Silicon only) to provide conversational AI with real tool capabilities.
 
 ## Key Capabilities
 
@@ -17,7 +17,7 @@ SAM is a native macOS application built with Swift 6.0 and SwiftUI. It runs on m
 
 ## Architecture
 
-Ten Swift modules (SPM targets): SAM (entry point), UserInterface (SwiftUI), APIFramework (providers, orchestrator, API server), MCPFramework (tools), ConversationEngine (conversations, memory, Vector RAG), ConfigurationSystem (settings, prompts), MLXIntegration (local models), VoiceFramework (speech), SharedData (SQLite shared topics), SecurityFramework (authorization).
+Ten Swift modules (SPM targets): SAM (entry point), UserInterface (SwiftUI), APIFramework (providers, orchestrator), MCPFramework (tools), ConversationEngine (conversations, memory, Vector RAG), ConfigurationSystem (settings, prompts), MLXIntegration (local models), VoiceFramework (speech), SharedData (SQLite shared topics), SecurityFramework (authorization).
 
 Actor-based concurrency with Swift 6 strict checking. @MainActor for all UI. Zero telemetry, local-first data storage.
 

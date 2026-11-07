@@ -22,7 +22,7 @@ For deeper implementation notes and internal specifications, see [`project-docs/
 | [Tools](TOOLS.md) | SAM's built-in tool system and operations |
 | [Memory](MEMORY.md) | Conversation memory, semantic search, documents, and long-term memory |
 | [Performance](PERFORMANCE.md) | Resource usage, local model expectations, and optimization tips |
-| [Security](SECURITY.md) | Privacy model, key storage, API server security, and file authorization |
+| [Security](SECURITY.md) | Privacy model, key storage, and file authorization |
 
 ## Technical Overview
 

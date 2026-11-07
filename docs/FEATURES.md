@@ -106,8 +106,8 @@ Each conversation stores its own UI state:
 - Model caching and lazy loading
 - LRU eviction for memory management
 
-**llama.cpp (Any Mac)**
-- Runs GGUF-format models on Apple Silicon or Intel
+**llama.cpp (Apple Silicon)**
+- Runs GGUF-format models on Apple Silicon
 - Compiled as a native framework (included as git submodule)
 - CPU and GPU inference modes
 

@@ -17,14 +17,14 @@ This document is a starting point for understanding SAM's design. For deep imple
 ```mermaid
 graph TB
     UI["UserInterface<br/>ChatWidget - Preferences - Documents - Help - Search"]
-    API["APIFramework<br/>AgentOrchestrator - Providers - EndpointManager<br/>ToolCallExtractor - TokenCounter - SAMAPIServer"]
-    MCP["MCPFramework<br/>Tools - 13 consolidated"]
+    API["APIFramework<br/>AgentOrchestrator - Providers - EndpointManager<br/>ToolCallExtractor - TokenCounter"]
+    MCP["MCPFramework<br/>Tools - 14 consolidated"]
     CONV["ConversationEngine<br/>Memory - VectorRAG"]
     CONFIG["ConfigurationSystem<br/>Preferences - Prompts"]
     MLX["MLXIntegration<br/>Local Models"]
     VOICE["VoiceFramework<br/>TTS - STT"]
     SHARED["SharedData<br/>SQLite"]
-    SECURITY["SecurityFramework<br/>Authorization - Secret Redaction"]
+    SECURITY["SecurityFramework<br/>Keychain - Secret Redaction - Filtering"]
     MAIN["SAM Application"]
     
     MAIN --> UI
@@ -77,7 +77,7 @@ All UI code is `@MainActor` isolated for thread safety, following Swift 6 strict
 
 ### APIFramework
 
-The largest module. Handles all AI communication, orchestration, and the local API server.
+The largest module. Handles all AI communication, orchestration, and provider management.
 
 **Key Components:**
 
@@ -86,6 +86,7 @@ The largest module. Handles all AI communication, orchestration, and the local A
   - `AgentOrchestrator+LLMCalls.swift` - AI provider communication
   - `AgentOrchestrator+ToolExecution.swift` - Tool dispatch and result handling
   - `AgentOrchestrator+ContextManagement.swift` - Context window management
+  - `AgentOrchestrator+RequestPrep.swift` - Request preparation and context building
 
 - **Providers** - Implementations for each AI provider:
   - `Providers.swift` - OpenAI, GitHub Copilot
@@ -105,12 +106,15 @@ The largest module. Handles all AI communication, orchestration, and the local A
 The tool system. Implements the Model Context Protocol pattern where tools are registered, discovered, and executed by the AI.
 
 **Components:**
-- **ToolRegistry** - Central registry of all available tools
-- **Tools/** - Individual tool implementations (file operations, web, documents, math, etc.)
+- **MCPToolRegistry** - Central registry of all available tools (in `MCPManager.swift`)
+- **MCPManager** - Tool lifecycle management and initialization (in `MCPManager.swift`)
+- **ConsolidatedMCP** - Protocol for consolidated tools (in `ConsolidatedMCP.swift`)
+- **Tools/** - 14 consolidated tool implementations
 - **Authorization/** - Path-based authorization for file access
 - **Internal/** - Sub-tools dispatched by consolidated tools
+- **Utilities/** - Shared utility types (token estimation, etc.)
 
-SAM exposes 13 consolidated tools to the AI, which internally dispatch to ~80 sub-operations. This keeps the tool interface clean for the AI while providing fine-grained functionality.
+SAM exposes 14 consolidated tools to the AI, which internally dispatch to ~80 sub-operations. This keeps the tool interface clean for the AI while providing fine-grained functionality.
 
 ### ConversationEngine
 
@@ -135,7 +139,7 @@ Centralized settings and configuration management.
 - **PerformanceMonitor** - RSS, CPU, and inference tracking
 - **ChatSessionManager** - Session lifecycle management
 - **EndpointConfigurationModels** - Provider configuration models
-- **MiniPromptConfiguration** - Quick-action prompt templates
+- **CustomInstructionConfiguration** - Quick-action prompt templates (formerly "mini prompts")
 
 **Storage Layout:**
 ```
@@ -177,11 +181,15 @@ Cross-conversation data sharing via SQLite.
 
 ### SecurityFramework
 
-Authorization and security operations.
+Security operations including credential storage, secret redaction, and input filtering.
 
-- Path-based authorization for file access
-- Working directory enforcement
-- Tool permission management
+- **KeychainManager** - API key storage in macOS Keychain
+- **CredentialStore** - Credential management
+- **SecretRedactor** - Secret redaction from tool results
+- **InvisibleCharFilter** - Invisible character filtering
+- **SecurityPipeline** - Security pipeline coordination
+
+Path-based authorization for file access is implemented in `MCPFramework/Authorization/`.
 
 ---
 
@@ -261,7 +269,6 @@ SAM uses Swift Package Manager (SPM) with a Makefile wrapper:
 | **mlx-swift-lm** | Language model support for MLX |
 | **swift-transformers** | Tokenization |
 | **llama.cpp** | Local model inference (GGUF format) |
-| **Vapor** | HTTP server for API |
 | **SQLite.swift** | Database for conversations and shared data |
 | **Sparkle** | Auto-update framework |
 | **swift-log** | Structured logging |

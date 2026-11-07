@@ -325,11 +325,6 @@ public struct ApplicationPreferences: Codable {
     // Update Channel
     public var updateChannel: UpdateChannel  // stable, development
     
-    // API Server
-    public var apiServerEnabled: Bool
-    public var apiServerPort: Int
-    public var apiServerCORS: Bool
-    
     // Advanced
     public var enablePerformanceMonitoring: Bool
     public var maxMemoryUsage: Int64

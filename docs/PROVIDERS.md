@@ -15,7 +15,6 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 | Provider | Cost | Speed | Privacy | Best For |
 |----------|------|-------|---------|----------|
 | **OpenAI** | Pay-per-token | Fast | Cloud | General use, coding, creative writing |
-| **Anthropic** | - | - | - | No direct provider. Use OpenRouter for Claude models. |
 | **GitHub Copilot** | Subscription | Fast | Cloud | Developers with existing Copilot subscription |
 | **DeepSeek** | Pay-per-token (low cost) | Fast | Cloud | Budget-friendly general use |
 | **Google Gemini** | Pay-per-token | Fast | Cloud | Google ecosystem, multimodal |

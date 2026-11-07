@@ -30,7 +30,6 @@ This document defines the security architecture for SAM (Synthetic Autonomic Min
 ### 3. Defense in Depth
 - **Multiple Security Layers**: No single point of failure
 - **Path-Based Authorization**: File access controlled by working directory
-- **API Token Authentication**: Required for all API server endpoints
 - **macOS Permission Integration**: Uses system permissions for Calendar, Contacts, Notes
 
 ---
@@ -126,34 +125,7 @@ public func authorizePath(_ path: String, for tool: String, operation: String) a
 4. **ALICE Image Generation** - Only when `image_generation` tool used
 
 **No Inbound Connections** except:
-- **Local API Server** (port 8080, disabled by default, requires token auth)
-
----
-
-## API Server Security
-
-### Authentication
-
-```swift
-// Token-based authentication for all endpoints
-let authHeader = request.headers["Authorization"]
-guard authHeader == "Bearer \(apiToken)" else {
-    return Response(status: .unauthorized)
-}
-```
-
-### Security Features:
-- **Token-based auth** - All API requests require valid token
-- **Local network only** - Binds to all interfaces but intended for LAN
-- **No internet exposure** - SAM does not configure port forwarding/UPnP
-- **CORS** - Configurable cross-origin headers
-- **Rate limiting** - Built-in request throttling
-
-### Recommendations:
-- Keep API server disabled when not in use
-- Use only on trusted networks
-- Don't expose port 8080 to internet
-- Treat API token like a password
+- **None** - SAM does not run a local HTTP server or accept inbound network connections
 
 ---
 
@@ -211,7 +183,6 @@ Tools requiring system permissions:
 |--------|------------|
 | **Unauthorized file access** | Path-based authorization, working directory enforcement |
 | **API key theft** | Keychain storage, hardware encryption |
-| **API server abuse** | Token authentication, local network only |
 | **Malicious tool execution** | Path authorization, user confirmation for sensitive operations |
 | **Data exfiltration** | Local-first design, no telemetry, user controls cloud providers |
 
@@ -301,14 +272,13 @@ When using MLX, llama.cpp, or llama.cpp:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 2.0 | 2026-08-23 | Updated to reflect actual implementation: SecurityFramework module, path-based auth, Keychain storage, API server security, macOS permissions integration |
+| 2.0 | 2026-08-23 | Updated to reflect actual implementation: SecurityFramework module, path-based auth, Keychain storage, macOS permissions integration |
 | 1.0 | 2025-12-20 | Initial specification (aspirational) |
 
 ---
 
 ## See Also
 
-- [API Authentication](API_AUTHENTICATION.md) - API server authentication implementation
 - [Configuration System](CONFIGURATION_SYSTEM.md) - Keychain and preferences
 - [Conversation Engine](CONVERSATION_ENGINE.md) - Session validation
 - [SAM.entitlements](../SAM.entitlements) - Application entitlements

@@ -127,7 +127,6 @@ SAM supports multiple AI providers. You can configure one or many and switch bet
 | Provider | Models | Notes |
 |----------|--------|-------|
 | **OpenAI** | Frontier models | Most popular, broad capabilities |
-| **Anthropic** | Via OpenRouter | Claude models available through OpenRouter |
 | **GitHub Copilot** | Multiple model families | Requires GitHub Copilot subscription |
 | **DeepSeek** | General and coding models | Cost-effective, good for coding |
 | **Google Gemini** | Multimodal models with large context | Up to 1M token context |
@@ -540,13 +539,6 @@ SAM's default system prompt is built from modular components:
 - Wake word toggle and customization
 - Text-to-speech voice, speed, devices
 - Relay/conversation mode timeout
-
-### API Server
-
-- Enable/disable local HTTP server
-- Port configuration
-- API token display and regeneration
-- CORS settings
 
 ### Appearance
 

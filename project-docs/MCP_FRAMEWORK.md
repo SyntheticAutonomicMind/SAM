@@ -44,13 +44,12 @@ The **MCPFramework** is SAM's tool execution system, implementing a consolidated
 | Component | Location | Responsibility |
 |-----------|----------|----------------|
 | **MCPManager** | `MCPManager.swift` | Central coordinator, tool registration, execution |
-| **UniversalToolRegistry** | `ToolRegistry.swift` | Tool registration, lookup, KV cache ordering |
-| **MCPTool Protocol** | `MCPTool.swift` | Base protocol all tools implement |
-| **ConsolidatedMCP** | `MCPTool.swift` | Base class for consolidated tools |
-| **ToolRegistry** | `ToolRegistry.swift` | Legacy registry (being phased out) |
-| **ToolResult** | `ToolResult.swift` | Standardized result format |
+| **MCPToolRegistry** | `MCPManager.swift` | Tool registration, lookup, KV cache ordering |
+| **MCPTool Protocol** | `MCPTypes.swift` | Base protocol all tools implement |
+| **ConsolidatedMCP** | `ConsolidatedMCP.swift` | Protocol for consolidated tools |
+| **MCPToolResult** | `MCPTypes.swift` | Standardized result format |
 | **Authorization** | `Authorization/` | Path-based authorization checks |
-| **Tools/** | `Tools/` | 13 consolidated tool implementations |
+| **Tools/** | `Tools/` | 14 consolidated tool implementations |
 
 ---
 

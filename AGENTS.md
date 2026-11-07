@@ -227,7 +227,7 @@ Sources/
 ├── MCPFramework/               - Model Context Protocol tools
 │   ├── MCPManager.swift (tool registration, lifecycle)
 │   ├── ConsolidatedMCP.swift (protocol for consolidated tools)
-│   ├── Tools/ (13 consolidated tools, 80+ operations)
+│   ├── Tools/ (14 consolidated tools, 80+ operations)
 │   └── MCPTypes.swift (result types)
 ├── SharedData/                 - Shared types, thread-safe storage
 │   ├── SharedTopics.swift
@@ -254,7 +254,6 @@ Sources/
 ### External Dependencies
 
 - **external/llama.cpp/** - Git submodule for local model support (macOS only)
-- **external/ml-stable-diffusion/** - Apple's image generation
 - **.github/workflows/** - CI/CD automation (build, test, release)
 
 ---

@@ -27,24 +27,3 @@ func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerO
 - `CustomProvider` - Generic OpenAI-compatible providers
 
 > **Note:** There is no direct `AnthropicProvider`. Claude models are accessed through the `OpenRouterProvider`.
-
----
-
-### SAMAPIServer
-
-**Location:** `Sources/APIFramework/SAMAPIServer.swift`
-
-**Purpose:** OpenAI-compatible HTTP API server for external tool integration.
-
-**Endpoints:**
-
-```
-POST /v1/chat/completions          - Standard chat completion
-POST /api/chat/completions         - Alternative route
-POST /api/chat/autonomous          - Multi-step autonomous workflow
-GET  /v1/models                    - List available models
-GET  /v1/conversations             - List conversations
-GET  /v1/conversations/:id         - Get conversation
-POST /api/models/download          - Download model from hub
-GET  /api/models/download/:id/status - Download progress
-```

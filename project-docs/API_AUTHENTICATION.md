@@ -1,5 +1,7 @@
 # API Authentication Guide
 
+> **NOTE:** This document describes planned functionality that is not yet implemented. SAM does not currently include a local HTTP API server. This document is retained as a specification for future implementation.
+
 SAM's API server now requires authentication for all external requests to protect against unauthorized access.
 
 ## Security Model
