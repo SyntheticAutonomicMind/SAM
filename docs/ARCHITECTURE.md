@@ -97,7 +97,6 @@ The largest module. Handles all AI communication, orchestration, and the local A
   - `RemoteLlamaProvider.swift` - Remote llama.cpp servers
 
 - **EndpointManager** - Routes requests to the correct provider, manages model lists, handles authentication
-- **SAMAPIServer** - Local HTTP server (Vapor-based) for SAM-Web and external integrations
 - **ToolCallExtractor** - Parses tool calls from AI responses across different provider formats
 - **TokenCounter** - Tracks token usage for context management
 
@@ -262,7 +261,7 @@ SAM uses Swift Package Manager (SPM) with a Makefile wrapper:
 | **mlx-swift-lm** | Language model support for MLX |
 | **swift-transformers** | Tokenization |
 | **llama.cpp** | Local model inference (GGUF format) |
-| **Vapor** | HTTP server for API and SAM-Web |
+| **Vapor** | HTTP server for API |
 | **SQLite.swift** | Database for conversations and shared data |
 | **Sparkle** | Auto-update framework |
 | **swift-log** | Structured logging |

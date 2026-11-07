@@ -16,14 +16,13 @@
 8. [Documents](#documents)
 9. [Image Generation (ALICE)](#image-generation-alice)
 10. [Math and Calculations](#math-and-calculations)
-11. [SAM-Web: Remote Access](#sam-web-remote-access)
-12. [Shared Topics](#shared-topics)
-13. [Personality System](#personality-system)
-14. [Preferences and Settings](#preferences-and-settings)
-15. [Keyboard Shortcuts](#keyboard-shortcuts)
-16. [Tips and Best Practices](#tips-and-best-practices)
-17. [Troubleshooting](#troubleshooting)
-18. [FAQ](#faq)
+11. [Shared Topics](#shared-topics)
+12. [Personality System](#personality-system)
+13. [Preferences and Settings](#preferences-and-settings)
+14. [Keyboard Shortcuts](#keyboard-shortcuts)
+15. [Tips and Best Practices](#tips-and-best-practices)
+16. [Troubleshooting](#troubleshooting)
+17. [FAQ](#faq)
 
 ---
 
@@ -447,37 +446,6 @@ SAM automatically recognizes math requests and routes them through the computati
 
 ---
 
-## SAM-Web: Remote Access
-
-### What is SAM-Web?
-
-[SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) is a web interface that lets you chat with SAM from any device on your network - iPad, iPhone, another computer, or any device with a browser.
-
-### Requirements
-
-1. SAM running on your Mac with the API server enabled
-2. SAM-Web deployed (see [SAM-Web repository](https://github.com/SyntheticAutonomicMind/SAM-web))
-3. Both devices on the same network
-
-### Setup
-
-1. In SAM, open Settings > API Server
-2. Enable the API server
-3. Note your API token
-4. Deploy SAM-Web and configure it to connect to your Mac's IP
-5. Open your browser and navigate to `http://your-mac-ip:8080`
-
-### What You Can Do Remotely
-
-- Full chat interface with all features
-- Model selection
-- Conversation management
-- File operations (within working directory)
-- Web research
-- Document import/creation
-
----
-
 ## Shared Topics
 
 ### What Are Shared Topics?
@@ -690,9 +658,6 @@ SAM's default system prompt is built from modular components:
 
 **Q: Does SAM work offline?**
 A: Yes, with local models (MLX, llama.cpp) and no cloud providers configured.
-
-**Q: Can I use SAM on iPhone/iPad?**
-A: Not directly, but [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) provides browser access from any device on your network.
 
 **Q: How much does SAM cost?**
 A: SAM itself is free (GPL-3.0). Cloud providers charge per-token. Local models are free after download.

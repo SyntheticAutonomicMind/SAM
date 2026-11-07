@@ -51,7 +51,6 @@ SAM is a native macOS AI assistant with:
 - Built-in tools for files, web research, documents, math, and macOS integration
 - Per-conversation memory plus long-term memory features
 - Voice input and speech output with relay mode
-- Remote access through SAM-Web and the local API server
 - Privacy-first defaults with user-controlled integrations
 - LoRA fine-tuning for local models
 - Onboarding wizard for first-time setup

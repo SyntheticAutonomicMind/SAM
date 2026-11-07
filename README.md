@@ -44,7 +44,6 @@ SAM is a native macOS app for people who aren't developers. Say "Hey SAM" to go 
 - Manage files and folders with voice commands
 - Create project plans and task lists
 - Organize your work in project folders
-- Access SAM from your iPad or phone via [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web)
 
 ### Math & Calculations
 
@@ -149,10 +148,6 @@ brew install --cask sam
 
 Press `N` for a new conversation. Type your message. Say "Hey SAM" for hands-free.
 
-### Access From Other Devices
-
-[SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) provides chat from your iPad, iPhone, or any browser. Enable API Server in SAM Preferences, then visit the SAM-Web repository for setup instructions.
-
 ---
 
 ## System Requirements
@@ -185,7 +180,6 @@ SAM is part of [Synthetic Autonomic Mind](https://github.com/SyntheticAutonomicM
 
 - **[CLIO](https://github.com/SyntheticAutonomicMind/CLIO)** - Terminal AI coding assistant (macOS, Linux, Windows)
 - **[ALICE](https://github.com/SyntheticAutonomicMind/ALICE)** - Image generation server (SAM's image engine)
-- **[SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web)** - Access SAM from any browser
 
 ---
 

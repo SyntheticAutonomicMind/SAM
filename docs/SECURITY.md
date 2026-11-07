@@ -64,7 +64,7 @@ SAM runs as a standard macOS application with hardened runtime:
 | **Notarization** | Apple notarized |
 | **App Sandbox** | Not sandboxed (requires server capabilities and unrestricted file access) |
 
-SAM is not sandboxed because it runs a local HTTP server for SAM-Web and needs unrestricted file system access for its tool system. This is standard for developer tools and productivity applications distributed outside the App Store.
+SAM is not sandboxed because it needs unrestricted file system access for its tool system. This is standard for developer tools and productivity applications distributed outside the App Store.
 
 ### Entitlements
 
@@ -142,32 +142,6 @@ SAM includes privacy controls for tools that access sensitive data:
 - Modify system files
 - Install software
 - Access the Keychain (except through SAM's own key management)
-
----
-
-## API Server Security
-
-When the API server is enabled (for SAM-Web):
-
-### Authentication
-
-- **Token-based auth** - All API requests require a valid authentication token
-- **Token generation** - Tokens are generated locally and displayed in Settings
-- **No default access** - The API server rejects unauthenticated requests
-
-### Network Exposure
-
-- **Local network only** - The server binds to all interfaces but is intended for LAN use
-- **Port 8080** - Default port (configurable)
-- **No internet exposure** - SAM does not configure port forwarding or UPnP
-- **CORS** - Configurable cross-origin resource sharing headers
-
-### Recommendations
-
-- Keep the API server disabled when not in use
-- Use the API server only on trusted networks
-- Don't expose port 8080 to the internet
-- Treat the API token like a password
 
 ---
 

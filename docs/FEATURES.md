@@ -419,25 +419,6 @@ Connect to a remote [ALICE](https://github.com/SyntheticAutonomicMind/ALICE) ser
 
 ---
 
-## SAM-Web (Remote Access)
-
-Access SAM from any device on your local network through a web browser.
-
-**Features:**
-- Full chat interface
-- Mini-prompts
-- Model selection
-- Conversation management
-- Responsive design (desktop, tablet, mobile)
-- Token-based authentication
-
-**Requirements:**
-- SAM running on your Mac with API server enabled
-- [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web) deployed
-- Both devices on the same network
-
----
-
 ## Shared Topics
 
 Cross-conversation workspaces backed by SQLite:
@@ -492,20 +473,6 @@ SAM's system prompt is built from modular components (SAM Default v25+):
 - **Dynamic Iterations** - Iteration monitoring (when enabled)
 - **Two-Phase Workflow** - Pattern recommendation
 - **Sequential Lists** - Pattern guidance
-
----
-
-## API Server
-
-SAM runs a local HTTP server (Vapor-based) that provides:
-
-- **OpenAI-compatible API** - Connect external tools that speak the OpenAI protocol
-- **SAM-Web interface** - Web-based access from other devices
-- **Authentication** - Token-based auth for all API endpoints
-- **SSE streaming** - Real-time streaming responses
-- **CORS support** - Configurable cross-origin access
-
-The server runs on port 8080 by default and is disabled until explicitly enabled in Settings.
 
 ---
 

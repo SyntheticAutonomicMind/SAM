@@ -11,7 +11,6 @@ SAM is a native macOS application built with Swift 6.0 and SwiftUI. It runs on m
 - Voice control with "Hey SAM" wake word, speech-to-text, and streaming text-to-speech
 - Semantic memory using Apple NaturalLanguage vector embeddings for document and conversation search
 - Shared Topics for cross-conversation context sharing
-- SAM-Web remote access via local API server (Vapor-based, token auth)
 - Image generation via remote ALICE server (Stable Diffusion)
 - Real math computation via Python interpreter
 - Auto-updates via Sparkle framework

@@ -112,15 +112,6 @@ If you want hands-free interaction:
 3. Grant microphone access when macOS asks
 4. Enable text-to-speech if you want spoken responses
 
-### 5. Optional: enable the API server
-
-If you want browser-based or remote access through SAM-Web:
-
-1. Open **Settings > API Server**
-2. Enable the API server
-3. Copy the generated API token
-4. Configure [SAM-Web](https://github.com/SyntheticAutonomicMind/SAM-web)
-
 ---
 
 ## Auto-Updates
