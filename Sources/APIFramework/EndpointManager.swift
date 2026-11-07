@@ -1140,6 +1140,17 @@ public class EndpointManager: ObservableObject {
                 temperature: ProviderType.cheaperInference.defaultTemperature
             )
 
+        case .apiRoute:
+            return ProviderConfiguration(
+                providerId: ProviderType.apiRoute.defaultIdentifier,
+                providerType: .apiRoute,
+                isEnabled: false,
+                baseURL: ProviderType.apiRoute.defaultBaseURL,
+                models: ProviderType.apiRoute.defaultModels,
+                maxTokens: ProviderType.apiRoute.defaultMaxOutputTokens,
+                temperature: ProviderType.apiRoute.defaultTemperature
+            )
+
         case .custom:
             return ProviderConfiguration(
                 providerId: "custom",
@@ -1201,6 +1212,9 @@ public class EndpointManager: ObservableObject {
 
         case .cheaperInference:
             return CheaperInferenceProvider(config: config)
+
+        case .apiRoute:
+            return ApiRouteProvider(config: config)
 
         case .custom:
             return CustomProvider(config: config)
