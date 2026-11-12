@@ -319,6 +319,9 @@ struct EndpointManagementView: View {
         case .cheaperInference:
             return "Get your API key from cheaperinference.com"
 
+        case .uberLLM:
+            return "Get your API key from uberllm.dev"
+
         case .custom:
             return "Enter the API key for your custom provider"
         }
@@ -466,6 +469,7 @@ struct ProviderRowView: View {
         case .zai: return "z.circle"
         case .zaiCoding: return "z.circle"
         case .cheaperInference: return "c.circle"
+        case .uberLLM: return "u.circle"
         case .custom: return "gear"
         }
     }
@@ -884,6 +888,9 @@ struct ProviderConfigurationSheet: View {
         case .cheaperInference:
             return "Get your API key from cheaperinference.com - OpenAI-compatible gateway to models from several labs"
 
+        case .uberLLM:
+            return "Get your API key from uberllm.dev - one key for chat models from many labs"
+
         case .custom:
             return "Enter the API key provided by your custom endpoint"
         }
@@ -939,7 +946,7 @@ struct ProviderConfigurationSheet: View {
         /// Add authentication if required.
         if providerType.requiresApiKey && !apiKey.isEmpty {
             switch providerType {
-            case .openai, .deepseek, .minimax, .cheaperInference, .custom:
+            case .openai, .deepseek, .minimax, .cheaperInference, .uberLLM, .custom:
                 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
             case .openrouter:
