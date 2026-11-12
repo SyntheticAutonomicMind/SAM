@@ -1723,6 +1723,57 @@ public class CheaperInferenceProvider: AIProvider {
     }
 }
 
+// MARK: - UberLLM Provider
+
+/// UberLLM provider: an OpenAI-compatible API for models from many labs.
+/// Model IDs are sent bare (gpt-5.4-mini); UberLLM resolves them to vendor/model IDs.
+/// Uses protocol-extension defaults for: loadModel, getLoadedStatus, unload,
+/// getAvailableModels, validateConfiguration, processStreamingChatCompletion.
+@MainActor
+public class UberLLMProvider: AIProvider {
+    public let identifier: String
+    public let config: ProviderConfiguration
+    private let logger = Logger(label: "com.sam.api.uberllm")
+
+    public init(config: ProviderConfiguration) {
+        self.identifier = config.providerId
+        self.config = config
+        logger.debug("UberLLM Provider initialized")
+    }
+
+    public func processChatCompletion(_ request: OpenAIChatRequest) async throws -> ServerOpenAIChatResponse {
+        let requestId = UUID().uuidString
+        logger.debug("Processing chat completion via UberLLM API [req:\(requestId.prefix(8))]")
+
+        guard let apiKey = config.apiKey else {
+            throw ProviderError.authenticationFailed("UberLLM API key not configured")
+        }
+
+        guard let baseURL = config.baseURL ?? ProviderType.uberLLM.defaultBaseURL else {
+            throw ProviderError.invalidConfiguration("UberLLM base URL not configured")
+        }
+
+        let modelForAPI = RemoteProviderHTTP.stripProviderPrefix(from: request.model)
+        let requestBody = request.buildOpenAICompatibleRequestBody(
+            modelOverride: modelForAPI, cacheControl: true
+        )
+
+        let urlRequest = try RemoteProviderHTTP.buildChatCompletionRequest(
+            baseURL: baseURL, apiKey: apiKey, requestBody: requestBody,
+            timeoutSeconds: config.timeoutSeconds
+        )
+
+        return try await RemoteProviderHTTP.executeChatCompletion(
+            urlRequest: urlRequest, providerName: "UberLLM",
+            requestId: requestId, logger: logger
+        )
+    }
+
+    public func supportsModel(_ model: String) -> Bool {
+        return config.models.contains(model)
+    }
+}
+
 
 // MARK: - Z.AI Provider
 
