@@ -247,6 +247,8 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 
 **Models:** Bare model IDs work, for example `gpt-5.4-mini`, `claude-sonnet-5`, `deepseek-v4.1-flash`. The live list (`vendor/model` IDs) is at `https://api.uberllm.dev/v1/models`.
 
+**Prefer bare IDs.** A fetched `vendor/model` ID (for example `deepseek/deepseek-v4.1-flash`) is shown in the model chooser without the `uberllm/` prefix, so it can look like it belongs to another provider. It still routes to UberLLM, but if you also have that vendor's own provider enabled, enter the bare ID (`deepseek-v4.1-flash`) to keep the two apart.
+
 ---
 
 ## Local Models
