@@ -114,6 +114,7 @@ Choose how SAM talks to you - friendly, professional, creative, or create your o
 | **Z.AI (Chat)** | GLM models for conversation and reasoning |
 | **Z.AI (Coding)** | GLM models optimized for coding |
 | **Cheaper Inference** | OpenAI-compatible gateway to models from several labs |
+| **UberLLM** | OpenAI-compatible API, one key for chat models from many labs |
 | **Local MLX** | Run models on Apple Silicon Macs |
 | **Local llama.cpp** | High-performance GGUF inference on Apple Silicon Macs |
 | **Remote llama.cpp** | Connect to remote llama.cpp server |

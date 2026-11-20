@@ -1140,6 +1140,17 @@ public class EndpointManager: ObservableObject {
                 temperature: ProviderType.cheaperInference.defaultTemperature
             )
 
+        case .uberLLM:
+            return ProviderConfiguration(
+                providerId: "uberllm",
+                providerType: .uberLLM,
+                isEnabled: false,
+                baseURL: "https://api.uberllm.dev/v1",
+                models: ProviderType.uberLLM.defaultModels,
+                maxTokens: ProviderType.uberLLM.defaultMaxOutputTokens,
+                temperature: ProviderType.uberLLM.defaultTemperature
+            )
+
         case .custom:
             return ProviderConfiguration(
                 providerId: "custom",
@@ -1201,6 +1212,9 @@ public class EndpointManager: ObservableObject {
 
         case .cheaperInference:
             return CheaperInferenceProvider(config: config)
+
+        case .uberLLM:
+            return UberLLMProvider(config: config)
 
         case .custom:
             return CustomProvider(config: config)

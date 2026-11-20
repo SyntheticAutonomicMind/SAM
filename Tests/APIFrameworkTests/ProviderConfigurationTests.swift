@@ -185,6 +185,53 @@ final class ProviderConfigurationTests: XCTestCase {
                       "User-provided baseURL should be used as-is")
     }
 
+    // MARK: - UberLLM provider
+
+    func testUberLLMProviderTypeMetadata() {
+        XCTAssertTrue(ProviderType.allCases.contains(.uberLLM),
+                      "uberLLM should be in ProviderType.allCases")
+        XCTAssertTrue(ProviderType.uberLLM.requiresApiKey,
+                      "UberLLM is a hosted API and needs a key")
+        XCTAssertEqual(ProviderType.uberLLM.normalizedProviderName, "uberllm")
+        XCTAssertEqual(ProviderType.uberLLM.defaultIdentifier, "uberllm")
+        XCTAssertEqual(ProviderType.uberLLM.displayName, "UberLLM")
+        XCTAssertFalse(ProviderType.uberLLM.defaultModels.isEmpty,
+                       "UberLLM should ship a default model list")
+    }
+
+    @MainActor
+    func testUberLLMProviderCreation() {
+        let config = ProviderConfiguration(
+            providerId: "uberllm",
+            providerType: .uberLLM,
+            isEnabled: true,
+            apiKey: "test-key",
+            baseURL: ProviderType.uberLLM.defaultBaseURL,
+            models: ["gpt-5.4-mini", "deepseek/deepseek-v4.1-flash"]
+        )
+
+        let provider = UberLLMProvider(config: config)
+
+        XCTAssertEqual(provider.identifier, "uberllm")
+        XCTAssertEqual(provider.config.providerType, .uberLLM)
+        XCTAssertEqual(provider.config.baseURL, "https://api.uberllm.dev/v1")
+        XCTAssertTrue(provider.supportsModel("gpt-5.4-mini"))
+        XCTAssertTrue(provider.supportsModel("deepseek/deepseek-v4.1-flash"),
+                      "A vendor/model ID from the live list is matched as configured")
+        XCTAssertFalse(provider.supportsModel("not-configured-model"))
+    }
+
+    func testUberLLMModelIdsAreSentBare() {
+        // The live list returns vendor/model IDs; the request sends the bare model name,
+        // the same as for a bare ID picked from the default list.
+        XCTAssertEqual(RemoteProviderHTTP.stripProviderPrefix(from: "deepseek/deepseek-v4.1-flash"),
+                       "deepseek-v4.1-flash")
+        XCTAssertEqual(RemoteProviderHTTP.stripProviderPrefix(from: "uberllm/gpt-5.4-mini"),
+                       "gpt-5.4-mini")
+        XCTAssertEqual(RemoteProviderHTTP.stripProviderPrefix(from: "gpt-5.4-mini"),
+                       "gpt-5.4-mini")
+    }
+
     // MARK: - Context size fallbacks
 
     func testTokenCounterGetContextSizeForRemoteLlamaModel() async {
@@ -280,6 +327,7 @@ final class ProviderConfigurationTests: XCTestCase {
         XCTAssertEqual(ProviderType.openrouter.defaultBaseURL, "https://openrouter.ai/api/v1")
         XCTAssertEqual(ProviderType.githubCopilot.defaultBaseURL, "https://api.githubcopilot.com")
         XCTAssertEqual(ProviderType.cheaperInference.defaultBaseURL, "https://api.cheaperinference.com/v1")
+        XCTAssertEqual(ProviderType.uberLLM.defaultBaseURL, "https://api.uberllm.dev/v1")
 
         // These providers have no default URL — user must configure
         XCTAssertNil(ProviderType.localLlama.defaultBaseURL)
