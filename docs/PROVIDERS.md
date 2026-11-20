@@ -24,6 +24,7 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 | **Z.AI (Chat)** | Pay-per-token | Fast | Cloud | GLM models, Chinese/English bilingual |
 | **Z.AI (Coding)** | Pay-per-token | Fast | Cloud | GLM coding models |
 | **Cheaper Inference** | Pay-per-token | Varies | Cloud | Access models from several labs with one API key |
+| **API Route** | Pay-per-token | Varies | Cloud | OpenAI-compatible models available to your API key |
 | **UberLLM** | Pay-per-token | Varies | Cloud | Chat models from many labs with one API key |
 | **MLX (Local)** | Free | Varies | Full privacy | Offline use, sensitive data, Apple Silicon |
 | **llama.cpp (Local)** | Free | Fast | Full privacy | High-performance local, Apple Silicon |
@@ -216,6 +217,25 @@ SAM connects to AI providers to power its conversation and tool capabilities. Yo
 - Specialized for code generation and analysis
 - Supports chain-of-thought reasoning for complex coding tasks
 - Large context windows
+
+---
+
+### API Route
+
+**Setup:**
+1. Create an API key at [API Route](https://www.api-route.com).
+2. In SAM Settings > AI Providers, add **API Route** and paste the key.
+3. Keep the default base URL, `https://global.api-route.com/v1`.
+4. Fetch the model list, then select models available to your key.
+
+The initial model list is empty because access depends on your API key.
+Model discovery uses authenticated `GET /v1/models`. Chat uses SAM's shared
+OpenAI-compatible request handling, with the default simulated streaming
+implementation. API usage is billed separately by API Route.
+
+**Models:** Bare model IDs, for example `claude-sonnet-4-6`, `deepseek-v4.1-flash`,
+`gpt-6-sol`. Use the ID exactly as listed - API Route does not use a `vendor/`
+prefix. See the [model list](https://www.api-route.com/pricing) for the full set.
 
 ---
 
